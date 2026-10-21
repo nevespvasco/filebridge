@@ -1,14 +1,20 @@
 //! `NameRule` trait and the general name-correction rules.
 //!
 //! Pure and synchronous: no I/O. Names arrive as raw bytes (the scanner never assumes UTF-8) and
-//! leave as a `source → destination` path map. Phase 0 ships only the `nfc` rule; the other
-//! general rules (see `docs/04-name-correction.md`) land in later phases.
+//! leave as a `source → destination` path map. Rules so far: `nfc`, `forbidden-chars`, `trailing`
+//! and `reserved`; the other general rules (see `docs/04-name-correction.md`) land in Phase 2.
 
+mod forbidden_chars;
 mod nfc;
+mod reserved;
 mod rule_set;
+mod trailing;
 
+pub use forbidden_chars::ForbiddenChars;
 pub use nfc::Nfc;
-pub use rule_set::{Mapped, RuleSet};
+pub use reserved::{Reserved, WINDOWS_DEVICE_NAMES};
+pub use rule_set::{Mapped, RULE_ORDER, RuleSet};
+pub use trailing::Trailing;
 
 /// Index of an [`Entry`] inside the slice produced by the scanner.
 pub type EntryId = usize;
@@ -96,6 +102,68 @@ impl Default for TargetProfile {
             integration: None,
         }
     }
+}
+
+/// Which targets a target-dependent rule is active for: Windows targets, targets whose
+/// integration is in a list, or both.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveFor {
+    windows: bool,
+    integrations: Vec<String>,
+}
+
+impl ActiveFor {
+    /// Windows targets only.
+    pub fn windows() -> Self {
+        Self {
+            windows: true,
+            integrations: Vec::new(),
+        }
+    }
+
+    /// Only targets whose integration id is one of `ids`, whatever their family.
+    pub fn integrations<I, S>(ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            windows: false,
+            integrations: ids.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Also targets whose integration id is one of `ids`.
+    pub fn and_integrations<I, S>(mut self, ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.integrations.extend(ids.into_iter().map(Into::into));
+        self
+    }
+
+    pub fn matches(&self, target: &TargetProfile) -> bool {
+        (self.windows && target.family == TargetFamily::Windows)
+            || target
+                .integration
+                .as_deref()
+                .is_some_and(|id| self.integrations.iter().any(|i| i == id))
+    }
+}
+
+/// The general rules that exist today, wired as `docs/04` describes: `nfc` always;
+/// `forbidden-chars` and `trailing` on the targets in `windows_compat` (Windows, plus any
+/// integration that requires them); `reserved` with the Windows device names on Windows targets.
+///
+/// `RuleSet::new` filters them by target and puts them in order.
+pub fn general_rules(windows_compat: ActiveFor) -> Vec<Box<dyn NameRule>> {
+    vec![
+        Box::new(Nfc),
+        Box::new(ForbiddenChars::new(windows_compat.clone())),
+        Box::new(Trailing::new(windows_compat)),
+        Box::new(Reserved::windows()),
+    ]
 }
 
 pub trait NameRule: Send + Sync {
