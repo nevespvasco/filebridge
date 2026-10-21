@@ -1,0 +1,22 @@
+arch: amd64
+cores: 2
+hostname: nc-photos
+memory: 2048
+mp0: /mnt/pve/hdd/nextcloud,mp=/srv/nextcloud/data
+net0: name=eth0,bridge=vmbr0,ip=dhcp,type=veth
+ostype: ubuntu
+rootfs: local-lvm:vm-130-disk-0,size=12G
+unprivileged: 1
+lxc.idmap: u 0 100000 33
+lxc.idmap: g 0 100000 33
+lxc.idmap: u 33 1005 1
+lxc.idmap: g 33 1005 1
+lxc.idmap: u 34 100034 65502
+lxc.idmap: g 34 100034 65502
+
+[before-upgrade]
+arch: amd64
+hostname: nc-photos
+mp0: /mnt/old,mp=/srv/old
+snaptime: 1718000000
+unprivileged: 1

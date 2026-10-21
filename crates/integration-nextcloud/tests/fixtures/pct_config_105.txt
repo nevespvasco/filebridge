@@ -1,0 +1,14 @@
+arch: amd64
+cores: 4
+description: Nextcloud 29%0A
+features: nesting=1
+hostname: nextcloud
+memory: 4096
+mp0: /tank/nextcloud-data,mp=/mnt/ncdata,backup=0
+mp1: local-zfs:subvol-105-disk-1,mp=/srv/extra,ro=1,size=32G
+net0: name=eth0,bridge=vmbr0,firewall=1,hwaddr=02:00:00:00:00:01,ip=192.0.2.50/24,gw=192.0.2.1,type=veth
+onboot: 1
+ostype: debian
+rootfs: local-zfs:subvol-105-disk-0,size=16G
+swap: 512
+unprivileged: 1

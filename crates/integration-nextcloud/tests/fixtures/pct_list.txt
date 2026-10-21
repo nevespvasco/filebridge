@@ -1,0 +1,5 @@
+VMID       Status     Lock         Name                
+101        running                 pihole              
+105        running                 nextcloud           
+110        running    backup       backup-ct           
+120        stopped                 test-debian         

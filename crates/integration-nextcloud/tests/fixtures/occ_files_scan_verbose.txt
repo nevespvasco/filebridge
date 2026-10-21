@@ -1,0 +1,15 @@
+Starting scan for user 1 out of 1 (alice)
+	Folder	/alice/files/Fotos
+	Entry "/alice/files/Fotos/Verão" will not be accessible due to incompatible encoding
+	Folder	/alice/files/Fotos/2024
+	File	/alice/files/Fotos/2024/IMG_0001.jpg
+	File	/alice/files/Fotos/2024/IMG 0002 (cópia).jpg
+	Folder	/alice/files/Fotos/Viagem a Óbidos
+	File	/alice/files/Fotos/Viagem a Óbidos/O'Brien "festa".jpg
+	File	/alice/files/Fotos/Viagem a Óbidos/mapa.pdf
+
++---------+-------+-----+---------+---------+--------+--------------+
+| Folders | Files | New | Updated | Removed | Errors | Elapsed time |
++---------+-------+-----+---------+---------+--------+--------------+
+| 3       | 4     | 4   | 0       | 0       | 1      | 00:00:02     |
++---------+-------+-----+---------+---------+--------+--------------+
