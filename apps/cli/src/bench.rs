@@ -1,0 +1,351 @@
+//! Phase 0 benchmark: baseline `sync/copy` vs plan A vs plan B on the same source.
+//!
+//! Each mode writes to its own new folder `<dest-root>/filebridge-bench-<unix time>/<mode>`.
+//! The source is only ever read. Nothing at the destination is deleted.
+
+use std::collections::BTreeSet;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result, bail};
+use filebridge_transport_api::{
+    Backend, Destination, ProgressEvent, ProgressSink, TransferJob, TransferOptions, Transport,
+};
+use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy, fs, stats};
+use serde::Serialize;
+use serde_json::json;
+
+use crate::prepare::{Prepared, prepare};
+
+#[derive(clap::Args)]
+pub struct Args {
+    /// Local folder to send (read-only).
+    #[arg(long)]
+    source: PathBuf,
+    /// Folder on the destination under which the bench folder is created.
+    #[arg(long)]
+    dest_root: String,
+    /// SFTP host; without it the destination is a local folder.
+    #[arg(long)]
+    sftp_host: Option<String>,
+    #[arg(long)]
+    sftp_port: Option<u16>,
+    #[arg(long)]
+    sftp_user: Option<String>,
+    /// Private key; without it the SSH agent is used.
+    #[arg(long)]
+    key_file: Option<PathBuf>,
+    /// Defaults to ~/.ssh/known_hosts. Host keys are always verified.
+    #[arg(long)]
+    known_hosts: Option<PathBuf>,
+    #[arg(
+        long,
+        value_enum,
+        value_delimiter = ',',
+        default_value = "baseline,plan-a,plan-b"
+    )]
+    modes: Vec<Mode>,
+    /// Files in flight (rclone --transfers for sync/copy, parallel copyfile calls for plan A).
+    #[arg(long, default_value_t = 8)]
+    concurrency: usize,
+    /// Write results as JSON here.
+    #[arg(long)]
+    json: Option<PathBuf>,
+    #[arg(long, default_value = "rclone")]
+    rclone: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum Mode {
+    /// Plain sync/copy, original names: the speed to beat.
+    Baseline,
+    /// operations/copyfile per file, straight to the NFC name.
+    PlanA,
+    /// sync/copy to a temp folder, batch rename there, move into place.
+    PlanB,
+}
+
+impl Mode {
+    fn dir(self) -> &'static str {
+        match self {
+            Mode::Baseline => "baseline",
+            Mode::PlanA => "plan-a",
+            Mode::PlanB => "plan-b",
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct Run {
+    mode: Mode,
+    concurrency: usize,
+    files: usize,
+    bytes: u64,
+    seconds: f64,
+    files_per_sec: f64,
+    mb_per_sec: f64,
+    stages: Vec<(String, f64)>,
+    failed: usize,
+    /// Expected destination paths not found after the run.
+    missing: usize,
+    /// Destination paths that were not expected (e.g. a name left uncorrected).
+    unexpected: usize,
+}
+
+pub async fn run(args: Args) -> Result<()> {
+    let prepared = prepare(&args.source)?;
+    let (rf, rd) = prepared.renamed_nodes();
+    eprintln!(
+        "source: {} files, {} dirs, {:.1} MB; nfc corrects {rf} file and {rd} dir names ({} file paths change); {} non-UTF-8 skipped",
+        prepared.files(),
+        prepared.dirs(),
+        prepared.scan.total_bytes() as f64 / 1e6,
+        prepared.renamed_files,
+        prepared.unmappable.len(),
+    );
+    if args.concurrency == 0 {
+        bail!("--concurrency must be at least 1");
+    }
+
+    let rcd = Arc::new(Rcd::start(&args.rclone).await?);
+    let rc = rcd.client().clone();
+    let version = rc.call("core/version", json!({})).await?;
+    let version = version["version"].as_str().unwrap_or("?").to_owned();
+    let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let backend = match &args.sftp_host {
+        Some(host) => Backend::Sftp {
+            host: host.clone(),
+            port: args.sftp_port,
+            user: args.sftp_user.clone(),
+            key_file: args.key_file.clone(),
+            known_hosts_file: args.known_hosts.clone(),
+            password: None,
+        },
+        None => Backend::Local,
+    };
+    let bench_root = fs::join(&args.dest_root, &format!("filebridge-bench-{stamp}"));
+    let bench = Destination {
+        transport: "rclone".into(),
+        backend,
+        root: bench_root.clone(),
+    };
+    // Creates the bench folder and warms up the connection, so the first mode isn't penalised.
+    rc.call(
+        "operations/mkdir",
+        json!({ "fs": fs::dest_fs(&bench, "")?, "remote": "" }),
+    )
+    .await
+    .context("cannot create the bench folder at the destination")?;
+    eprintln!("rclone {version}; writing under {bench_root}");
+
+    let mut runs = Vec::new();
+    for mode in &args.modes {
+        let dest = Destination {
+            root: fs::join(&bench_root, mode.dir()),
+            ..bench.clone()
+        };
+        let run = run_mode(*mode, &rcd, &dest, &prepared, &args, stamp).await?;
+        runs.push(run);
+    }
+
+    println!("\nmode      files     MB        s   files/s    MB/s  failed missing unexpected");
+    for r in &runs {
+        println!(
+            "{:<8} {:>6} {:>8.1} {:>8.1} {:>9.1} {:>7.1} {:>7} {:>7} {:>10}",
+            r.mode.dir(),
+            r.files,
+            r.bytes as f64 / 1e6,
+            r.seconds,
+            r.files_per_sec,
+            r.mb_per_sec,
+            r.failed,
+            r.missing,
+            r.unexpected
+        );
+        for (stage, secs) in &r.stages {
+            println!("           {stage}: {secs:.1} s");
+        }
+    }
+    if let Some(path) = &args.json {
+        let out = json!({
+            "rclone": version,
+            "destination": if args.sftp_host.is_some() { "sftp" } else { "local" },
+            "started_at_unix": stamp,
+            "source": {
+                "files": prepared.files(),
+                "dirs": prepared.dirs(),
+                "bytes": prepared.scan.total_bytes(),
+                "nfc_renamed_files": rf,
+                "nfc_renamed_dirs": rd,
+                "file_paths_changed": prepared.renamed_files,
+                "non_utf8_skipped": prepared.unmappable.len(),
+            },
+            "runs": runs,
+        });
+        std::fs::write(path, serde_json::to_string_pretty(&out)? + "\n")?;
+        eprintln!("results written to {}", path.display());
+    }
+    eprintln!("bench folders were left at the destination under {bench_root}");
+    Ok(())
+}
+
+async fn run_mode(
+    mode: Mode,
+    rcd: &Arc<Rcd>,
+    dest: &Destination,
+    p: &Prepared,
+    args: &Args,
+    stamp: u64,
+) -> Result<Run> {
+    let rc = rcd.client();
+    let (sink, rx) = ProgressSink::channel();
+    let printer = tokio::spawn(print_progress(mode, rx));
+    let started = Instant::now();
+
+    let (files, bytes, failed, expected) = match mode {
+        Mode::Baseline => {
+            let group = format!("bench-{stamp}-baseline");
+            let totals = (p.files() as u64, p.scan.total_bytes());
+            let poller = stats::spawn_poller(
+                rc.clone(),
+                group.clone(),
+                Some(totals),
+                sink.clone(),
+                Duration::from_millis(500),
+            );
+            sink.send(ProgressEvent::Stage("copy".into()));
+            let c = args.concurrency;
+            let res = rc
+                .call_job(
+                    "sync/copy",
+                    json!({
+                        "srcFs": fs::local_fs(&args.source)?,
+                        "dstFs": fs::dest_fs(dest, "")?,
+                        "_config": { "Transfers": c, "Checkers": c * 2 },
+                        "_group": group,
+                    }),
+                )
+                .await;
+            poller.abort();
+            res?;
+            let expected = p
+                .scan
+                .files()
+                .filter_map(|e| String::from_utf8(e.raw_path.clone()).ok())
+                .collect::<BTreeSet<_>>();
+            (totals.0 as usize, totals.1, 0, expected)
+        }
+        Mode::PlanA | Mode::PlanB => {
+            let strategy = if mode == Mode::PlanA {
+                Strategy::PerFile
+            } else {
+                Strategy::TempThenRename
+            };
+            let transport = RcloneTransport::new(rcd.clone(), strategy);
+            let job = TransferJob {
+                id: format!("{stamp}-{}", mode.dir()),
+                source_root: args.source.clone(),
+                items: p.items.clone(),
+                options: TransferOptions {
+                    concurrency: args.concurrency,
+                    bwlimit: None,
+                },
+            };
+            let res = transport.transfer(dest, &job, sink.clone()).await?;
+            let expected = p.items.iter().map(|i| i.dest.as_str().to_owned()).collect();
+            (p.items.len(), res.bytes, res.failed(), expected)
+        }
+    };
+    let seconds = started.elapsed().as_secs_f64();
+    drop(sink);
+    let stage_starts = tokio::time::timeout(Duration::from_secs(5), printer)
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .unwrap_or_default();
+
+    let mut stages = Vec::new();
+    for (i, (name, at)) in stage_starts.iter().enumerate() {
+        let end = stage_starts.get(i + 1).map_or(seconds, |(_, next)| {
+            next.duration_since(started).as_secs_f64()
+        });
+        stages.push((name.clone(), end - at.duration_since(started).as_secs_f64()));
+    }
+
+    let listed = rc
+        .call(
+            "operations/list",
+            json!({ "fs": fs::dest_fs(dest, "")?, "remote": "", "opt": { "recurse": true, "filesOnly": true } }),
+        )
+        .await?;
+    let actual: BTreeSet<String> = listed["list"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|e| e["Path"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    let missing = expected.difference(&actual).count();
+    let unexpected = actual.difference(&expected).count();
+    for path in expected.difference(&actual).take(3) {
+        eprintln!("  missing: {path:?}");
+    }
+    for path in actual.difference(&expected).take(3) {
+        eprintln!("  unexpected: {path:?}");
+    }
+
+    Ok(Run {
+        mode,
+        concurrency: args.concurrency,
+        files,
+        bytes,
+        seconds,
+        files_per_sec: files as f64 / seconds,
+        mb_per_sec: bytes as f64 / 1e6 / seconds,
+        stages,
+        failed,
+        missing,
+        unexpected,
+    })
+}
+
+/// Prints a one-line progress display; returns when every sink is dropped, with stage starts.
+async fn print_progress(
+    mode: Mode,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<ProgressEvent>,
+) -> Vec<(String, Instant)> {
+    let mut stages: Vec<(String, Instant)> = Vec::new();
+    let mut err = std::io::stderr();
+    while let Some(ev) = rx.recv().await {
+        match ev {
+            ProgressEvent::Stage(name) => {
+                if !stages.is_empty() {
+                    let _ = writeln!(err);
+                }
+                stages.push((name, Instant::now()));
+            }
+            ProgressEvent::Stats(s) => {
+                let stage = stages.last().map_or("", |(n, _)| n.as_str());
+                let _ = write!(
+                    err,
+                    "\r\x1b[2K{} {stage}: {}/{} files, {:.1}/{:.1} MB, {:.1} MB/s, {:.0} s",
+                    mode.dir(),
+                    s.files_done,
+                    s.total_files,
+                    s.bytes as f64 / 1e6,
+                    s.total_bytes as f64 / 1e6,
+                    s.bytes_per_sec / 1e6,
+                    s.elapsed_secs
+                );
+                let _ = err.flush();
+            }
+            ProgressEvent::ItemDone { .. } => {}
+        }
+    }
+    let _ = writeln!(err);
+    stages
+}
