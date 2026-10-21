@@ -24,7 +24,21 @@ impl Rcd {
         let port = free_port()?;
         let user = random_hex(16)?;
         let pass = random_hex(32)?;
-        let mut child = Command::new(binary)
+        let mut cmd = Command::new(binary);
+        // If this process dies without dropping `Rcd` (SIGKILL, crash), the sidecar must not
+        // outlive it. Linux: the kernel sends SIGTERM to rclone when the thread that spawned
+        // it exits; that is a runtime worker thread, which lives as long as the runtime.
+        // macOS/Windows: not covered yet (`kill_on_drop` only handles orderly exits).
+        #[cfg(target_os = "linux")]
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = cmd
             // filebridge owns name normalisation (`names`); rclone must compare bytes as-is.
             .args([
                 "rcd",

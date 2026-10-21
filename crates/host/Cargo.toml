@@ -1,0 +1,22 @@
+[package]
+name = "filebridge-host"
+description = "Wiring shared by the binaries that host the engine: data dir, lock, rclone sidecar, built-in plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+filebridge-core.workspace = true
+filebridge-integration-api.workspace = true
+filebridge-integration-nextcloud.workspace = true
+filebridge-ipc.workspace = true
+filebridge-transport-api.workspace = true
+filebridge-transport-rclone.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

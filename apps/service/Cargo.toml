@@ -1,6 +1,6 @@
 [package]
 name = "filebridge-service"
-description = "filebridge background service"
+description = "filebridge background service: hosts the engine and serves ipc over a local socket"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,3 +11,17 @@ name = "filebridge-service"
 path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
+clap = { workspace = true, features = ["env"] }
+filebridge-core.workspace = true
+filebridge-host.workspace = true
+filebridge-ipc.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+filebridge-host.workspace = true
+filebridge-transport-api.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

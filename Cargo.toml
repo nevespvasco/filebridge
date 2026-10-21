@@ -4,6 +4,7 @@ members = [
     "apps/cli",
     "apps/service",
     "crates/core",
+    "crates/host",
     "crates/integration-api",
     "crates/integration-nextcloud",
     "crates/ipc",
@@ -23,6 +24,7 @@ publish = false
 [workspace.dependencies]
 # Internal crates
 filebridge-core = { path = "crates/core" }
+filebridge-host = { path = "crates/host" }
 filebridge-integration-api = { path = "crates/integration-api" }
 filebridge-integration-nextcloud = { path = "crates/integration-nextcloud" }
 filebridge-ipc = { path = "crates/ipc" }

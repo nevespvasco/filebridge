@@ -1,12 +1,11 @@
-//! Opening the engine: data directory, SQLite store, rclone sidecar and the plugin registry.
+//! Opening the engine through `filebridge-host`, plus id/name lookups for the commands.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
-use filebridge_core::{Engine, EngineOptions, JobSummary, Profile, Registry, Store};
-use filebridge_integration_nextcloud::Nextcloud;
-use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
+use anyhow::{Result, bail};
+use filebridge_core::{Engine, JobSummary, Profile};
+use filebridge_host::{Access, Host, HostOptions};
 
 /// Options shared by every engine command.
 #[derive(clap::Args, Clone)]
@@ -21,39 +20,27 @@ pub struct Global {
 
 pub struct App {
     pub engine: Arc<Engine>,
-    /// Keeps the rclone sidecar alive for as long as the engine needs it.
-    _rcd: Option<Arc<Rcd>>,
+    _host: Host,
 }
 
 impl App {
-    /// `with_transport: false` skips starting rclone, for commands that only read the store.
-    pub async fn open(g: &Global, with_transport: bool) -> Result<Self> {
-        let dir = match &g.data_dir {
-            Some(d) => d.clone(),
-            None => default_data_dir()?,
-        };
-        std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-        let store = Store::open(&dir.join("filebridge.db"))
-            .with_context(|| format!("open the database in {}", dir.display()))?;
-        let mut registry = Registry::new();
-        let rcd = if with_transport {
-            let bin = find_rclone(g.rclone.as_deref())?;
-            let rcd = Arc::new(
-                Rcd::start(&bin)
-                    .await
-                    .with_context(|| format!("start {}", bin.display()))?,
-            );
-            registry.add_transport(Arc::new(RcloneTransport::new(
-                rcd.clone(),
-                Strategy::PerFile,
-            )));
-            Some(rcd)
-        } else {
-            None
-        };
-        registry.add_integration(Arc::new(Nextcloud::with_ssh()));
-        let engine = Engine::new(store, registry, EngineOptions::default());
-        Ok(Self { engine, _rcd: rcd })
+    /// Read-only commands skip the lock and rclone; commands that change state take the data
+    /// directory's lock (refused while `filebridge-service` runs), and those that reach a
+    /// destination also start rclone.
+    pub async fn open(g: &Global, access: Access, with_transport: bool) -> Result<Self> {
+        let host = Host::open(
+            &HostOptions {
+                data_dir: g.data_dir.clone(),
+                rclone: g.rclone.clone(),
+            },
+            access,
+            with_transport,
+        )
+        .await?;
+        Ok(Self {
+            engine: host.engine.clone(),
+            _host: host,
+        })
     }
 
     /// A profile by exact id or name.
@@ -76,45 +63,4 @@ impl App {
             n => bail!("{n} jobs start with {key:?}; give more characters"),
         }
     }
-}
-
-fn default_data_dir() -> Result<PathBuf> {
-    let home = || std::env::var_os("HOME").map(PathBuf::from);
-    let dir = if cfg!(target_os = "macos") {
-        home().map(|h| h.join("Library/Application Support/filebridge"))
-    } else if cfg!(windows) {
-        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("filebridge"))
-    } else {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .or_else(|| home().map(|h| h.join(".local/share")))
-            .map(|d| d.join("filebridge"))
-    };
-    dir.context("cannot find a data directory; pass --data-dir")
-}
-
-fn find_rclone(explicit: Option<&Path>) -> Result<PathBuf> {
-    if let Some(p) = explicit {
-        return Ok(p.to_path_buf());
-    }
-    let exe = if cfg!(windows) {
-        "rclone.exe"
-    } else {
-        "rclone"
-    };
-    if let Some(paths) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(exe);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        let candidate = PathBuf::from(home).join(".local/bin").join(exe);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    bail!("rclone not found; install it or pass --rclone")
 }

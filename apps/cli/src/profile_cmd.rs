@@ -5,14 +5,12 @@ use std::path::PathBuf;
 use anyhow::{Result, bail};
 use clap::Subcommand;
 use filebridge_core::{Family, PreflightView, Profile, TargetSpec};
-use filebridge_integration_api::CheckStatus;
-use filebridge_integration_nextcloud::{
-    DetectInput, Detector, INTEGRATION_ID, LxcDetector, NextcloudDirectProfile, NextcloudSettings,
-    ShellConnector, SshConnector, SshTarget,
-};
+use filebridge_integration_nextcloud::NextcloudDirectProfile;
+use filebridge_ipc::DetectNextcloudRequest;
 use filebridge_transport_api::{Backend, Destination};
 
 use crate::app::{App, Global};
+use filebridge_host::Access;
 
 #[derive(clap::Args, Clone)]
 pub struct SshArgs {
@@ -40,16 +38,6 @@ impl SshArgs {
             key_file: self.key_file.clone(),
             known_hosts_file: self.known_hosts.clone(),
             password: None,
-        }
-    }
-
-    fn target(&self) -> SshTarget {
-        SshTarget {
-            host: self.host.clone(),
-            port: self.port,
-            user: self.user.clone(),
-            key_file: self.key_file.clone(),
-            known_hosts_file: self.known_hosts.clone(),
         }
     }
 }
@@ -133,7 +121,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             root,
             windows,
         } => {
-            let app = App::open(g, true).await?;
+            let app = App::open(g, Access::Exclusive, true).await?;
             let root = std::path::absolute(&root)?;
             save(
                 &app,
@@ -161,7 +149,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             if !root.starts_with('/') {
                 bail!("--root must be an absolute path on the server");
             }
-            let app = App::open(g, true).await?;
+            let app = App::open(g, Access::Exclusive, true).await?;
             save(
                 &app,
                 Profile {
@@ -190,76 +178,57 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             file_mode,
             verbose,
         } => {
-            let app = App::open(g, true).await?;
+            let app = App::open(g, Access::Exclusive, true).await?;
             eprintln!("connecting to {}@{}:{} …", ssh.user, ssh.host, ssh.port);
-            let shell = SshConnector::new().connect(&ssh.target()).await?;
-            let input = DetectInput {
-                ssh: ssh.target(),
+            let req = DetectNextcloudRequest {
+                name,
+                host: ssh.host.clone(),
+                port: ssh.port,
+                user: ssh.user.clone(),
+                key_file: ssh
+                    .key_file
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                known_hosts_file: ssh
+                    .known_hosts
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
                 nextcloud_user: nc_user,
+                folder,
                 ctid,
                 install_dir,
             };
-            let detection = LxcDetector.detect(shell.as_ref(), &input).await;
-            for step in &detection.steps {
-                println!(
-                    "  {} {:<28} {}",
-                    status_mark(step.check.status),
-                    step.check.id,
-                    step.check.message
-                );
+            let res =
+                filebridge_host::detect_nextcloud(&app.engine, req, Some((dir_mode, file_mode)))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+            for step in &res.steps {
+                let mark = match step.status.as_str() {
+                    "ok" => "✓",
+                    "warn" => "!",
+                    _ => "✗",
+                };
+                println!("  {mark} {:<28} {}", step.id, step.message);
                 if verbose {
                     for c in &step.commands {
-                        println!("      $ {}  (exit {})", c.command, c.status);
-                        if !c.stderr.trim().is_empty() {
-                            println!("        {}", c.stderr.trim());
-                        }
+                        println!("      $ {c}");
                     }
                 }
             }
-            let Some(mut nc) = detection.profile else {
-                if detection.containers.len() > 1 {
-                    println!("containers found:");
-                    for c in &detection.containers {
-                        println!("  {c:?}");
-                    }
+            let Some(saved) = res.profile else {
+                if res.containers.len() > 1 {
+                    println!("containers found: {}", res.containers.join(", "));
                     println!("pick one with --ctid");
                 }
                 bail!("detection did not finish; fix the failed step and run it again");
             };
-            nc.dir_mode = dir_mode;
-            nc.file_mode = file_mode;
-            nc.validate()?;
-            let folder = folder.trim_matches('/');
-            let root = if folder.is_empty() {
-                nc.host_files_dir()
-            } else {
-                format!("{}/{folder}", nc.host_files_dir())
-            };
-            println!(
-                "owner {} · modes {}/{} · files go to {root}",
-                nc.owner.chown_spec(),
-                nc.dir_mode,
-                nc.file_mode
-            );
-            save(
-                &app,
-                Profile {
-                    id: String::new(),
-                    name,
-                    destination: Destination {
-                        transport: "rclone".into(),
-                        backend: ssh.backend(),
-                        root,
-                    },
-                    integration: Some(INTEGRATION_ID.into()),
-                    integration_settings: serde_json::to_value(NextcloudSettings::Direct(nc))?,
-                    target: TargetSpec::default(),
-                },
-            )
-            .await
+            println!("files go to {}", saved.destination.root);
+            println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
+            println!("test it with: filebridge profile test {:?}", saved.name);
+            Ok(())
         }
         ProfileCmd::List => {
-            let app = App::open(g, false).await?;
+            let app = App::open(g, Access::Read, false).await?;
             let profiles = app.engine.list_profiles().await?;
             if profiles.is_empty() {
                 println!("no profiles yet; add one with `filebridge profile add-…`");
@@ -285,7 +254,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             Ok(())
         }
         ProfileCmd::Test { profile } => {
-            let app = App::open(g, true).await?;
+            let app = App::open(g, Access::Read, true).await?;
             let p = app.profile(&profile).await?;
             let test = app.engine.test_profile(&p.id).await?;
             print_preflight(&test.transport);
@@ -300,7 +269,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             Ok(())
         }
         ProfileCmd::Remove { profile } => {
-            let app = App::open(g, false).await?;
+            let app = App::open(g, Access::Exclusive, false).await?;
             let p = app.profile(&profile).await?;
             app.engine.delete_profile(&p.id).await?;
             println!("removed {}", p.name);
@@ -314,14 +283,6 @@ async fn save(app: &App, profile: Profile) -> Result<()> {
     println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
     println!("test it with: filebridge profile test {:?}", saved.name);
     Ok(())
-}
-
-fn status_mark(s: CheckStatus) -> &'static str {
-    match s {
-        CheckStatus::Ok => "✓",
-        CheckStatus::Warn => "!",
-        CheckStatus::Fail => "✗",
-    }
 }
 
 pub fn print_preflight(p: &PreflightView) {
