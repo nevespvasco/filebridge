@@ -1,0 +1,127 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
+import type { Profile_Serialize } from "@/bindings";
+import ProfileForm from "@/components/ProfileForm.vue";
+import PreflightList from "@/components/PreflightList.vue";
+import DetailsPanel from "@/components/DetailsPanel.vue";
+import { useFmt } from "@/composables/useFmt";
+import { request } from "@/lib/requests";
+import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
+import { useWizard } from "@/stores/wizard";
+
+const wizard = useWizard();
+const profiles = useProfiles();
+const fmt = useFmt();
+const creating = ref(false);
+
+onMounted(async () => {
+  await profiles.load();
+  if (!profiles.list.length) creating.value = true;
+  if (wizard.profileId && !profiles.tests[wizard.profileId]) void profiles.test(wizard.profileId);
+});
+
+function choose(p: Profile_Serialize) {
+  wizard.profileId = p.id;
+  if (!profiles.tests[p.id]) void profiles.test(p.id);
+}
+
+function onSaved(p: Profile_Serialize) {
+  creating.value = false;
+  choose(p);
+}
+
+const selectedTest = computed(() => (wizard.profileId ? profiles.tests[wizard.profileId] : undefined));
+const failing = computed(() =>
+  [selectedTest.value?.result?.transport, selectedTest.value?.result?.integration].some((v) => v?.checks.some((c) => c.status === "fail")),
+);
+
+function next() {
+  void wizard.analyse();
+  wizard.step = 3;
+}
+
+const details = computed(() => [
+  request("list_profiles"),
+  ...(wizard.profileId ? [request("test_profile", { id: wizard.profileId })] : []),
+]);
+</script>
+
+<template>
+  <div class="step">
+    <h2>{{ $t("dest.title") }}</h2>
+    <p class="muted">{{ $t("dest.intro") }}</p>
+    <p v-if="profiles.loadError" class="error">{{ profiles.loadError }}</p>
+
+    <div class="profiles" role="radiogroup" :aria-label="$t('dest.title')">
+      <button
+        v-for="p in profiles.list"
+        :key="p.id"
+        type="button"
+        role="radio"
+        class="profile card"
+        :aria-checked="wizard.profileId === p.id"
+        @click="choose(p)"
+      >
+        <span class="kind badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
+        <strong>{{ p.name }}</strong>
+        <span class="small muted ellipsis mono" :title="profileWhere(p)">{{ profileWhere(p) }}</span>
+        <span class="small">
+          <template v-if="profiles.tests[p.id]?.running">{{ $t("dest.testing") }}</template>
+          <template v-else-if="profiles.tests[p.id]?.error"><span class="error">{{ $t("dest.unreachable") }}</span></template>
+          <template v-else-if="profiles.tests[p.id]?.result">
+            {{ freeBytes(profiles.tests[p.id]?.result) != null ? $t("preflight.free", { size: fmt.bytes(freeBytes(profiles.tests[p.id]?.result)) }) : $t("preflight.freeUnknown") }}
+          </template>
+        </span>
+      </button>
+      <button v-if="!creating" type="button" class="profile card add" @click="creating = true">
+        <strong>＋ {{ $t("dest.new") }}</strong>
+        <span class="small muted">{{ $t("dest.newHint") }}</span>
+      </button>
+    </div>
+
+    <ProfileForm v-if="creating" class="form" @saved="onSaved" @cancel="creating = false" />
+
+    <div v-if="selectedTest && !creating" class="card test">
+      <div class="test-head">
+        <strong>{{ $t("dest.test") }}</strong>
+        <button class="btn btn-small" :disabled="selectedTest.running" @click="profiles.test(wizard.profileId!)">{{ $t("dest.retest") }}</button>
+      </div>
+      <p v-if="selectedTest.running" class="muted small">{{ $t("dest.testing") }}</p>
+      <p v-else-if="selectedTest.error" class="error small">{{ selectedTest.error }}</p>
+      <PreflightList v-else-if="selectedTest.result" :views="[selectedTest.result.transport, ...(selectedTest.result.integration ? [selectedTest.result.integration] : [])]" />
+      <p class="small muted">{{ $t("dest.etaLater") }}</p>
+    </div>
+
+    <DetailsPanel :lines="details" />
+
+    <div class="footer">
+      <button class="btn" @click="wizard.step = 1">← {{ $t("common.back") }}</button>
+      <span class="grow" />
+      <span v-if="failing" class="small warn-text">{{ $t("dest.failingHint") }}</span>
+      <button class="btn btn-primary" :disabled="!wizard.canAnalyse || creating" @click="next">{{ $t("dest.analyse") }} →</button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.profile {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+}
+.profile[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.profile:focus-visible { outline: 2px solid var(--accent); }
+.profile.add { border-style: dashed; }
+.kind { justify-self: start; }
+.form, .test { margin-top: 1rem; }
+.test-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+</style>

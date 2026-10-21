@@ -1,0 +1,185 @@
+// The "New transfer" wizard (docs/06). The job is created once the destination is chosen
+// (the service needs a profile to create one) and analysed right away; the analysis step then
+// shows the scan's running total.
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
+import type {
+  AnalysisSummary_Serialize,
+  DecisionInput,
+  JobSummary_Serialize,
+  RuleCount,
+  SendOptions_Serialize,
+} from "@/bindings";
+import { api, errorMessage } from "@/lib/api";
+import { useJobs } from "./jobs";
+import { useProfiles } from "./profiles";
+
+export type Step = 1 | 2 | 3 | 4 | 5;
+
+function defaultOptions(): SendOptions_Serialize {
+  // Verifying by checksum is the safe default for a one-off migration.
+  return { verify: true, concurrency: 8, bwlimit: null };
+}
+
+export const useWizard = defineStore("wizard", () => {
+  const step = ref<Step>(1);
+  const sources = ref<string[]>([]);
+  const profileId = ref<string | null>(null);
+  const options = ref<SendOptions_Serialize>(defaultOptions());
+
+  const jobId = ref<string | null>(null);
+  /** What `jobId` was created from; a change means a new job and a new analysis. */
+  const jobKey = ref<string | null>(null);
+  const jobOptions = ref<SendOptions_Serialize | null>(null);
+  const analysis = ref<AnalysisSummary_Serialize | null>(null);
+  const analysing = ref(false);
+  const analyseError = ref<string | null>(null);
+  const ruleCounts = ref<RuleCount[]>([]);
+  const sendError = ref<string | null>(null);
+  const sending = ref(false);
+  /** Bumped after every decision, so open issue lists can refresh their rows. */
+  const decisionsVersion = ref(0);
+
+  const pending = computed(() => ruleCounts.value.reduce((n, r) => n + r.pending, 0));
+  const key = computed(() => JSON.stringify([sources.value, profileId.value, options.value]));
+  const canAnalyse = computed(() => sources.value.length > 0 && profileId.value != null);
+  const canReview = computed(() => !!jobId.value && !analysing.value && !analyseError.value && pending.value === 0);
+
+  function addSources(paths: string[]) {
+    const seen = new Set(sources.value);
+    for (const p of paths) if (!seen.has(p)) sources.value.push(p);
+  }
+
+  function removeSource(path: string) {
+    sources.value = sources.value.filter((p) => p !== path);
+  }
+
+  function reset() {
+    step.value = 1;
+    sources.value = [];
+    profileId.value = null;
+    options.value = defaultOptions();
+    jobId.value = null;
+    jobKey.value = null;
+    jobOptions.value = null;
+    analysis.value = null;
+    analysing.value = false;
+    analyseError.value = null;
+    ruleCounts.value = [];
+    sendError.value = null;
+    sending.value = false;
+  }
+
+  /** Creates the job (if sources, destination or options changed) and analyses it. */
+  async function analyse(force = false) {
+    if (!canAnalyse.value) return;
+    if (!force && jobKey.value === key.value && (analysis.value || analysing.value)) return;
+    analysing.value = true;
+    analyseError.value = null;
+    analysis.value = null;
+    ruleCounts.value = [];
+    try {
+      if (jobKey.value !== key.value || !jobId.value) {
+        // The old job was never sent; cancelling it keeps it from looking queued in Jobs.
+        // Nothing is deleted anywhere.
+        if (jobId.value) await api.cancel(jobId.value).catch(() => undefined);
+        jobId.value = await api.createJob([...sources.value], profileId.value!, { ...options.value });
+        jobKey.value = key.value;
+        jobOptions.value = { ...options.value };
+      }
+      const id = jobId.value;
+      void useJobs().refresh(id);
+      const summary = await api.analyse(id);
+      if (jobId.value !== id) return; // superseded while it ran
+      analysis.value = summary;
+      ruleCounts.value = summary.rules;
+    } catch (e) {
+      analyseError.value = errorMessage(e);
+    } finally {
+      analysing.value = false;
+    }
+  }
+
+  async function refreshRuleCounts() {
+    if (!jobId.value) return;
+    ruleCounts.value = await api.ruleCounts(jobId.value);
+  }
+
+  async function decide(issueId: number, decision: DecisionInput) {
+    if (!jobId.value) return;
+    await api.decide(jobId.value, issueId, decision);
+    decisionsVersion.value++;
+    await refreshRuleCounts();
+  }
+
+  /**
+   * The service can't change a created job's options, so a different "verify" choice means a
+   * new job and a new analysis (ipc change proposed in the PR).
+   */
+  const optionsChanged = computed(
+    () => !!jobOptions.value && JSON.stringify(jobOptions.value) !== JSON.stringify(options.value),
+  );
+
+  async function send(): Promise<boolean> {
+    if (!jobId.value) return false;
+    sending.value = true;
+    sendError.value = null;
+    try {
+      await api.start(jobId.value);
+      await useJobs().refresh(jobId.value);
+      step.value = 5;
+      return true;
+    } catch (e) {
+      sendError.value = errorMessage(e);
+      return false;
+    } finally {
+      sending.value = false;
+    }
+  }
+
+  /** Continue an unsent job (Draft, AwaitingApproval or Ready) from the Jobs screen. */
+  async function openJob(job: JobSummary_Serialize) {
+    reset();
+    sources.value = [...job.sources];
+    profileId.value = job.profile_id;
+    options.value = { ...job.options };
+    jobId.value = job.id;
+    jobKey.value = key.value;
+    jobOptions.value = { ...job.options };
+    step.value = 3;
+    void useProfiles().ensure(job.profile_id);
+    if (job.state === "draft") {
+      await analyse(true);
+    } else {
+      await refreshRuleCounts();
+    }
+  }
+
+  return {
+    step,
+    sources,
+    profileId,
+    options,
+    jobId,
+    jobOptions,
+    analysis,
+    analysing,
+    analyseError,
+    ruleCounts,
+    pending,
+    sendError,
+    sending,
+    decisionsVersion,
+    canAnalyse,
+    canReview,
+    optionsChanged,
+    addSources,
+    removeSource,
+    reset,
+    analyse,
+    refreshRuleCounts,
+    decide,
+    send,
+    openJob,
+  };
+});

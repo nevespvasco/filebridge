@@ -1,0 +1,32 @@
+[package]
+name = "filebridge-desktop"
+description = "filebridge desktop app: a thin Tauri client of filebridge-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "filebridge_desktop"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "filebridge-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+filebridge-core.workspace = true
+filebridge-ipc.workspace = true
+serde.workspace = true
+specta = { workspace = true, features = ["derive", "serde_json"] }
+specta-typescript.workspace = true
+tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
