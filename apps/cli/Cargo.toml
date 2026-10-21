@@ -14,8 +14,9 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
 filebridge-core.workspace = true
-filebridge-integration-api.workspace = true
+filebridge-host.workspace = true
 filebridge-integration-nextcloud.workspace = true
+filebridge-ipc.workspace = true
 filebridge-names.workspace = true
 filebridge-scanner.workspace = true
 filebridge-transport-api.workspace = true

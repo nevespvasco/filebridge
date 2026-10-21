@@ -735,8 +735,9 @@ dependencies = [
  "anyhow",
  "clap",
  "filebridge-core",
- "filebridge-integration-api",
+ "filebridge-host",
  "filebridge-integration-nextcloud",
+ "filebridge-ipc",
  "filebridge-names",
  "filebridge-scanner",
  "filebridge-transport-api",
@@ -769,6 +770,23 @@ dependencies = [
  "tracing",
  "uuid",
  "windows-sys",
+]
+
+[[package]]
+name = "filebridge-host"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "filebridge-core",
+ "filebridge-integration-api",
+ "filebridge-integration-nextcloud",
+ "filebridge-ipc",
+ "filebridge-transport-api",
+ "filebridge-transport-rclone",
+ "serde_json",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -837,6 +855,19 @@ dependencies = [
 [[package]]
 name = "filebridge-service"
 version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "filebridge-core",
+ "filebridge-host",
+ "filebridge-ipc",
+ "filebridge-transport-api",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "filebridge-store"
@@ -869,6 +900,7 @@ dependencies = [
  "async-trait",
  "filebridge-transport-api",
  "getrandom 0.3.4",
+ "libc",
  "reqwest",
  "serde_json",
  "tokio",

@@ -13,6 +13,7 @@ filebridge/
 │   └── service/                 # filebridge-service: hosts the engine, serves ipc (ADR 0008)
 ├── crates/
 │   ├── core/                    # Job, pipeline, states, Registry, progress events
+│   ├── host/                    # wiring for engine hosts: data dir + lock, rclone, built-in plugins
 │   ├── ipc/                     # window/CLI ↔ service messages over a local socket
 │   ├── scanner/                 # walk source, names as bytes, manifest
 │   ├── names/                   # NameRule trait + general rules (NFC, mojibake, forbidden)
@@ -35,12 +36,12 @@ the phase it lands in.
 flowchart TB
     desktop["apps/desktop (src-tauri)"] --> ipc
     service["apps/service"] --> ipc
-    service --> core
-    service --> trc["transport-rclone"]
-    service --> inc["integration-nextcloud"]
-    cli["apps/cli"] --> core
-    cli --> trc
-    cli --> inc
+    service --> host
+    cli["apps/cli"] --> host
+    host --> core
+    host --> ipc
+    host --> trc["transport-rclone"]
+    host --> inc["integration-nextcloud"]
     ipc --> core
     core --> tapi["transport-api"]
     core --> iapi["integration-api"]
@@ -61,8 +62,8 @@ flowchart TB
   implementations**.
 - Every `transport-*` and `integration-*` crate is independent: **a new plugin is a new crate plus
   one line in the `Registry`**. Plugins never depend on `core`, `store` or `secrets`.
-- Only the binaries that host the engine (`apps/service`, `apps/cli`) depend on concrete plugins
-  (to register them). The desktop app talks to
+- Only the binaries that host the engine (`apps/service`, `apps/cli`) depend on concrete plugins,
+  through `crates/host`, which registers them. The desktop app talks to
   `filebridge-service` through `crates/ipc` ([ADR 0008](adr/0008-service-ipc.md)).
 - The interface talks only through typed Tauri commands and events (generated with `specta`), so
   the TS types come from Rust and never drift.

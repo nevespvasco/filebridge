@@ -1,15 +1,40 @@
 # apps/service
 
 `filebridge-service`: the background process that owns the `Engine`, SQLite, the rclone sidecar
-and the sleep inhibitor. Closing the window never stops a send. **Lands in:** Phase 1, Wave 3.
+and the sleep inhibitor. Closing the window never stops a send. **Landed in:** Phase 1, Wave 3.
 See [ADR 0008](../../docs/adr/0008-service-ipc.md).
 
-## Responsibility
-- Build the `Registry` (rclone transport, Nextcloud integration), open the store, resume
-  unfinished jobs, then serve `crates/ipc` on the local socket.
-- Single-instance lock (a second start exits and tells the caller the socket path).
-- `filebridge-service install-user-unit` / `uninstall-user-unit` on Linux
-  (`~/.config/systemd/user/filebridge-service.service`, `Restart=on-failure`).
+## Commands
+```
+filebridge-service [run]              # foreground; default
+filebridge-service status             # running? version, active jobs (exit 3 if not running)
+filebridge-service install-user-unit [--no-start]   # Linux: ~/.config/systemd/user/filebridge-service.service
+filebridge-service uninstall-user-unit
+```
+Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
+(`FILEBRIDGE_RCLONE`), `--socket` (`FILEBRIDGE_SOCKET`). Logs: `FILEBRIDGE_LOG`, default
+`info`.
+
+## Behaviour
+- **Startup:** take the data directory's lock (a second instance, or a CLI command that
+  changes state, is refused), open the store, start rclone, register the built-in plugins
+  (through `crates/host`), resume interrupted jobs, then serve `crates/ipc`.
+- **Shutdown:** on SIGTERM or Ctrl-C it exits cleanly and removes the socket. Running jobs
+  stay stored as running and resume on the next start. A SIGKILLed service also resumes them,
+  and its rclone sidecar exits with it (Linux `PR_SET_PDEATHSIG`; not yet covered on
+  macOS/Windows).
+- **systemd unit:** `Restart=on-failure`, `WantedBy=default.target`. It runs this exact binary
+  with any `--data-dir` / `--rclone` given at install time. Installing changes your user's
+  systemd config, so it is never done automatically.
+
+## Tests
+`tests/service.rs` runs the real binary with real rclone (skipped if rclone is missing):
+- A second instance is refused.
+- A send driven over the socket completes, with NFC names at the destination and events
+  delivered.
+- SIGTERM exits cleanly and removes the socket.
+- SIGKILL mid-send, then a restart, resumes the job and finishes it byte for byte.
 
 ## Allowed dependencies
-`core`, `ipc`, `transport-rclone`, `integration-nextcloud`, `tokio`, `tracing-subscriber`, `anyhow`.
+`core`, `ipc`, `host` (which wires `transport-rclone` and `integration-nextcloud`), `tokio`,
+`clap`, `tracing-subscriber`, `anyhow`.

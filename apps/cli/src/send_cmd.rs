@@ -15,6 +15,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::app::{App, Global};
 use crate::profile_cmd::print_preflight;
+use filebridge_host::Access;
 
 #[derive(clap::Args)]
 pub struct SendArgs {
@@ -50,7 +51,7 @@ pub enum DecisionArg {
 }
 
 pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
-    let app = App::open(g, true).await?;
+    let app = App::open(g, Access::Exclusive, true).await?;
     let profile = app.profile(&args.to).await?;
     let job = app
         .engine
@@ -98,7 +99,7 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
 }
 
 pub async fn start(g: &Global, job: &str) -> Result<()> {
-    let app = App::open(g, true).await?;
+    let app = App::open(g, Access::Exclusive, true).await?;
     let job = app.job(job).await?.id;
     app.engine.start(&job).await?;
     follow(&app.engine, &job).await
@@ -106,7 +107,7 @@ pub async fn start(g: &Global, job: &str) -> Result<()> {
 
 /// Resumes one job, or every job that was running when the last command stopped.
 pub async fn resume(g: &Global, job: Option<String>) -> Result<()> {
-    let app = App::open(g, true).await?;
+    let app = App::open(g, Access::Exclusive, true).await?;
     let ids = match job {
         Some(key) => {
             let j = app.job(&key).await?;
@@ -130,7 +131,7 @@ pub async fn resume(g: &Global, job: Option<String>) -> Result<()> {
 }
 
 pub async fn issues(g: &Global, job: &str, rule: Option<String>, all: bool) -> Result<()> {
-    let app = App::open(g, false).await?;
+    let app = App::open(g, Access::Read, false).await?;
     let job = app.job(job).await?;
     for r in app.engine.rule_counts(&job.id).await? {
         println!("{:<18} {:>7} names, {} pending", r.rule, r.total, r.pending);
@@ -170,7 +171,7 @@ pub async fn decide(
     decision: DecisionArg,
     name: Option<String>,
 ) -> Result<()> {
-    let app = App::open(g, false).await?;
+    let app = App::open(g, Access::Exclusive, false).await?;
     let job = app.job(job).await?;
     let input = match (decision, name) {
         (DecisionArg::Accept, _) => DecisionInput::Accept,
@@ -186,7 +187,7 @@ pub async fn decide(
 }
 
 pub async fn jobs(g: &Global, limit: u32) -> Result<()> {
-    let app = App::open(g, false).await?;
+    let app = App::open(g, Access::Read, false).await?;
     for j in app.engine.list_jobs(limit, 0).await? {
         println!(
             "{}  {:<24} {:>6}/{:<6} files  {:>10}  {}",
@@ -202,7 +203,7 @@ pub async fn jobs(g: &Global, limit: u32) -> Result<()> {
 }
 
 pub async fn show(g: &Global, job: &str) -> Result<()> {
-    let app = App::open(g, false).await?;
+    let app = App::open(g, Access::Read, false).await?;
     let j = app.job(job).await?;
     println!("job       {}", j.id);
     println!("state     {}", j.state.as_str());
@@ -231,7 +232,7 @@ pub async fn show(g: &Global, job: &str) -> Result<()> {
 }
 
 pub async fn cancel(g: &Global, job: &str) -> Result<()> {
-    let app = App::open(g, false).await?;
+    let app = App::open(g, Access::Exclusive, false).await?;
     let j = app.job(job).await?;
     app.engine.cancel(&j.id).await?;
     println!("cancelled {} (nothing was deleted)", &j.id[..8]);
