@@ -1,0 +1,32 @@
+# filebridge docs
+
+These docs are the implementation plan. They expand the original plan (2026-10-21) into enough
+detail to build each crate on its own.
+
+## Reading order
+
+1. [00 — Overview](00-overview.md): what the app is and why each feature exists.
+2. [01 — Stack](01-stack.md): technologies and the alternatives we rejected.
+3. [02 — Architecture](02-architecture.md): jobs, the 6-stage pipeline, layers, state machine.
+4. [03 — Extension contracts](03-extension-contracts.md): `Transport`, `NameRule`, `Integration`, `Registry`.
+5. [04 — Name correction](04-name-correction.md): rules, the algorithm, "Repair destination".
+6. [05 — Nextcloud integration](05-integration-nextcloud.md): WebDAV mode, direct mode, detection wizard.
+7. [06 — Interface](06-interface.md): the wizard, screens and UX principles.
+8. [07 — Security & reliability](07-security-reliability.md): resume, sleep inhibit, keys, keyring.
+9. [08 — Repository structure](08-repository-structure.md): monorepo layout and dependency rules.
+10. [09 — Roadmap](09-roadmap.md): phases 0–3 and the gate that closes each one.
+11. [10 — Risks & open decisions](10-risks-and-open-decisions.md).
+
+## Architecture decision records
+
+| ADR | Decision |
+|---|---|
+| [0001](adr/0001-tauri-vue-rust.md) | Tauri 2 + Vue 3 + Rust core instead of Electron |
+| [0002](adr/0002-rclone-behind-transport.md) | rclone as a sidecar, driven via `rc`, hidden behind `Transport` |
+| [0003](adr/0003-sqlite-state.md) | SQLite for jobs, manifests and profiles |
+| [0004](adr/0004-os-keyring-secrets.md) | Secrets only in the OS keyring |
+| [0005](adr/0005-fix-names-in-transit.md) | Fix names in transit, never at the source |
+| [0006](adr/0006-compiled-in-plugins.md) | Plugins compiled into the app in v1; WASM later |
+
+ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
+the old one rather than rewriting history.
