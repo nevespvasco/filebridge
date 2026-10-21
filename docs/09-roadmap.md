@@ -43,7 +43,8 @@ flowchart TB
 - [ ] Tauri + Vue app with the 5-step wizard and the job list.
 - [ ] `crates/store` (SQLite + migrations), `crates/core` (Job, pipeline, state machine, Registry,
       events), `specta` bindings.
-- [ ] SFTP profile, NFC and forbidden-character rules, automatic resume with backoff.
+- [x] NFC and forbidden-character rules (`nfc`, `forbidden-chars`, `trailing`, `reserved`).
+- [ ] SFTP profile, automatic resume with backoff.
 - [ ] Nextcloud direct mode: LXC detection, owner `100033`, scan by path.
 - [ ] Engine as a background service and sleep inhibit.
 - [x] Decide and record the window ↔ service IPC ([ADR 0008](adr/0008-service-ipc.md)).
