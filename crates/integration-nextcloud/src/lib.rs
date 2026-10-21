@@ -1,3 +1,106 @@
-//! Nextcloud integration: WebDAV and direct mode
+//! Nextcloud integration. Phase 1 ships direct mode (SFTP into the data folder, then owner/mode
+//! and `occ files:scan --path` over SSH); WebDAV mode lands in Phase 2.
 //!
-//! Stub created in Phase 1 Step 0; implemented in Phase 1 (see docs/09-roadmap.md).
+//! See `docs/05-integration-nextcloud.md`.
+
+pub mod detect;
+pub mod direct;
+pub mod fake;
+pub mod parse;
+pub mod profile;
+pub mod quote;
+pub mod rules;
+pub mod shell;
+pub mod ssh;
+
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use filebridge_integration_api::{
+    AfterTransferReport, Integration, IntegrationSink, JobContext, NameRule, PreflightReport,
+    RemotePath, Result, TransportCaps,
+};
+
+pub use detect::{DetectInput, Detection, Detector, LxcDetector};
+pub use direct::DirectOptions;
+pub use profile::{NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
+pub use rules::{NextcloudNfc, NextcloudReserved};
+pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};
+pub use ssh::{SshConnector, SshShell};
+
+pub const INTEGRATION_ID: &str = "nextcloud";
+
+/// The Nextcloud [`Integration`]. Registered once; each job connects with its profile's target.
+pub struct Nextcloud {
+    connector: Arc<dyn ShellConnector>,
+    options: DirectOptions,
+}
+
+impl Nextcloud {
+    pub fn new(connector: Arc<dyn ShellConnector>) -> Self {
+        Self {
+            connector,
+            options: DirectOptions::default(),
+        }
+    }
+
+    /// Over real SSH.
+    pub fn with_ssh() -> Self {
+        Self::new(Arc::new(SshConnector::new()))
+    }
+
+    pub fn with_options(mut self, options: DirectOptions) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// Detectors the profile wizard tries, in order.
+    pub fn detectors() -> Vec<Box<dyn Detector>> {
+        vec![Box::new(LxcDetector)]
+    }
+
+    fn direct_profile(ctx: &JobContext) -> Result<NextcloudDirectProfile> {
+        let NextcloudSettings::Direct(profile) = ctx.profile.settings_as::<NextcloudSettings>()?;
+        profile.validate()?;
+        Ok(profile)
+    }
+}
+
+#[async_trait]
+impl Integration for Nextcloud {
+    fn id(&self) -> &str {
+        INTEGRATION_ID
+    }
+
+    /// Direct mode sets owner and mode itself over SSH, so it needs nothing from the transport.
+    fn required_caps(&self) -> TransportCaps {
+        TransportCaps::empty()
+    }
+
+    fn name_rules(&self) -> Vec<Box<dyn NameRule>> {
+        vec![Box::new(NextcloudNfc), Box::new(NextcloudReserved)]
+    }
+
+    async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport> {
+        let profile = Self::direct_profile(ctx)?;
+        direct::preflight(&profile, ctx, self.connector.as_ref()).await
+    }
+
+    async fn after_transfer(
+        &self,
+        ctx: &JobContext,
+        changed: &[RemotePath],
+        progress: IntegrationSink,
+    ) -> Result<AfterTransferReport> {
+        let profile = Self::direct_profile(ctx)?;
+        direct::after_transfer(
+            &profile,
+            ctx,
+            changed,
+            &progress,
+            self.connector.as_ref(),
+            &self.options,
+        )
+        .await
+    }
+}

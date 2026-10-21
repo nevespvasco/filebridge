@@ -1,0 +1,2 @@
+Filesystem           1024-blocks       Used  Available Capacity Mounted on
+tank/nextcloud-data   3904897024 1175269376 2729627648      31% /tank/nextcloud-data
