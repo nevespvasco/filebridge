@@ -1,0 +1,18 @@
+[package]
+name = "filebridge-transport-rclone"
+description = "Transport implementation over rclone's rc API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+filebridge-transport-api.workspace = true
+getrandom.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["process", "rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

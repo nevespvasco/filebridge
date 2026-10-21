@@ -1,0 +1,40 @@
+[workspace]
+resolver = "2"
+# Only crates that exist as code are members; the others are still README-only (later phases).
+members = [
+    "apps/cli",
+    "crates/names",
+    "crates/scanner",
+    "crates/transport-api",
+    "crates/transport-rclone",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+filebridge-names = { path = "crates/names" }
+filebridge-scanner = { path = "crates/scanner" }
+filebridge-transport-api = { path = "crates/transport-api" }
+filebridge-transport-rclone = { path = "crates/transport-rclone" }
+
+# External
+anyhow = "1"
+async-trait = "0.1"
+bitflags = { version = "2", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+getrandom = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tokio = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-normalization = "0.1"
+walkdir = "2"

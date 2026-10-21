@@ -19,17 +19,19 @@ flowchart TB
 
 ## Phase 0 — Prototype (validates the biggest risk)
 
-- [ ] Install Rust toolchain and rclone locally.
-- [ ] Scaffold the Cargo workspace (`apps/cli`, `crates/transport-api`, `crates/transport-rclone`,
+- [x] Install Rust toolchain and rclone locally.
+- [x] Scaffold the Cargo workspace (`apps/cli`, `crates/transport-api`, `crates/transport-rclone`,
       `crates/names` with only the NFC rule, `crates/scanner`).
-- [ ] Rust CLI that controls rclone through the `rc` API (`rclone rcd`, `operations/copyfile`,
+- [x] Rust CLI that controls rclone through the `rc` API (`rclone rcd`, `operations/copyfile`,
       `sync/copy`, `core/stats`, `job/status`).
-- [ ] Send a folder over SFTP with NFC-corrected names, **file by file**.
+- [x] Send a folder over SFTP with NFC-corrected names, **file by file**.
 - [ ] Measure speed on the real `Backup` folder: files/s and MB/s, per-file rename vs a plain
       `sync/copy` baseline.
-- [ ] Prototype plan B for comparison: send to a temp folder with original names, batch rename at
+- [x] Prototype plan B for comparison: send to a temp folder with original names, batch rename at
       the destination, move into place.
 - [ ] Record the result as an ADR (plan A or plan B).
+      Draft: [ADR 0007](adr/0007-rename-in-transit-strategy.md) (Proposed, plan A), pending the
+      real-server run. Simulated results: [benchmarks/phase-0-simulated.md](benchmarks/phase-0-simulated.md).
 
 **Gate:** renaming during send is fast enough, or plan B is chosen.
 

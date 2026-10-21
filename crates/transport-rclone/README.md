@@ -3,8 +3,9 @@
 `Transport` implementation over **rclone's `rc` API**. **Lands in:** Phase 0.
 
 ## Responsibility
-- Spawn and supervise the `rclone rcd` sidecar (localhost, random port, per-start `--rc-user`/
-  `--rc-pass`), restart it if it dies.
+- Spawn and supervise the `rclone rcd` sidecar (localhost, random port, per-start rc user and
+  password passed via environment, in-memory config, `--no-unicode-normalization`), restart it if
+  it dies (restart: Phase 1).
 - Configure backends in memory (`config/create` or connection strings) — local, SFTP, WebDAV
   (vendor `nextcloud`). No `rclone.conf` with secrets on disk.
 - `transfer`: copy each item to its **mapped destination name** (`operations/copyfile` per file —
