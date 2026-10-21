@@ -1,0 +1,9 @@
+[package]
+name = "filebridge-ipc"
+description = "Window/CLI to service IPC: request, response and event types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]

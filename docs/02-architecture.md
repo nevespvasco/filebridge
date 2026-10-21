@@ -89,9 +89,8 @@ Rules:
 - rclone runs as a sidecar (`rclone rcd`) bound to localhost with a random auth token generated per
   start; `transport-rclone` talks to it over HTTP.
 
-> Open implementation detail for Phase 1: the IPC between the Tauri window and the service
-> (local socket / named pipe with the same typed messages vs. running core in-process when the
-> service isn't installed). Decide during Phase 1 and record an ADR.
+> The window ↔ service IPC is a local socket with newline-delimited JSON; see
+> [ADR 0008](adr/0008-service-ipc.md).
 
 ## Progress events
 

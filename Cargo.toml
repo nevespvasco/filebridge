@@ -1,10 +1,15 @@
 [workspace]
 resolver = "2"
-# Only crates that exist as code are members; the others are still README-only (later phases).
 members = [
     "apps/cli",
+    "apps/service",
+    "crates/core",
+    "crates/integration-api",
+    "crates/integration-nextcloud",
+    "crates/ipc",
     "crates/names",
     "crates/scanner",
+    "crates/store",
     "crates/transport-api",
     "crates/transport-rclone",
 ]
@@ -17,8 +22,13 @@ publish = false
 
 [workspace.dependencies]
 # Internal crates
+filebridge-core = { path = "crates/core" }
+filebridge-integration-api = { path = "crates/integration-api" }
+filebridge-integration-nextcloud = { path = "crates/integration-nextcloud" }
+filebridge-ipc = { path = "crates/ipc" }
 filebridge-names = { path = "crates/names" }
 filebridge-scanner = { path = "crates/scanner" }
+filebridge-store = { path = "crates/store" }
 filebridge-transport-api = { path = "crates/transport-api" }
 filebridge-transport-rclone = { path = "crates/transport-rclone" }
 
@@ -26,15 +36,23 @@ filebridge-transport-rclone = { path = "crates/transport-rclone" }
 anyhow = "1"
 async-trait = "0.1"
 bitflags = { version = "2", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 getrandom = "0.3"
+interprocess = { version = "2", features = ["tokio"] }
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+russh = "0.64"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# specta and specta-typescript are pinned to what tauri-specta 2.0.0-rc.26 requires.
+specta = "=2.0.0-rc.26"
+specta-typescript = "=0.0.13"
 tempfile = "3"
 thiserror = "2"
 tokio = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-normalization = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }
 walkdir = "2"

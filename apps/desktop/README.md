@@ -5,9 +5,10 @@ Tauri 2 + Vue 3 + TypeScript + Vite desktop app. **Lands in:** Phase 1.
 ## Responsibility
 - `src/` — the interface: the 5-step "New transfer" wizard, Jobs, Job detail, Destinations,
   Integrations, Repair destination, Settings. Pinia stores, vue-i18n (pt, en).
-- `src-tauri/` — Tauri commands and events. **Only a bridge to `core`**: no business logic here.
-  Builds the `Registry` (registers `transport-rclone`, `integration-nextcloud`), manages the tray
-  icon, notifications, autostart and the rclone sidecar declaration.
+- `src-tauri/` — Tauri commands and events. **A thin client of `filebridge-service`** over
+  `crates/ipc` ([ADR 0008](../../docs/adr/0008-service-ipc.md)): no business logic here. Starts the
+  service if its socket is missing, and manages the tray icon, notifications, autostart and the
+  sidecar declarations (rclone, filebridge-service).
 
 ## Rules
 - All Rust ↔ TS types come from `tauri-specta` into `src/bindings/` — never hand-written.
@@ -15,6 +16,6 @@ Tauri 2 + Vue 3 + TypeScript + Vite desktop app. **Lands in:** Phase 1.
 - Destructive actions always confirm and show what will happen.
 
 ## Allowed dependencies (src-tauri)
-`core`, `transport-rclone`, `integration-nextcloud` (to register them), `tauri`, `tauri-specta`.
+`ipc`, `tauri`, `tauri-specta`. Never `core` or a plugin crate directly.
 
 See [docs/06-interface.md](../../docs/06-interface.md).

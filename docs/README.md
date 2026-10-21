@@ -28,6 +28,7 @@ detail to build each crate on its own.
 | [0005](adr/0005-fix-names-in-transit.md) | Fix names in transit, never at the source |
 | [0006](adr/0006-compiled-in-plugins.md) | Plugins compiled into the app in v1; WASM later |
 | [0007](adr/0007-rename-in-transit-strategy.md) | *Proposed:* rename in transit with one `copyfile` per file (plan A) |
+| [0008](adr/0008-service-ipc.md) | Engine in `filebridge-service`; window ↔ service IPC over a local socket |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

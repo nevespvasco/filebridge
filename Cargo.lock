@@ -203,6 +203,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "filebridge-core"
+version = "0.0.1"
+
+[[package]]
+name = "filebridge-integration-api"
+version = "0.0.1"
+
+[[package]]
+name = "filebridge-integration-nextcloud"
+version = "0.0.1"
+
+[[package]]
+name = "filebridge-ipc"
+version = "0.0.1"
+
+[[package]]
 name = "filebridge-names"
 version = "0.0.1"
 dependencies = [
@@ -217,6 +233,14 @@ dependencies = [
  "tempfile",
  "walkdir",
 ]
+
+[[package]]
+name = "filebridge-service"
+version = "0.0.1"
+
+[[package]]
+name = "filebridge-store"
+version = "0.0.1"
 
 [[package]]
 name = "filebridge-transport-api"

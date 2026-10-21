@@ -8,10 +8,12 @@ filebridge/
 ├── apps/
 │   ├── desktop/                 # Tauri 2 + Vue 3 + TS
 │   │   ├── src/                 # interface (views, Pinia stores, components)
-│   │   └── src-tauri/           # Tauri commands — only bridge to core
-│   └── cli/                     # same logic, no UI (servers, scripts)
+│   │   └── src-tauri/           # Tauri commands — thin IPC client of filebridge-service
+│   ├── cli/                     # same logic, no UI (servers, scripts)
+│   └── service/                 # filebridge-service: hosts the engine, serves ipc (ADR 0008)
 ├── crates/
 │   ├── core/                    # Job, pipeline, states, Registry, progress events
+│   ├── ipc/                     # window/CLI ↔ service messages over a local socket
 │   ├── scanner/                 # walk source, names as bytes, manifest
 │   ├── names/                   # NameRule trait + general rules (NFC, mojibake, forbidden)
 │   ├── store/                   # SQLite: jobs, manifests, profiles
@@ -31,12 +33,15 @@ the phase it lands in.
 
 ```mermaid
 flowchart TB
-    desktop["apps/desktop (src-tauri)"] --> core
+    desktop["apps/desktop (src-tauri)"] --> ipc
+    service["apps/service"] --> ipc
+    service --> core
+    service --> trc["transport-rclone"]
+    service --> inc["integration-nextcloud"]
     cli["apps/cli"] --> core
-    desktop --> trc["transport-rclone"]
-    desktop --> inc["integration-nextcloud"]
     cli --> trc
     cli --> inc
+    ipc --> core
     core --> tapi["transport-api"]
     core --> iapi["integration-api"]
     core --> names
@@ -56,7 +61,9 @@ flowchart TB
   implementations**.
 - Every `transport-*` and `integration-*` crate is independent: **a new plugin is a new crate plus
   one line in the `Registry`**. Plugins never depend on `core`, `store` or `secrets`.
-- Only the app binaries depend on concrete plugins (to register them).
+- Only the binaries that host the engine (`apps/service`, `apps/cli`) depend on concrete plugins
+  (to register them). The desktop app talks to
+  `filebridge-service` through `crates/ipc` ([ADR 0008](adr/0008-service-ipc.md)).
 - The interface talks only through typed Tauri commands and events (generated with `specta`), so
   the TS types come from Rust and never drift.
 

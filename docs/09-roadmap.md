@@ -35,6 +35,9 @@ flowchart TB
 
 **Gate:** renaming during send is fast enough, or plan B is chosen.
 
+> **Status (2026-10-21):** passed provisionally on the simulated results (plan A). Phase 1
+> started; the real-server run can still reopen ADR 0007.
+
 ## Phase 1 — Personal MVP (replaces the terminal)
 
 - [ ] Tauri + Vue app with the 5-step wizard and the job list.
@@ -43,7 +46,7 @@ flowchart TB
 - [ ] SFTP profile, NFC and forbidden-character rules, automatic resume with backoff.
 - [ ] Nextcloud direct mode: LXC detection, owner `100033`, scan by path.
 - [ ] Engine as a background service and sleep inhibit.
-- [ ] Decide and record the window ↔ service IPC (ADR).
+- [x] Decide and record the window ↔ service IPC ([ADR 0008](adr/0008-service-ipc.md)).
 
 **Gate:** send three real folders — a large work folder, a code repository and one with a comma in its name — without opening the terminal.
 

@@ -1,0 +1,13 @@
+[package]
+name = "filebridge-service"
+description = "filebridge background service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "filebridge-service"
+path = "src/main.rs"
+
+[dependencies]

@@ -6,13 +6,22 @@ changing anything they cover.
 
 ## Current phase
 
-Phase 0 (prototype). See `docs/09-roadmap.md` for deliverables and the gate that closes each phase.
-Do not build Phase 1+ features before the Phase 0 gate is decided.
+Phase 1 (personal MVP). See `docs/09-roadmap.md` for deliverables and the gate that closes each
+phase. The Phase 0 gate passed provisionally on simulated results (ADR 0007, plan A); the
+real-server benchmark is still pending and can reopen it.
+
+## Build
+
+- Rust toolchain: `~/.cargo/bin/cargo` (not on PATH by default). rclone: `~/.local/bin/rclone`.
+- `cargo test --workspace` and `cargo clippy --workspace -- -D warnings` must pass.
+- Shared external dependency versions live in the root `[workspace.dependencies]`; add a new one
+  there only if more than one crate needs it.
 
 ## Hard rules
 
-- **Layering:** Vue UI → Tauri commands → `core` → contracts (`transport-api`, `integration-api`,
-  `names`) → plugins. The UI talks only to `core`; `core` talks only to contracts.
+- **Layering:** Vue UI → Tauri commands → `ipc` → `filebridge-service` → `core` → contracts
+  (`transport-api`, `integration-api`, `names`) → plugins. The UI reaches `core` only through
+  `ipc` (ADR 0008); `core` talks only to contracts.
 - **`core` depends only on `*-api` crates** (and `names`, `store`, `scanner`, `secrets`), never on a
   concrete `transport-*` or `integration-*` crate. Only the app binaries wire implementations into
   the `Registry`.
