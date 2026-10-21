@@ -13,14 +13,22 @@ Messages between clients (the Tauri window) and `filebridge-service`.
   concurrently.
 - Error `code`s are stable: `pending_decisions`, `invalid_transition`, `not_found`, `invalid`,
   `unsupported`, `internal`, `disconnected` (client side).
-- `Request` mirrors the `core::Engine` API, plus `detect_nextcloud`. Plugin-specific requests
+- `PROTOCOL_VERSION` is 2 (`set_options` and `decide_all` were added); `ping` returns it and
+  clients refuse a service that speaks another one.
+- `Request` mirrors the `core::Engine` API, plus `detect_nextcloud`. `set_options` changes a
+  job's `SendOptions` until it is sent (Draft, AwaitingApproval, Ready); `decide_all` applies one
+  decision (not `edit`) to every pending issue of a job or of one rule and answers with the count. Plugin-specific requests
   go through the `Extensions` trait, which the service binary implements, because only it may
   know plugins.
 
 ## API
 - Service: `bind(&Endpoint)` (replaces a stale socket) and `serve(listener, engine, extensions)`.
 - Client: `Client::connect(&Endpoint)`, typed methods (`list_jobs`, `start`, `analyse`, …) and
-  `events()`.
+  `events()`. When the connection drops, every `events()` receiver reports `Closed` and later
+  calls fail at once with `disconnected`.
+- The `core` and `transport-api` types that requests, responses and events carry (`Profile`,
+  `SendOptions`, `JobSummary`, `Event`, `Destination`, …) are re-exported, so clients depend on
+  this crate only.
 
 ## TypeScript bindings (for apps/desktop)
 Every request, response and event type derives `specta::Type`. specta-typescript 0.0.13
@@ -31,7 +39,9 @@ default. The desktop export should remap them to `number` with `specta_util::Rem
 ## Tests
 `tests/roundtrip.rs` (Unix): a real socket, a real engine with a fake transport, and the
 client. It drives a job through analysis, a collision decision, start, events and
-completion, and checks error codes and the 0700 directory.
+completion, and checks error codes and the 0700 directory; `set_options` and `decide_all` over
+the socket; and that event streams close when the service hangs up.
 
 ## Allowed dependencies
-`core`, `interprocess`, `tokio`, `serde`, `serde_json`, `specta`, `async-trait`.
+`core`, `transport-api` (for the types it re-exports), `interprocess`, `tokio`, `serde`,
+`serde_json`, `specta`, `async-trait`.

@@ -20,12 +20,11 @@ const mode = computed(() => (profile.value ? profileKind(profile.value) : "local
 
 onMounted(() => profiles.ensure(wizard.profileId));
 
-async function reanalyse() {
-  wizard.step = 3;
-  await wizard.analyse(true);
-}
-
-const details = computed(() => (wizard.jobId ? [request("start", { job_id: wizard.jobId }), request("subscribe")] : []));
+const details = computed(() =>
+  wizard.jobId
+    ? [request("set_options", { job_id: wizard.jobId, options: wizard.options }), request("start", { job_id: wizard.jobId }), request("subscribe")]
+    : [],
+);
 </script>
 
 <template>
@@ -50,16 +49,12 @@ const details = computed(() => (wizard.jobId ? [request("start", { job_id: wizar
     </dl>
 
     <label class="check card">
-      <input v-model="wizard.options.verify" type="checkbox" />
+      <input v-model="wizard.options.verify" type="checkbox" @change="wizard.changeOptions()" />
       <span>
         <strong>{{ $t("review.verify") }}</strong>
         <span class="small muted block">{{ $t("review.verifyHint") }}</span>
       </span>
     </label>
-    <div v-if="wizard.optionsChanged" class="card warn-box">
-      <p class="small">{{ $t("review.optionsChanged") }}</p>
-      <button class="btn btn-small" @click="reanalyse">{{ $t("analysis.rerun") }}</button>
-    </div>
 
     <p class="small muted">{{ $t("review.safety") }}</p>
     <p v-if="wizard.sendError" class="error">{{ wizard.sendError }}</p>
@@ -69,7 +64,7 @@ const details = computed(() => (wizard.jobId ? [request("start", { job_id: wizar
     <div class="footer">
       <button class="btn" @click="wizard.step = 3">← {{ $t("common.back") }}</button>
       <span class="grow" />
-      <button class="btn btn-primary btn-big" :disabled="wizard.sending || wizard.optionsChanged || !wizard.canReview" @click="wizard.send()">
+      <button class="btn btn-primary btn-big" :disabled="wizard.sending || !wizard.canReview" @click="wizard.send()">
         {{ wizard.sending ? $t("review.starting") : $t("review.send") }}
       </button>
     </div>
@@ -83,5 +78,4 @@ dd { margin: 0; min-width: 0; }
 .block { display: block; }
 .check { display: flex; gap: 0.75rem; align-items: flex-start; cursor: pointer; }
 .check input { margin-top: 0.3rem; }
-.warn-box { margin-top: 0.75rem; border-color: var(--warn); display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
 </style>

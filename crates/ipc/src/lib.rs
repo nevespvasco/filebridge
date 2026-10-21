@@ -13,15 +13,23 @@ mod server;
 
 use std::path::PathBuf;
 
-use filebridge_core::{DecisionInput, Event, Profile, SendOptions};
 use interprocess::local_socket::{GenericFilePath, GenericNamespaced, Name, ToFsName, ToNsName};
 use serde::{Deserialize, Serialize};
 
 pub use client::Client;
 pub use server::{Extensions, bind, serve};
 
+/// The core and transport types requests, responses and events carry, so clients need only
+/// this crate (ADR 0008: the window reaches `core` only through `ipc`).
+pub use filebridge_core::{
+    AnalysisSummary, CheckView, Counts, DecisionInput, Event, Family, IssueView, JobKind, JobState,
+    JobSummary, PreflightView, Profile, ProfileTest, RuleCount, SendOptions, TargetSpec,
+};
+pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
+
 /// Bumped on incompatible protocol changes; `ping` returns it.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// 2: `set_options` and `decide_all`.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -43,6 +51,11 @@ pub enum Request {
         profile_id: String,
         options: SendOptions,
     },
+    /// Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready).
+    SetOptions {
+        job_id: String,
+        options: SendOptions,
+    },
     Analyse {
         job_id: String,
     },
@@ -58,6 +71,13 @@ pub enum Request {
     Decide {
         job_id: String,
         issue_id: i64,
+        decision: DecisionInput,
+    },
+    /// One decision for every pending issue of the job (or of `rule`). Not `edit`. Answers
+    /// with the number of issues changed.
+    DecideAll {
+        job_id: String,
+        rule: Option<String>,
         decision: DecisionInput,
     },
     Start {

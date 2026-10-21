@@ -190,7 +190,7 @@ async function handle(cmd: string, a: Args): Promise<unknown> {
     case "set_tray_labels":
       return null;
     case "ping":
-      return { protocol: 1, version: "0.0.1-mock" };
+      return { protocol: 2, version: "0.0.1-mock" };
     case "list_profiles":
       return profiles;
     case "save_profile": {
@@ -252,6 +252,12 @@ async function handle(cmd: string, a: Args): Promise<unknown> {
       });
       return id;
     }
+    case "set_options": {
+      const job = find(a.jobId);
+      if (!["draft", "awaiting_approval", "ready"].includes(job.state)) throw { code: "invalid", message: `options can't change while the job is ${job.state}` };
+      job.options = a.options as JobSummary_Serialize["options"];
+      return null;
+    }
     case "analyse": {
       const job = find(a.jobId);
       setState(job, "analysing");
@@ -298,6 +304,23 @@ async function handle(cmd: string, a: Args): Promise<unknown> {
       const job = find(a.jobId);
       if (job.state === "awaiting_approval" && ruleCounts(job.id).every((r) => r.pending === 0)) setState(job, "ready");
       return null;
+    }
+    case "decide_all": {
+      const d = a.decision as DecisionInput;
+      if (d.kind === "edit") throw { code: "invalid", message: "an edited name applies to one issue, not to many" };
+      const map = { accept: "accepted", keep_original: "rejected", skip: "skipped" } as const;
+      const job = find(a.jobId);
+      let n = 0;
+      for (const def of rulesFor(job.id)) {
+        if (def.auto || (a.rule && def.rule !== a.rule)) continue;
+        for (let i = 0; i < def.total; i++) {
+          if (decisions.has(def.base + i)) continue;
+          decisions.set(def.base + i, { decision: map[d.kind], custom_name: null });
+          n++;
+        }
+      }
+      if (job.state === "awaiting_approval" && ruleCounts(job.id).every((r) => r.pending === 0)) setState(job, "ready");
+      return n;
     }
     case "start":
     case "resume": {

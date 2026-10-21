@@ -1,11 +1,10 @@
 //! One Tauri command per `filebridge_ipc::Client` method. They only forward: no business logic
 //! lives in the window (ADR 0008).
 
-use filebridge_core::{
-    AnalysisSummary, DecisionInput, IssueView, JobSummary, Profile, ProfileTest, RuleCount,
-    SendOptions,
+use filebridge_ipc::{
+    AnalysisSummary, DecisionInput, DetectNextcloudRequest, DetectNextcloudResponse, ErrorBody,
+    IssueView, JobSummary, Pong, Profile, ProfileTest, RuleCount, SendOptions,
 };
-use filebridge_ipc::{DetectNextcloudRequest, DetectNextcloudResponse, ErrorBody, Pong};
 use tauri::State;
 
 use crate::service::Service;
@@ -68,6 +67,12 @@ pub async fn create_job(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn set_options(svc: State<'_, Service>, job_id: String, options: SendOptions) -> Res<()> {
+    svc.client().await?.set_options(job_id, options).await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn analyse(svc: State<'_, Service>, job_id: String) -> Res<AnalysisSummary> {
     svc.client().await?.analyse(job_id).await
 }
@@ -102,6 +107,18 @@ pub async fn decide(
     decision: DecisionInput,
 ) -> Res<()> {
     svc.client().await?.decide(job_id, issue_id, decision).await
+}
+
+/// Returns how many issues changed.
+#[tauri::command]
+#[specta::specta]
+pub async fn decide_all(
+    svc: State<'_, Service>,
+    job_id: String,
+    rule: Option<String>,
+    decision: DecisionInput,
+) -> Res<u64> {
+    svc.client().await?.decide_all(job_id, rule, decision).await
 }
 
 #[tauri::command]

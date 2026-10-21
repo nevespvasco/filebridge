@@ -224,6 +224,33 @@ impl Store {
         })
         .await
     }
+
+    /// Records one decision for every pending issue of a job (optionally of one rule), in a
+    /// single statement. Decided issues are left alone. `Edited` is refused: a custom name
+    /// belongs to one file. Returns how many issues changed.
+    pub async fn decide_pending_issues(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+        decision: Decision,
+    ) -> Result<u64> {
+        if matches!(decision, Decision::Pending | Decision::Edited) {
+            return Err(StoreError::Invalid(format!(
+                "cannot decide issues in bulk as {}",
+                decision.as_str()
+            )));
+        }
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE issues SET decision = ?3, custom_name = NULL, decided_at = ?4
+                 WHERE job_id = ?1 AND decision = 'pending' AND (?2 IS NULL OR rule = ?2)",
+                params![job_id, rule, decision.as_str(), now_ms()],
+            )?;
+            Ok(n as u64)
+        })
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -314,5 +341,64 @@ mod tests {
 
         store.clear_issues(&job).await.unwrap();
         assert!(store.issue_summary(&job).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn bulk_decisions_touch_only_pending_issues() {
+        let (store, job) = store_with_job().await;
+        store
+            .insert_issues(
+                &job,
+                vec![
+                    issue(0, "nfc", Decision::Accepted),
+                    issue(1, "collision", Decision::Pending),
+                    issue(2, "collision", Decision::Pending),
+                    issue(3, "mojibake", Decision::Pending),
+                ],
+            )
+            .await
+            .unwrap();
+        let first = store
+            .issues_page(&job, Some("collision".into()), None, 1)
+            .await
+            .unwrap();
+        store
+            .decide_issue(first[0].id, Decision::Edited, Some("mine".into()))
+            .await
+            .unwrap();
+
+        for refused in [Decision::Edited, Decision::Pending] {
+            assert!(matches!(
+                store.decide_pending_issues(&job, None, refused).await,
+                Err(StoreError::Invalid(_))
+            ));
+        }
+        let n = store
+            .decide_pending_issues(&job, Some("collision".into()), Decision::Skipped)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(store.pending_issue_count(&job).await.unwrap(), 1);
+
+        let rows = store.issues_page(&job, None, None, 10).await.unwrap();
+        let decisions: Vec<_> = rows.iter().map(|r| r.issue.decision).collect();
+        assert_eq!(
+            decisions,
+            [
+                Decision::Accepted,
+                Decision::Edited,
+                Decision::Skipped,
+                Decision::Pending
+            ]
+        );
+        assert_eq!(rows[1].custom_name.as_deref(), Some("mine"));
+        assert!(rows[2].decided_at.is_some());
+
+        let n = store
+            .decide_pending_issues(&job, None, Decision::Accepted)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(store.pending_issue_count(&job).await.unwrap(), 0);
     }
 }

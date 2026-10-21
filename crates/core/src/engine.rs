@@ -381,6 +381,27 @@ impl Engine {
         Ok(id)
     }
 
+    /// Replaces a job's send options (step 4 of the wizard). Allowed until the job is sent:
+    /// in Draft, AwaitingApproval and Ready. The analysis and the decisions are kept.
+    pub async fn set_options(&self, job_id: &str, options: SendOptions) -> Result<()> {
+        let state = JobState::parse(&self.store.get_job(job_id).await?.state)?;
+        if !matches!(
+            state,
+            JobState::Draft | JobState::AwaitingApproval | JobState::Ready
+        ) {
+            return Err(CoreError::Invalid(format!(
+                "options can't change while the job is {}",
+                state.as_str()
+            )));
+        }
+        let options = serde_json::to_value(&options)?;
+        self.store.set_job_options(job_id, options.clone()).await?;
+        self.store
+            .append_event(Some(job_id), "options", options)
+            .await?;
+        Ok(())
+    }
+
     pub async fn job(&self, id: &str) -> Result<JobSummary> {
         let row = self.store.get_job(id).await?;
         self.summary(row).await
@@ -629,13 +650,7 @@ impl Engine {
         issue_id: i64,
         input: DecisionInput,
     ) -> Result<()> {
-        let state = JobState::parse(&self.store.get_job(job_id).await?.state)?;
-        if !matches!(state, JobState::AwaitingApproval | JobState::Ready) {
-            return Err(CoreError::Invalid(format!(
-                "decisions can't change while the job is {}",
-                state.as_str()
-            )));
-        }
+        let state = self.deciding_state(job_id).await?;
         let (decision, name) = match input {
             DecisionInput::Accept => (Decision::Accepted, None),
             DecisionInput::Edit(n) => (Decision::Edited, Some(n)),
@@ -643,6 +658,50 @@ impl Engine {
             DecisionInput::Skip => (Decision::Skipped, None),
         };
         self.store.decide_issue(issue_id, decision, name).await?;
+        self.ready_if_decided(job_id, state).await
+    }
+
+    /// Applies one decision to every pending issue of a job, or of one `rule`, in one store
+    /// transaction. Issues already decided keep their decision. `Edit` is refused: a custom
+    /// name belongs to one file. Returns how many issues changed.
+    pub async fn decide_all(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+        input: DecisionInput,
+    ) -> Result<u64> {
+        let decision = match input {
+            DecisionInput::Accept => Decision::Accepted,
+            DecisionInput::KeepOriginal => Decision::Rejected,
+            DecisionInput::Skip => Decision::Skipped,
+            DecisionInput::Edit(_) => {
+                return Err(CoreError::Invalid(
+                    "an edited name applies to one issue, not to many".into(),
+                ));
+            }
+        };
+        let state = self.deciding_state(job_id).await?;
+        let n = self
+            .store
+            .decide_pending_issues(job_id, rule, decision)
+            .await?;
+        self.ready_if_decided(job_id, state).await?;
+        Ok(n)
+    }
+
+    /// The job's state, if decisions may change in it.
+    async fn deciding_state(&self, job_id: &str) -> Result<JobState> {
+        let state = JobState::parse(&self.store.get_job(job_id).await?.state)?;
+        if !matches!(state, JobState::AwaitingApproval | JobState::Ready) {
+            return Err(CoreError::Invalid(format!(
+                "decisions can't change while the job is {}",
+                state.as_str()
+            )));
+        }
+        Ok(state)
+    }
+
+    async fn ready_if_decided(&self, job_id: &str, state: JobState) -> Result<()> {
         if state == JobState::AwaitingApproval && self.store.pending_issue_count(job_id).await? == 0
         {
             self.transition(job_id, JobState::Ready, None).await?;

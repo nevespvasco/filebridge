@@ -235,6 +235,9 @@ async fn dispatch(
             .await
             .map_err(to_error)?,
         ),
+        Request::SetOptions { job_id, options } => {
+            json(e.set_options(&job_id, options).await.map_err(to_error)?)
+        }
         Request::Analyse { job_id } => json(e.analyse(&job_id).await.map_err(to_error)?),
         Request::RuleCounts { job_id } => json(e.rule_counts(&job_id).await.map_err(to_error)?),
         Request::Issues {
@@ -253,6 +256,15 @@ async fn dispatch(
             decision,
         } => json(
             e.decide_issue(&job_id, issue_id, decision)
+                .await
+                .map_err(to_error)?,
+        ),
+        Request::DecideAll {
+            job_id,
+            rule,
+            decision,
+        } => json(
+            e.decide_all(&job_id, rule, decision)
                 .await
                 .map_err(to_error)?,
         ),

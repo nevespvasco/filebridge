@@ -9,8 +9,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
-    DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry, SendOptions, Store,
-    TargetSpec,
+    CoreError, DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry,
+    SendOptions, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -577,4 +577,160 @@ async fn unverifiable_destinations_warn_without_resending() {
     let summary = s.engine.job(&job).await.unwrap();
     assert!(summary.error.unwrap().contains("could not be verified"));
     assert_eq!(summary.counts.mismatch, 0);
+}
+
+#[tokio::test]
+async fn options_change_until_the_job_is_sent() {
+    let s = setup().await;
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    let verify = SendOptions {
+        verify: true,
+        concurrency: 2,
+        bwlimit: Some("20M".into()),
+    };
+    // Draft.
+    s.engine.set_options(&job, verify.clone()).await.unwrap();
+    assert_eq!(s.engine.job(&job).await.unwrap().options, verify);
+
+    // Ready: the analysis is kept.
+    assert_eq!(s.engine.analyse(&job).await.unwrap().state, JobState::Ready);
+    s.engine
+        .set_options(&job, SendOptions::default())
+        .await
+        .unwrap();
+    let summary = s.engine.job(&job).await.unwrap();
+    assert_eq!(summary.state, JobState::Ready);
+    assert_eq!(summary.options, SendOptions::default());
+    assert_eq!(summary.counts.files, 3);
+    s.engine.set_options(&job, verify.clone()).await.unwrap();
+
+    // Sent: refused, and the job keeps what it was sent with.
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert!(matches!(
+        s.engine.set_options(&job, SendOptions::default()).await,
+        Err(CoreError::Invalid(_))
+    ));
+    let summary = s.engine.job(&job).await.unwrap();
+    assert_eq!(summary.options, verify);
+    assert_eq!(summary.counts.verified_ok, 3);
+    assert!(matches!(
+        s.engine.set_options("nope", SendOptions::default()).await,
+        Err(CoreError::Store(StoreError::NotFound(_)))
+    ));
+}
+
+#[tokio::test]
+async fn options_change_while_awaiting_approval() {
+    let s = setup().await;
+    std::fs::write(s.src.join("Fotos/Ver\u{e3}o.jpg"), b"other summer").unwrap();
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    s.engine.analyse(&job).await.unwrap();
+    let verify = SendOptions {
+        verify: true,
+        ..SendOptions::default()
+    };
+    s.engine.set_options(&job, verify.clone()).await.unwrap();
+    let summary = s.engine.job(&job).await.unwrap();
+    assert_eq!(summary.state, JobState::AwaitingApproval);
+    assert_eq!(summary.options, verify);
+    assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn decide_all_applies_one_decision_to_every_pending_issue() {
+    let s = setup().await;
+    // Three files that all become "Verão.jpg": two collisions to decide.
+    std::fs::write(s.src.join("Fotos/Ver\u{e3}o.jpg"), b"nfc").unwrap();
+    std::fs::write(s.src.join("Fotos/Vera\u{303}o.JPG"), b"upper").unwrap();
+    let mut profile = s.engine.get_profile(&s.profile_id).await.unwrap();
+    profile.target.case_sensitive = false;
+    s.engine.save_profile(profile).await.unwrap();
+
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    assert!(
+        matches!(
+            s.engine.decide_all(&job, None, DecisionInput::Accept).await,
+            Err(CoreError::Invalid(_))
+        ),
+        "no decisions in Draft"
+    );
+    let summary = s.engine.analyse(&job).await.unwrap();
+    assert_eq!(summary.state, JobState::AwaitingApproval);
+    assert_eq!(summary.pending_decisions, 2, "{summary:?}");
+
+    assert!(matches!(
+        s.engine
+            .decide_all(&job, None, DecisionInput::Edit("x".into()))
+            .await,
+        Err(CoreError::Invalid(_))
+    ));
+    // Another rule's issues are not pending, so nothing changes.
+    let n = s
+        .engine
+        .decide_all(&job, Some("nfc".into()), DecisionInput::Skip)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+    assert_eq!(
+        s.engine.job(&job).await.unwrap().state,
+        JobState::AwaitingApproval
+    );
+
+    // One decided by hand keeps its decision.
+    let issues = s
+        .engine
+        .issues(&job, Some("collision".into()), None, 10)
+        .await
+        .unwrap();
+    s.engine
+        .decide_issue(&job, issues[0].id, DecisionInput::Skip)
+        .await
+        .unwrap();
+    assert_eq!(
+        s.engine.job(&job).await.unwrap().state,
+        JobState::AwaitingApproval
+    );
+    let n = s
+        .engine
+        .decide_all(&job, Some("collision".into()), DecisionInput::Accept)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+    assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Ready);
+    let decisions: Vec<_> = s
+        .engine
+        .issues(&job, Some("collision".into()), None, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|i| i.decision)
+        .collect();
+    assert_eq!(decisions, ["skipped", "accepted"]);
+
+    // Ready stays Ready; nothing is pending any more.
+    let n = s
+        .engine
+        .decide_all(&job, None, DecisionInput::KeepOriginal)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+    assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Ready);
+
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert!(matches!(
+        s.engine.decide_all(&job, None, DecisionInput::Accept).await,
+        Err(CoreError::Invalid(_))
+    ));
 }
