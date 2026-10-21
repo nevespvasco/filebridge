@@ -1,0 +1,134 @@
+//! Embedded migrations, tracked with `PRAGMA user_version`. Append new migrations; never edit one
+//! that has shipped.
+
+use rusqlite::Connection;
+
+use crate::{Result, StoreError};
+
+const MIGRATIONS: &[&str] = &[
+    // 1: initial schema (docs/02-architecture.md, "Persistence model").
+    r#"
+CREATE TABLE profiles (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    transport   TEXT NOT NULL,
+    integration TEXT,
+    -- JSON: destination and integration settings. Keyring references only, never secrets.
+    config      TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE jobs (
+    id            TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL,
+    profile_id    TEXT NOT NULL REFERENCES profiles(id),
+    state         TEXT NOT NULL,
+    options       TEXT NOT NULL,
+    error         TEXT,
+    attempt       INTEGER NOT NULL DEFAULT 0,
+    next_retry_at INTEGER,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    finished_at   INTEGER
+);
+CREATE INDEX jobs_unfinished ON jobs(finished_at, created_at);
+
+CREATE TABLE job_sources (
+    job_id   TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    path     BLOB NOT NULL,
+    PRIMARY KEY (job_id, position)
+);
+
+CREATE TABLE manifest_entries (
+    job_id         TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    idx            INTEGER NOT NULL,
+    source         INTEGER NOT NULL,
+    raw_path       BLOB NOT NULL,
+    parent_idx     INTEGER,
+    is_dir         INTEGER NOT NULL,
+    size           INTEGER NOT NULL,
+    mtime          INTEGER,
+    hash           BLOB,
+    hash_algo      TEXT,
+    dest_path      TEXT,
+    transfer_state TEXT NOT NULL DEFAULT 'pending',
+    verify_state   TEXT NOT NULL DEFAULT 'pending',
+    error          TEXT,
+    PRIMARY KEY (job_id, idx)
+) WITHOUT ROWID;
+CREATE INDEX manifest_transfer_state ON manifest_entries(job_id, transfer_state);
+
+CREATE TABLE issues (
+    id          INTEGER PRIMARY KEY,
+    job_id      TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    entry_idx   INTEGER NOT NULL,
+    rule        TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    message_key TEXT NOT NULL,
+    before      BLOB NOT NULL,
+    after       BLOB NOT NULL,
+    decision    TEXT NOT NULL,
+    custom_name TEXT,
+    decided_at  INTEGER
+);
+CREATE INDEX issues_job_rule ON issues(job_id, rule, id);
+CREATE INDEX issues_job_decision ON issues(job_id, decision);
+
+CREATE TABLE events (
+    id     INTEGER PRIMARY KEY,
+    job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE,
+    at     INTEGER NOT NULL,
+    kind   TEXT NOT NULL,
+    data   TEXT NOT NULL
+);
+CREATE INDEX events_job ON events(job_id, id);
+
+CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"#,
+];
+
+pub fn migrate(conn: &mut Connection) -> Result<()> {
+    let current: usize = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if current > MIGRATIONS.len() {
+        return Err(StoreError::Invalid(format!(
+            "database schema version {current} is newer than this app ({})",
+            MIGRATIONS.len()
+        )));
+    }
+    for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
+        let tx = conn.transaction()?;
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", i + 1)?;
+        tx.commit()?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrations_are_idempotent() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+        migrate(&mut conn).unwrap();
+        let v: usize = conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn refuses_a_newer_schema() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "user_version", MIGRATIONS.len() + 1)
+            .unwrap();
+        assert!(matches!(migrate(&mut conn), Err(StoreError::Invalid(_))));
+    }
+}
