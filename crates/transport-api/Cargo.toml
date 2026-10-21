@@ -10,5 +10,6 @@ publish.workspace = true
 async-trait.workspace = true
 bitflags.workspace = true
 serde.workspace = true
+specta = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }

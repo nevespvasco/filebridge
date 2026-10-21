@@ -25,7 +25,7 @@ pub use profile::{Family, Profile, TargetSpec};
 pub use registry::Registry;
 pub use state::{JobKind, JobState};
 
-pub use filebridge_store::Store;
+pub use filebridge_store::{Store, StoreError};
 
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;
 

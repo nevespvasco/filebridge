@@ -32,7 +32,7 @@ impl Default for TargetSpec {
 }
 
 /// A saved destination. Holds keyring references only, never secrets (ADR 0004).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct Profile {
     pub id: String,
     pub name: String,
