@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_specta::Event as _;
 use tokio::sync::{Mutex, broadcast};
-use tokio::time::{Instant, sleep, timeout};
+use tokio::time::{Instant, sleep};
 
 /// The service binary's file name.
 const SERVICE_BIN: &str = if cfg!(windows) {
@@ -25,12 +25,10 @@ const SERVICE_BIN: &str = if cfg!(windows) {
 };
 /// How long to wait for a freshly started service to accept connections.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
-/// How often the event forwarder checks that the service still answers.
-const HEARTBEAT: Duration = Duration::from_secs(2);
 
 /// Every engine event, forwarded as is from `Client::events()`.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
-pub struct ServiceEvent(pub filebridge_core::Event);
+pub struct ServiceEvent(pub filebridge_ipc::Event);
 
 /// The window's link to the service went up or down. After `connected: true` the UI reloads
 /// what it shows, because events sent while disconnected are lost.
@@ -132,33 +130,24 @@ impl Service {
         }
     }
 
-    /// Forwards events until the connection drops, then reconnects in the background.
+    /// Forwards events until the connection drops (the event stream then reports `Closed`),
+    /// then reconnects in the background.
     async fn forward_events(self, generation: u64, client: Client) {
         let app = &self.0.app;
         match client.events().await {
             Ok(mut rx) => {
                 self.emit_connection(true);
-                let mut heartbeat = tokio::time::interval(HEARTBEAT);
                 loop {
-                    tokio::select! {
-                        received = rx.recv() => match received {
-                            Ok(event) => {
-                                if let Err(e) = ServiceEvent(event).emit(app) {
-                                    tracing::warn!("could not forward an event: {e}");
-                                }
-                            }
-                            Err(broadcast::error::RecvError::Lagged(n)) => {
-                                tracing::debug!("the window missed {n} progress events");
-                            }
-                            Err(broadcast::error::RecvError::Closed) => break,
-                        },
-                        _ = heartbeat.tick() => {
-                            // The client keeps its event channel open after the socket closes,
-                            // so a ping is how a dead connection shows up.
-                            if !matches!(timeout(HEARTBEAT, client.ping()).await, Ok(Ok(_))) {
-                                break;
+                    match rx.recv().await {
+                        Ok(event) => {
+                            if let Err(e) = ServiceEvent(event).emit(app) {
+                                tracing::warn!("could not forward an event: {e}");
                             }
                         }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::debug!("the window missed {n} progress events");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
             }

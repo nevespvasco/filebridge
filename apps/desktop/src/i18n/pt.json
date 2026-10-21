@@ -30,7 +30,6 @@
     "loading": "A carregar…",
     "browse": "Procurar…",
     "advanced": "Avançado",
-    "stop": "Parar",
     "yes": "Sim",
     "no": "Não"
   },
@@ -150,7 +149,7 @@
     "acceptAll": "Aceitar todos",
     "keepAll": "Manter todos",
     "skipAll": "Saltar todos",
-    "bulkProgress": "A aplicar… {done} de {total}",
+    "bulkProgress": "A aplicar…",
     "page": "Página {n}",
     "editTitle": "Escolha o nome no destino",
     "editLabel": "Novo nome",
@@ -179,7 +178,6 @@
     },
     "verify": "Verificar por checksum no fim",
     "verifyHint": "Compara o SHA-256 de cada ficheiro na origem e no destino. Mais lento, mas prova que a cópia é idêntica.",
-    "optionsChanged": "O serviço ainda não consegue mudar esta opção num envio já criado: a análise tem de correr de novo (as decisões que tomou serão pedidas outra vez).",
     "safety": "Só cópia: a origem nunca é alterada nem apagada. Fechar a janela não para o envio.",
     "send": "Enviar",
     "starting": "A iniciar…"

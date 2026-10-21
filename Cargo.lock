@@ -1579,7 +1579,6 @@ dependencies = [
 name = "filebridge-desktop"
 version = "0.0.1"
 dependencies = [
- "filebridge-core",
  "filebridge-ipc",
  "serde",
  "specta",

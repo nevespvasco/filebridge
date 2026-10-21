@@ -30,7 +30,6 @@
     "loading": "Loading…",
     "browse": "Browse…",
     "advanced": "Advanced",
-    "stop": "Stop",
     "yes": "Yes",
     "no": "No"
   },
@@ -150,7 +149,7 @@
     "acceptAll": "Accept all",
     "keepAll": "Keep all",
     "skipAll": "Skip all",
-    "bulkProgress": "Applying… {done} of {total}",
+    "bulkProgress": "Applying…",
     "page": "Page {n}",
     "editTitle": "Choose the name at the destination",
     "editLabel": "New name",
@@ -179,7 +178,6 @@
     },
     "verify": "Verify by checksum at the end",
     "verifyHint": "Compares the SHA-256 of every file at the source and the destination. Slower, but proves the copy is identical.",
-    "optionsChanged": "The service can't change this option on an existing job yet: the analysis has to run again (decisions you made will be asked again).",
     "safety": "Copy only: the source is never changed or deleted. Closing the window doesn't stop the send.",
     "send": "Send",
     "starting": "Starting…"

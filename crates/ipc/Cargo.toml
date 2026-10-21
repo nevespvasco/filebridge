@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 filebridge-core.workspace = true
+filebridge-transport-api.workspace = true
 interprocess.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -19,6 +20,5 @@ tracing.workspace = true
 
 [dev-dependencies]
 filebridge-integration-api.workspace = true
-filebridge-transport-api.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

@@ -4,21 +4,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use filebridge_core::{
-    AnalysisSummary, DecisionInput, Event, IssueView, JobSummary, Profile, ProfileTest, RuleCount,
-    SendOptions,
-};
 use interprocess::local_socket::tokio::{Stream, prelude::*};
 use serde::de::DeserializeOwned;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::{
-    DetectNextcloudRequest, DetectNextcloudResponse, Endpoint, Envelope, ErrorBody, Outgoing, Pong,
-    Request,
+    AnalysisSummary, DecisionInput, DetectNextcloudRequest, DetectNextcloudResponse, Endpoint,
+    Envelope, ErrorBody, Event, IssueView, JobSummary, Outgoing, Pong, Profile, ProfileTest,
+    Request, RuleCount, SendOptions,
 };
 
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<serde_json::Value, ErrorBody>>>>>;
+/// Calls waiting for their answer. `None` once the connection is gone, so a later call fails
+/// at once instead of waiting for an answer that can't come.
+type Pending =
+    Arc<Mutex<Option<HashMap<u64, oneshot::Sender<Result<serde_json::Value, ErrorBody>>>>>>;
 
 fn closed() -> ErrorBody {
     ErrorBody {
@@ -32,7 +32,9 @@ fn closed() -> ErrorBody {
 pub struct Client {
     out: mpsc::Sender<Vec<u8>>,
     pending: Pending,
-    events: broadcast::Sender<Event>,
+    /// The reader task owns the only strong sender, so event receivers see `Closed` once the
+    /// connection is gone.
+    events: broadcast::WeakSender<Event>,
     next_id: Arc<AtomicU64>,
     subscribed: Arc<Mutex<bool>>,
 }
@@ -50,15 +52,16 @@ impl Client {
             }
         });
 
-        let pending: Pending = Arc::default();
-        let (events, _) = broadcast::channel(1024);
-        let (p, ev) = (pending.clone(), events.clone());
+        let pending: Pending = Arc::new(Mutex::new(Some(HashMap::new())));
+        let (ev, _) = broadcast::channel(1024);
+        let (p, events) = (pending.clone(), ev.downgrade());
         tokio::spawn(async move {
             let mut lines = BufReader::new(recv).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 match serde_json::from_str::<Outgoing>(&line) {
                     Ok(Outgoing::Response { id, ok, err }) => {
-                        if let Some(tx) = p.lock().await.remove(&id) {
+                        let tx = p.lock().await.as_mut().and_then(|m| m.remove(&id));
+                        if let Some(tx) = tx {
                             let _ = tx.send(match err {
                                 Some(e) => Err(e),
                                 None => Ok(ok.unwrap_or(serde_json::Value::Null)),
@@ -71,8 +74,9 @@ impl Client {
                     Err(e) => tracing::warn!("bad message from the service: {e}"),
                 }
             }
-            // Connection gone: fail every waiting call.
-            for (_, tx) in p.lock().await.drain() {
+            // Connection gone: fail every waiting call and end the event streams.
+            drop(ev);
+            for (_, tx) in p.lock().await.take().into_iter().flatten() {
                 let _ = tx.send(Err(closed()));
             }
         });
@@ -90,14 +94,19 @@ impl Client {
     pub async fn call<T: DeserializeOwned>(&self, request: Request) -> Result<T, ErrorBody> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().await.insert(id, tx);
+        match self.pending.lock().await.as_mut() {
+            Some(pending) => pending.insert(id, tx),
+            None => return Err(closed()),
+        };
         let mut line = serde_json::to_vec(&Envelope { id, request }).map_err(|e| ErrorBody {
             code: "invalid".into(),
             message: e.to_string(),
         })?;
         line.push(b'\n');
         if self.out.send(line).await.is_err() {
-            self.pending.lock().await.remove(&id);
+            if let Some(pending) = self.pending.lock().await.as_mut() {
+                pending.remove(&id);
+            }
             return Err(closed());
         }
         let value = rx.await.map_err(|_| closed())??;
@@ -107,9 +116,10 @@ impl Client {
         })
     }
 
-    /// Engine events. The first call subscribes this connection.
+    /// Engine events. The first call subscribes this connection. The receiver reports
+    /// `Closed` when the connection drops; after that this returns `disconnected`.
     pub async fn events(&self) -> Result<broadcast::Receiver<Event>, ErrorBody> {
-        let rx = self.events.subscribe();
+        let rx = self.events.upgrade().ok_or_else(closed)?.subscribe();
         let mut subscribed = self.subscribed.lock().await;
         if !*subscribed {
             self.call::<()>(Request::Subscribe).await?;
@@ -159,6 +169,10 @@ impl Client {
         .await
     }
 
+    pub async fn set_options(&self, job_id: String, options: SendOptions) -> Result<(), ErrorBody> {
+        self.call(Request::SetOptions { job_id, options }).await
+    }
+
     pub async fn analyse(&self, job_id: String) -> Result<AnalysisSummary, ErrorBody> {
         self.call(Request::Analyse { job_id }).await
     }
@@ -192,6 +206,21 @@ impl Client {
         self.call(Request::Decide {
             job_id,
             issue_id,
+            decision,
+        })
+        .await
+    }
+
+    /// Returns how many issues changed.
+    pub async fn decide_all(
+        &self,
+        job_id: String,
+        rule: Option<String>,
+        decision: DecisionInput,
+    ) -> Result<u64, ErrorBody> {
+        self.call(Request::DecideAll {
+            job_id,
+            rule,
             decision,
         })
         .await

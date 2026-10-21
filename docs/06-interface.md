@@ -60,7 +60,8 @@ apps/desktop/src/
 |---|---|
 | `scan_sources(paths)` | Start stage 2 for a draft job; returns job id |
 | `list_profiles()` / `save_profile(p)` / `test_profile(id)` | Destinations screen & wizard |
-| `get_issues(job_id, rule?, page)` / `decide_issue(issue_id, decision)` | Analysis step |
+| `get_issues(job_id, rule?, page)` / `decide_issue(issue_id, decision)` / `decide_all(job_id, rule?, decision)` | Analysis step |
+| `set_options(job_id, options)` | Review step: change "verify" etc. without a new analysis |
 | `start_job(job_id, options)` / `pause_job` / `resume_job` / `cancel_job` / `verify_job` | Lifecycle |
 | `list_jobs()` / `get_job(job_id)` / `get_job_log(job_id, page)` | Jobs screens |
 | `start_repair(profile_id, remote_path)` | Repair destination |

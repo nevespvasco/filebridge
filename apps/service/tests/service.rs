@@ -7,7 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use filebridge_core::{Event, JobState, Profile, SendOptions, TargetSpec};
-use filebridge_ipc::{Client, Endpoint};
+use filebridge_ipc::{Client, Endpoint, PROTOCOL_VERSION};
 use filebridge_transport_api::{Backend, Destination};
 
 struct Env {
@@ -116,7 +116,7 @@ async fn serves_a_send_refuses_a_second_instance_and_stops_cleanly() {
     };
     let mut service = env.spawn();
     let client = env.connect().await;
-    assert_eq!(client.ping().await.unwrap().protocol, 1);
+    assert_eq!(client.ping().await.unwrap().protocol, PROTOCOL_VERSION);
 
     // A second instance on the same data dir must refuse to start.
     let second = env.spawn().wait_with_output().unwrap();

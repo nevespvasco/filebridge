@@ -28,8 +28,9 @@ export const useWizard = defineStore("wizard", () => {
   const options = ref<SendOptions_Serialize>(defaultOptions());
 
   const jobId = ref<string | null>(null);
-  /** What `jobId` was created from; a change means a new job and a new analysis. */
+  /** The sources and destination `jobId` was created from; a change means a new job and a new analysis. */
   const jobKey = ref<string | null>(null);
+  /** The options the service has for `jobId`. Step 4 changes them in place (`setOptions`). */
   const jobOptions = ref<SendOptions_Serialize | null>(null);
   const analysis = ref<AnalysisSummary_Serialize | null>(null);
   const analysing = ref(false);
@@ -41,7 +42,7 @@ export const useWizard = defineStore("wizard", () => {
   const decisionsVersion = ref(0);
 
   const pending = computed(() => ruleCounts.value.reduce((n, r) => n + r.pending, 0));
-  const key = computed(() => JSON.stringify([sources.value, profileId.value, options.value]));
+  const key = computed(() => JSON.stringify([sources.value, profileId.value]));
   const canAnalyse = computed(() => sources.value.length > 0 && profileId.value != null);
   const canReview = computed(() => !!jobId.value && !analysing.value && !analyseError.value && pending.value === 0);
 
@@ -70,7 +71,7 @@ export const useWizard = defineStore("wizard", () => {
     sending.value = false;
   }
 
-  /** Creates the job (if sources, destination or options changed) and analyses it. */
+  /** Creates the job (if the sources or the destination changed) and analyses it. */
   async function analyse(force = false) {
     if (!canAnalyse.value) return;
     if (!force && jobKey.value === key.value && (analysis.value || analysing.value)) return;
@@ -87,6 +88,7 @@ export const useWizard = defineStore("wizard", () => {
         jobKey.value = key.value;
         jobOptions.value = { ...options.value };
       }
+      await saveOptions();
       const id = jobId.value;
       void useJobs().refresh(id);
       const summary = await api.analyse(id);
@@ -112,19 +114,46 @@ export const useWizard = defineStore("wizard", () => {
     await refreshRuleCounts();
   }
 
-  /**
-   * The service can't change a created job's options, so a different "verify" choice means a
-   * new job and a new analysis (ipc change proposed in the PR).
-   */
+  /** Applies one decision to every pending issue of `rule` in one call; returns how many changed. */
+  async function decideAll(rule: string, decision: DecisionInput): Promise<number> {
+    if (!jobId.value) return 0;
+    try {
+      return await api.decideAll(jobId.value, rule, decision);
+    } finally {
+      decisionsVersion.value++;
+      await refreshRuleCounts();
+    }
+  }
+
   const optionsChanged = computed(
     () => !!jobOptions.value && JSON.stringify(jobOptions.value) !== JSON.stringify(options.value),
   );
+
+  /** Gives the job the current options. The analysis and the decisions are kept. */
+  async function saveOptions() {
+    if (!jobId.value || !optionsChanged.value) return;
+    const next = { ...options.value };
+    await api.setOptions(jobId.value, next);
+    jobOptions.value = next;
+  }
+
+  /** Step 4's checkbox: saves right away, so the job in Jobs shows the choice too. */
+  async function changeOptions() {
+    sendError.value = null;
+    try {
+      await saveOptions();
+      if (jobId.value) void useJobs().refresh(jobId.value);
+    } catch (e) {
+      sendError.value = errorMessage(e);
+    }
+  }
 
   async function send(): Promise<boolean> {
     if (!jobId.value) return false;
     sending.value = true;
     sendError.value = null;
     try {
+      await saveOptions();
       await api.start(jobId.value);
       await useJobs().refresh(jobId.value);
       step.value = 5;
@@ -172,13 +201,14 @@ export const useWizard = defineStore("wizard", () => {
     decisionsVersion,
     canAnalyse,
     canReview,
-    optionsChanged,
     addSources,
     removeSource,
     reset,
     analyse,
     refreshRuleCounts,
     decide,
+    decideAll,
+    changeOptions,
     send,
     openJob,
   };

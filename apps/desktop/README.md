@@ -42,13 +42,13 @@ src-tauri/src/
 - `ping` checks `PROTOCOL_VERSION`; a mismatch is the error code `incompatible_service`. A missing
   binary or a service that never answers is `service_unavailable`.
 - Events: `Client::events()` is forwarded as the Tauri event `service-event` (payload: the engine
-  `Event`). A ping every 2 s detects a dead connection (the client's event channel stays open
-  after the socket closes); the window then emits `connection-changed { connected: false }`,
-  reconnects with backoff (starting the service again if needed) and emits `connected: true`, on
-  which the stores reload, since events sent in between are lost.
+  `Event`). The stream ends (`Closed`) when the connection drops; the window then emits
+  `connection-changed { connected: false }`, reconnects with backoff (starting the service again
+  if needed) and emits `connected: true`, on which the stores reload, since events sent in
+  between are lost.
 - Commands (camelCase in TS): `ping`, `listProfiles`, `saveProfile`, `deleteProfile`,
-  `testProfile`, `detectNextcloud`, `createJob`, `analyse`, `ruleCounts`, `issues`, `decide`,
-  `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint` and
+  `testProfile`, `detectNextcloud`, `createJob`, `setOptions`, `analyse`, `ruleCounts`, `issues`,
+  `decide`, `decideAll`, `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint` and
   `setTrayLabels`. They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
   `api.*` in `src/lib/api.ts` turns that into a value or a thrown `ServiceError` with its `code`.
 
@@ -86,8 +86,7 @@ Linux packages for `tauri dev` / `tauri build`:
 
 ## Allowed dependencies (src-tauri)
 `ipc`, `tauri` (+ the `dialog` and `notification` plugins), `tauri-specta`, `specta`,
-`specta-typescript`, `serde`, `tokio`, `tracing`. `core` for its types only, because `ipc`
-doesn't re-export them yet. Never a plugin crate, and nothing from `core` beyond the types `ipc`
-carries.
+`specta-typescript`, `serde`, `tokio`, `tracing`. Never `core` or a plugin crate: the types the
+service speaks come re-exported from `ipc`.
 
 See [docs/06-interface.md](../../docs/06-interface.md).

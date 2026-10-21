@@ -15,7 +15,6 @@ const fmt = useFmt();
 const wizard = useWizard();
 
 const PAGE = 100;
-const BULK_PAGE = 1000;
 
 const open = ref(props.rule.pending > 0);
 const rows = ref<IssueView_Serialize[]>([]);
@@ -25,7 +24,7 @@ const hasNext = ref(false);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const busyRow = ref<number | null>(null);
-const bulk = ref<{ done: number; total: number; stop: boolean } | null>(null);
+const bulk = ref(false);
 const editing = ref<IssueView_Serialize | null>(null);
 const editName = ref("");
 
@@ -111,29 +110,16 @@ async function saveEdit() {
   await decide(row, { kind: "edit", name: editName.value });
 }
 
-/** Applies one decision to every pending issue of this rule, page by page. */
+/** Applies one decision to every pending issue of this rule, in one service call. */
 async function decideAllPending(decision: DecisionInput) {
-  bulk.value = { done: 0, total: props.rule.pending, stop: false };
+  bulk.value = true;
   error.value = null;
   try {
-    let after: number | null = null;
-    for (;;) {
-      const page: IssueView_Serialize[] = await api.issues(props.jobId, props.rule.rule, after, BULK_PAGE);
-      if (!page.length) break;
-      for (const issue of page) {
-        if (bulk.value.stop) return;
-        if (issue.decision !== "pending") continue;
-        await api.decide(props.jobId, issue.id, decision);
-        bulk.value.done++;
-      }
-      after = page[page.length - 1].id;
-      if (page.length < BULK_PAGE) break;
-    }
+    await wizard.decideAll(props.rule.rule, decision);
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
-    bulk.value = null;
-    await wizard.refreshRuleCounts();
+    bulk.value = false;
     if (open.value) await load();
   }
 }
@@ -157,10 +143,7 @@ function decisionLabel(row: IssueView_Serialize) {
 
     <div v-if="open" class="group-body">
       <div v-if="rule.pending > 0 && !readonly" class="bulk">
-        <template v-if="bulk">
-          <span class="small">{{ $t("issues.bulkProgress", { done: fmt.count(bulk.done), total: fmt.count(bulk.total) }) }}</span>
-          <button class="btn btn-small" @click="bulk.stop = true">{{ $t("common.stop") }}</button>
-        </template>
+        <span v-if="bulk" class="small">{{ $t("issues.bulkProgress") }}</span>
         <template v-else>
           <span class="small muted">{{ $t("issues.bulkLabel", { n: fmt.count(rule.pending) }) }}</span>
           <button class="btn btn-small" @click="decideAllPending({ kind: 'accept' })">{{ $t("issues.acceptAll") }}</button>

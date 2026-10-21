@@ -14,10 +14,13 @@ export const commands = {
 	testProfile: (id: string) => typedError<ProfileTest_Serialize, ErrorBody>(__TAURI_INVOKE("test_profile", { id })),
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
 	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
+	setOptions: (jobId: string, options: SendOptions_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
 	analyse: (jobId: string) => typedError<AnalysisSummary_Serialize, ErrorBody>(__TAURI_INVOKE("analyse", { jobId })),
 	ruleCounts: (jobId: string) => typedError<RuleCount[], ErrorBody>(__TAURI_INVOKE("rule_counts", { jobId })),
 	issues: (jobId: string, rule: string | null, afterId: number | null, limit: number) => typedError<IssueView_Serialize[], ErrorBody>(__TAURI_INVOKE("issues", { jobId, rule, afterId, limit })),
 	decide: (jobId: string, issueId: number, decision: DecisionInput) => typedError<null, ErrorBody>(__TAURI_INVOKE("decide", { jobId, issueId, decision })),
+	/**  Returns how many issues changed. */
+	decideAll: (jobId: string, rule: string | null, decision: DecisionInput) => typedError<number, ErrorBody>(__TAURI_INVOKE("decide_all", { jobId, rule, decision })),
 	start: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("start", { jobId })),
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
