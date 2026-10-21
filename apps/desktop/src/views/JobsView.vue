@@ -1,0 +1,97 @@
+<script setup lang="ts">
+import { onMounted } from "vue";
+import { useRouter } from "vue-router";
+import JobStateBadge from "@/components/JobStateBadge.vue";
+import ProgressBar from "@/components/ProgressBar.vue";
+import { useFmt } from "@/composables/useFmt";
+import { baseName } from "@/lib/format";
+import { PAGE_SIZE, RUNNING, useJobs } from "@/stores/jobs";
+import { useProfiles } from "@/stores/profiles";
+
+const jobs = useJobs();
+const profiles = useProfiles();
+const router = useRouter();
+const fmt = useFmt();
+
+onMounted(() => {
+  void jobs.loadPage(0);
+  void profiles.load();
+});
+
+function sourcesLabel(sources: string[]) {
+  if (!sources.length) return "—";
+  const first = baseName(sources[0]);
+  return sources.length > 1 ? `${first} +${sources.length - 1}` : first;
+}
+</script>
+
+<template>
+  <div>
+    <header class="page-head">
+      <h1>{{ $t("jobs.title") }}</h1>
+      <button class="btn" @click="jobs.loadPage()">{{ $t("common.refresh") }}</button>
+    </header>
+    <p v-if="jobs.loadError" class="error">{{ jobs.loadError }}</p>
+    <p v-else-if="!jobs.page.length" class="card muted">{{ $t("jobs.empty") }}</p>
+
+    <div v-else class="table-wrap card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th class="c-what">{{ $t("jobs.col.what") }}</th>
+            <th class="c-where">{{ $t("jobs.col.where") }}</th>
+            <th class="c-state">{{ $t("jobs.col.state") }}</th>
+            <th class="c-progress">{{ $t("jobs.col.progress") }}</th>
+            <th class="c-num">{{ $t("jobs.col.speed") }}</th>
+            <th class="c-num">{{ $t("jobs.col.eta") }}</th>
+            <th class="c-retries">{{ $t("jobs.col.retries") }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="id in jobs.page"
+            :key="id"
+            tabindex="0"
+            class="clickable"
+            @click="router.push({ name: 'job', params: { id } })"
+            @keydown.enter="router.push({ name: 'job', params: { id } })"
+          >
+            <template v-if="jobs.byId[id]">
+              <td class="ellipsis" :title="jobs.byId[id].sources.join('\n')">
+                {{ sourcesLabel(jobs.byId[id].sources) }}
+                <span class="small muted block">{{ fmt.date(jobs.byId[id].created_at) }}</span>
+              </td>
+              <td class="ellipsis">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
+              <td><JobStateBadge :state="jobs.byId[id].state" /></td>
+              <td>
+                <ProgressBar :tone="jobs.byId[id].state === 'completed' ? 'ok' : jobs.byId[id].state === 'failed' ? 'danger' : 'accent'" :value="fmt.percent(jobs.live[id]?.transfer?.bytes_done ?? jobs.byId[id].counts.bytes_done, jobs.live[id]?.transfer?.bytes_total ?? jobs.byId[id].counts.bytes)" />
+                <span class="small muted">
+                  {{ fmt.bytes(jobs.live[id]?.transfer?.bytes_done ?? jobs.byId[id].counts.bytes_done) }} / {{ fmt.bytes(jobs.byId[id].counts.bytes) }}
+                </span>
+              </td>
+              <td class="nowrap">{{ RUNNING.includes(jobs.byId[id].state) ? fmt.rate(jobs.live[id]?.transfer?.bytes_per_sec) : "—" }}</td>
+              <td class="nowrap">{{ RUNNING.includes(jobs.byId[id].state) ? fmt.duration(jobs.live[id]?.transfer?.eta_secs) : "—" }}</td>
+              <td>{{ jobs.byId[id].attempt || "—" }}</td>
+            </template>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-if="jobs.offset > 0 || jobs.hasMore" class="pager">
+      <button class="btn btn-small" :disabled="jobs.offset === 0" @click="jobs.loadPage(Math.max(0, jobs.offset - PAGE_SIZE))">← {{ $t("common.previous") }}</button>
+      <button class="btn btn-small" :disabled="!jobs.hasMore" @click="jobs.loadPage(jobs.offset + PAGE_SIZE)">{{ $t("common.next") }} →</button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.c-what { width: 22%; }
+.c-where { width: 18%; }
+.c-state { width: 15%; }
+.c-progress { width: 22%; }
+.c-num { width: 9%; }
+.c-retries { width: 5rem; }
+.block { display: block; }
+.pager { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
+</style>

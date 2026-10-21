@@ -1,0 +1,380 @@
+{
+  "nav": {
+    "label": "Principal",
+    "new": "Nova transferência",
+    "jobs": "Envios",
+    "destinations": "Destinos",
+    "settings": "Definições"
+  },
+  "tray": {
+    "show": "Abrir filebridge",
+    "quit": "Fechar janela (os envios continuam)"
+  },
+  "conn": {
+    "connected": "Serviço ligado",
+    "connecting": "A ligar…",
+    "disconnected": "Serviço inacessível",
+    "retry": "Tentar de novo",
+    "bannerTitle": "Sem ligação ao filebridge-service.",
+    "bannerBody": "Os envios em curso continuam no serviço; a janela volta a ligar-se sozinha."
+  },
+  "common": {
+    "next": "Seguinte",
+    "back": "Voltar",
+    "previous": "Anterior",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Apagar",
+    "retry": "Tentar de novo",
+    "refresh": "Atualizar",
+    "loading": "A carregar…",
+    "browse": "Procurar…",
+    "advanced": "Avançado",
+    "stop": "Parar",
+    "yes": "Sim",
+    "no": "Não"
+  },
+  "status": {
+    "ok": "OK",
+    "warn": "Aviso",
+    "fail": "Falhou"
+  },
+  "details": {
+    "title": "Detalhes",
+    "none": "Ainda nada foi pedido ao serviço.",
+    "sourceNote": "Ainda nada é lido: os ficheiros são contados quando escolher o destino."
+  },
+  "wizard": {
+    "title": "Nova transferência",
+    "steps": {
+      "1": "Origem",
+      "2": "Destino",
+      "3": "Análise",
+      "4": "Rever e enviar",
+      "5": "Envio"
+    }
+  },
+  "source": {
+    "title": "O que quer enviar?",
+    "intro": "Arraste ficheiros e pastas para a janela, ou escolha-os.",
+    "drop": "Largue aqui ficheiros ou pastas",
+    "pickFolders": "Escolher pastas",
+    "pickFiles": "Escolher ficheiros",
+    "chosen": "{n} item escolhido | {n} itens escolhidos",
+    "remove": "Retirar {path}",
+    "total": "{files} ficheiros · {size}",
+    "countLater": "O total (ficheiros e GB) é contado na análise, depois de escolher o destino.",
+    "readOnly": "O filebridge só lê a origem: nada lá é movido, renomeado ou apagado."
+  },
+  "dest": {
+    "title": "Para onde?",
+    "intro": "Escolha um destino guardado ou crie um novo.",
+    "new": "Novo destino",
+    "newHint": "Pasta local, servidor SFTP ou Nextcloud",
+    "testing": "A testar a ligação…",
+    "unreachable": "Sem ligação",
+    "test": "Testar ligação",
+    "retest": "Testar de novo",
+    "etaLater": "O tempo estimado aparece quando os ficheiros estiverem contados.",
+    "failingHint": "O teste de ligação tem falhas.",
+    "analyse": "Analisar"
+  },
+  "preflight": {
+    "transport": "Destino",
+    "integration": "Integração",
+    "free": "{size} livres",
+    "freeUnknown": "espaço livre desconhecido",
+    "writable": "com escrita",
+    "notWritable": "sem escrita"
+  },
+  "analysis": {
+    "title": "Análise",
+    "counting": "A contar ficheiros…",
+    "files": "ficheiros",
+    "dirs": "pastas",
+    "size": "tamanho",
+    "symlinks": "atalhos simbólicos ignorados",
+    "tooBig": "Espaço insuficiente: {size} para enviar, {free} livres no destino.",
+    "scanErrors": "{n} item não pôde ser lido | {n} itens não puderam ser lidos",
+    "preflight": "Verificações do destino",
+    "reopened": "Envio reaberto da lista: os totais são os guardados.",
+    "rerun": "Analisar de novo",
+    "names": "Nomes",
+    "noIssues": "Nenhum problema nos nomes: tudo é enviado tal como está.",
+    "pendingHint": "Falta {n} decisão | Faltam {n} decisões"
+  },
+  "rules": {
+    "unknown": "{n} nomes assinalados por “{rule}”",
+    "nfc": {
+      "title": "{n} nome com acentos decompostos | {n} nomes com acentos decompostos",
+      "explain": "Corrigido automaticamente: os acentos são reescritos na forma composta (NFC). O texto parece igual; os bytes mudam."
+    },
+    "nextcloud-nfc": {
+      "title": "{n} nome que o Nextcloud não encontraria | {n} nomes que o Nextcloud não encontraria",
+      "explain": "Corrigido automaticamente: o Nextcloud só indexa nomes na forma composta (NFC)."
+    },
+    "forbidden-chars": {
+      "title": "{n} nome com caracteres que o destino recusa | {n} nomes com caracteres que o destino recusa",
+      "explain": "Corrigido automaticamente: < > : \" \\ {'|'} ? * e caracteres de controlo passam a _."
+    },
+    "trailing": {
+      "title": "{n} nome acabado em espaço ou ponto | {n} nomes acabados em espaço ou ponto",
+      "explain": "Corrigido automaticamente: os espaços e pontos finais são retirados."
+    },
+    "reserved": {
+      "title": "{n} nome reservado do Windows | {n} nomes reservados do Windows",
+      "explain": "Corrigido automaticamente: nomes como CON ou COM1 recebem um prefixo."
+    },
+    "nextcloud-reserved": {
+      "title": "{n} nome reservado pelo Nextcloud | {n} nomes reservados pelo Nextcloud",
+      "explain": "Corrigido automaticamente: nomes como .htaccess são renomeados."
+    },
+    "collision": {
+      "title": "{n} nome que chocaria com outro | {n} nomes que chocariam com outros",
+      "explain": "Dois nomes ficam iguais no destino. Decida qual muda."
+    },
+    "encoding": {
+      "title": "{n} nome que não é UTF-8 válido | {n} nomes que não são UTF-8 válido",
+      "explain": "Os bytes originais não se leem como texto. Decida como enviá-los."
+    }
+  },
+  "issues": {
+    "pending": "{n} por decidir",
+    "resolved": "Resolvido",
+    "accept": "Aceitar",
+    "keep": "Manter",
+    "skip": "Saltar",
+    "edit": "Editar",
+    "notSent": "(não enviado)",
+    "bulkLabel": "Os {n} por decidir:",
+    "acceptAll": "Aceitar todos",
+    "keepAll": "Manter todos",
+    "skipAll": "Saltar todos",
+    "bulkProgress": "A aplicar… {done} de {total}",
+    "page": "Página {n}",
+    "editTitle": "Escolha o nome no destino",
+    "editLabel": "Novo nome",
+    "editEmpty": "O nome não pode ficar vazio.",
+    "editSlash": "Um nome não pode ter /."
+  },
+  "decision": {
+    "pending": "Por decidir",
+    "accepted": "Corrigir",
+    "edited": "Editado",
+    "rejected": "Manter original",
+    "skipped": "Não enviado"
+  },
+  "review": {
+    "title": "Rever e enviar",
+    "sources": "Origem",
+    "destination": "Destino",
+    "files": "Ficheiros",
+    "renames": "Problemas de nomes",
+    "renamesValue": "{n} nome, tudo decidido | {n} nomes, tudo decidido",
+    "mode": "Modo",
+    "modes": {
+      "local": "Cópia para uma pasta",
+      "sftp": "Cópia por SFTP",
+      "nextcloud": "Nextcloud (modo direto): os ficheiros são copiados e depois indexados pelo Nextcloud"
+    },
+    "verify": "Verificar por checksum no fim",
+    "verifyHint": "Compara o SHA-256 de cada ficheiro na origem e no destino. Mais lento, mas prova que a cópia é idêntica.",
+    "optionsChanged": "O serviço ainda não consegue mudar esta opção num envio já criado: a análise tem de correr de novo (as decisões que tomou serão pedidas outra vez).",
+    "safety": "Só cópia: a origem nunca é alterada nem apagada. Fechar a janela não para o envio.",
+    "send": "Enviar",
+    "starting": "A iniciar…"
+  },
+  "after": {
+    "title": "A enviar",
+    "reportTitle": "Relatório final",
+    "closeOk": "Pode fechar a janela: o envio continua em segundo plano e recebe uma notificação quando acabar.",
+    "result": {
+      "completed": "Concluído — tudo foi enviado.",
+      "completed_with_warnings": "Concluído, com avisos.",
+      "cancelled": "Cancelado.",
+      "failed": "O envio falhou."
+    },
+    "verifiedAll": "Todos os ficheiros foram verificados: origem e destino são idênticos.",
+    "failures": "{n} ficheiro com erros | {n} ficheiros com erros",
+    "problems": "{n} problema na integração | {n} problemas na integração",
+    "openJob": "Abrir envio",
+    "newTransfer": "Nova transferência"
+  },
+  "progress": {
+    "bytes": "{done} de {total}",
+    "files": "{done} de {total} ficheiros",
+    "eta": "faltam {eta}",
+    "retry": "Tentativa {attempt} daqui a {secs} s",
+    "retries": "{n} novas tentativas automáticas",
+    "verifying": "A verificar {done} de {total}",
+    "mismatches": "{n} diferenças",
+    "items": "{n} itens"
+  },
+  "integration": {
+    "nextcloud": {
+      "permissions": "A acertar dono e permissões no Nextcloud",
+      "scan": "A indexar no Nextcloud",
+      "waiting-for-disk": "à espera do disco…"
+    }
+  },
+  "counts": {
+    "pending": "Por enviar",
+    "done": "Enviados",
+    "failed": "Falharam",
+    "skipped": "Saltados",
+    "verified": "Verificados",
+    "mismatch": "Diferenças"
+  },
+  "state": {
+    "draft": "Rascunho",
+    "analysing": "A analisar",
+    "awaiting_approval": "À espera de decisões",
+    "ready": "Pronto",
+    "transferring": "A enviar",
+    "paused": "Em pausa",
+    "retrying": "A tentar de novo",
+    "verifying": "A verificar",
+    "integrating": "A integrar",
+    "completed": "Concluído",
+    "completed_with_warnings": "Concluído com avisos",
+    "cancelled": "Cancelado",
+    "failed": "Falhou"
+  },
+  "log": {
+    "state": "{from} → {to}",
+    "retry": "Tentativa {attempt} daqui a {secs} s: {error}"
+  },
+  "notify": {
+    "doneTitle": "Envio concluído",
+    "doneBody": "Tudo foi enviado para {where}.",
+    "warningsBody": "Enviado para {where}, com avisos.",
+    "failedTitle": "O envio falhou",
+    "failedBody": "{where}: {error}"
+  },
+  "jobs": {
+    "title": "Envios",
+    "empty": "Ainda não há envios.",
+    "col": {
+      "what": "O quê",
+      "where": "Para onde",
+      "state": "Estado",
+      "progress": "Progresso",
+      "speed": "Velocidade",
+      "eta": "Falta",
+      "retries": "Tentativas"
+    }
+  },
+  "jobDetail": {
+    "title": "Envio",
+    "notFound": "Este envio não existe (ou já não existe).",
+    "continue": "Continuar no assistente",
+    "pause": "Pausa",
+    "resume": "Retomar",
+    "cancel": "Cancelar envio",
+    "what": "Envio",
+    "counts": "Totais",
+    "created": "Criado",
+    "finished": "Terminado",
+    "nextRetry": "próxima tentativa {at}",
+    "log": "Registo",
+    "logNote": "Eventos recebidos enquanto esta janela esteve aberta.",
+    "logEmpty": "Ainda sem eventos.",
+    "cancelTitle": "Cancelar este envio?",
+    "cancelStops": "O envio para de vez e não pode ser retomado.",
+    "cancelKeeps": "Os {n} ficheiros já enviados ficam no destino.",
+    "cancelNoDelete": "Nada é apagado, nem na origem nem no destino.",
+    "cancelFinal": "Para enviar o resto mais tarde, comece uma nova transferência.",
+    "cancelConfirm": "Cancelar envio",
+    "keepSending": "Continuar a enviar"
+  },
+  "destinations": {
+    "title": "Destinos",
+    "empty": "Ainda não há destinos.",
+    "ncMode": "modo: {mode}",
+    "deleteTitle": "Apagar este destino?",
+    "deleteForgets": "O filebridge esquece o perfil “{name}”.",
+    "deleteNoFiles": "Nenhum ficheiro é apagado, nem no destino nem em lado nenhum.",
+    "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele."
+  },
+  "profile": {
+    "kind": "Tipo de destino",
+    "kinds": {
+      "local": "Pasta local",
+      "sftp": "SFTP",
+      "nextcloud": "Nextcloud"
+    },
+    "kindsHint": {
+      "local": "Um disco ou pasta neste computador",
+      "sftp": "Um servidor ou NAS por SSH",
+      "nextcloud": "Modo direto: LXC no Proxmox por SSH"
+    },
+    "name": "Nome",
+    "nameHintLocal": "Disco externo",
+    "nameHintSftp": "NAS de casa",
+    "host": "Servidor",
+    "port": "Porta",
+    "user": "Utilizador",
+    "folder": "Pasta",
+    "remoteFolder": "Pasta no servidor (caminho absoluto)",
+    "keyFile": "Chave privada",
+    "keyFileHint": "vazio = agente SSH",
+    "knownHosts": "Ficheiro known_hosts",
+    "noPassword": "Só chave ou agente SSH; a chave do servidor tem de estar já no known_hosts. O início de sessão com palavra-passe ainda não está disponível na janela.",
+    "target": "Sistema de ficheiros do destino",
+    "family": {
+      "unix": "Linux / Unix",
+      "windows": "Windows / SMB",
+      "macos": "macOS"
+    },
+    "caseSensitive": "distingue maiúsculas",
+    "caseInsensitive": "não distingue maiúsculas",
+    "save": "Guardar destino"
+  },
+  "nextcloud": {
+    "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox, encontra o contentor do Nextcloud e verifica cada passo. Nada é alterado durante a deteção.",
+    "host": "Anfitrião Proxmox",
+    "sshUser": "Utilizador SSH",
+    "ncUser": "Utilizador do Nextcloud",
+    "ncUserHint": "a conta que recebe os ficheiros",
+    "folder": "Pasta nos ficheiros desse utilizador",
+    "folderHint": "vazio = raiz, p. ex. Backup",
+    "ctid": "Contentor (CTID)",
+    "installDir": "Pasta de instalação do Nextcloud",
+    "auto": "automático",
+    "detect": "Detetar",
+    "detecting": "A detetar…",
+    "pickContainer": "Há mais do que um contentor com ar de Nextcloud. Qual é?",
+    "saved": "Destino “{name}” guardado.",
+    "steps": {
+      "ssh": "Ligação SSH",
+      "pct-list": "Contentores",
+      "pct-config": "Configuração do contentor",
+      "datadirectory": "Pasta de dados",
+      "data-path": "Caminho dos dados no anfitrião",
+      "occ": "Comando occ",
+      "run-as": "Utilizador do servidor web",
+      "owner": "Dono dos ficheiros"
+    },
+    "done": "Concluir"
+  },
+  "settings": {
+    "title": "Definições",
+    "language": "Língua",
+    "languages": {
+      "pt": "Português",
+      "en": "English"
+    },
+    "notifications": "Avisar quando um envio acaba",
+    "notificationsHint": "Notificação do sistema quando um envio termina ou falha.",
+    "bandwidth": "Limite de largura de banda",
+    "bandwidthHint": "p. ex. 20M",
+    "schedule": "Horário de envio",
+    "scheduleHint": "p. ex. 01:00–07:00",
+    "later": "O limite de largura de banda e o horário chegam numa versão futura.",
+    "service": "Serviço",
+    "state": "Estado",
+    "version": "Versão",
+    "endpoint": "Socket",
+    "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso."
+  }
+}

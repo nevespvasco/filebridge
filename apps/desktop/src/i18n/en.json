@@ -1,0 +1,380 @@
+{
+  "nav": {
+    "label": "Main",
+    "new": "New transfer",
+    "jobs": "Jobs",
+    "destinations": "Destinations",
+    "settings": "Settings"
+  },
+  "tray": {
+    "show": "Open filebridge",
+    "quit": "Close window (sends keep running)"
+  },
+  "conn": {
+    "connected": "Service connected",
+    "connecting": "Connecting…",
+    "disconnected": "Service unreachable",
+    "retry": "Try again",
+    "bannerTitle": "No connection to filebridge-service.",
+    "bannerBody": "Sends already running continue in the service; the window reconnects by itself."
+  },
+  "common": {
+    "next": "Next",
+    "back": "Back",
+    "previous": "Previous",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "retry": "Try again",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "browse": "Browse…",
+    "advanced": "Advanced",
+    "stop": "Stop",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "status": {
+    "ok": "OK",
+    "warn": "Warning",
+    "fail": "Failed"
+  },
+  "details": {
+    "title": "Details",
+    "none": "Nothing sent to the service yet.",
+    "sourceNote": "Nothing is read yet: the files are counted once you choose the destination."
+  },
+  "wizard": {
+    "title": "New transfer",
+    "steps": {
+      "1": "Source",
+      "2": "Destination",
+      "3": "Analysis",
+      "4": "Review & send",
+      "5": "Transfer"
+    }
+  },
+  "source": {
+    "title": "What do you want to send?",
+    "intro": "Drag files and folders onto the window, or pick them.",
+    "drop": "Drop files or folders here",
+    "pickFolders": "Choose folders",
+    "pickFiles": "Choose files",
+    "chosen": "{n} item chosen | {n} items chosen",
+    "remove": "Remove {path}",
+    "total": "{files} files · {size}",
+    "countLater": "The total (files and GB) is counted in the analysis, once the destination is chosen.",
+    "readOnly": "filebridge only reads the source: nothing there is ever moved, renamed or deleted."
+  },
+  "dest": {
+    "title": "Where to?",
+    "intro": "Choose a saved destination or create a new one.",
+    "new": "New destination",
+    "newHint": "Local folder, SFTP server or Nextcloud",
+    "testing": "Testing the connection…",
+    "unreachable": "Can't connect",
+    "test": "Connection test",
+    "retest": "Test again",
+    "etaLater": "The estimated time appears once the files are counted.",
+    "failingHint": "The connection test has failures.",
+    "analyse": "Analyse"
+  },
+  "preflight": {
+    "transport": "Destination",
+    "integration": "Integration",
+    "free": "{size} free",
+    "freeUnknown": "free space unknown",
+    "writable": "writable",
+    "notWritable": "not writable"
+  },
+  "analysis": {
+    "title": "Analysis",
+    "counting": "Counting files…",
+    "files": "files",
+    "dirs": "folders",
+    "size": "size",
+    "symlinks": "symbolic links skipped",
+    "tooBig": "Not enough free space: {size} to send, {free} free at the destination.",
+    "scanErrors": "{n} item could not be read | {n} items could not be read",
+    "preflight": "Destination checks",
+    "reopened": "Job reopened from the list: the counts are the saved ones.",
+    "rerun": "Analyse again",
+    "names": "Names",
+    "noIssues": "No name problems: everything is sent as it is.",
+    "pendingHint": "{n} decision pending | {n} decisions pending"
+  },
+  "rules": {
+    "unknown": "{n} names flagged by “{rule}”",
+    "nfc": {
+      "title": "{n} name with decomposed accents | {n} names with decomposed accents",
+      "explain": "Fixed automatically: the accents are rewritten in the composed form (NFC). The text looks the same; the bytes change."
+    },
+    "nextcloud-nfc": {
+      "title": "{n} name Nextcloud would not find | {n} names Nextcloud would not find",
+      "explain": "Fixed automatically: Nextcloud only indexes names in the composed form (NFC)."
+    },
+    "forbidden-chars": {
+      "title": "{n} name with characters the destination refuses | {n} names with characters the destination refuses",
+      "explain": "Fixed automatically: < > : \" \\ {'|'} ? * and control characters become _."
+    },
+    "trailing": {
+      "title": "{n} name ending in a space or dot | {n} names ending in a space or dot",
+      "explain": "Fixed automatically: the trailing spaces and dots are removed."
+    },
+    "reserved": {
+      "title": "{n} reserved Windows name | {n} reserved Windows names",
+      "explain": "Fixed automatically: names like CON or COM1 get a prefix."
+    },
+    "nextcloud-reserved": {
+      "title": "{n} name Nextcloud reserves | {n} names Nextcloud reserves",
+      "explain": "Fixed automatically: names like .htaccess are renamed."
+    },
+    "collision": {
+      "title": "{n} name that would clash with another | {n} names that would clash with another",
+      "explain": "Two names become the same at the destination. Decide which one changes."
+    },
+    "encoding": {
+      "title": "{n} name that isn't valid UTF-8 | {n} names that aren't valid UTF-8",
+      "explain": "The original bytes can't be read as text. Decide how to send them."
+    }
+  },
+  "issues": {
+    "pending": "{n} pending",
+    "resolved": "Resolved",
+    "accept": "Accept",
+    "keep": "Keep",
+    "skip": "Skip",
+    "edit": "Edit",
+    "notSent": "(not sent)",
+    "bulkLabel": "All {n} pending:",
+    "acceptAll": "Accept all",
+    "keepAll": "Keep all",
+    "skipAll": "Skip all",
+    "bulkProgress": "Applying… {done} of {total}",
+    "page": "Page {n}",
+    "editTitle": "Choose the name at the destination",
+    "editLabel": "New name",
+    "editEmpty": "The name can't be empty.",
+    "editSlash": "A name can't contain /."
+  },
+  "decision": {
+    "pending": "Pending",
+    "accepted": "Fix",
+    "edited": "Edited",
+    "rejected": "Keep original",
+    "skipped": "Not sent"
+  },
+  "review": {
+    "title": "Review & send",
+    "sources": "Source",
+    "destination": "Destination",
+    "files": "Files",
+    "renames": "Name issues",
+    "renamesValue": "{n} name, all decided | {n} names, all decided",
+    "mode": "Mode",
+    "modes": {
+      "local": "Copy to a folder",
+      "sftp": "Copy over SFTP",
+      "nextcloud": "Nextcloud (direct mode): files are copied, then Nextcloud indexes them"
+    },
+    "verify": "Verify by checksum at the end",
+    "verifyHint": "Compares the SHA-256 of every file at the source and the destination. Slower, but proves the copy is identical.",
+    "optionsChanged": "The service can't change this option on an existing job yet: the analysis has to run again (decisions you made will be asked again).",
+    "safety": "Copy only: the source is never changed or deleted. Closing the window doesn't stop the send.",
+    "send": "Send",
+    "starting": "Starting…"
+  },
+  "after": {
+    "title": "Sending",
+    "reportTitle": "Final report",
+    "closeOk": "You can close the window: the send continues in the background and you'll get a notification when it ends.",
+    "result": {
+      "completed": "Done — everything was sent.",
+      "completed_with_warnings": "Done, with warnings.",
+      "cancelled": "Cancelled.",
+      "failed": "The send failed."
+    },
+    "verifiedAll": "Every file was verified: source and destination are identical.",
+    "failures": "{n} file with errors | {n} files with errors",
+    "problems": "{n} integration problem | {n} integration problems",
+    "openJob": "Open job",
+    "newTransfer": "New transfer"
+  },
+  "progress": {
+    "bytes": "{done} of {total}",
+    "files": "{done} of {total} files",
+    "eta": "{eta} left",
+    "retry": "Attempt {attempt} in {secs} s",
+    "retries": "{n} automatic retries",
+    "verifying": "Verifying {done} of {total}",
+    "mismatches": "{n} differences",
+    "items": "{n} items"
+  },
+  "integration": {
+    "nextcloud": {
+      "permissions": "Setting owner and permissions in Nextcloud",
+      "scan": "Indexing in Nextcloud",
+      "waiting-for-disk": "waiting for the disk…"
+    }
+  },
+  "counts": {
+    "pending": "To send",
+    "done": "Sent",
+    "failed": "Failed",
+    "skipped": "Skipped",
+    "verified": "Verified",
+    "mismatch": "Differences"
+  },
+  "state": {
+    "draft": "Draft",
+    "analysing": "Analysing",
+    "awaiting_approval": "Awaiting decisions",
+    "ready": "Ready",
+    "transferring": "Sending",
+    "paused": "Paused",
+    "retrying": "Retrying",
+    "verifying": "Verifying",
+    "integrating": "Integrating",
+    "completed": "Completed",
+    "completed_with_warnings": "Completed with warnings",
+    "cancelled": "Cancelled",
+    "failed": "Failed"
+  },
+  "log": {
+    "state": "{from} → {to}",
+    "retry": "Attempt {attempt} in {secs} s: {error}"
+  },
+  "notify": {
+    "doneTitle": "Send finished",
+    "doneBody": "Everything was sent to {where}.",
+    "warningsBody": "Sent to {where}, with warnings.",
+    "failedTitle": "Send failed",
+    "failedBody": "{where}: {error}"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "empty": "No sends yet.",
+    "col": {
+      "what": "What",
+      "where": "Where",
+      "state": "State",
+      "progress": "Progress",
+      "speed": "Speed",
+      "eta": "Time left",
+      "retries": "Retries"
+    }
+  },
+  "jobDetail": {
+    "title": "Job",
+    "notFound": "This job doesn't exist (any more).",
+    "continue": "Continue in the wizard",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel send",
+    "what": "Send",
+    "counts": "Counts",
+    "created": "Created",
+    "finished": "Finished",
+    "nextRetry": "next attempt {at}",
+    "log": "Log",
+    "logNote": "Events received while this window was open.",
+    "logEmpty": "No events yet.",
+    "cancelTitle": "Cancel this send?",
+    "cancelStops": "The send stops for good and can't be resumed.",
+    "cancelKeeps": "The {n} files already sent stay at the destination.",
+    "cancelNoDelete": "Nothing at the source or the destination is deleted.",
+    "cancelFinal": "To send the rest later, start a new transfer.",
+    "cancelConfirm": "Cancel send",
+    "keepSending": "Keep sending"
+  },
+  "destinations": {
+    "title": "Destinations",
+    "empty": "No destinations yet.",
+    "ncMode": "mode: {mode}",
+    "deleteTitle": "Delete this destination?",
+    "deleteForgets": "filebridge forgets the profile “{name}”.",
+    "deleteNoFiles": "No files are deleted, at the destination or anywhere else.",
+    "deleteJobs": "Jobs that used it keep their history, but can't be resumed without it."
+  },
+  "profile": {
+    "kind": "Kind of destination",
+    "kinds": {
+      "local": "Local folder",
+      "sftp": "SFTP",
+      "nextcloud": "Nextcloud"
+    },
+    "kindsHint": {
+      "local": "A disk or folder on this computer",
+      "sftp": "A server or NAS over SSH",
+      "nextcloud": "Direct mode: Proxmox LXC over SSH"
+    },
+    "name": "Name",
+    "nameHintLocal": "External disk",
+    "nameHintSftp": "Home NAS",
+    "host": "Server",
+    "port": "Port",
+    "user": "User",
+    "folder": "Folder",
+    "remoteFolder": "Folder on the server (absolute path)",
+    "keyFile": "Private key",
+    "keyFileHint": "empty = SSH agent",
+    "knownHosts": "known_hosts file",
+    "noPassword": "Key or SSH agent only; the server's host key must already be in known_hosts. Password login is not available in the window yet.",
+    "target": "Destination file system",
+    "family": {
+      "unix": "Linux / Unix",
+      "windows": "Windows / SMB",
+      "macos": "macOS"
+    },
+    "caseSensitive": "case-sensitive",
+    "caseInsensitive": "case-insensitive",
+    "save": "Save destination"
+  },
+  "nextcloud": {
+    "intro": "filebridge connects over SSH to the Proxmox host, finds the Nextcloud container and checks each step. Nothing is changed during detection.",
+    "host": "Proxmox host",
+    "sshUser": "SSH user",
+    "ncUser": "Nextcloud user",
+    "ncUserHint": "the account that receives the files",
+    "folder": "Folder in that user's files",
+    "folderHint": "empty = root, e.g. Backup",
+    "ctid": "Container (CTID)",
+    "installDir": "Nextcloud install folder",
+    "auto": "automatic",
+    "detect": "Detect",
+    "detecting": "Detecting…",
+    "pickContainer": "More than one container looks like Nextcloud. Which one?",
+    "saved": "Destination “{name}” saved.",
+    "steps": {
+      "ssh": "SSH connection",
+      "pct-list": "Containers",
+      "pct-config": "Container configuration",
+      "datadirectory": "Data directory",
+      "data-path": "Data path on the host",
+      "occ": "occ command",
+      "run-as": "Web server user",
+      "owner": "File owner"
+    },
+    "done": "Done"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languages": {
+      "pt": "Português",
+      "en": "English"
+    },
+    "notifications": "Notify when a send ends",
+    "notificationsHint": "System notification when a send finishes or fails.",
+    "bandwidth": "Bandwidth limit",
+    "bandwidthHint": "e.g. 20M",
+    "schedule": "Send schedule",
+    "scheduleHint": "e.g. 01:00–07:00",
+    "later": "Bandwidth limit and schedule arrive in a later version.",
+    "service": "Service",
+    "state": "State",
+    "version": "Version",
+    "endpoint": "Socket",
+    "serviceHint": "filebridge-service does the sends; the window only shows them. It starts by itself when needed."
+  }
+}
