@@ -34,6 +34,8 @@ struct FakeTransport {
     /// Delay per file, to make pausing observable.
     per_file: Mutex<Duration>,
     calls: AtomicU32,
+    /// The destination can't compute hashes.
+    no_hash: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
@@ -91,6 +93,7 @@ impl Transport for FakeTransport {
                 std::fs::copy(&from, &to).unwrap();
             }
             bytes += item.size;
+            progress.send(ProgressEvent::ItemDone { index: i, ok: true });
             progress.send(ProgressEvent::Stats(StatsSnapshot {
                 bytes,
                 files_done: i as u64 + 1,
@@ -103,6 +106,11 @@ impl Transport for FakeTransport {
     }
 
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> TResult<Digest> {
+        if self.no_hash.load(Ordering::SeqCst) {
+            return Err(TransportError::fatal(
+                "hash unsupported: hash type not supported",
+            ));
+        }
         let data = std::fs::read(Path::new(&dest.root).join(path.as_str()))
             .map_err(|e| TransportError::fatal(e.to_string()))?;
         Ok(Digest {
@@ -178,6 +186,15 @@ fn engine_with(
     transport: Arc<FakeTransport>,
     integration: Arc<FakeIntegration>,
 ) -> Arc<Engine> {
+    engine_with_batch(store, transport, integration, 3)
+}
+
+fn engine_with_batch(
+    store: Store,
+    transport: Arc<FakeTransport>,
+    integration: Arc<FakeIntegration>,
+    batch_size: u32,
+) -> Arc<Engine> {
     let mut registry = Registry::new();
     registry.add_transport(transport);
     registry.add_integration(integration);
@@ -186,7 +203,7 @@ fn engine_with(
         registry,
         EngineOptions {
             backoff: Backoff::Fixed(Duration::from_millis(10)),
-            batch_size: 3,
+            batch_size,
             inhibit_sleep: false,
             max_verify_rounds: 3,
         },
@@ -493,4 +510,71 @@ async fn cancel_is_final() {
     s.engine.cancel(&job).await.unwrap();
     assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Cancelled);
     assert!(s.engine.start(&job).await.is_err());
+}
+
+#[tokio::test]
+async fn files_finished_mid_batch_are_kept_when_paused() {
+    let s = setup().await;
+    for i in 0..20 {
+        std::fs::write(s.src.join(format!("f{i:02}.txt")), b"x").unwrap();
+    }
+    // One transport call for all 23 files; pause while it is half way.
+    let engine = engine_with_batch(
+        s.store.clone(),
+        s.transport.clone(),
+        s.integration.clone(),
+        100,
+    );
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(40);
+    let job = engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    engine.analyse(&job).await.unwrap();
+    engine.start(&job).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    engine.pause(&job).await.unwrap();
+    let paused = engine.job(&job).await.unwrap();
+    assert!(
+        paused.counts.done >= 3 && paused.counts.done < 23,
+        "files already sent must stay done: {:?}",
+        paused.counts
+    );
+
+    *s.transport.per_file.lock().unwrap() = Duration::ZERO;
+    let calls = s.transport.calls.load(Ordering::SeqCst);
+    engine.resume(&job).await.unwrap();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(20), engine.wait(&job))
+            .await
+            .unwrap()
+            .unwrap(),
+        JobState::Completed
+    );
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst) - calls, 1);
+    assert_eq!(engine.job(&job).await.unwrap().counts.done, 23);
+}
+
+#[tokio::test]
+async fn unverifiable_destinations_warn_without_resending() {
+    let s = setup().await;
+    s.transport.no_hash.store(true, Ordering::SeqCst);
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    let calls = s.transport.calls.load(Ordering::SeqCst);
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+    assert_eq!(
+        s.transport.calls.load(Ordering::SeqCst) - calls,
+        1,
+        "nothing resent"
+    );
+    let summary = s.engine.job(&job).await.unwrap();
+    assert!(summary.error.unwrap().contains("could not be verified"));
+    assert_eq!(summary.counts.mismatch, 0);
 }

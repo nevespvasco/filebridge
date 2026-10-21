@@ -284,32 +284,62 @@ impl Engine {
 
                 let (sink, mut rx) = ProgressSink::channel();
                 let events = self.events.clone();
+                let store = self.store.clone();
                 let job_id = ctx.job_id.clone();
+                let idx_of: Vec<u64> = kept.iter().map(|e| e.entry.idx).collect();
                 let (bb, bf) = (base_bytes, base_files);
+                // Forwards progress, and saves each finished file as soon as the transport
+                // reports it, so a crash mid-batch never resends what already arrived.
                 let forward = tokio::spawn(async move {
-                    while let Some(ev) = rx.recv().await {
-                        if let ProgressEvent::Stats(s) = ev {
-                            let bytes_done = bb + s.bytes;
-                            let eta_secs = (s.bytes_per_sec > 0.0).then(|| {
-                                (bytes_total.saturating_sub(bytes_done) as f64 / s.bytes_per_sec)
-                                    as u64
-                            });
-                            let _ = events.send(Event::TransferProgress {
-                                job_id: job_id.clone(),
-                                bytes_done,
-                                bytes_total,
-                                files_done: bf + s.files_done,
-                                files_total,
-                                bytes_per_sec: s.bytes_per_sec,
-                                eta_secs,
-                            });
+                    let mut finished = Vec::new();
+                    let mut tick = tokio::time::interval(Duration::from_millis(500));
+                    loop {
+                        tokio::select! {
+                            ev = rx.recv() => match ev {
+                                Some(ProgressEvent::Stats(s)) => {
+                                    let bytes_done = bb + s.bytes;
+                                    let eta_secs = (s.bytes_per_sec > 0.0).then(|| {
+                                        (bytes_total.saturating_sub(bytes_done) as f64
+                                            / s.bytes_per_sec) as u64
+                                    });
+                                    let _ = events.send(Event::TransferProgress {
+                                        job_id: job_id.clone(),
+                                        bytes_done,
+                                        bytes_total,
+                                        files_done: bf + s.files_done,
+                                        files_total,
+                                        bytes_per_sec: s.bytes_per_sec,
+                                        eta_secs,
+                                    });
+                                }
+                                Some(ProgressEvent::ItemDone { index, ok: true }) => {
+                                    if let Some(idx) = idx_of.get(index) {
+                                        finished.push((*idx, EntryState::Done, None));
+                                    }
+                                }
+                                Some(_) => {}
+                                None => break,
+                            },
+                            _ = tick.tick() => {}
                         }
+                        if !finished.is_empty()
+                            && let Err(e) = store
+                                .set_transfer_states(&job_id, std::mem::take(&mut finished))
+                                .await
+                        {
+                            tracing::warn!(job = job_id, "cannot save progress: {e}");
+                        }
+                    }
+                    if !finished.is_empty() {
+                        let _ = store.set_transfer_states(&job_id, finished).await;
                     }
                 });
                 let result = tokio::select! {
                     r = transport.transfer(&ctx.profile.destination, &tj, sink) => r,
                     _ = ctx.cancel.cancelled() => {
-                        forward.abort();
+                        // Dropping the transfer drops its sink; let the forwarder save what
+                        // finished before stopping.
+                        let _ = tokio::time::timeout(Duration::from_secs(2), forward).await;
                         return Ok(StageEnd::Cancelled);
                     }
                 };
@@ -377,6 +407,7 @@ impl Engine {
         let counts = self.store.manifest_counts(&ctx.job_id).await?;
         let total = counts.done;
         let (mut checked, mut mismatched) = (counts.verified_ok, Vec::new());
+        let (mut unverifiable, mut first_error) = (0u64, None::<String>);
         let mut after = None;
         loop {
             let page = self.store.entries_page(&ctx.job_id, after, PAGE).await?;
@@ -406,31 +437,35 @@ impl Engine {
                 let Some(dest) = e.dest_path.clone() else {
                     continue;
                 };
-                let remote = match transport
+                let remote = transport
                     .hash(
                         &ctx.profile.destination,
                         &RemotePath::new(dest)?,
                         HashAlgo::Sha256,
                     )
-                    .await
-                {
-                    Ok(d) => Some(d.bytes),
+                    .await;
+                checked += 1;
+                let state = match remote {
+                    Ok(r) if r.bytes == local => EntryState::Done,
+                    Ok(_) => {
+                        mismatched.push(e.entry.idx);
+                        EntryState::Mismatch
+                    }
                     Err(err) if err.retryable => {
                         self.store.set_verify_states(&ctx.job_id, updates).await?;
                         return Ok(StageEnd::Retry(err.message));
                     }
-                    Err(_) => None,
-                };
-                checked += 1;
-                let state = match remote {
-                    Some(r) if r == local => EntryState::Done,
-                    Some(_) => {
-                        mismatched.push(e.entry.idx);
-                        EntryState::Mismatch
-                    }
-                    None => {
+                    // Gone from the destination: send it again.
+                    Err(err) if err.message.contains("not found") => {
                         mismatched.push(e.entry.idx);
                         EntryState::Missing
+                    }
+                    // The destination couldn't produce a hash. That says nothing about the
+                    // file, so it is reported, not resent.
+                    Err(err) => {
+                        unverifiable += 1;
+                        first_error.get_or_insert(err.message);
+                        EntryState::Failed
                     }
                 };
                 updates.push((e.entry.idx, state));
@@ -442,6 +477,12 @@ impl Engine {
                 });
             }
             self.store.set_verify_states(&ctx.job_id, updates).await?;
+        }
+        if unverifiable > 0 {
+            ctx.warnings.push(format!(
+                "{unverifiable} files could not be verified ({})",
+                first_error.unwrap_or_default()
+            ));
         }
         Ok(StageEnd::Done(mismatched))
     }

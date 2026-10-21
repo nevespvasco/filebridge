@@ -38,12 +38,24 @@ impl Rcd {
             .env("RCLONE_RC_PASS", &pass)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::inherit())
+            // rclone logs to stderr; it goes to `tracing` (target `rclone`, debug level) instead
+            // of the user's terminal. Errors that matter reach callers through the rc API.
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| {
                 TransportError::fatal(format!("cannot start {}: {e}", binary.display()))
             })?;
+
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut lines = tokio::io::BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::debug!(target: "rclone", "{line}");
+                }
+            });
+        }
 
         let client = RcClient::new(port, user, pass);
         let deadline = Instant::now() + Duration::from_secs(15);

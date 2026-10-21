@@ -377,19 +377,33 @@ impl Transport for RcloneTransport {
                 return Err(TransportError::fatal("xxh3-128 is not supported by rclone"));
             }
         };
-        let v = self
-            .rc()
-            .call(
-                "operations/hashsum",
-                json!({ "fs": dest_fs(dest, path.as_str())?, "hashType": hash_type }),
-            )
-            .await?;
-        let line = v
-            .get("hashsum")
-            .and_then(Value::as_array)
-            .and_then(|a| a.first())
-            .and_then(Value::as_str)
-            .ok_or_else(|| TransportError::fatal(format!("no hash returned for {path}")))?;
+        let fs = dest_fs(dest, path.as_str())?;
+        let params =
+            |download: bool| json!({ "fs": fs, "hashType": hash_type, "download": download });
+        let first_line = |v: &Value| {
+            v.get("hashsum")
+                .and_then(Value::as_array)
+                .and_then(|a| a.first())
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        // Servers that can't hash (no `sha256sum`, or `rclone serve sftp`) fall back to rclone
+        // downloading the file and hashing it locally: slower, but still a real check. rclone
+        // reports "hash unsupported" as an empty list (only logged), or as an error.
+        let line = match self.rc().call("operations/hashsum", params(false)).await {
+            Ok(v) if first_line(&v).is_some() => first_line(&v),
+            Ok(_) => None,
+            Err(e) if e.message.contains("hash unsupported") => None,
+            Err(e) => return Err(e),
+        };
+        let line = match line {
+            Some(l) => l,
+            None => {
+                let v = self.rc().call("operations/hashsum", params(true)).await?;
+                first_line(&v)
+                    .ok_or_else(|| TransportError::fatal(format!("no hash returned for {path}")))?
+            }
+        };
         let hex = line.split_whitespace().next().unwrap_or_default();
         let bytes = (0..hex.len())
             .step_by(2)
