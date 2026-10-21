@@ -41,12 +41,14 @@ flowchart TB
 ## Phase 1 — Personal MVP (replaces the terminal)
 
 - [ ] Tauri + Vue app with the 5-step wizard and the job list.
-- [ ] `crates/store` (SQLite + migrations), `crates/core` (Job, pipeline, state machine, Registry,
-      events), `specta` bindings.
+- [x] `crates/store` (SQLite + migrations), `crates/core` (Job, pipeline, state machine, Registry,
+      events), `crates/ipc` with `specta` types. The CLI drives the engine end to end.
+- [ ] TypeScript bindings generated for the desktop app (Wave 3).
 - [x] NFC and forbidden-character rules (`nfc`, `forbidden-chars`, `trailing`, `reserved`).
-- [ ] SFTP profile, automatic resume with backoff.
-- [ ] Nextcloud direct mode: LXC detection, owner `100033`, scan by path.
-- [ ] Engine as a background service and sleep inhibit.
+- [x] SFTP profile, automatic resume with backoff (crash-tested: `kill -9` mid-send, then resume).
+- [ ] Nextcloud direct mode: LXC detection, owner `100033`, scan by path. *Code and CLI
+      done; not yet run against the real server.*
+- [ ] Engine as a background service (Wave 3) and sleep inhibit (done in core).
 - [x] Decide and record the window ↔ service IPC ([ADR 0008](adr/0008-service-ipc.md)).
 
 **Gate:** send three real folders — a large work folder, a code repository and one with a comma in its name — without opening the terminal.

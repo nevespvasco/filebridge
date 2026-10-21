@@ -1,7 +1,7 @@
 //! The `Transport` contract: move bytes from a source to a destination, with progress, resume
 //! and hashing. No implementation code lives here.
 //!
-//! `specta::Type` derives are added in Phase 1, when these types first cross into the UI.
+//! Types that cross into the UI (through `crates/ipc`) derive `specta::Type`.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -50,10 +50,10 @@ bitflags::bitflags! {
 }
 
 /// Reference to a secret stored in the OS keyring. Never the secret itself.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeyringRef(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Backend {
     Local,
@@ -69,7 +69,7 @@ pub enum Backend {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct Destination {
     pub transport: String,
     pub backend: Backend,

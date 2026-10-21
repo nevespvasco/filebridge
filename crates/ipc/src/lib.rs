@@ -1,3 +1,197 @@
-//! Window/CLI to service IPC: request, response and event types
+//! Window/CLI ↔ `filebridge-service` IPC over a local socket (ADR 0008).
 //!
-//! Stub created in Phase 1 Step 0; implemented in Phase 1 (see docs/09-roadmap.md).
+//! Wire format: newline-delimited JSON. A client sends `{"id": n, "type": "...", ...}`; the
+//! server answers `{"kind": "response", "id": n, "ok": …}` or `{"kind": "response", "id": n,
+//! "err": {…}}`. After a `subscribe` request the same connection also carries
+//! `{"kind": "event", "event": …}` lines. Requests on one connection are handled concurrently.
+//!
+//! The socket is user-only: a Unix socket inside a 0700 directory
+//! (`$XDG_RUNTIME_DIR/filebridge/service.sock`), or a per-user named pipe on Windows.
+
+mod client;
+mod server;
+
+use std::path::PathBuf;
+
+use filebridge_core::{DecisionInput, Event, Profile, SendOptions};
+use interprocess::local_socket::{GenericFilePath, GenericNamespaced, Name, ToFsName, ToNsName};
+use serde::{Deserialize, Serialize};
+
+pub use client::Client;
+pub use server::{Extensions, bind, serve};
+
+/// Bumped on incompatible protocol changes; `ping` returns it.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Request {
+    Ping,
+    ListProfiles,
+    SaveProfile {
+        profile: Profile,
+    },
+    DeleteProfile {
+        id: String,
+    },
+    TestProfile {
+        id: String,
+    },
+    DetectNextcloud(DetectNextcloudRequest),
+    CreateJob {
+        sources: Vec<String>,
+        profile_id: String,
+        options: SendOptions,
+    },
+    Analyse {
+        job_id: String,
+    },
+    RuleCounts {
+        job_id: String,
+    },
+    Issues {
+        job_id: String,
+        rule: Option<String>,
+        after_id: Option<i64>,
+        limit: u32,
+    },
+    Decide {
+        job_id: String,
+        issue_id: i64,
+        decision: DecisionInput,
+    },
+    Start {
+        job_id: String,
+    },
+    Pause {
+        job_id: String,
+    },
+    Resume {
+        job_id: String,
+    },
+    Cancel {
+        job_id: String,
+    },
+    ListJobs {
+        limit: u32,
+        offset: u32,
+    },
+    Job {
+        job_id: String,
+    },
+    /// From now on, this connection also receives every engine [`Event`].
+    Subscribe,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct Envelope {
+    pub id: u64,
+    #[serde(flatten)]
+    pub request: Request,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum Outgoing {
+    Response {
+        id: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        ok: Option<serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        err: Option<ErrorBody>,
+    },
+    Event {
+        event: Event,
+    },
+}
+
+/// An error the service returns. `code` is stable (for the UI to branch on); `message` is
+/// for people.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, thiserror::Error)]
+#[error("{message}")]
+pub struct ErrorBody {
+    /// `pending_decisions`, `invalid_transition`, `not_found`, `invalid`, `unsupported`,
+    /// `internal`.
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct Pong {
+    pub protocol: u32,
+    pub version: String,
+}
+
+/// Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct DetectNextcloudRequest {
+    /// Name for the profile saved when detection succeeds.
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub key_file: Option<String>,
+    pub known_hosts_file: Option<String>,
+    pub nextcloud_user: String,
+    /// Folder inside the user's files that receives sends (`""` for the root).
+    pub folder: String,
+    pub ctid: Option<u32>,
+    pub install_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct DetectStepView {
+    pub id: String,
+    /// `ok`, `warn` or `fail`.
+    pub status: String,
+    pub message: String,
+    /// The commands the step ran, for the Details panel.
+    pub commands: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DetectNextcloudResponse {
+    pub steps: Vec<DetectStepView>,
+    /// Containers seen, when the choice was ambiguous.
+    pub containers: Vec<String>,
+    /// The saved profile, when every step passed.
+    pub profile: Option<Profile>,
+}
+
+/// Where the service listens: a socket file, or a named pipe on Windows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Endpoint {
+    Path(PathBuf),
+    Pipe(String),
+}
+
+impl Endpoint {
+    /// The per-user default.
+    pub fn default_for_user() -> Self {
+        if cfg!(windows) {
+            let user = std::env::var("USERNAME").unwrap_or_else(|_| "user".into());
+            return Self::Pipe(format!("filebridge-{user}"));
+        }
+        let dir = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
+                std::env::temp_dir().join(format!("filebridge-{user}"))
+            });
+        Self::Path(dir.join("filebridge").join("service.sock"))
+    }
+
+    pub(crate) fn name(&self) -> std::io::Result<Name<'static>> {
+        match self {
+            Self::Path(p) => p.clone().to_fs_name::<GenericFilePath>(),
+            Self::Pipe(n) => n.clone().to_ns_name::<GenericNamespaced>(),
+        }
+    }
+
+    pub fn display(&self) -> String {
+        match self {
+            Self::Path(p) => p.display().to_string(),
+            Self::Pipe(n) => format!(r"\\.\pipe\{n}"),
+        }
+    }
+}

@@ -1,34 +1,47 @@
 # crates/core
 
-The heart of the app: **Job, pipeline, states, Registry, progress events.** **Lands in:** Phase 1.
+The heart of the app: **jobs, the 6-stage pipeline, the state machine, the `Registry` and typed
+progress events.** **Landed in:** Phase 1 (Wave 2).
 
-## Responsibility
-- `Job` and `JobKind` (`Transfer`, `Repair`).
-- The 6-stage pipeline: source & destination → analyse → fix names → transfer → verify → update tool.
-- Job state machine, persistence of every transition via `store`, resume on startup.
-- Retry with backoff (30 s → … → 15 min cap, unlimited).
-- `Registry` of transports, integrations and general name rules.
-- Typed progress events (`specta::Type`) consumed by the UI and CLI.
-- Sleep inhibitor lifecycle (via a small per-OS module).
+## Public API (`Engine`)
+| Area | Methods |
+|---|---|
+| Profiles | `save_profile` (checks plugins and caps), `get_profile`, `list_profiles`, `delete_profile`, `test_profile` |
+| Jobs | `create_job`, `job`, `list_jobs`, `wait` |
+| Stages 2–3 | `analyse` (scan + rules + preflight → `AnalysisSummary`), `rule_counts`, `issues`, `decide_issue` |
+| Lifecycle | `start`, `pause`, `resume`, `cancel`, `resume_unfinished` (on startup) |
+| Events | `subscribe` → `broadcast::Receiver<Event>` |
 
-## Planned public API (draft)
-```rust
-pub struct Engine { /* registry, store, secrets, event bus */ }
-impl Engine {
-    pub async fn create_job(&self, sources: Vec<PathBuf>, profile: ProfileId) -> Result<JobId>;
-    pub async fn analyse(&self, job: JobId) -> Result<()>;
-    pub async fn decide_issue(&self, issue: IssueId, d: Decision) -> Result<()>;
-    pub async fn start(&self, job: JobId, opts: SendOptions) -> Result<()>;
-    pub async fn pause(&self, job: JobId) -> Result<()>;
-    pub async fn resume(&self, job: JobId) -> Result<()>;
-    pub async fn cancel(&self, job: JobId) -> Result<()>;
-    pub async fn verify(&self, job: JobId) -> Result<()>;
-    pub fn subscribe(&self) -> broadcast::Receiver<Event>;
-}
-```
+All types that cross into the UI derive `specta::Type`.
+
+## How a job runs
+- **Analysis.** Each source root is itself an entry, so `/home/u/Acme` lands as `Acme/…`.
+  Names go through the general rules and the integration's rules. Two more issue kinds come
+  from core itself: `collision` (two entries would get the same destination path; proposes
+  ` (2)`) and `encoding` (an undecodable name with no fix). Both need a decision.
+- **Start.** Decisions are applied to the manifest: final paths are recomputed, skipped
+  subtrees are marked, and duplicate final paths are refused.
+- **Transfer.** Files go in batches per source root. Each file the transport reports finished
+  is saved within 0.5 s, so a crash never resends what already arrived. Retryable failures back
+  off 30 s → 1 min → … → 15 min (±10 %) forever; a fatal per-file error marks that file failed
+  and the job finishes with warnings.
+- **Verify** (when `SendOptions::verify`). SHA-256 of the source is compared with
+  `Transport::hash`. Mismatched or missing files are resent, for at most `max_verify_rounds`
+  rounds. A destination that can't hash at all gives a warning, not resends.
+- **Integrate.** `Integration::after_transfer` receives exactly the files sent. Problems turn
+  into warnings; a failed tool update doesn't hide that the files arrived.
+- Every state change is validated (`JobState::can_go_to`), persisted, logged as an event and
+  broadcast. A sleep inhibitor is held while a runner works (`inhibit.rs`: logind on Linux,
+  `caffeinate` on macOS, `SetThreadExecutionState` on Windows; the Windows code is untested).
 
 ## Allowed dependencies
-`transport-api`, `integration-api`, `names`, `scanner`, `store`, `secrets`.
-**Never** a concrete `transport-*` / `integration-*` crate.
+`transport-api`, `integration-api`, `names`, `scanner`, `store`. **Never** a concrete
+`transport-*` / `integration-*` crate.
+
+## Tests
+`cargo test -p filebridge-core`: unit tests, plus `tests/engine.rs`, which runs end to end
+with a local-copy fake transport. It covers NFD names, collisions, retries, fatal file errors,
+verify-and-resend, an unhashable destination, pause/resume mid-batch, resume after a crash,
+integration problems and cancel.
 
 See [docs/02-architecture.md](../../docs/02-architecture.md) and [docs/03-extension-contracts.md](../../docs/03-extension-contracts.md).

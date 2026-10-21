@@ -1,6 +1,6 @@
 [package]
 name = "filebridge-cli"
-description = "filebridge command line (Phase 0: rename-in-transit benchmark)"
+description = "filebridge command line: the engine without a UI (servers, scripts)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,11 +12,15 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-clap.workspace = true
+clap = { workspace = true, features = ["env"] }
+filebridge-core.workspace = true
+filebridge-integration-api.workspace = true
+filebridge-integration-nextcloud.workspace = true
 filebridge-names.workspace = true
 filebridge-scanner.workspace = true
 filebridge-transport-api.workspace = true
 filebridge-transport-rclone.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "signal"] }
+tracing-subscriber.workspace = true

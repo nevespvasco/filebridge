@@ -153,6 +153,16 @@ impl Store {
         .await
     }
 
+    /// Drops a job's manifest, before re-running the analysis.
+    pub async fn clear_manifest(&self, job_id: &str) -> Result<()> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            c.execute("DELETE FROM manifest_entries WHERE job_id = ?1", [&job_id])?;
+            Ok(())
+        })
+        .await
+    }
+
     /// Stores the stage-3 result: `(idx, destination path)`.
     pub async fn set_dest_paths(
         &self,
@@ -452,6 +462,9 @@ mod tests {
         assert_eq!(second[0].entry.idx, 10);
         let last = store.entries_page(&job, Some(19), 10).await.unwrap();
         assert_eq!(last.len(), 5);
+
+        store.clear_manifest(&job).await.unwrap();
+        assert!(store.entries_page(&job, None, 10).await.unwrap().is_empty());
     }
 
     #[tokio::test]
