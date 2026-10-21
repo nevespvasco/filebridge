@@ -82,3 +82,7 @@ the same preview, renames **on the destination**, then runs the integration upda
 Renaming per file with rclone may be slow for hundreds of thousands of files. Phase 0 measures it.
 **Plan B:** send with original names to a temporary folder, rename in batch at the destination,
 then move into place. See [09 — Roadmap](09-roadmap.md) and [10 — Risks](10-risks-and-open-decisions.md).
+
+Phase 0 result so far (simulated): plan A keeps up with a plain `sync/copy`, and plan B is slower and
+needed extra care on destinations that treat NFD and NFC as the same name. See
+[ADR 0007](adr/0007-rename-in-transit-strategy.md) (Proposed).

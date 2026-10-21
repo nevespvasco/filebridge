@@ -1,0 +1,78 @@
+{
+  "destination": "sftp",
+  "rclone": "v1.75.2",
+  "runs": [
+    {
+      "bytes": 335544320,
+      "concurrency": 8,
+      "failed": 0,
+      "files": 40,
+      "files_per_sec": 49.477651384602204,
+      "mb_per_sec": 415.0486222260851,
+      "missing": 0,
+      "mode": "baseline",
+      "seconds": 0.808445811,
+      "stages": [
+        [
+          "copy",
+          0.80843041
+        ]
+      ],
+      "unexpected": 0
+    },
+    {
+      "bytes": 335544320,
+      "concurrency": 8,
+      "failed": 0,
+      "files": 40,
+      "files_per_sec": 54.70997901605594,
+      "mb_per_sec": 458.940567653919,
+      "missing": 0,
+      "mode": "plan-a",
+      "seconds": 0.731128045,
+      "stages": [
+        [
+          "copy",
+          0.731113955
+        ]
+      ],
+      "unexpected": 0
+    },
+    {
+      "bytes": 335544320,
+      "concurrency": 8,
+      "failed": 0,
+      "files": 40,
+      "files_per_sec": 32.63532210201342,
+      "mb_per_sec": 273.76492406752664,
+      "missing": 0,
+      "mode": "plan-b",
+      "seconds": 1.225665856,
+      "stages": [
+        [
+          "copy",
+          1.01047756
+        ],
+        [
+          "rename (12 nodes)",
+          0.011031282999999892
+        ],
+        [
+          "move-into-place",
+          0.20412374300000002
+        ]
+      ],
+      "unexpected": 0
+    }
+  ],
+  "source": {
+    "bytes": 335544320,
+    "dirs": 4,
+    "file_paths_changed": 16,
+    "files": 40,
+    "nfc_renamed_dirs": 1,
+    "nfc_renamed_files": 11,
+    "non_utf8_skipped": 0
+  },
+  "started_at_unix": 1792603756
+}
