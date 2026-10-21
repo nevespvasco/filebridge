@@ -7,3 +7,26 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+filebridge-integration-api.workspace = true
+filebridge-names.workspace = true
+filebridge-scanner.workspace = true
+filebridge-store.workspace = true
+filebridge-transport-api.workspace = true
+getrandom.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.11"
+specta = { workspace = true, features = ["derive", "serde_json"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "fs", "process"] }
+tokio-util = "0.7"
+tracing.workspace = true
+uuid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Power"] }
+
+[dev-dependencies]
+async-trait.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
