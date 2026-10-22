@@ -6,6 +6,9 @@
 - Spawn and supervise the `rclone rcd` sidecar (localhost, random port, per-start rc user and
   password passed via environment, in-memory config, `--no-unicode-normalization`), restart it if
   it dies (restart: Phase 1).
+- SFTP host keys are always checked against `known_hosts`. rclone is told to negotiate only the key
+  types `known_hosts` holds for the host (`host_key_algorithms`, read with `russh`), since Go's SSH
+  client otherwise fails with "key mismatch" when the server prefers a type that is not there.
 - Configure backends in memory (`config/create` or connection strings) — local, SFTP, WebDAV
   (vendor `nextcloud`). No `rclone.conf` with secrets on disk.
 - `transfer`: copy each item to its **mapped destination name** (`operations/copyfile` per file —
@@ -19,6 +22,6 @@
 SFTP without root → handled by the integration.
 
 ## Allowed dependencies
-`transport-api`, `reqwest`, `tokio`, `serde_json`.
+`transport-api`, `reqwest`, `tokio`, `serde_json`, `russh` (known_hosts parsing only).
 
 See [ADR 0002](../../docs/adr/0002-rclone-behind-transport.md).
