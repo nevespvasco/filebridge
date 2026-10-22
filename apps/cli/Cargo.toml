@@ -24,5 +24,6 @@ filebridge-transport-api.workspace = true
 filebridge-transport-rclone.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "signal"] }
 tracing-subscriber.workspace = true

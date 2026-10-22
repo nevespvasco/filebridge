@@ -325,8 +325,8 @@ async fn run_mode(
     })
 }
 
-/// Sends the source with a fresh Engine (its database in the temp directory, removed after) and
-/// reports progress into `sink`. Name decisions that would block the send are skipped.
+/// Sends the source with a fresh Engine (its database in a private temp directory, removed on
+/// every return path) and reports progress into `sink`. Name decisions that would block the send are skipped.
 async fn through_engine(
     rcd: &Arc<Rcd>,
     dest: &Destination,
@@ -334,8 +334,11 @@ async fn through_engine(
     stamp: u64,
     sink: &ProgressSink,
 ) -> Result<(usize, u64, usize, BTreeSet<String>)> {
-    let db = std::env::temp_dir().join(format!("filebridge-bench-{stamp}.db"));
-    let store = Store::open(&db).context("open the bench database")?;
+    let tmp = tempfile::Builder::new()
+        .prefix(&format!("filebridge-bench-{stamp}-"))
+        .tempdir()
+        .context("create the bench database directory")?;
+    let store = Store::open(&tmp.path().join("bench.db")).context("open the bench database")?;
     let mut registry = Registry::new();
     registry.add_transport(Arc::new(RcloneTransport::new(
         rcd.clone(),
@@ -422,7 +425,6 @@ async fn through_engine(
         }
     }
     drop(engine);
-    let _ = std::fs::remove_file(&db);
     Ok((
         summary.counts.files as usize,
         summary.counts.bytes_done,

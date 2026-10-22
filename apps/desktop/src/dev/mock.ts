@@ -7,6 +7,7 @@
 // with the command's own answer type (`Handlers`), and which operation is allowed in which job
 // state comes from the engine's table (`JOB_OPERATIONS`), not from a copy.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { setMockPicker, type PickOptions } from "@/lib/platform";
 import { emit } from "@tauri-apps/api/event";
 import {
   JOB_OPERATIONS,
@@ -285,7 +286,7 @@ const handlers: Handlers = {
       { id: "owner", status: "ok", message: "100033:100033", commands: ["stat -c %u:%g /srv/ncdata/demo/files"] },
     );
     // Built from the request, so it also works when the mock starts empty (VITE_MOCK_EMPTY).
-    const folder = req.folder.replace(/^\/+|\/+$/g, "");
+    const folder = req.folder.split("/").filter(Boolean).join("/");
     const files = `/srv/ncdata/${req.nextcloud_user}/files`;
     const profile: Profile_Serialize = {
       id: `p-${Math.random().toString(36).slice(2, 8)}`,
@@ -427,7 +428,45 @@ async function handle(cmd: string, a: Args): Promise<unknown> {
   throw fail("unsupported", `mock: ${cmd}`);
 }
 
+/** Asks for a path in a page dialog, with an example: a browser can't see real paths. */
+function pickInPage(opts: PickOptions): Promise<string[]> {
+  const example = opts.directory ? "/home/demo/Fotos" : "/home/demo/Documentos/relatório.pdf";
+  const dialog = document.createElement("dialog");
+  dialog.className = "card";
+  const form = document.createElement("form");
+  form.method = "dialog";
+  const label = document.createElement("label");
+  label.textContent = `Demo mode: type the ${opts.directory ? "folder" : "file"} path (the real app opens the system picker)`;
+  const input = document.createElement("input");
+  input.value = example;
+  input.style.cssText = "display:block;width:100%;margin:.5rem 0";
+  label.append(input);
+  // Not a submit button, so Enter in the field means OK.
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "btn";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => dialog.close("cancel"));
+  const ok = document.createElement("button");
+  ok.className = "btn btn-primary";
+  ok.value = "ok";
+  ok.textContent = "OK";
+  form.append(label, cancel, " ", ok);
+  dialog.append(form);
+  document.body.append(dialog);
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      const path = dialog.returnValue === "ok" ? input.value.trim() : "";
+      dialog.remove();
+      resolve(path ? [path] : []);
+    });
+    dialog.showModal();
+    input.select();
+  });
+}
+
 export function installMock() {
+  setMockPicker(pickInPage);
   mockWindows("main");
   // Cloned, like real IPC answers: the UI must never share objects with the fake service.
   mockIPC(async (cmd, payload) => structuredClone(await handle(cmd, (payload ?? {}) as Args)), { shouldMockEvents: true });

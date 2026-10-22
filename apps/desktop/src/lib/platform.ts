@@ -10,15 +10,17 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
 
+export type PickOptions = { directory: boolean; multiple?: boolean; title?: string };
+
+/** Mock mode only: a browser can't open the OS picker, so `src/dev/mock.ts` puts one here. */
+let mockPicker: ((opts: PickOptions) => Promise<string[]>) | null = null;
+export function setMockPicker(picker: (opts: PickOptions) => Promise<string[]>) {
+  mockPicker = picker;
+}
+
 /** Native picker. Returns absolute paths (empty when cancelled). */
-export async function pickPaths(opts: { directory: boolean; multiple?: boolean; title?: string }): Promise<string[]> {
-  if (isMock) {
-    // A browser can't open the OS picker or see real paths: ask for one, with an example.
-    const example = opts.directory ? "/home/demo/Fotos" : "/home/demo/Documentos/relatório.pdf";
-    const what = opts.directory ? "folder" : "file";
-    const answer = window.prompt(`Demo mode: type the ${what} path (the real app opens the system picker)`, example);
-    return answer?.trim() ? [answer.trim()] : [];
-  }
+export async function pickPaths(opts: PickOptions): Promise<string[]> {
+  if (isMock) return mockPicker ? mockPicker(opts) : [];
   const picked = await open({
     directory: opts.directory,
     multiple: opts.multiple ?? true,
