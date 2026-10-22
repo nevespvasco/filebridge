@@ -1,5 +1,7 @@
-//! Scratch check (not committed): per-file `hash` and `hash_many` give the same answers for
-//! the files `verify_bench` sent. Env as verify_bench, plus BENCH_ROOT of a finished run.
+//! Check: per-file `Transport::hash` and `Transport::hash_many` give the same answer for every
+//! file a `verify_bench` run sent (BENCH_ROOT of that run, same env), plus a file and a folder
+//! that aren't there, and how long each takes. Change or delete a few files on the server first
+//! to compare mismatches and `NotFound` too.
 
 use std::sync::Arc;
 use std::time::Instant;
