@@ -1,5 +1,11 @@
-//! Scratch benchmark (not committed): send N small files to a WebDAV server with verify on and
-//! time the verify stage. Env: BENCH_URL, BENCH_USER, BENCH_PASS, BENCH_ROOT, BENCH_FILES.
+//! Benchmark: sends BENCH_FILES small files (most in one folder, a few in subfolders, names
+//! with glob characters) to a Nextcloud over WebDAV with verify on, through the real engine and
+//! rclone, and times the verify stage. The password stays in memory, never in the keyring.
+//!
+//! Env: BENCH_URL (`…/remote.php/dav/files/<user>/`), BENCH_USER, BENCH_PASS, BENCH_ROOT (a
+//! folder under the user's files), BENCH_FILES. Use a throwaway server and account, e.g.
+//! `docker run -p 127.0.0.1:8099:80 -e SQLITE_DATABASE=nc -e NEXTCLOUD_ADMIN_USER=… \
+//! -e NEXTCLOUD_ADMIN_PASSWORD=… nextcloud:31-apache`. See crates/transport-rclone/README.md.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
