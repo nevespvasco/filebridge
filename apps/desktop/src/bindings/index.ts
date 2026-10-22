@@ -101,15 +101,32 @@ export const commands = {
 	 */
 	removeAccess: (profileId: string) => typedError<AccessReport_Serialize, ErrorBody>(__TAURI_INVOKE("remove_access", { profileId })),
 	/**
+	 *  Connects to an SSH server only far enough to read its host key (never signs in) and
+	 *  says whether `known_hosts_file` (default `~/.ssh/known_hosts`) knows it, has no key
+	 *  for the host, or has another one. Writes nothing.
+	 */
+	scanHostKey: (host: string, port: number, knownHostsFile: string | null) => typedError<HostKeyView_Serialize, ErrorBody>(__TAURI_INVOKE("scan_host_key", { host, port, knownHostsFile })),
+	/**
+	 *  Adds the server's host key to the known_hosts file once the user has checked its
+	 *  `fingerprint`: only when the host has no key there yet and the server still
+	 *  presents that key. A changed key is refused (`host_key_changed`), never replaced.
+	 */
+	trustHostKey: (host: string, port: number, knownHostsFile: string | null, fingerprint: string) => typedError<HostKeyView_Serialize, ErrorBody>(__TAURI_INVOKE("trust_host_key", { host, port, knownHostsFile, fingerprint })),
+	/**
 	 *  Stores the profile's password in the OS keyring (`None` removes it); the profile
 	 *  keeps only its reference (ADR 0004). Never logged, never in a Details panel.
 	 */
-	setProfilePassword: (profileId: string, password: string | null) => typedError<Profile_Serialize, ErrorBody>(__TAURI_INVOKE("set_profile_password", { profileId, password })),
+	setProfilePassword: (profileId: string, password: Password | null) => typedError<Profile_Serialize, ErrorBody>(__TAURI_INVOKE("set_profile_password", { profileId, password })),
 	/**
 	 *  A draft "Repair destination" job for a folder of a profile (`None` = its root):
 	 *  `analyse`, the decisions and `start` then work on it like on a send.
 	 */
 	createRepairJob: (profileId: string, dir: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_repair_job", { profileId, dir })),
+	/**
+	 *  How many entries a Repair job would rename with its decisions as they are: what
+	 *  the confirmation counts. Refused while a decision is pending.
+	 */
+	plannedRenames: (jobId: string) => typedError<number, ErrorBody>(__TAURI_INVOKE("planned_renames", { jobId })),
 	/**  What each chosen source is and what is wrong with it, without reading contents. */
 	inspectSources: (paths: string[]) => typedError<SourceInfo_Serialize[], ErrorBody>(__TAURI_INVOKE("inspect_sources", { paths })),
 	/**  One page of a job's files, filtered and sorted (at most 500). */
@@ -129,6 +146,11 @@ export const commands = {
 	saveSettings: (settings: AppSettings_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("save_settings", { settings })),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
 	serviceEndpoint: () => __TAURI_INVOKE<string>("service_endpoint"),
+	/**
+	 *  Whether an older copy engine is being replaced right now (`ConnectionChanged` says when it
+	 *  starts and ends; this covers one that started before the window listened).
+	 */
+	serviceReplacing: () => __TAURI_INVOKE<boolean>("service_replacing"),
 	/**  Translated tray menu labels; the strings live in the UI's i18n files. */
 	setTrayLabels: (show: string, quit: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_tray_labels", { show, quit })),
 	platform: () => __TAURI_INVOKE<Platform>("platform"),
@@ -153,7 +175,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 19 as const;
+export const PROTOCOL_VERSION = 21 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -371,6 +393,11 @@ export type CheckView = {
  */
 export type ConnectionChanged = {
 	connected: boolean,
+	/**
+	 *  An older service is being stopped and replaced: every command waits until it is done
+	 *  (up to [`STOP_TIMEOUT`] plus [`START_TIMEOUT`]).
+	 */
+	replacing: boolean,
 	/**  Socket path or pipe name, for the Details panel. */
 	endpoint: string,
 };
@@ -729,6 +756,57 @@ export type HashView = {
 	hex: string,
 };
 
+/**  Where an SSH server's host key stands in the `known_hosts` file filebridge uses. */
+export type HostKeyStatus = 
+/**  The file holds this key for the host: connections go through. */
+"known" | 
+/**  The file holds no key for the host: the user may trust this one (`trust_host_key`). */
+"unknown" | 
+/**
+ *  The file holds another key for the host: the server changed or the connection is being
+ *  intercepted. Never trusted from the app.
+ */
+"changed";
+
+/**  An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015). */
+export type HostKeyView = HostKeyView_Serialize | HostKeyView_Deserialize;
+
+/**  An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015). */
+export type HostKeyView_Deserialize = {
+	host: string,
+	port: number,
+	/**  The file checked, and the one `trust_host_key` adds to. */
+	known_hosts_file: string,
+	status: HostKeyStatus,
+	/**
+	 *  The key type the server presented, e.g. `ssh-ed25519`. `None` only when `changed` and the
+	 *  server offered none of the key types on record.
+	 */
+	key_type?: string | null,
+	/**  `SHA256:…`, as `ssh` shows it; what the user compares and confirms. */
+	fingerprint?: string | null,
+	/**  For `changed`: the line of `known_hosts_file` with the key on record. */
+	line?: number | null,
+};
+
+/**  An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015). */
+export type HostKeyView_Serialize = {
+	host: string,
+	port: number,
+	/**  The file checked, and the one `trust_host_key` adds to. */
+	known_hosts_file: string,
+	status: HostKeyStatus,
+	/**
+	 *  The key type the server presented, e.g. `ssh-ed25519`. `None` only when `changed` and the
+	 *  server offered none of the key types on record.
+	 */
+	key_type: string | null,
+	/**  `SHA256:…`, as `ssh` shows it; what the user compares and confirms. */
+	fingerprint: string | null,
+	/**  For `changed`: the line of `known_hosts_file` with the key on record. */
+	line: number | null,
+};
+
 /**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */
 export type InFlightView = InFlightView_Serialize | InFlightView_Deserialize;
 
@@ -935,14 +1013,24 @@ export type LogLevel = "info" | "warn" | "error";
 export type NextcloudWebdavRequest = {
 	/**  Name for the profile saved when every check passes. */
 	name: string,
-	/**  What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud. */
+	/**
+	 *  What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud
+	 *  (whose `…/dav/files/<id>/` gives the user's id when the login is an email).
+	 */
 	server: string,
+	/**  The login the app password belongs to. */
 	user: string,
 	/**  A Nextcloud app password (Settings → Security), never the account password. */
-	app_password: string,
+	app_password: Password,
 	/**  Folder inside the user's files that receives sends (`""` for the root). */
 	folder: string,
 };
+
+/**
+ *  A password on its way to the OS keyring. On the wire it is a plain string; its `Debug` never
+ *  shows it, so neither does any request, envelope or log line that carries one.
+ */
+export type Password = string;
 
 /**  Where the app runs, for what the UI shows (no tray, service or drag & drop on a phone). */
 export type Platform = "desktop" | "android" | "ios";
@@ -1115,6 +1203,11 @@ export type RuleCount = {
 	rule: string,
 	total: number,
 	pending: number,
+	/**
+	 *  Pending issues with no proposal to accept (an undecodable name, a path no cut fits):
+	 *  "Accept all" can't apply while there are any.
+	 */
+	no_proposal: number,
 };
 
 /**  Per-job choices made in step 4 of the wizard. */
@@ -1321,10 +1414,14 @@ export type TargetSpec = TargetSpec_Serialize | TargetSpec_Deserialize;
 export type TargetSpec_Deserialize = {
 	family: Family,
 	case_sensitive: boolean,
-	/**  Longest name the destination takes, in UTF-8 bytes. Default 255. */
+	/**
+	 *  Longest name the destination takes, in UTF-8 bytes (UTF-16 units on Windows). Default
+	 *  255; 16 to 4096.
+	 */
 	max_name_bytes?: number | null,
 	/**
-	 *  Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+	 *  Longest path under the destination's root, in UTF-8 bytes (UTF-16 units on Windows), no
+	 *  shorter than the longest name. Default 260 on Windows (its
 	 *  classic limit), 4096 elsewhere.
 	 */
 	max_path_bytes?: number | null,
@@ -1333,10 +1430,14 @@ export type TargetSpec_Deserialize = {
 export type TargetSpec_Serialize = {
 	family: Family,
 	case_sensitive: boolean,
-	/**  Longest name the destination takes, in UTF-8 bytes. Default 255. */
+	/**
+	 *  Longest name the destination takes, in UTF-8 bytes (UTF-16 units on Windows). Default
+	 *  255; 16 to 4096.
+	 */
 	max_name_bytes: number | null,
 	/**
-	 *  Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+	 *  Longest path under the destination's root, in UTF-8 bytes (UTF-16 units on Windows), no
+	 *  shorter than the longest name. Default 260 on Windows (its
 	 *  classic limit), 4096 elsewhere.
 	 */
 	max_path_bytes: number | null,

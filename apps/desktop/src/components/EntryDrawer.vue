@@ -8,12 +8,16 @@ import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { CATEGORY_ICON, categoryColor } from "@/lib/categories";
 import { canReveal, copyText, revealInFileManager } from "@/lib/platform";
+import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import BytesDiff from "./BytesDiff.vue";
 import Drawer from "./Drawer.vue";
 import EntryStatusBadge from "./EntryStatusBadge.vue";
 
 const props = defineProps<{ jobId: string; idx: number | null }>();
+const jobs = useJobs();
+/** A Repair job's entries were found at the destination: there is no local file to show. */
+const remote = computed(() => jobs.byId[props.jobId]?.kind === "repair");
 const emit = defineEmits<{ close: [] }>();
 const { t, te } = useI18n();
 const fmt = useFmt();
@@ -168,7 +172,7 @@ async function reveal() {
       </section>
 
       <p v-if="copied" class="small ok-text" role="status">{{ $t("entry.copied") }}</p>
-      <button v-if="canReveal()" class="btn" @click="reveal"><AppIcon name="reveal" /> {{ $t("entry.reveal") }}</button>
+      <button v-if="!remote && canReveal()" class="btn" @click="reveal"><AppIcon name="reveal" /> {{ $t("entry.reveal") }}</button>
     </template>
   </Drawer>
 </template>

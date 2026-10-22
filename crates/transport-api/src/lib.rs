@@ -92,6 +92,37 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeyringRef(pub String);
 
+/// A secret's value, read for one use: wiped from memory when dropped, never printed.
+pub struct SecretValue(zeroize::Zeroizing<String>);
+
+impl SecretValue {
+    pub fn new(value: String) -> Self {
+        Self(zeroize::Zeroizing::new(value))
+    }
+
+    /// The value itself, for the one place that needs it (a connection, a key parser).
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("***")
+    }
+}
+
+/// Turns a [`KeyringRef`] into its secret. Plugins never touch the keyring (docs/03): the host
+/// implements this over the OS keyring and hands it to the plugins that sign in with a secret.
+///
+/// Errors: nothing stored is `Auth` (the user sets it again); a keyring that can't be reached
+/// (locked, absent, not answering) is `Transient`, so a send waits and tries again instead of
+/// failing as if the password were wrong.
+#[async_trait]
+pub trait SecretResolver: Send + Sync {
+    async fn resolve(&self, r: &KeyringRef) -> Result<SecretValue>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Backend {
@@ -387,16 +418,24 @@ pub trait Transport: Send + Sync {
             "listing folders is not supported by this transport",
         ))
     }
-    /// Renames the file or folder `from` to `to`, both already under the destination's root and
-    /// normally in the same folder. Never overwrites: an entry named exactly `to` is an error.
-    /// Safe on servers that store NFD and NFC (or two cases) as one name, where `from` and `to`
-    /// may be "the same" entry: adapters go through an intermediate name. `NotFound` if `from`
-    /// isn't there. Adapters that implement it advertise [`TransportCaps::MOVE`].
-    async fn move_path(
+    /// Renames one entry at the destination, safely ([`MoveRequest`]): through the request's
+    /// intermediate name (servers that store NFD and NFC, or two cases, as one name would see
+    /// "unchanged" and drop the source), never onto an entry that answers to `to`'s name exactly,
+    /// in another normalisation or in another case, and checked afterwards. A move cut short
+    /// between its two hops is finished by the same request. `NotFound` when neither `from` nor
+    /// the intermediate is there and `to` isn't the moved entry. Adapters that implement
+    /// [`Transport::move_unchecked`] get this for free and advertise [`TransportCaps::MOVE`].
+    async fn move_path(&self, dest: &Destination, req: &MoveRequest) -> Result<()> {
+        checked_move(self, dest, req).await
+    }
+    /// One server-side rename of `from` (a folder when `is_dir`) to `to`, with **no** checks: it
+    /// may overwrite or merge. Only [`Transport::move_path`] calls it, after its own checks.
+    async fn move_unchecked(
         &self,
         _dest: &Destination,
         _from: &RemotePath,
         _to: &RemotePath,
+        _is_dir: bool,
     ) -> Result<()> {
         Err(TransportError::unsupported(
             "renaming at the destination is not supported by this transport",
@@ -406,6 +445,152 @@ pub trait Transport: Send + Sync {
     /// including ones already running; `None` lifts the limit. Default: no limit to apply.
     async fn set_bandwidth_limit(&self, _bytes_per_sec: Option<u64>) -> Result<()> {
         Ok(())
+    }
+}
+
+/// One rename at the destination ([`Transport::move_path`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MoveRequest {
+    pub from: RemotePath,
+    /// Normally in `from`'s folder.
+    pub to: RemotePath,
+    /// The intermediate name, in `from`'s folder. Deterministic (the caller derives it from its
+    /// job and entry), so a move cut short between its hops is found and finished by asking
+    /// again.
+    pub via: RemotePath,
+    /// What `from` was when the caller listed it. A move asked again after both `from` and
+    /// `via` are gone is done only if `to` is this entry: same kind, and for a file the same
+    /// size and modification time (when known).
+    pub is_dir: bool,
+    pub size: Option<u64>,
+    pub mtime: Option<i64>,
+}
+
+/// Whether `e` is the entry a move request was about: same kind, and for a file the same size
+/// and modification time, where both sides know them.
+fn is_moved(e: &RemoteEntry, is_dir: bool, size: Option<u64>, mtime: Option<i64>) -> bool {
+    fn same<T: PartialEq>(a: Option<T>, b: Option<T>) -> bool {
+        a.is_none() || b.is_none() || a == b
+    }
+    e.is_dir == is_dir && (is_dir || (same(e.size, size) && same(e.mtime, mtime)))
+}
+
+/// [`Transport::move_path`]'s promise, over [`Transport::list`] and
+/// [`Transport::move_unchecked`]: the folders are listed before the first hop, again right
+/// before the second, and once more to confirm.
+pub async fn checked_move<T: Transport + ?Sized>(
+    t: &T,
+    dest: &Destination,
+    req: &MoveRequest,
+) -> Result<()> {
+    let MoveRequest { from, to, via, .. } = req;
+    if via.parent() != from.parent() || via == from || via == to {
+        return Err(TransportError::fatal(format!(
+            "{via} can't be the intermediate name of {from}"
+        )));
+    }
+    let list = |dir: Option<&str>| {
+        let dir = dir.map(RemotePath::new).transpose();
+        async move {
+            match t.list(dest, dir?.as_ref(), false).await {
+                Err(e) if e.kind == ErrorKind::NotFound => Ok(Vec::new()),
+                other => other,
+            }
+        }
+    };
+    let find = |l: &[RemoteEntry], name: &str| l.iter().find(|e| e.name == name).cloned();
+    // Another entry answering to `to`'s name: exactly, in another normalisation or case.
+    let to_key = filebridge_names::loose_key(to.file_name());
+    let clash = |l: &[RemoteEntry]| {
+        l.iter()
+            .find(|e| {
+                e.name != from.file_name()
+                    && e.name != via.file_name()
+                    && filebridge_names::loose_key(&e.name) == to_key
+            })
+            .map(|e| e.name.clone())
+    };
+    let taken = |by: String| TransportError::fatal(format!("{to} is taken by {by:?}"));
+
+    let here = list(from.parent()).await?;
+    if from == to {
+        return match find(&here, from.file_name()) {
+            Some(_) => Ok(()),
+            None => Err(TransportError::not_found(format!("{from} is not there"))),
+        };
+    }
+    let there = if to.parent() == from.parent() {
+        here.clone()
+    } else {
+        list(to.parent()).await?
+    };
+    let moving = match (find(&here, from.file_name()), find(&here, via.file_name())) {
+        (Some(_), Some(_)) => {
+            return Err(TransportError::fatal(format!(
+                "{via} is already there, from a rename cut short; rename or remove it by hand"
+            )));
+        }
+        (None, None) => {
+            // Nothing left to move: done before, if `to` is the entry that was asked for.
+            return match find(&there, to.file_name()) {
+                Some(e) if is_moved(&e, req.is_dir, req.size, req.mtime) => Ok(()),
+                _ => Err(TransportError::not_found(format!("{from} is not there"))),
+            };
+        }
+        (Some(source), None) => {
+            if let Some(by) = clash(&there) {
+                return Err(taken(by));
+            }
+            t.move_unchecked(dest, from, via, source.is_dir).await?;
+            source
+        }
+        // Cut short between the hops: finish it.
+        (None, Some(mid)) => mid,
+    };
+
+    // Right before the second hop: something may have taken the name meanwhile.
+    if let Some(by) = clash(&list(to.parent()).await?) {
+        return Err(
+            match t.move_unchecked(dest, via, from, moving.is_dir).await {
+                Ok(()) => taken(by),
+                Err(e) => TransportError::fatal(format!(
+                    "{to} is taken by {by:?}, and {from} is left as {via}: {e}"
+                )),
+            },
+        );
+    }
+    if let Err(e) = t.move_unchecked(dest, via, to, moving.is_dir).await {
+        if e.is_retryable() {
+            let left = format!(
+                "{}; {from} is left as {via} until this is retried",
+                e.message
+            );
+            return Err(TransportError::new(e.kind, left));
+        }
+        // It won't work later either: put the entry back under its old name.
+        return Err(
+            match t.move_unchecked(dest, via, from, moving.is_dir).await {
+                Ok(()) => e,
+                Err(back) => TransportError::new(
+                    e.kind,
+                    format!("{}; {from} is left as {via}: {back}", e.message),
+                ),
+            },
+        );
+    }
+
+    let after = list(to.parent()).await?;
+    let arrived = find(&after, to.file_name()).or_else(|| {
+        after
+            .iter()
+            .find(|e| filebridge_names::loose_key(&e.name) == to_key)
+            .cloned()
+    });
+    match arrived {
+        Some(e) if is_moved(&e, moving.is_dir, moving.size, None) => Ok(()),
+        _ => Err(TransportError::fatal(format!(
+            "{to} isn't there after renaming {from}; check {via}"
+        ))),
     }
 }
 
@@ -426,6 +611,13 @@ mod tests {
         assert_eq!(p.parent(), Some("Fotos/Verão"));
         assert_eq!(p.file_name(), "praia.jpg");
         assert_eq!(RemotePath::new("top").unwrap().parent(), None);
+    }
+
+    #[test]
+    fn a_secret_value_never_prints() {
+        let v = SecretValue::new("hunter2".into());
+        assert_eq!(format!("{v:?}"), "***");
+        assert_eq!(v.expose(), "hunter2");
     }
 
     #[test]

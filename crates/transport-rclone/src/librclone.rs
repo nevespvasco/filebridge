@@ -12,6 +12,7 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::client::{RcCall, answer};
+use crate::fs::Scrubber;
 
 #[repr(C)]
 struct RpcResult {
@@ -30,6 +31,8 @@ pub struct Librclone {
     path: PathBuf,
     rpc: RpcFn,
     free: FreeFn,
+    /// Secrets in use with rclone, scrubbed from every error it returns.
+    scrubber: Scrubber,
     _lib: libloading::Library,
 }
 
@@ -99,6 +102,7 @@ impl Librclone {
                 path: path.to_path_buf(),
                 rpc,
                 free,
+                scrubber: Scrubber::default(),
                 _lib: lib,
             })
         }
@@ -146,6 +150,10 @@ impl RcCall for Librclone {
         let body: Value = serde_json::from_str(&output).map_err(|e| {
             TransportError::retryable(format!("rclone rc {method}: bad response: {e}"))
         })?;
-        answer(method, status, body)
+        answer(method, status, body, &self.scrubber)
+    }
+
+    fn scrubber(&self) -> &Scrubber {
+        &self.scrubber
     }
 }

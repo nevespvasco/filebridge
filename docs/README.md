@@ -38,6 +38,7 @@ detail to build each crate on its own.
 | [0012](adr/0012-own-ssh-key-with-restrict.md) | filebridge's own SSH key in the keyring, installed with `restrict`; "Remove access" deletes it and proves it no longer signs in |
 | [0013](adr/0013-phones-as-a-source-android-first.md) | On phones filebridge sends the phone's own files; Android first, iOS after, personal builds |
 | [0014](adr/0014-engine-in-the-app-on-phones.md) | On phones the engine runs in the app (Android foreground service) and rclone is linked in as librclone |
+| [0015](adr/0015-trust-unknown-host-key-in-the-app.md) | An unknown SSH host key is trusted in the wizard after the user checks its fingerprint; a changed key never is |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

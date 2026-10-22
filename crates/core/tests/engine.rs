@@ -18,7 +18,9 @@ use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
     Problem, StepProgress,
 };
-use filebridge_transport_api::{Backend, Destination, PreflightReport, RemotePath, TransportCaps};
+use filebridge_transport_api::{
+    Backend, Destination, PreflightReport, RemotePath, TransportCaps, TransportError,
+};
 use filebridge_transport_fake::FakeTransport;
 
 #[derive(Default)]
@@ -41,6 +43,30 @@ impl Integration for FakeIntegration {
 
     fn name_rules(&self, _settings: &serde_json::Value) -> Vec<Box<dyn NameRule>> {
         Vec::new()
+    }
+
+    /// `{"needs_password": true}`: like Nextcloud's WebDAV mode, the profile can't be without one.
+    fn check_profile(
+        &self,
+        destination: &Destination,
+        settings: &serde_json::Value,
+    ) -> filebridge_integration_api::Result<()> {
+        let has = matches!(
+            &destination.backend,
+            Backend::Sftp {
+                password: Some(_),
+                ..
+            } | Backend::Webdav {
+                password: Some(_),
+                ..
+            }
+        );
+        if settings["needs_password"] == true && !has {
+            return Err(filebridge_integration_api::IntegrationError::fatal(
+                "this destination needs its password",
+            ));
+        }
+        Ok(())
     }
 
     async fn preflight(
@@ -1573,9 +1599,14 @@ async fn keeping_the_original_skips_only_that_rule() {
 async fn a_latin1_name_is_decoded_and_sent_readable() {
     use std::os::unix::ffi::OsStrExt;
     let s = setup().await;
-    // "Patológica.pdf" written as Latin-1 (ó = f3), and a name with a byte CP1252 leaves
-    // undefined (81), which can only be guessed.
-    for raw in [&b"Patol\xf3gica.pdf"[..], b"guess\x81.txt"] {
+    // "Patológica.pdf" written as Latin-1 (ó = f3); a name with a byte CP1252 leaves
+    // undefined (81), which can only be guessed; and "Привет.txt" in CP1251, which CP1252 reads
+    // as "Ïðèâåò.txt": not a Latin name, so a guess too.
+    for raw in [
+        &b"Patol\xf3gica.pdf"[..],
+        b"guess\x81.txt",
+        b"\xcf\xf0\xe8\xe2\xe5\xf2.txt",
+    ] {
         std::fs::write(s.src.join(std::ffi::OsStr::from_bytes(raw)), b"x").unwrap();
     }
     let job = s
@@ -1591,8 +1622,8 @@ async fn a_latin1_name_is_decoded_and_sent_readable() {
             .await,
         Err(CoreError::Invalid(_))
     ));
-    // The sure reading is applied; the guess waits for the user.
-    assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 1);
+    // The sure reading is applied; the guesses wait for the user.
+    assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 2);
     s.engine
         .decide_all(&job, Some("encoding".into()), DecisionInput::Accept)
         .await
@@ -1604,8 +1635,8 @@ async fn a_latin1_name_is_decoded_and_sent_readable() {
         "{files:?}"
     );
     assert!(
-        files.contains(&"Acme/guess\u{81}.txt".to_owned()),
-        "{files:?}"
+        files.contains(&"Acme/guess_.txt".to_owned()),
+        "no control character reaches a name: {files:?}"
     );
 }
 
@@ -1660,11 +1691,37 @@ async fn names_already_at_the_destination_are_repaired_there() {
         rules.contains(&"mojibake") && rules.contains(&"nfc"),
         "{rules:?}"
     );
+    assert!(matches!(
+        s.engine.planned_renames(&job).await,
+        Err(CoreError::PendingDecisions(1))
+    ));
     s.engine
         .decide_all(&job, Some("mojibake".into()), DecisionInput::Accept)
         .await
         .unwrap();
+    // The confirmation counts the entries that will change: the folder and the NFD file.
+    assert_eq!(s.engine.planned_renames(&job).await.unwrap(), 2);
+    // An entry's "source" is where its name was found at the destination.
+    let detail = s.engine.entry_detail(&job, 0).await.unwrap();
+    assert_eq!(
+        detail.source_path,
+        format!("{}/Fotos/PatolÃ³gica", s.dest.display())
+    );
+    // The folder and its decisions are what the user confirms: they can't be retargeted.
+    assert!(matches!(
+        s.engine
+            .set_options(
+                &job,
+                SendOptions {
+                    target_dir: Some("Elsewhere".into()),
+                    ..SendOptions::default()
+                }
+            )
+            .await,
+        Err(CoreError::Invalid(_))
+    ));
 
+    let mut events = s.engine.subscribe();
     assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
     let files = dest_files(&s.dest);
     assert_eq!(
@@ -1672,6 +1729,19 @@ async fn names_already_at_the_destination_are_repaired_there() {
         ["Fotos/Patológica/a.txt", "Fotos/Verão.jpg", "Fotos/ok.txt"],
         "renamed in place, nothing else touched"
     );
+    // Progress counts files, like the job's counts.
+    let mut last = None;
+    while let Ok(e) = events.try_recv() {
+        if let Event::TransferProgress {
+            files_done,
+            files_total,
+            ..
+        } = e
+        {
+            last = Some((files_done, files_total));
+        }
+    }
+    assert_eq!(last, Some((3, 3)));
     assert_eq!(std::fs::read(fotos.join("Patológica/a.txt")).unwrap(), b"a");
     // Nextcloud-like tools rescan the folder that holds the renamed names.
     assert_eq!(*s.integration.changed.lock().unwrap(), ["Fotos"]);
@@ -1710,6 +1780,220 @@ async fn repair_never_overwrites_a_name_that_is_taken() {
     assert_eq!(
         std::fs::read(s.dest.join("PatolÃ³gica.txt")).unwrap(),
         b"garbled"
+    );
+}
+
+/// A Repair job for `dir`, analysed, with every `mojibake` and `collision` proposal accepted.
+async fn repair_job(s: &Setup, dir: Option<&str>) -> String {
+    let job = s
+        .engine
+        .create_repair_job(&s.profile_id, dir.map(Into::into))
+        .await
+        .unwrap();
+    s.engine.analyse(&job).await.unwrap();
+    for rule in ["mojibake", "collision"] {
+        s.engine
+            .decide_all(&job, Some(rule.into()), DecisionInput::Accept)
+            .await
+            .unwrap();
+    }
+    job
+}
+
+#[tokio::test]
+async fn a_repair_runs_again_only_on_its_own_destination() {
+    let s = setup().await;
+    std::fs::create_dir_all(s.dest.join("Fotos")).unwrap();
+    std::fs::write(s.dest.join("Fotos/PatolÃ³gica.txt"), b"garbled").unwrap();
+    let job = repair_job(&s, Some("Fotos")).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let other = s
+        .engine
+        .save_profile(Profile {
+            id: String::new(),
+            name: "Other".into(),
+            destination: Destination {
+                transport: "fake".into(),
+                backend: Backend::Local,
+                root: s.src.to_string_lossy().into_owned(),
+            },
+            integration: None,
+            integration_settings: serde_json::json!({}),
+            target: TargetSpec::default(),
+        })
+        .await
+        .unwrap();
+    // The folder belongs to the first destination: another one is refused, not repaired.
+    let err = s
+        .engine
+        .send_again(&job, Some(other.id.clone()))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, CoreError::Invalid(_)), "{err:?}");
+    for profile in [None, Some(s.profile_id.clone())] {
+        let again = s.engine.send_again(&job, profile).await.unwrap();
+        let again = s.engine.job(&again).await.unwrap();
+        assert_eq!(again.kind, JobKind::Repair);
+        assert_eq!(again.profile_id, s.profile_id);
+        assert_eq!(again.options.target_dir.as_deref(), Some("Fotos"));
+    }
+}
+
+/// The warnings a finished job ended with.
+async fn warnings(s: &Setup, job: &str) -> String {
+    s.engine.job(job).await.unwrap().error.unwrap_or_default()
+}
+
+#[tokio::test]
+async fn a_rename_cut_short_between_its_hops_is_finished_on_retry() {
+    let s = setup().await;
+    std::fs::write(s.dest.join("PatolÃ³gica.txt"), b"garbled").unwrap();
+    let job = repair_job(&s, None).await;
+    // The second hop fails as if the connection dropped: the file waits under its
+    // intermediate name, and the retry finishes the move instead of losing it.
+    s.transport.fail_move_once.lock().unwrap().insert(
+        "Patológica.txt".into(),
+        TransportError::retryable("connection reset by peer"),
+    );
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest), ["Patológica.txt"]);
+    assert_eq!(s.engine.job(&job).await.unwrap().attempt, 1, "retried once");
+}
+
+#[tokio::test]
+async fn a_rename_that_fails_halfway_goes_back_or_says_where_it_was_left() {
+    let s = setup().await;
+    std::fs::write(s.dest.join("PatolÃ³gica.txt"), b"garbled").unwrap();
+    std::fs::write(s.dest.join("RelatÃ³rio.txt"), b"report").unwrap();
+    let job = repair_job(&s, None).await;
+    let fail = |name: &str| {
+        s.transport
+            .fail_move_once
+            .lock()
+            .unwrap()
+            .insert(name.into(), TransportError::fatal("permission denied"));
+    };
+    // The first one's second hop fails for good: it is put back under its old name. The
+    // second one can't be put back either: the warning says where it is.
+    fail("Patológica.txt");
+    fail("Relatório.txt");
+    fail("RelatÃ³rio.txt");
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+    let files = dest_files(&s.dest);
+    assert!(files.contains(&"PatolÃ³gica.txt".to_owned()), "{files:?}");
+    let left: Vec<_> = files
+        .iter()
+        .filter(|f| f.starts_with(".fb-repair-"))
+        .collect();
+    assert_eq!(left.len(), 1, "{files:?}");
+    let warned = warnings(&s, &job).await;
+    assert!(
+        warned.contains("RelatÃ³rio.txt is left as .fb-repair-"),
+        "{warned}"
+    );
+    assert!(warned.contains("2 names could not be changed"), "{warned}");
+}
+
+#[tokio::test]
+async fn repair_never_takes_a_name_in_another_case_or_normalisation() {
+    let s = setup().await;
+    std::fs::write(s.dest.join("PatolÃ³gica.txt"), b"garbled").unwrap();
+    let job = repair_job(&s, None).await;
+    // Appears after the analysis; a server that ignores case would store both as one.
+    std::fs::write(s.dest.join("PATOLÓGICA.TXT"), b"other").unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+    assert_eq!(
+        dest_files(&s.dest),
+        ["PATOLÓGICA.TXT", "PatolÃ³gica.txt"],
+        "both kept as they were"
+    );
+}
+
+#[tokio::test]
+async fn a_folder_that_could_not_be_renamed_is_counted_and_rescanned_where_it_is() {
+    let s = setup().await;
+    let fotos = s.dest.join("Fotos");
+    std::fs::create_dir_all(fotos.join("PatolÃ³gica")).unwrap();
+    std::fs::write(fotos.join("PatolÃ³gica/Vera\u{303}o.jpg"), b"v").unwrap();
+    let job = repair_job(&s, Some("Fotos")).await;
+    // The folder's new name is taken after the analysis.
+    std::fs::create_dir(fotos.join("Patológica")).unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+    assert!(
+        fotos.join("PatolÃ³gica/Verão.jpg").exists(),
+        "{:?}",
+        dest_files(&s.dest)
+    );
+    let warned = warnings(&s, &job).await;
+    assert!(warned.contains("1 names could not be changed"), "{warned}");
+    // The folder holding the renamed file is where it really is: under its old name.
+    assert_eq!(
+        *s.integration.changed.lock().unwrap(),
+        ["Fotos/PatolÃ³gica"]
+    );
+}
+
+#[tokio::test]
+async fn a_name_renamed_by_hand_meanwhile_counts_only_if_it_is_the_same_file() {
+    let s = setup().await;
+    std::fs::write(s.dest.join("PatolÃ³gica.txt"), b"one").unwrap();
+    std::fs::write(s.dest.join("RelatÃ³rio.txt"), b"two").unwrap();
+    let job = repair_job(&s, None).await;
+    // One is renamed by hand (the same file); the other replaced by a different file.
+    std::fs::rename(
+        s.dest.join("PatolÃ³gica.txt"),
+        s.dest.join("Patológica.txt"),
+    )
+    .unwrap();
+    std::fs::remove_file(s.dest.join("RelatÃ³rio.txt")).unwrap();
+    std::fs::write(s.dest.join("Relatório.txt"), b"another file").unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+    let warned = warnings(&s, &job).await;
+    assert!(warned.contains("1 names could not be changed"), "{warned}");
+    let job_view = s.engine.job(&job).await.unwrap();
+    assert_eq!((job_view.counts.done, job_view.counts.failed), (1, 1));
+}
+
+#[tokio::test]
+async fn renames_in_one_folder_free_a_name_before_it_is_taken() {
+    let s = setup().await;
+    // "Verão.txt" twice: NFD and NFC. The NFD one becomes "Verão.txt", which the NFC one has
+    // to leave first (for "Verão (2).txt").
+    std::fs::write(s.dest.join("Vera\u{303}o.txt"), b"nfd").unwrap();
+    std::fs::write(s.dest.join("Ver\u{e3}o.txt"), b"nfc").unwrap();
+    let job = repair_job(&s, None).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest), ["Verão (2).txt", "Verão.txt"]);
+    assert_eq!(std::fs::read(s.dest.join("Verão.txt")).unwrap(), b"nfd");
+    assert_eq!(std::fs::read(s.dest.join("Verão (2).txt")).unwrap(), b"nfc");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unreadable_folder_is_a_scan_error_not_a_failed_analysis() {
+    use std::os::unix::fs::PermissionsExt;
+    let s = setup().await;
+    let locked = s.dest.join("Fotos/locked");
+    std::fs::create_dir_all(&locked).unwrap();
+    std::fs::write(s.dest.join("Fotos/PatolÃ³gica.txt"), b"x").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let readable = std::fs::read_dir(&locked).is_ok(); // root reads it anyway
+    let job = s
+        .engine
+        .create_repair_job(&s.profile_id, None)
+        .await
+        .unwrap();
+    let summary = s.engine.analyse(&job).await;
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let summary = summary.unwrap();
+    if !readable {
+        assert_eq!(summary.scan_errors.len(), 1, "{:?}", summary.scan_errors);
+        assert!(summary.scan_errors[0].contains("Fotos/locked"));
+    }
+    assert_eq!(
+        summary.state,
+        JobState::AwaitingApproval,
+        "the rest is analysed"
     );
 }
 
@@ -1791,6 +2075,132 @@ async fn a_profile_password_lives_in_the_keyring_only() {
         secrets.get(&r).is_err(),
         "deleting the profile deletes its secrets"
     );
+}
+
+#[tokio::test]
+async fn a_password_a_profile_needs_cannot_be_removed() {
+    use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, reference};
+    let store = Store::open_in_memory().unwrap();
+    let secrets = Arc::new(MemoryStore::default());
+    let mut registry = Registry::new();
+    registry.add_transport(Arc::new(FakeTransport::default()));
+    registry.add_integration(Arc::new(FakeIntegration::default()));
+    registry.set_secrets(secrets.clone());
+    let engine = Engine::new(
+        store.clone(),
+        registry,
+        EngineOptions {
+            backoff: Backoff::Fixed(Duration::from_millis(10)),
+            batch_size: 3,
+            inhibit_sleep: false,
+            max_verify_rounds: 3,
+            local_clock: LocalClock::fixed(|| NOON),
+        },
+    );
+    let id = "p-webdav".to_owned();
+    let r = reference(&id, SecretKind::AppPassword);
+    secrets.set(&r, "app-pass").unwrap();
+    engine
+        .save_profile(Profile {
+            id: id.clone(),
+            name: "Cloud".into(),
+            destination: Destination {
+                transport: "fake".into(),
+                backend: Backend::Webdav {
+                    url: "https://cloud.example.com/remote.php/dav/files/alice/".into(),
+                    user: "alice".into(),
+                    password: Some(r.clone()),
+                    vendor: Some("nextcloud".into()),
+                },
+                root: "Backup".into(),
+            },
+            integration: Some("fakeint".into()),
+            integration_settings: serde_json::json!({ "needs_password": true }),
+            target: TargetSpec::default(),
+        })
+        .await
+        .unwrap();
+    let err = engine.set_profile_password(&id, None).await.unwrap_err();
+    assert!(err.to_string().contains("needs its password"), "{err}");
+    assert_eq!(
+        secrets.get(&r).unwrap().0.as_str(),
+        "app-pass",
+        "refused before the keyring is touched"
+    );
+    // A new one is fine.
+    engine
+        .set_profile_password(&id, Some("new-app-pass".into()))
+        .await
+        .unwrap();
+    assert_eq!(secrets.get(&r).unwrap().0.as_str(), "new-app-pass");
+}
+
+#[tokio::test]
+async fn a_deleted_destination_keeps_its_jobs_history() {
+    let s = setup().await;
+    let draft = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    // Not while a job to it could still be sent or resumed.
+    let err = s.engine.delete_profile(&s.profile_id).await.unwrap_err();
+    assert!(err.to_string().contains("not finished (draft)"), "{err}");
+    assert!(s.engine.get_profile(&s.profile_id).await.is_ok());
+    s.engine.cancel(&draft).await.unwrap();
+
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let profile = s.engine.get_profile(&s.profile_id).await.unwrap();
+    s.engine.delete_profile(&s.profile_id).await.unwrap();
+
+    // The report, a file's details and the activity still name it.
+    let path = s.dest.parent().unwrap().join("after-delete.csv");
+    let res = s
+        .engine
+        .export_report(
+            &job,
+            ReportRequest {
+                format: ReportFormat::Csv,
+                scope: ReportScope::All,
+                include_dirs: false,
+                path: path.display().to_string(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(res.rows > 0);
+    let page = s
+        .engine
+        .files_page(&job, EntryFilter::default(), None, 10)
+        .await
+        .unwrap();
+    s.engine
+        .entry_detail(&job, page.items[0].idx)
+        .await
+        .unwrap();
+    let activity = s.engine.activity(None, 50).await.unwrap();
+    assert!(
+        activity
+            .iter()
+            .filter(|a| a.job_id.as_deref() == Some(job.as_str()))
+            .all(|a| a.profile_name.as_deref() == Some("Test")),
+        "{activity:?}"
+    );
+
+    // Nothing can be sent to it, and saving it again doesn't revive it unseen.
+    assert!(
+        s.engine
+            .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+            .await
+            .is_err()
+    );
+    let err = s.engine.save_profile(profile).await.unwrap_err();
+    assert!(
+        matches!(err, CoreError::Store(StoreError::Deleted(_))),
+        "{err}"
+    );
+    assert!(s.engine.list_profiles().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -1926,6 +2336,36 @@ async fn a_closed_window_holds_the_transfer_until_it_opens() {
         .unwrap();
     assert_eq!(state, JobState::Completed);
     assert_eq!(dest_files(&s.dest).len(), 3);
+}
+
+#[tokio::test]
+async fn a_profile_is_busy_only_while_a_job_works_on_it() {
+    let s = setup().await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    let job = ready_job(&s, SendOptions::default()).await;
+    // Ready: not being worked on yet.
+    assert!(
+        s.engine
+            .active_jobs_of(&s.profile_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    s.engine.start(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    assert_eq!(
+        s.engine.active_jobs_of(&s.profile_id).await.unwrap(),
+        vec![job.clone()]
+    );
+    assert!(s.engine.active_jobs_of("another").await.unwrap().is_empty());
+    s.engine.cancel(&job).await.unwrap();
+    assert!(
+        s.engine
+            .active_jobs_of(&s.profile_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]

@@ -42,28 +42,44 @@ const COLUMNS: &str = "id, name, transport, integration, config, created_at, upd
 
 impl Store {
     /// Inserts or updates a profile. `created_at` is kept on update; `updated_at` is set to now.
+    /// A deleted profile is not brought back: `Deleted`, and nothing is written.
     pub async fn upsert_profile(&self, p: ProfileRow) -> Result<()> {
         let config = serde_json::to_string(&p.config)?;
         self.call(move |c| {
             let now = now_ms();
-            c.execute(
+            let n = c.execute(
                 "INSERT INTO profiles (id, name, transport, integration, config, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
                  ON CONFLICT(id) DO UPDATE SET name = ?2, transport = ?3, integration = ?4,
-                     config = ?5, updated_at = ?6",
+                     config = ?5, updated_at = ?6
+                 WHERE profiles.deleted_at IS NULL",
                 params![p.id, p.name, p.transport, p.integration, config, now],
             )?;
+            if n == 0 {
+                return Err(StoreError::Deleted(format!("profile {}", p.id)));
+            }
             Ok(())
         })
         .await
     }
 
+    /// A profile that can be used: not deleted.
     pub async fn get_profile(&self, id: &str) -> Result<ProfileRow> {
+        self.profile_where(id, "AND deleted_at IS NULL").await
+    }
+
+    /// A profile for the history of the jobs that used it (their report, a file's details,
+    /// the activity), deleted or not. Never for sending.
+    pub async fn get_profile_for_history(&self, id: &str) -> Result<ProfileRow> {
+        self.profile_where(id, "").await
+    }
+
+    async fn profile_where(&self, id: &str, and: &'static str) -> Result<ProfileRow> {
         let id = id.to_owned();
         self.call(move |c| {
             let pair = c
                 .query_row(
-                    &format!("SELECT {COLUMNS} FROM profiles WHERE id = ?1 AND deleted_at IS NULL"),
+                    &format!("SELECT {COLUMNS} FROM profiles WHERE id = ?1 {and}"),
                     [&id],
                     ProfileRow::from_row,
                 )
@@ -200,6 +216,15 @@ mod tests {
     #[tokio::test]
     async fn a_used_profile_is_forgotten_and_its_jobs_stay() {
         let (store, job) = store_with_job().await;
+        let unfinished = store.unfinished_jobs_of_profile("p1").await.unwrap();
+        assert_eq!(unfinished.len(), 1, "the draft counts");
+        assert!(
+            store
+                .unfinished_jobs_of_profile("p2")
+                .await
+                .unwrap()
+                .is_empty()
+        );
         store.delete_profile("p1").await.unwrap();
         assert!(matches!(
             store.get_profile("p1").await,
@@ -211,5 +236,30 @@ mod tests {
             store.delete_profile("p1").await,
             Err(StoreError::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_deleted_profile_stays_readable_for_history_only() {
+        let (store, _) = store_with_job().await;
+        let before = store.get_profile("p1").await.unwrap();
+        store.delete_profile("p1").await.unwrap();
+        let kept = store.get_profile_for_history("p1").await.unwrap();
+        assert_eq!(kept.name, before.name);
+        assert!(matches!(
+            store.get_profile_for_history("nope").await,
+            Err(StoreError::NotFound(_))
+        ));
+        // Saving it again doesn't quietly update a row nobody can see.
+        let err = store.upsert_profile(before.clone()).await.unwrap_err();
+        assert!(matches!(err, StoreError::Deleted(_)), "{err}");
+        assert!(store.get_profile("p1").await.is_err());
+        assert_eq!(
+            store
+                .get_profile_for_history("p1")
+                .await
+                .unwrap()
+                .updated_at,
+            kept.updated_at
+        );
     }
 }

@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use filebridge_transport_api::{
     Backend, Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome, KeyringRef,
-    PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, TransferJob,
-    TransferResult, Transport, TransportCaps, TransportError,
+    PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, SecretResolver,
+    SecretValue, TransferJob, TransferResult, Transport, TransportCaps, TransportError,
 };
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
@@ -13,7 +13,6 @@ use tokio::task::JoinSet;
 
 use crate::fs::{Creds, dest_fs, join, local_fs, split_root, utf8};
 use crate::{RcClient, rename, stats};
-use filebridge_secrets::{Redacted, SecretStore};
 
 /// How files reach their corrected names. See the crate docs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,8 +24,9 @@ pub enum Strategy {
 pub struct RcloneTransport {
     rc: RcClient,
     strategy: Strategy,
-    /// Where profiles' passwords are kept; without one, profiles that need a secret fail.
-    secrets: Option<Arc<dyn SecretStore>>,
+    /// Reads profiles' passwords and keys (the host's, over the OS keyring); without one,
+    /// profiles that need a secret fail.
+    secrets: Option<Arc<dyn SecretResolver>>,
 }
 
 impl RcloneTransport {
@@ -41,56 +41,65 @@ impl RcloneTransport {
         }
     }
 
-    /// Reads profiles' secrets from `store`.
-    pub fn with_secrets(mut self, store: Arc<dyn SecretStore>) -> Self {
-        self.secrets = Some(store);
+    /// Reads profiles' secrets through `resolver`.
+    pub fn with_secrets(mut self, resolver: Arc<dyn SecretResolver>) -> Self {
+        self.secrets = Some(resolver);
         self
     }
 
-    /// The destination's secrets for one call: read from the keyring (off the async threads)
-    /// and obscured by rclone, which only takes passwords that way.
+    /// The destination's secrets for one call, obscured by rclone, which only takes passwords
+    /// that way. Each value (clear and as rclone takes it) is scrubbed from every rclone message
+    /// while the `Creds` live.
     async fn creds(&self, dest: &Destination) -> Result<Creds> {
         let (password, key) = match &dest.backend {
             Backend::Sftp { password, key, .. } => (password.clone(), key.clone()),
             Backend::Webdav { password, .. } => (password.clone(), None),
             Backend::Local => (None, None),
         };
+        let scrubber = self.rc().scrubber();
         let mut creds = Creds::default();
         if let Some(r) = password {
-            let clear = self.secret(r).await?;
+            let clear = self.secret(&r).await?;
+            creds.held.push(scrubber.hold(clear.expose()));
             let obscured = self
                 .rc()
-                .call("core/obscure", json!({ "clear": clear.0.as_str() }))
+                .call("core/obscure", json!({ "clear": clear.expose() }))
                 .await?;
             let obscured = obscured
                 .get("obscured")
                 .and_then(Value::as_str)
                 .ok_or_else(|| TransportError::fatal("rclone rc core/obscure: no answer"))?;
-            creds.pass = Some(Redacted(obscured.to_owned()));
+            creds.held.push(scrubber.hold(obscured));
+            creds.pass = Some(SecretValue::new(obscured.to_owned()));
         }
         if let Some(r) = key {
             // rclone wants the PEM on one line, its line breaks written as `\n`.
-            let pem = self.secret(r).await?;
-            creds.key_pem = Some(Redacted(pem.0.trim_end().replace('\n', "\\n")));
+            let pem = self.secret(&r).await?;
+            let one_line = pem.expose().trim_end().replace('\n', "\\n");
+            creds.held.push(scrubber.hold(pem.expose()));
+            creds.held.push(scrubber.hold(&one_line));
+            creds.key_pem = Some(SecretValue::new(one_line));
         }
         Ok(creds)
     }
 
-    /// One secret from the keyring, off the async threads.
-    async fn secret(&self, r: KeyringRef) -> Result<filebridge_secrets::Secret> {
-        let store = self.secrets.clone().ok_or_else(|| {
+    /// One secret, through the host's resolver: missing is `Auth`, an unreachable keyring
+    /// `Transient`.
+    async fn secret(&self, r: &KeyringRef) -> Result<SecretValue> {
+        let resolver = self.secrets.as_ref().ok_or_else(|| {
             TransportError::fatal("no keyring available to read the destination's credentials")
         })?;
-        tokio::task::spawn_blocking(move || store.get(&r))
-            .await
-            .map_err(|e| TransportError::fatal(format!("keyring task failed: {e}")))?
-            .map_err(|e| TransportError::new(ErrorKind::Auth, e.to_string()))
+        resolver.resolve(r).await
     }
 
     fn rc(&self) -> &RcClient {
         &self.rc
     }
 
+    /// One `operations/copyfile` per item, `concurrency` at a time. The first `Auth` error ends
+    /// the round: nothing more is started (each start would be one more refused sign-in, which
+    /// servers count against the account), the files already on their way finish, and the call
+    /// fails with that error. Files that arrived were already reported by `ItemDone`.
     async fn per_file(
         &self,
         src_fs: &str,
@@ -98,8 +107,9 @@ impl RcloneTransport {
         group: &str,
         job: &TransferJob,
         progress: &ProgressSink,
-    ) -> Vec<ItemOutcome> {
+    ) -> Result<Vec<ItemOutcome>> {
         let mut outcomes = vec![ItemOutcome::Done; job.items.len()];
+        let mut refused: Option<TransportError> = None;
         let sem = Arc::new(Semaphore::new(job.options.concurrency.max(1)));
         let mut set = JoinSet::new();
         for (i, item) in job.items.iter().enumerate() {
@@ -115,6 +125,12 @@ impl RcloneTransport {
                 .acquire_owned()
                 .await
                 .expect("semaphore is never closed");
+            while let Some(done) = set.try_join_next() {
+                record(done, &mut outcomes, progress, &mut refused);
+            }
+            if refused.is_some() {
+                break;
+            }
             let rc = self.rc().clone();
             let params = json!({
                 "srcFs": src_fs, "srcRemote": src,
@@ -125,14 +141,14 @@ impl RcloneTransport {
                 let _permit = permit;
                 (i, rc.call("operations/copyfile", params).await)
             });
-            while let Some(done) = set.try_join_next() {
-                record(done, &mut outcomes, progress);
-            }
         }
         while let Some(done) = set.join_next().await {
-            record(done, &mut outcomes, progress);
+            record(done, &mut outcomes, progress, &mut refused);
         }
-        outcomes
+        match refused {
+            Some(e) => Err(e),
+            None => Ok(outcomes),
+        }
     }
 
     async fn temp_then_rename(
@@ -284,14 +300,19 @@ impl RcloneTransport {
     }
 }
 
+/// One finished copy: its outcome, its `ItemDone`, and the first `Auth` error in `refused`.
 fn record(
     done: std::result::Result<(usize, Result<Value>), tokio::task::JoinError>,
     outcomes: &mut [ItemOutcome],
     progress: &ProgressSink,
+    refused: &mut Option<TransportError>,
 ) {
     let Ok((i, res)) = done else { return };
     let ok = res.is_ok();
     if let Err(e) = res {
+        if e.kind == ErrorKind::Auth && refused.is_none() {
+            *refused = Some(e.clone());
+        }
         outcomes[i] = ItemOutcome::Failed(e);
     }
     progress.send(ProgressEvent::ItemDone { index: i, ok });
@@ -380,67 +401,37 @@ impl Transport for RcloneTransport {
         Ok(report)
     }
 
-    async fn move_path(
+    async fn move_unchecked(
         &self,
         dest: &Destination,
         from: &RemotePath,
         to: &RemotePath,
+        is_dir: bool,
     ) -> Result<()> {
         let creds = self.creds(dest).await?;
-        let parent_of = |p: &RemotePath| p.parent().map(RemotePath::new).transpose();
-        let listed = |dir: Option<RemotePath>| async move {
-            match self.list(dest, dir.as_ref(), false).await {
-                Err(e) if e.kind == ErrorKind::NotFound => Ok(Vec::new()),
-                other => other,
-            }
-        };
-        let source = listed(parent_of(from)?)
-            .await?
-            .into_iter()
-            .find(|e| e.name == from.file_name())
-            .ok_or_else(|| TransportError::not_found(format!("{from} is not there")))?;
-        if from == to {
-            return Ok(());
-        }
-        // Exact names only: on a server that normalises or ignores case, `to` may be `from`
-        // itself under another spelling, and that is not a clash.
-        if listed(parent_of(to)?)
-            .await?
-            .iter()
-            .any(|e| e.name == to.file_name())
-        {
-            return Err(TransportError::fatal(format!("{to} already exists")));
-        }
-        // Through an intermediate name, as in the temp-folder rename: a server that treats the
-        // two spellings as one name would otherwise see "unchanged" and delete the source.
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
-        let mid = join(
-            from.parent().unwrap_or(""),
-            &format!(".fb-move-{}-{nanos}", std::process::id()),
-        );
-        let root = dest_fs(dest, &creds, "")?;
-        for (a, b) in [(from.as_str(), mid.as_str()), (mid.as_str(), to.as_str())] {
-            if source.is_dir {
-                // The target never exists, so rclone does a single server-side DirMove.
-                self.rc()
-                    .call_job(
-                        "sync/move",
-                        json!({
-                            "srcFs": dest_fs(dest, &creds, a)?, "dstFs": dest_fs(dest, &creds, b)?,
-                            "deleteEmptySrcDirs": true,
-                        }),
-                    )
-                    .await?;
-            } else {
-                self.rc()
-                    .call(
-                        "operations/movefile",
-                        json!({ "srcFs": root, "srcRemote": a, "dstFs": root, "dstRemote": b }),
-                    )
-                    .await?;
-            }
+        if is_dir {
+            // `move_path` made sure nothing is at `to`, so rclone does one server-side DirMove.
+            self.rc()
+                .call_job(
+                    "sync/move",
+                    json!({
+                        "srcFs": dest_fs(dest, &creds, from.as_str())?,
+                        "dstFs": dest_fs(dest, &creds, to.as_str())?,
+                        "deleteEmptySrcDirs": true,
+                    }),
+                )
+                .await?;
+        } else {
+            let root = dest_fs(dest, &creds, "")?;
+            self.rc()
+                .call(
+                    "operations/movefile",
+                    json!({
+                        "srcFs": root, "srcRemote": from.as_str(),
+                        "dstFs": root, "dstRemote": to.as_str(),
+                    }),
+                )
+                .await?;
         }
         Ok(())
     }
@@ -517,9 +508,8 @@ impl Transport for RcloneTransport {
         let outcomes = match self.strategy {
             Strategy::PerFile => {
                 progress.send(ProgressEvent::Stage("copy".into()));
-                Ok(self
-                    .per_file(&src_fs, &dst_fs, &group, job, &progress)
-                    .await)
+                self.per_file(&src_fs, &dst_fs, &group, job, &progress)
+                    .await
             }
             Strategy::TempThenRename => self
                 .temp_then_rename(&src_fs, dest, &group, job, &progress)

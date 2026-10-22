@@ -8,11 +8,10 @@ import { useI18n } from "vue-i18n";
 import { JOB_OPERATIONS, type JobState, type JobSummary_Serialize } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { errorMessage } from "@/lib/api";
-import { jobLabel } from "@/lib/jobs";
+import { continueJob, jobLabel } from "@/lib/jobs";
 import { copyText } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
-import { useWizard } from "@/stores/wizard";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import RowMenu, { type MenuItem } from "./RowMenu.vue";
 
@@ -20,7 +19,6 @@ const props = defineProps<{ job: JobSummary_Serialize; showOpen?: boolean }>();
 const emit = defineEmits<{ exportReport: [] }>();
 const jobs = useJobs();
 const profiles = useProfiles();
-const wizard = useWizard();
 const router = useRouter();
 const { t } = useI18n();
 const fmt = useFmt();
@@ -31,13 +29,14 @@ const unsent = computed(() => ["draft", "awaiting_approval", "ready"].includes(p
 const items = computed<MenuItem[]>(() => {
   const out: MenuItem[] = [];
   if (props.showOpen) out.push({ id: "open", label: t("jobs.menu.open"), icon: "next" });
-  if (unsent.value) out.push({ id: "continue", label: t("jobDetail.continue"), icon: "pointing" });
+  if (unsent.value) out.push({ id: "continue", label: t(props.job.kind === "repair" ? "repair.continue" : "jobDetail.continue"), icon: "pointing" });
   if (can("pause")) out.push({ id: "pause", label: t("jobDetail.pause"), icon: "pause" });
   if (props.job.state === "paused") out.push({ id: "resume", label: t("jobDetail.resume"), icon: "play" });
   out.push({ id: "rename", label: t("jobs.menu.rename"), icon: "renamed" });
   const again = can("send_again");
   out.push({ id: "again", label: t("jobs.menu.again"), icon: "again", disabled: !again, reason: t("jobs.menu.whenFinished") });
-  out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
+  // A repair works on a folder of its own destination: it only runs again there.
+  if (props.job.kind !== "repair") out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
   out.push({ id: "export", label: t("jobs.menu.export"), icon: "export", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
   out.push({ id: "copyId", label: t("jobs.menu.copyId"), icon: "copy" });
   if (can("cancel")) out.push({ id: "cancel", label: t("jobDetail.cancel"), icon: "close", danger: true });
@@ -71,8 +70,7 @@ async function onSelect(id: string) {
     case "open":
       return void router.push({ name: "job", params: { id: j.id } });
     case "continue":
-      await wizard.openJob(j);
-      return void router.push({ name: "new" });
+      return continueJob(j, router);
     case "pause":
       return act(() => jobs.pause(j.id));
     case "resume":
@@ -108,8 +106,7 @@ async function sendAgain() {
     const draft = await jobs.sendAgain(props.job.id, againTo.value ? target.value : null);
     if (!draft) return;
     againOpen.value = false;
-    await wizard.openJob(draft);
-    await router.push({ name: "new" });
+    await continueJob(draft, router);
   });
 }
 

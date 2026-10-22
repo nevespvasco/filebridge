@@ -13,6 +13,7 @@ import { useProfiles } from "@/stores/profiles";
 import StatusIcon from "./StatusIcon.vue";
 import DetailsPanel from "./DetailsPanel.vue";
 import HelpTip from "./HelpTip.vue";
+import HostKeyPrompt from "./HostKeyPrompt.vue";
 
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const { t, te } = useI18n();
@@ -63,15 +64,27 @@ async function pickKey() {
   if (p) form.key_file = p;
 }
 
+/** The SSH server's host key, trusted by the user if known_hosts doesn't have it (ADR 0015). */
+const hostKey = ref<InstanceType<typeof HostKeyPrompt> | null>(null);
+
 async function detect() {
   running.value = true;
   error.value = null;
   result.value = null;
   try {
+    const host = form.host.trim();
+    let known: boolean;
+    try {
+      known = await hostKey.value!.ensureKnown(host, form.port, form.known_hosts_file.trim() || null);
+    } catch (e) {
+      error.value = t("hostKey.unreachable", { error: errorMessage(e) });
+      return;
+    }
+    if (!known) return;
     const ctid = form.ctid.trim() ? Number(form.ctid) : null;
     result.value = await profiles.detectNextcloud({
       name: form.name.trim(),
-      host: form.host.trim(),
+      host,
       port: form.port,
       user: form.user.trim(),
       key_file: form.key_file.trim() || null,
@@ -205,6 +218,7 @@ function chooseContainer(c: string) {
       </div>
       <DetailsPanel :lines="commands" />
     </div>
+    <HostKeyPrompt ref="hostKey" />
   </form>
 </template>
 

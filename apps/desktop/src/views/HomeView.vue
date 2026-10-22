@@ -14,7 +14,7 @@ import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
 import { useFmt } from "@/composables/useFmt";
-import { jobLabel } from "@/lib/jobs";
+import { continueJob, jobLabel } from "@/lib/jobs";
 import { useConnection } from "@/stores/connection";
 import { useHome } from "@/stores/home";
 import { useJobs } from "@/stores/jobs";
@@ -70,10 +70,7 @@ function reason(j: JobSummary_Serialize): { text: string; action: string; icon: 
   }
 }
 async function act(j: JobSummary_Serialize) {
-  if (j.state === "awaiting_approval") {
-    await wizard.openJob(j);
-    return void router.push({ name: "new" });
-  }
+  if (j.state === "awaiting_approval") return continueJob(j, router);
   home.markSeen(j.id);
   void router.push({ name: "job", params: { id: j.id } });
 }

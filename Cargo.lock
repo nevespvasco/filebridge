@@ -1716,7 +1716,6 @@ dependencies = [
  "async-trait",
  "filebridge-integration-api",
  "filebridge-names",
- "filebridge-secrets",
  "filebridge-transport-api",
  "getrandom 0.3.4",
  "russh",
@@ -1725,6 +1724,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -1775,9 +1776,11 @@ dependencies = [
 name = "filebridge-secrets"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "filebridge-transport-api",
  "keyring",
  "thiserror 2.0.21",
+ "tokio",
  "zeroize",
 ]
 
@@ -1816,11 +1819,13 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "bitflags 2.13.2",
+ "filebridge-names",
  "serde",
  "sha2 0.11.1",
  "specta",
  "thiserror 2.0.21",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]

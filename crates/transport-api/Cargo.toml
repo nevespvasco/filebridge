@@ -9,10 +9,12 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 bitflags.workspace = true
+filebridge-names.workspace = true
 serde.workspace = true
 specta = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+zeroize.workspace = true
 sha2 = { workspace = true, optional = true }
 
 [features]

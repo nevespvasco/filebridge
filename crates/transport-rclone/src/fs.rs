@@ -1,21 +1,133 @@
 //! Builds rclone fs strings. Backends are always on-the-fly connection strings
 //! (`:sftp,host=…:path`), so no `rclone.conf` is ever written; secrets go in them only in the
 //! form rclone takes (an obscured password), over the local authenticated rc API, and are
-//! scrubbed from rclone's error messages ([`redact`]).
+//! scrubbed from rclone's error messages and log lines ([`Scrubber`], [`redact`]).
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
-use filebridge_secrets::Redacted;
-use filebridge_transport_api::{Backend, Destination, Result, TransportError};
+use filebridge_transport_api::{Backend, Destination, Result, SecretValue, TransportError};
 
-/// A destination's secrets, fetched from the keyring for one call, as rclone takes them.
-#[derive(Debug, Default, Clone)]
+/// A destination's secrets, fetched from the keyring for one call, as rclone takes them. While
+/// it lives, the [`Scrubber`] that made it removes these values from every message.
+#[derive(Debug, Default)]
 pub struct Creds {
     /// The password, obscured by rclone (`core/obscure`): its `pass=` parameter.
-    pub pass: Option<Redacted<String>>,
+    pub pass: Option<SecretValue>,
     /// filebridge's own SSH key (ADR 0012), PEM on one line with `\n` escapes: rclone's
     /// `key_pem` parameter. Never written to a file.
-    pub key_pem: Option<Redacted<String>>,
+    pub key_pem: Option<SecretValue>,
+    pub(crate) held: Vec<ScrubGuard>,
+}
+
+/// Values shorter than this are scrubbed only where they follow their parameter's name
+/// ([`redact`]): replacing every `ab` in a message would make it unreadable and hide nothing.
+const MIN_SCRUBBED: usize = 4;
+
+/// The secret values in use right now. [`Scrubber::scrub`] replaces each of them, in every form
+/// rclone may print it (as given, quoted for a connection string, Go's `%q`, a PEM's lines), on
+/// top of [`redact`]'s parameter parsing: a value can reach a message without its parameter
+/// name. Shared by an rcd's client (its errors) and its stderr reader (its log lines).
+#[derive(Clone, Default)]
+pub struct Scrubber(Arc<Mutex<HashMap<String, usize>>>);
+
+impl Scrubber {
+    /// Scrubs `secret` from messages until the guard is dropped.
+    pub(crate) fn hold(&self, secret: &str) -> ScrubGuard {
+        let forms = forms(secret);
+        let mut map = self.0.lock().expect("scrubber lock");
+        for f in &forms {
+            *map.entry(f.clone()).or_default() += 1;
+        }
+        ScrubGuard {
+            scrubber: self.clone(),
+            forms,
+        }
+    }
+
+    /// `message` without any secret parameter's value nor any value held now.
+    pub fn scrub(&self, message: &str) -> String {
+        let mut out = redact(message);
+        let map = self.0.lock().expect("scrubber lock");
+        let mut values: Vec<&String> = map.keys().collect();
+        // Longest first, so a value that contains another goes whole.
+        values.sort_by_key(|v| std::cmp::Reverse(v.len()));
+        for v in values {
+            if out.contains(v.as_str()) {
+                out = out.replace(v.as_str(), "***");
+            }
+        }
+        out
+    }
+}
+
+/// Keeps a secret's forms in its [`Scrubber`]; they go when the last holder drops.
+pub(crate) struct ScrubGuard {
+    scrubber: Scrubber,
+    forms: Vec<String>,
+}
+
+impl std::fmt::Debug for ScrubGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ScrubGuard")
+    }
+}
+
+impl Drop for ScrubGuard {
+    fn drop(&mut self) {
+        let mut map = self.scrubber.0.lock().expect("scrubber lock");
+        for f in &self.forms {
+            if let Some(n) = map.get_mut(f) {
+                *n -= 1;
+                if *n == 0 {
+                    map.remove(f);
+                }
+            }
+        }
+    }
+}
+
+/// Go's `%q` of `s`, without the outer quotes: how rclone dumps a string in some errors.
+fn go_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Every form of `secret` a message may carry.
+fn forms(secret: &str) -> Vec<String> {
+    let doubled = secret.replace('"', "\"\"");
+    let mut out = vec![
+        secret.to_owned(),
+        go_quoted(secret),
+        go_quoted(&doubled),
+        doubled,
+    ];
+    // A key: its lines on their own too (the PEM's body), with real or escaped line breaks.
+    if secret.contains('\n') || secret.contains("\\n") {
+        out.extend(
+            secret
+                .split('\n')
+                .flat_map(|l| l.split("\\n"))
+                .map(str::trim)
+                .filter(|l| l.len() >= 16 && !l.starts_with("-----"))
+                .map(str::to_owned),
+        );
+    }
+    out.retain(|f| f.len() >= MIN_SCRUBBED);
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// The connection-string parameters that carry secrets; their values never leave this crate.
@@ -46,7 +158,7 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
                         "filebridge's SSH key is not in the keyring; use its key again or Remove access",
                     )
                 })?;
-                params.push(("key_pem", pem.0.clone()));
+                params.push(("key_pem", pem.expose().to_owned()));
             }
             if let Some(port) = port {
                 params.push(("port", port.to_string()));
@@ -66,6 +178,9 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
                 params.push(("host_key_algorithms", algos));
             }
             params.push(("known_hosts_file", known_hosts));
+            // A symbolic link at the destination is listed as what it points to otherwise, so
+            // "Repair destination" would rename (and Nextcloud scan) things outside the folder.
+            params.push(("skip_links", "true".into()));
             Ok(format!(":sftp,{}:{path}", connection(params)))
         }
         Backend::Webdav {
@@ -95,8 +210,8 @@ fn connection(params: Vec<(&str, String)>) -> String {
 }
 
 /// The obscured password a profile says it has: missing from the keyring is an `Auth` error.
-fn needed(pass: &Option<Redacted<String>>, what: &str) -> Result<String> {
-    pass.as_ref().map(|p| p.0.clone()).ok_or_else(|| {
+fn needed(pass: &Option<SecretValue>, what: &str) -> Result<String> {
+    pass.as_ref().map(|p| p.expose().to_owned()).ok_or_else(|| {
         TransportError::new(
             filebridge_transport_api::ErrorKind::Auth,
             format!("the {what} password is not in the keyring; set it again"),
@@ -105,7 +220,8 @@ fn needed(pass: &Option<Redacted<String>>, what: &str) -> Result<String> {
 }
 
 /// `message` with the value of every secret connection-string parameter (`pass="…"`,
-/// `key_pem=…`) replaced by `***`: rclone repeats the fs string in some errors.
+/// `key_pem=…`, and Go's `%q` of them, `pass=\"…\"`) replaced by `***`: rclone repeats the fs
+/// string in some errors.
 pub fn redact(message: &str) -> String {
     let starts_param = |s: &str, i: usize| i == 0 || matches!(s.as_bytes()[i - 1], b',' | b':');
     let mut out = String::with_capacity(message.len());
@@ -128,20 +244,32 @@ pub fn redact(message: &str) -> String {
         out.push_str(&rest[..i + key_len]);
         out.push_str("***");
         let value = &rest[i + key_len..];
-        let end = match value.strip_prefix('"') {
-            // Quoted: up to the closing quote that isn't doubled.
-            Some(quoted) => {
-                let b = quoted.as_bytes();
-                let mut j = 0;
-                while j < b.len() && !(b[j] == b'"' && b.get(j + 1) != Some(&b'"')) {
-                    j += if b[j] == b'"' { 2 } else { 1 };
-                }
-                (j + 2).min(value.len())
-            }
-            None => value.find([',', ':', ' ', '"']).unwrap_or(value.len()),
+        let end = if value.starts_with("\\\"") {
+            quoted_end(value, "\\\"")
+        } else if value.starts_with('"') {
+            quoted_end(value, "\"")
+        } else {
+            value
+                .find([',', ':', ' ', '"', '\\'])
+                .unwrap_or(value.len())
         };
         rest = &value[end..];
     }
+}
+
+/// Where a value that starts with the quote `q` ends: after the closing `q` that isn't doubled
+/// (a quote inside is written twice), or at the end of the message.
+fn quoted_end(value: &str, q: &str) -> usize {
+    let mut j = q.len();
+    while let Some(k) = value[j..].find(q) {
+        let after = j + k + q.len();
+        if value[after..].starts_with(q) {
+            j = after + q.len();
+        } else {
+            return after;
+        }
+    }
+    value.len()
 }
 
 /// fs string for a local source directory.
@@ -240,7 +368,7 @@ mod tests {
         assert_eq!(
             dest_fs(&dest, &Creds::default(), "Backup").unwrap(),
             ":sftp,host=\"nas.lan\",port=\"2222\",user=\"ana\",key_file=\"/k/id,ed25519\",\
-             known_hosts_file=\"/k/known_hosts\":/srv/files/Backup"
+             known_hosts_file=\"/k/known_hosts\",skip_links=\"true\":/srv/files/Backup"
         );
     }
 
@@ -265,6 +393,45 @@ mod tests {
             ":sftp,pass=***,key_pem=***:/"
         );
         assert_eq!(redact("nothing here"), "nothing here");
+        // Go's %q of a connection string: quotes escaped, doubled ones too.
+        let q = r#"fs "\":sftp,host=\"nas\",pass=\"Ab\"\"c\",key_pem=\"-----BEGIN\\nxyz\":/\"""#;
+        let out = redact(q);
+        assert!(!out.contains("Ab") && !out.contains("xyz"), "{out}");
+        assert!(out.contains(r#"host=\"nas\""#), "{out}");
+    }
+
+    #[test]
+    fn held_values_are_scrubbed_in_every_form_while_held() {
+        let scrubber = Scrubber::default();
+        let pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\n-----END OPENSSH PRIVATE KEY-----\n";
+        let escaped = pem.trim_end().replace('\n', "\\n");
+        let guards = [
+            scrubber.hold("obscured-pass\"1"),
+            scrubber.hold(pem),
+            scrubber.hold(&escaped),
+            scrubber.hold("ab"),
+        ];
+        for msg in [
+            "failed: obscured-pass\"1".to_owned(),
+            format!("bad key {escaped:?}"),
+            format!("bad key {pem}"),
+            "line b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ seen".to_owned(),
+            r#"fs ":sftp,pass=\"obscured-pass\"\"1\"""#.to_owned(),
+            "dump obscured-pass\\\"1".to_owned(),
+        ] {
+            let out = scrubber.scrub(&msg);
+            assert!(
+                !out.contains("obscured-pass") && !out.contains("b3BlbnNzaC1rZXkt"),
+                "{msg} -> {out}"
+            );
+        }
+        assert_eq!(
+            scrubber.scrub("abc ab"),
+            "abc ab",
+            "too short to scrub alone"
+        );
+        drop(guards);
+        assert_eq!(scrubber.scrub("obscured-pass\"1"), "obscured-pass\"1");
     }
 
     #[test]
@@ -287,8 +454,8 @@ mod tests {
         let err = dest_fs(&dest, &Creds::default(), "").unwrap_err();
         assert_eq!(err.kind, filebridge_transport_api::ErrorKind::Auth);
         let creds = Creds {
-            pass: Some(Redacted("obscured".into())),
-            key_pem: None,
+            pass: Some(SecretValue::new("obscured".into())),
+            ..Creds::default()
         };
         let fs = dest_fs(&dest, &creds, "").unwrap();
         assert!(fs.contains("pass=\"obscured\""), "{fs}");

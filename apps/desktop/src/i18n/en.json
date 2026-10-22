@@ -33,13 +33,19 @@
     "connected": "Copy engine running",
     "connecting": "Starting the copy engine…",
     "disconnected": "Copy engine not responding",
+    "replacing": "Updating the copy engine…",
     "short": {
       "connecting": "Connecting…",
-      "disconnected": "Offline"
+      "disconnected": "Offline",
+      "replacing": "Updating…"
     },
     "retry": "Try again",
     "tip": "The copy engine copies your files in the background, even with this window closed. This shows whether the window can reach it.",
     "problem": {
+      "replacing": {
+        "title": "Updating the copy engine…",
+        "body": "A copy engine from an earlier version of filebridge was running and is being replaced by this version's. This takes a few seconds; the window waits for it. Sends already running continue in the new one."
+      },
       "version": {
         "title": "The copy engine is from another version of filebridge.",
         "body": "Close every filebridge window and open it again. Sends already running are not lost: they continue when the engine starts again."
@@ -277,6 +283,7 @@
     "skip": "Skip",
     "edit": "Edit",
     "notSent": "(not sent)",
+    "keptClash": "Sent as “{name}”: the same name as another one, so sending waits until one of them changes.",
     "bulkLabel": "All {n} pending:",
     "acceptAll": "Accept all",
     "keepAll": "Keep all",
@@ -516,7 +523,9 @@
     "deleteTitle": "Delete this destination?",
     "deleteForgets": "filebridge forgets the profile “{name}”.",
     "deleteNoFiles": "No files are deleted, at the destination or anywhere else.",
-    "deleteJobs": "Transfers that used it keep their history, but can't be resumed without it.",
+    "deleteJobs": "Transfers that used it keep their history. Unfinished ones (drafts included) must be cancelled first, or allowed to finish.",
+    "deleteKey": "This destination signs in with filebridge's own key. Deleting it forgets the key here, but its line stays in the server's authorized_keys.",
+    "deleteRemoveFirst": "Remove access first…",
     "intro": "The places you send files to. Save each one once, then pick it in every new transfer.",
     "emptyHint": "Create your first destination: an external disk, a server (SFTP) or Nextcloud.",
     "deleteTip": "Forget this destination. No files are deleted.",
@@ -590,7 +599,8 @@
     },
     "password": "Password",
     "passwordHint": "optional: empty = key or SSH agent",
-    "firstConnect": "Before using a server here for the first time, connect to it once in a terminal (ssh user{'@'}server) and accept it, so this computer knows it."
+    "passwordNotSaved": "The destination was saved, but its password didn't reach the system keyring: {error}. Try again: the same destination is updated, not a second one made.",
+    "firstConnect": "The first time filebridge connects to a server, it shows the server's key fingerprint and asks you to confirm it."
   },
   "nextcloud": {
     "intro": "filebridge connects over SSH either to the Proxmox host (and finds the Nextcloud container) or straight to the machine Nextcloud runs on, and checks each step. Nothing is changed during detection.",
@@ -1038,6 +1048,7 @@
   },
   "repair": {
     "title": "Repair names at the destination",
+    "continue": "Continue the repair",
     "lead": "Names already in {folder} on {destination}, checked with the same rules as a send. Nothing is renamed until you confirm.",
     "label": "Repair · {folder}",
     "root": "the whole destination",
@@ -1054,7 +1065,7 @@
     "rename": "Rename at the destination",
     "fromProblems": "Repair these names",
     "confirm": {
-      "title": "Rename up to {n} name? | Rename up to {n} names?",
+      "title": "Rename {n} name? | Rename {n} names?",
       "where": "Names change directly on {destination}, in {folder}.",
       "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this job's report.",
       "taken": "A new name that is already taken is left as it was and reported.",
@@ -1083,7 +1094,7 @@
       "space": "Space"
     },
     "help": {
-      "server": "The address you open Nextcloud at in the browser, e.g. cloud.example.com. A WebDAV address copied from Nextcloud's Files settings works too.",
+      "server": "The address you open Nextcloud at in the browser, e.g. cloud.example.com. A WebDAV address copied from Nextcloud's Files settings works too, and is needed when you sign in with an email address or a company account.",
       "appPassword": "Create one in Nextcloud: Settings → Security → Devices & sessions → “Create new app password”. It can be revoked there at any time, and it is not your account password. filebridge keeps it in the system keyring.",
       "folder": "Where sends go, inside the user's files, e.g. Backup/Fotos. It is created by the first send if it doesn't exist."
     },
@@ -1100,23 +1111,27 @@
       "tip": "Give this destination a key of its own, kept in the system keyring, so your personal SSH key is no longer used",
       "title": "Use filebridge's own key for “{name}”?",
       "what1": "filebridge makes a new key on this computer and keeps it in the system keyring, never in a file.",
-      "what2": "It adds one line to {who}'s ~/.ssh/authorized_keys, marked “restrict”: no interactive terminal, no tunnels, no forwarding. Nothing else on the server changes.",
+      "what2": "It adds one line to the ~/.ssh/authorized_keys of {who}, marked “restrict”: no interactive terminal, no tunnels, no forwarding. Nothing else on the server changes.",
       "what3": "From then on this destination signs in with that key instead of yours; your key stays where it is.",
       "what4": "It signs in with the new key before switching. If any step fails, everything is undone.",
       "confirm": "Install the key",
       "ok": "Done: this destination now uses filebridge's own key.",
-      "failed": "Not installed: nothing was changed."
+      "unconfirmed": "Installed, but not every check could be made: see the steps marked !.",
+      "failed": "Not installed: each step below says what was undone.",
+      "failedUndo": "Not installed, and the undo didn't finish: see the steps marked ✗ for what is left."
     },
     "remove": {
       "button": "Remove access…",
       "tip": "Delete filebridge's key from the server and the keyring, and check that it no longer signs in",
       "title": "Remove filebridge's access to “{name}”?",
-      "what1": "filebridge deletes its own line from {who}'s ~/.ssh/authorized_keys, and nothing else.",
-      "what2": "It deletes the key from the system keyring.",
-      "what3": "This destination then signs in with your key file or SSH agent again, if it has one.",
-      "what4": "Last, it tries the old key once more and checks that the server refuses it.",
+      "what1": "filebridge deletes its own line from the ~/.ssh/authorized_keys of {who}, and nothing else.",
+      "what2": "It tries the old key once more and checks that the server refuses it; if the server still accepts it, nothing else changes.",
+      "what3": "Only then does this destination sign in with your key file or SSH agent again, if it has one.",
+      "what3Password": "Only then does this destination sign in with its password again.",
+      "what4": "Last, it deletes the key from the system keyring.",
       "confirm": "Remove access",
       "ok": "Done: filebridge's key is gone and no longer signs in.",
+      "unconfirmed": "Removed, but not everything could be confirmed: see the steps marked !.",
       "failed": "Not finished: see the step that failed."
     },
     "steps": {
@@ -1131,5 +1146,23 @@
       "proof": "Check"
     },
     "offer": "Finished sending to “{name}”? When you won't send there again, remove filebridge's key from the server."
+  },
+  "hostKey": {
+    "title": "Trust this server?",
+    "intro": "filebridge has not connected to {host} before. Check that this is really your server before going on: someone on the network could be pretending to be it.",
+    "server": "Server",
+    "type": "Key type",
+    "fingerprint": "Fingerprint",
+    "howToCheck": "Compare it with the fingerprint the server shows: ask whoever runs it, or run this on the server. Trust it only if they are the same.",
+    "savedIn": "It will be added to {file}, and this server will not be asked about again.",
+    "trust": "Trust and continue",
+    "trusting": "Adding…",
+    "changedTitle": "This server's key has changed",
+    "changed": "{host} presented a different key from the one saved in {file} (line {line}). filebridge will not connect.",
+    "presented": "Key presented now",
+    "changedWhat": "Either the server was reinstalled or its keys were replaced, or someone is intercepting the connection. If whoever runs the server confirms the change, remove the old line from that file and try again.",
+    "close": "Close",
+    "unreachable": "Could not check the server's key: {error}",
+    "checking": "Checking the server's key…"
   }
 }

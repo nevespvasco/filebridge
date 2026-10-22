@@ -8,6 +8,7 @@
 // state comes from the engine's table (`JOB_OPERATIONS`), not from a copy.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { trimBoth, trimEnd } from "@/lib/format";
+import { sshAccounts } from "@/stores/profiles";
 import { setMockPicker, setMockSave, type PickOptions } from "@/lib/platform";
 import { emit } from "@tauri-apps/api/event";
 import {
@@ -22,6 +23,7 @@ import {
   type ErrorBody,
   type Event_Serialize,
   type FileCategory,
+  type HostKeyView_Serialize,
   type InFlightView_Serialize,
   type IssueDecision,
   type IssueView_Serialize,
@@ -35,6 +37,7 @@ import {
   type JobGroup,
   type JobSummary_Serialize,
   type LogEntry,
+  type NextcloudWebdavRequest,
   type ReclaimStatus_Serialize,
   type RecentSource,
   type StorageView_Serialize as StorageView,
@@ -225,7 +228,7 @@ function ruleCounts(jobId: string, query: string | null = null): RuleCount[] {
         total++;
         if (!def.auto && (decisions.get(def.base + i)?.decision ?? "pending") === "pending") pending++;
       }
-      return { rule: def.rule, total, pending };
+      return { rule: def.rule, total, pending, no_proposal: 0 };
     })
     .filter((r) => r.total > 0);
 }
@@ -397,6 +400,8 @@ function spaceOf(id: string) {
   const s = SPACE[id] ?? { total: 1_000_000_000_000, used: 400_000_000_000 };
   return { total_bytes: s.total, used_bytes: s.used, free_bytes: s.total - s.used };
 }
+/** Why each destination's last space check failed. */
+const lastError = new Map<string, string>();
 function storageOf(id: string): StorageView {
   const at = checkedAt.get(id) ?? null;
   const disk = spaceOf(id);
@@ -404,7 +409,7 @@ function storageOf(id: string): StorageView {
   const quota = q ? { total_bytes: q.total, used_bytes: q.used, free_bytes: q.total - q.used } : null;
   const eff = quota && quota.free_bytes < disk.free_bytes ? quota : disk;
   const low = eff.free_bytes < 10e9 || eff.free_bytes < eff.total_bytes * 0.1;
-  return { profile_id: id, ...eff, transport: disk, quota, checked_at: at, stale: at == null || Date.now() - at > 3_600_000, low, last_error: null };
+  return { profile_id: id, ...eff, transport: disk, quota, checked_at: at, stale: at == null || Date.now() - at > 3_600_000, low, last_error: lastError.get(id) ?? null };
 }
 
 function runTransfer(job: JobSummary_Serialize) {
@@ -552,8 +557,40 @@ function inspectAll(paths: string[]): SourceInfo_Serialize[] {
   return out;
 }
 
+/** SSH servers the mock's known_hosts holds. A host named like "new" starts unknown, one named
+ *  like "changed" has another key on record; every other host is already known. */
+const trustedHosts = new Set<string>();
+function hostKeyOf(a: Args): HostKeyView_Serialize {
+  const host = a.host as string;
+  const port = a.port as number;
+  const known_hosts_file = (a.knownHostsFile as string | null) ?? "/home/demo/.ssh/known_hosts";
+  const id = `${host}:${port}`;
+  const key = { key_type: "ssh-ed25519", fingerprint: "SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8" };
+  if (/changed/i.test(host)) return { host, port, known_hosts_file, status: "changed", ...key, line: 3 };
+  const known = !/new/i.test(host) || trustedHosts.has(id);
+  return { host, port, known_hosts_file, status: known ? "known" : "unknown", ...key, line: null };
+}
+
+/** Why connecting to a destination fails while one of its SSH servers isn't trusted, as rclone
+ *  and russh put it; `null` when every server's key is known. */
+function hostKeyProblem(id: unknown): string | null {
+  const p = profiles.find((x) => x.id === id);
+  const b = p?.destination.backend;
+  if (b?.kind !== "sftp") return null;
+  const s = p!.integration_settings as { ssh?: { host: string; port: number; known_hosts_file: string | null } } | null;
+  const servers = [{ host: b.host, port: b.port ?? 22, knownHostsFile: b.known_hosts_file }];
+  if (s?.ssh) servers.push({ host: s.ssh.host, port: s.ssh.port, knownHostsFile: s.ssh.known_hosts_file });
+  for (const a of servers) {
+    const k = hostKeyOf(a);
+    if (k.status === "unknown") return `host key of ${k.host} is not in ${k.known_hosts_file}`;
+    if (k.status === "changed") return `host key of ${k.host} does not match ${k.known_hosts_file} line ${k.line}`;
+  }
+  return null;
+}
+
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
+  serviceReplacing: () => false,
   setTrayLabels: () => null,
   platform: () => "desktop",
   pickFolder: () => null,
@@ -574,6 +611,11 @@ const handlers: Handlers = {
     return p;
   },
   deleteProfile: (a) => {
+    // Like the service: not while a job to it could still be sent or resumed.
+    const open = jobs.filter((j) => j.profile_id === a.id && !["completed", "completed_with_warnings", "cancelled", "failed"].includes(j.state));
+    if (open.length) {
+      throw fail("invalid", `${open.length} transfer(s) to this destination are not finished (${[...new Set(open.map((j) => j.state))].join(", ")}): cancel them, or let them finish, before deleting it`);
+    }
     const i = profiles.findIndex((x) => x.id === a.id);
     if (i >= 0) profiles.splice(i, 1);
     return null;
@@ -582,6 +624,13 @@ const handlers: Handlers = {
     await sleep(600);
     const p = profiles.find((x) => x.id === a.id);
     const nc = p?.integration === "nextcloud";
+    const keyProblem = hostKeyProblem(a.id);
+    if (keyProblem) {
+      lastError.set(a.id as string, keyProblem);
+      const failed = (source: string) => ({ source, free_bytes: null, total_bytes: null, used_bytes: null, writable: false, checks: [{ id: "connect", status: "fail", message: keyProblem }] });
+      return { transport: failed("transport"), integration: nc ? failed("integration") : null };
+    }
+    lastError.delete(a.id as string);
     checkedAt.set(a.id as string, Date.now());
     return {
       transport: { source: "transport", ...spaceOf(a.id as string), writable: true, checks: [{ id: "connect", status: "ok", message: "connected" }, { id: "writable", status: "ok", message: "test file written and removed" }] },
@@ -660,12 +709,16 @@ const handlers: Handlers = {
     return id;
   },
   addNextcloudWebdav: async (a) => {
-    const req = a.req as { name: string; server: string; user: string; app_password: string; folder: string };
+    const req = a.req as NextcloudWebdavRequest;
     await sleep(600);
     const bare = req.server.replace(/^https?:\/\//, "");
     const host = bare.includes("/") ? bare.slice(0, bare.indexOf("/")) : bare;
     if (/^http:\/\//.test(req.server)) throw fail("invalid", "the address must start with https://: an app password must not travel unencrypted");
-    const url = `https://${host}/remote.php/dav/files/${encodeURIComponent(req.user)}/`;
+    if (host.includes("@")) throw fail("invalid", "leave the user and password out of the address: enter them in their own fields");
+    // A pasted WebDAV address names the user's id, which an email login is not.
+    const pastedId = /\/remote\.php\/dav\/files\/([^/]+)/.exec(bare)?.[1];
+    const userId = pastedId ? decodeURIComponent(pastedId) : null;
+    const url = `https://${host}/remote.php/dav/files/${encodeURIComponent(userId ?? req.user)}/`;
     const steps = [{ id: "address", status: "ok", message: `WebDAV address ${url}`, commands: [] as string[] }];
     // Demo: any app password shorter than 10 characters is refused, like a mistyped one.
     if (req.app_password.length < 10) {
@@ -681,7 +734,7 @@ const handlers: Handlers = {
       name: req.name,
       destination: { transport: "rclone", backend: { kind: "webdav", url, user: req.user, password: `filebridge/${id}/app-password`, vendor: "nextcloud" }, root: req.folder },
       integration: "nextcloud",
-      integration_settings: { mode: "webdav", server: `https://${host}`, user: req.user },
+      integration_settings: { mode: "webdav", server: `https://${host}`, user: req.user, ...(userId && userId !== req.user ? { user_id: userId } : {}) },
       target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);
@@ -693,16 +746,19 @@ const handlers: Handlers = {
     const b = p.destination.backend;
     if (b.kind !== "sftp") throw fail("invalid", "only destinations reached over SSH (SFTP, Nextcloud direct mode) have an SSH key");
     if (b.key) throw fail("invalid", "this destination already uses filebridge's own key");
+    if (b.password && !b.key_file)
+      throw fail("invalid", "this destination signs in with a password: filebridge's own key is installed with a key file or SSH agent");
+    if (!b.user) throw fail("invalid", "the profile names no SSH user");
     await sleep(900);
-    const who = `${b.user ?? "root"}@${b.host}`;
+    const accounts = sshAccounts(p);
     b.key = `filebridge/${p.id}/ssh-key`;
     const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
     return {
       steps: [
         step("generate", "a new Ed25519 key, made on this computer"),
-        step("install", `added to ${who}'s authorized_keys, restricted`),
+        ...accounts.map((who) => step("install", `added to ${who}'s authorized_keys, restricted`)),
         step("keyring", "the private key is in the system keyring"),
-        step("sign-in", `${who} signs in with the new key`),
+        ...accounts.map((who) => step("sign-in", `${who} signs in with the new key`)),
         step("transfer", "files can be sent with the new key"),
         step("saved", "the destination now uses filebridge's own key; your own key is no longer used"),
       ],
@@ -715,18 +771,33 @@ const handlers: Handlers = {
     const b = p.destination.backend;
     if (b.kind !== "sftp" || !b.key) throw fail("invalid", "this destination doesn't use filebridge's own key");
     await sleep(900);
-    const who = `${b.user ?? "root"}@${b.host}`;
+    const accounts = sshAccounts(p);
     b.key = null;
     const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
     return {
       steps: [
-        step("remove", `removed from ${who}'s authorized_keys`),
+        ...accounts.map((who) => step("remove", `removed from ${who}'s authorized_keys`)),
+        ...accounts.map((who) => step("proof", `${who} refuses the old key: access is gone`)),
+        step(
+          "saved",
+          b.password ? "the destination signs in with its password again" : "the destination signs in with your key file or SSH agent again",
+        ),
         step("keyring", "deleted from the system keyring"),
-        step("saved", "the destination signs in with your key file or SSH agent again"),
-        step("proof", `${who} refuses the old key: access is gone`),
       ],
       profile: p,
     };
+  },
+  scanHostKey: async (a) => {
+    await sleep(400);
+    return hostKeyOf(a);
+  },
+  trustHostKey: async (a) => {
+    await sleep(400);
+    const found = hostKeyOf(a);
+    if (found.status === "changed") throw fail("host_key_changed", `host key of ${found.host} does not match ${found.known_hosts_file} line 3`);
+    if (found.fingerprint !== a.fingerprint) throw fail("host_key_changed", `${found.host} now presents the key ${found.fingerprint}, not the one you checked`);
+    trustedHosts.add(`${found.host}:${found.port}`);
+    return { ...found, status: "known" };
   },
   setProfilePassword: (a) => {
     const p = profiles.find((x) => x.id === a.profileId);
@@ -768,6 +839,7 @@ const handlers: Handlers = {
   setOptions: (a) => {
     const job = find(a.jobId);
     allow("set_options", job);
+    if (job.kind === "repair") throw fail("invalid", "a repair's folder and options can't change; start a new repair instead");
     job.options = a.options as JobSummary_Serialize["options"];
     return null;
   },
@@ -803,6 +875,18 @@ const handlers: Handlers = {
     return summary;
   },
   ruleCounts: (a) => ruleCounts(a.jobId as string, a.query as string | null),
+  plannedRenames: (a) => {
+    const job = find(a.jobId);
+    if (ruleCounts(job.id).some((r) => r.pending > 0)) throw fail("pending_decisions", "name decisions are still pending");
+    let n = 0;
+    for (const def of rulesFor(job.id)) {
+      for (let i = 0; i < def.total; i++) {
+        const d = def.auto ? "accepted" : (decisions.get(def.base + i)?.decision ?? "pending");
+        if (d === "accepted" || d === "edited") n++;
+      }
+    }
+    return n;
+  },
   issues: (a) => {
     const defs = rulesFor(a.jobId as string).filter((d) => !a.rule || d.rule === a.rule);
     const after = (a.afterId as number | null) ?? 0;
@@ -960,6 +1044,9 @@ const handlers: Handlers = {
   },
   browse: async (a) => {
     await sleep(250);
+    const target = a.target as { kind: string; id?: string };
+    const keyProblem = target.kind === "profile" ? hostKeyProblem(target.id) : null;
+    if (keyProblem) throw fail("connect", keyProblem);
     const dir = trimBoth((a.dir as string | null) ?? "", "/");
     if (!(dir in FOLDERS)) throw fail("not_found", `${dir} not found`);
     const prefix = ((a.prefix as string | null) ?? "").toLowerCase();
@@ -976,7 +1063,12 @@ const handlers: Handlers = {
   profileStorage: async (a) => {
     if (a.refresh) {
       await sleep(600);
-      checkedAt.set(a.id as string, Date.now());
+      const keyProblem = hostKeyProblem(a.id);
+      if (keyProblem) lastError.set(a.id as string, keyProblem);
+      else {
+        lastError.delete(a.id as string);
+        checkedAt.set(a.id as string, Date.now());
+      }
     }
     return storageOf(a.id as string);
   },

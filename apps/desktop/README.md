@@ -42,23 +42,43 @@ src-tauri/src/
   else `PATH`. It waits up to 5 s for the socket. The child gets its own process group, so it
   outlives the window and a Ctrl+C in the terminal that ran `tauri dev`.
 - `ping` checks `PROTOCOL_VERSION`. A service with an **older** protocol (left running by an
-  earlier version of the app) is replaced: on Unix the window asks the socket for its peer's pid,
-  checks the process is `filebridge-service`, sends SIGTERM (running jobs are stored as they are
-  and resume in the new service), waits up to 10 s for the socket to go quiet, then starts its
-  own. A **newer** service is never stopped. Any mismatch left is the error code
+  earlier version of the app) is replaced, on Unix, in this order:
+  1. the service binary is found first; with none, the old service is left running
+     (`incompatible_service`);
+  2. one connection gives the peer's pid (checked to be `filebridge-service`) and answers a
+     `ping` on that same connection: when it already speaks the protocol (another window
+     replaced it a moment ago) it is left alone and used;
+  3. how it was started is read (Linux: `/proc/PID/cmdline`, `environ`, `cgroup`). One run by
+     the systemd user unit `filebridge-service.service`, or started with arguments other than
+     `--data-dir`, `--rclone`, `--socket`, `--fake-transport` and `run`, is not replaced: the
+     error says why and what to do (`systemctl --user restart …`, or quit it). Other Unixes
+     replace only a service started without arguments;
+  4. SIGTERM (running jobs are stored as they are and resume in the new service), up to 10 s
+     for the socket to go quiet, then the new one starts with the same `--data-dir`, `--rclone`,
+     `--socket` and the old process's `FILEBRIDGE_*` variables (and none of this window's);
+  5. if the new one still speaks an older protocol, the binary on disk is old too: the window
+     remembers it and never stops and restarts it again (until it is reopened).
+
+  From step 4 to the new one answering (up to 10 s plus 5 s) every command waits. The window
+  emits `connection-changed { connected: false, replacing: true }` before step 4, and the
+  window-only command `serviceReplacing` says the same to a window that starts listening later;
+  the banner and the status then read "Updating the copy engine…" instead of an error. It ends
+  with `connected: true`, or `connected: false, replacing: false` when the replacement failed.
+
+  A **newer** service is never stopped. Any mismatch left is the error code
   `incompatible_service`. A missing binary or a service that never answers is
-  `service_unavailable`.
+  `service_unavailable`. Windows: the user quits the old service.
 - `tauri dev` runs `cargo build -p filebridge-service` first, so the service started from
   `target/debug/` is always the current one.
 - Events: `Client::events()` is forwarded as the Tauri event `service-event` (payload: the engine
   `Event`). The stream ends (`Closed`) when the connection drops; the window then emits
-  `connection-changed { connected: false }`, reconnects with backoff (starting the service again
+  `connection-changed { connected: false, replacing: false }`, reconnects with backoff (starting the service again
   if needed) and emits `connected: true`, on which the stores reload, since events sent in
   between are lost.
 - Commands (camelCase in TS): `ping`, `listProfiles`, `saveProfile`, `deleteProfile`,
   `testProfile`, `detectNextcloud`, `createJob`, `setOptions`, `analyse`, `ruleCounts`, `issues`,
-  `decide`, `decideAll`, `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint` and
-  `setTrayLabels`. They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
+  `decide`, `decideAll`, `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint`,
+  `serviceReplacing` and `setTrayLabels`. They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
   `api.*` in `src/lib/api.ts` turns that into a value or a thrown `ServiceError` with its `code`.
 
 ## TypeScript bindings

@@ -6,14 +6,19 @@ use filebridge_transport_api::{ErrorKind, Result, TransportError};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
+use crate::fs::Scrubber;
+
 /// One way to reach rclone's rc API: the `rclone rcd` sidecar over HTTP ([`crate::Rcd`]), or
 /// librclone linked into the process (`Librclone`, feature `librclone`, on phones: ADR 0014).
 /// Both take the same methods and JSON.
 #[async_trait]
 pub trait RcCall: Send + Sync {
     /// Calls an rc method. Errors carry a kind from the status and rclone's message
-    /// ([`kind_of`]).
+    /// ([`kind_of`]), scrubbed of the secrets in use ([`RcCall::scrubber`]).
     async fn call(&self, method: &str, params: Value) -> Result<Value>;
+
+    /// What scrubs secrets from this rclone's errors and log lines.
+    fn scrubber(&self) -> &Scrubber;
 }
 
 /// What the transport talks to rclone through. Cheap to clone; keeps rclone (the sidecar, or
@@ -30,6 +35,11 @@ impl<T: RcCall + 'static> From<Arc<T>> for RcClient {
 }
 
 impl RcClient {
+    /// What scrubs secrets from this rclone's errors and log lines.
+    pub fn scrubber(&self) -> &Scrubber {
+        self.inner.scrubber()
+    }
+
     /// Calls an rc method.
     pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
         self.inner.call(method, params).await
@@ -56,9 +66,10 @@ impl RcClient {
                 .get("error")
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error");
-            return Err(TransportError::new(
-                kind_of(None, err),
-                format!("rclone job {method}: {}", crate::fs::redact(err)),
+            return Err(error(
+                None,
+                &format!("rclone job {method}"),
+                &self.scrubber().scrub(err),
             ));
         }
     }
@@ -70,6 +81,8 @@ pub(crate) struct HttpRc {
     base: String,
     user: String,
     pass: String,
+    /// Secrets in use with this rcd, scrubbed from every error it returns.
+    scrubber: Scrubber,
 }
 
 impl HttpRc {
@@ -84,7 +97,12 @@ impl HttpRc {
             base: format!("http://127.0.0.1:{port}"),
             user,
             pass,
+            scrubber: Scrubber::default(),
         }
+    }
+
+    pub(crate) fn scrubber(&self) -> &Scrubber {
+        &self.scrubber
     }
 
     /// Calls an rc method. 5xx and network errors are `Transient`.
@@ -101,12 +119,18 @@ impl HttpRc {
         let body: Value = resp.json().await.map_err(|e| {
             TransportError::retryable(format!("rclone rc {method}: bad response: {e}"))
         })?;
-        answer(method, status, body)
+        answer(method, status, body, &self.scrubber)
     }
 }
 
-/// An rc call's result from its status and JSON body, the same for HTTP and librclone.
-pub(crate) fn answer(method: &str, status: StatusCode, body: Value) -> Result<Value> {
+/// An rc call's result from its status and JSON body, the same for HTTP and librclone. An
+/// error's message is scrubbed by `scrubber`.
+pub(crate) fn answer(
+    method: &str,
+    status: StatusCode,
+    body: Value,
+    scrubber: &Scrubber,
+) -> Result<Value> {
     if status.is_success() {
         return Ok(body);
     }
@@ -114,15 +138,69 @@ pub(crate) fn answer(method: &str, status: StatusCode, body: Value) -> Result<Va
         .get("error")
         .and_then(Value::as_str)
         .unwrap_or("unknown error");
-    Err(TransportError::new(
-        kind_of(Some(status), msg),
-        format!("rclone rc {method}: {}", crate::fs::redact(msg)),
+    Err(error(
+        Some(status),
+        &format!("rclone rc {method}"),
+        &scrubber.scrub(msg),
     ))
 }
 
+/// An rclone error, already scrubbed, as a `TransportError`: its kind (see [`kind_of`]) and, for
+/// the statuses people can act on, what it means.
+fn error(status: Option<StatusCode>, what: &str, message: &str) -> TransportError {
+    let hint = match http_status(message) {
+        Some(StatusCode::INSUFFICIENT_STORAGE) => "no space left at the destination: ",
+        Some(StatusCode::PAYLOAD_TOO_LARGE) => "the server refused a file this large: ",
+        Some(StatusCode::FORBIDDEN) => "the server refused this: ",
+        _ => "",
+    };
+    TransportError::new(kind_of(status, message), format!("{what}: {hint}{message}"))
+}
+
+/// The HTTP status a backend reported inside rclone's message, as its status token: the code
+/// followed by its reason phrase as servers send it (`401 Unauthorized`, `507 Insufficient
+/// Storage`). A number alone, or in other words (a size, a file name), is not one.
+fn http_status(message: &str) -> Option<StatusCode> {
+    let bytes = message.as_bytes();
+    let token_at = |i: usize| {
+        if i > 0 && bytes[i - 1].is_ascii_alphanumeric() {
+            return None;
+        }
+        let status = StatusCode::from_bytes(message.get(i..i + 3)?.as_bytes()).ok()?;
+        let rest = message[i + 3..].strip_prefix(' ')?;
+        // Its reason phrase, or the older name some servers still send for 413.
+        let reasons = [
+            status.canonical_reason(),
+            (status == StatusCode::PAYLOAD_TOO_LARGE).then_some("Request Entity Too Large"),
+        ];
+        reasons.into_iter().flatten().find_map(|reason| {
+            let after = rest.strip_prefix(reason)?;
+            (!after.starts_with(|c: char| c.is_ascii_alphanumeric())).then_some(status)
+        })
+    };
+    message
+        .match_indices(|c: char| c.is_ascii_digit())
+        .find_map(|(i, _)| token_at(i))
+}
+
 /// The kind of an rclone error, from the HTTP status of an rc call (`None` for an async job's
-/// result) and rclone's message. This is the only place that reads rclone's wording.
+/// result) and rclone's message. This is the only place that reads rclone's wording. A backend's
+/// HTTP status (WebDAV) is read from its status token, never from free text: `401` is `Auth`;
+/// `403` (a blocked name, a share without write access) and `413` are `Other`; `507` (no space)
+/// is `Other` too, since trying again won't free space; other `5xx` are `Transient`.
 pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
+    if let Some(backend) = http_status(message) {
+        match backend {
+            StatusCode::UNAUTHORIZED => return ErrorKind::Auth,
+            StatusCode::NOT_FOUND => return ErrorKind::NotFound,
+            StatusCode::FORBIDDEN
+            | StatusCode::PAYLOAD_TOO_LARGE
+            | StatusCode::INSUFFICIENT_STORAGE => return ErrorKind::Other,
+            StatusCode::TOO_MANY_REQUESTS | StatusCode::LOCKED => return ErrorKind::Transient,
+            s if s.is_server_error() => return ErrorKind::Transient,
+            _ => {}
+        }
+    }
     let msg = message.to_ascii_lowercase();
     let has = |needle: &str| msg.contains(needle);
     if status == Some(StatusCode::NOT_FOUND)
@@ -138,10 +216,8 @@ pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
         Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
     ) || has("unable to authenticate")
         || has("authentication failed")
-        // WebDAV servers (Nextcloud) answer a wrong password with HTTP 401, which rclone
-        // repeats inside its own 500 answer.
-        || has("401 unauthorized")
     {
+        // The rc's own status (its credentials), or SSH refusing the sign-in.
         ErrorKind::Auth
     } else if status.is_none_or(|s| s.is_server_error()) {
         // An async job's failure without a known cause is most often the network.
@@ -187,5 +263,41 @@ mod tests {
         );
         assert_eq!(k(None, "connection reset by peer"), ErrorKind::Transient);
         assert_eq!(k(Some(400), "bad parameter"), ErrorKind::Other);
+    }
+
+    #[test]
+    fn webdav_statuses_are_read_from_their_token() {
+        let k = |msg: &str| kind_of(Some(StatusCode::INTERNAL_SERVER_ERROR), msg);
+        assert_eq!(
+            k("couldn't list files: 401 Unauthorized: 401 Unauthorized"),
+            ErrorKind::Auth
+        );
+        // Forbidden is the server refusing this file or folder, not a wrong password.
+        assert_eq!(
+            k("failed to upload: 403 Forbidden: Sabre\\DAV\\Exception\\Forbidden"),
+            ErrorKind::Other
+        );
+        assert_eq!(k("upload failed: 413 Payload Too Large"), ErrorKind::Other);
+        assert_eq!(
+            k("upload failed: 413 Request Entity Too Large"),
+            ErrorKind::Other
+        );
+        assert_eq!(
+            k("Update failed: 507 Insufficient Storage: quota exceeded"),
+            ErrorKind::Other
+        );
+        assert_eq!(k("PUT: 503 Service Unavailable"), ErrorKind::Transient);
+        assert_eq!(k("too fast: 429 Too Many Requests"), ErrorKind::Transient);
+        // "401" in free text is a name or a number, not a status.
+        assert_eq!(
+            k("copy room-401 unauthorized-copies/x: connection reset"),
+            ErrorKind::Transient
+        );
+        assert_eq!(
+            k("file 401.txt: 4010 Unauthorized bytes"),
+            ErrorKind::Transient
+        );
+        let e = error(None, "rclone job x", "507 Insufficient Storage");
+        assert!(e.message.contains("no space left"), "{}", e.message);
     }
 }

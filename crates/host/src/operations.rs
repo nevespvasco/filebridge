@@ -12,9 +12,10 @@ use filebridge_ipc::{
     AccessReport, ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget,
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    ErrorBody, ExportResult, FolderNameCheck, Handler, IssueView, JobFilter, JobPage, JobSummary,
-    LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest,
-    RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo, StorageView,
+    ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, IssueView, JobFilter, JobPage,
+    JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile,
+    ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo,
+    StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -64,6 +65,7 @@ fn to_error(e: CoreError) -> ErrorBody {
         CoreError::PendingDecisions(_) => "pending_decisions",
         CoreError::InvalidTransition { .. } => "invalid_transition",
         CoreError::Store(StoreError::NotFound(_)) => "not_found",
+        CoreError::Store(StoreError::Deleted(_)) => "invalid",
         CoreError::Invalid(_) => "invalid",
         _ => "internal",
     };
@@ -342,13 +344,37 @@ impl Operations for EngineOperations {
         crate::access::remove(&self.engine, self.ssh()?, &profile_id).await
     }
 
+    async fn scan_host_key(
+        &self,
+        host: String,
+        port: u16,
+        known_hosts_file: Option<String>,
+    ) -> Res<HostKeyView> {
+        self.ssh()?;
+        crate::host_keys::scan(host, port, known_hosts_file).await
+    }
+
+    async fn trust_host_key(
+        &self,
+        host: String,
+        port: u16,
+        known_hosts_file: Option<String>,
+        fingerprint: String,
+    ) -> Res<HostKeyView> {
+        self.ssh()?;
+        crate::host_keys::trust(host, port, known_hosts_file, fingerprint).await
+    }
+
     async fn set_profile_password(
         &self,
         profile_id: String,
-        password: Option<String>,
+        password: Option<filebridge_ipc::Password>,
     ) -> Res<Profile> {
         self.engine
-            .set_profile_password(&profile_id, password)
+            .set_profile_password(
+                &profile_id,
+                password.map(filebridge_ipc::Password::into_inner),
+            )
             .await
             .map_err(to_error)
     }
@@ -358,6 +384,10 @@ impl Operations for EngineOperations {
             .create_repair_job(&profile_id, dir)
             .await
             .map_err(to_error)
+    }
+
+    async fn planned_renames(&self, job_id: String) -> Res<u64> {
+        self.engine.planned_renames(&job_id).await.map_err(to_error)
     }
 
     async fn inspect_sources(&self, paths: Vec<String>) -> Res<Vec<SourceInfo>> {

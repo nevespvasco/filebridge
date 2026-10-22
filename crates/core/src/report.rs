@@ -293,7 +293,7 @@ impl Engine {
     }
 
     async fn report_header(&self, job: &JobRow) -> Result<ReportHeader> {
-        let profile = self.get_profile(&job.profile_id).await?;
+        let profile = self.profile_for_history(&job.profile_id).await?;
         let counts = self.store.manifest_counts(&job.id).await?;
         Ok(ReportHeader {
             id: job.id.clone(),

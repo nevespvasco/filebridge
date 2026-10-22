@@ -7,7 +7,8 @@ use filebridge_model::{
 use filebridge_store::{EntryKey, EntryOrder, EntryQuery, EntryRow, ManifestEntry};
 
 use crate::analyse::{bytes_path, source_parent};
-use crate::{Engine, Result};
+use crate::browse::under;
+use crate::{Engine, JobKind, Result, SendOptions};
 
 /// The most rows one page may have.
 pub const MAX_ENTRY_PAGE: u32 = 500;
@@ -97,7 +98,7 @@ impl Engine {
     /// Everything about one entry.
     pub async fn entry_detail(&self, job_id: &str, idx: u64) -> Result<EntryDetail> {
         let job = self.store.get_job(job_id).await?;
-        let profile = self.get_profile(&job.profile_id).await?;
+        let profile = self.profile_for_history(&job.profile_id).await?;
         let e = self.store.get_entry(job_id, idx).await?;
         let issues = self.store.issues_for_entry(job_id, idx).await?;
         let renamed = issues
@@ -108,16 +109,33 @@ impl Engine {
             renamed,
             rank: 1,
         };
-        let source_root = job
-            .sources
-            .get(e.entry.source as usize)
-            .map(|s| source_parent(&bytes_path(s)))
-            .unwrap_or_default();
-        let source_path = source_root.join(bytes_path(&e.entry.raw_path));
+        let root = profile.destination.root.trim_end_matches('/');
+        let at_root = |d: &str| {
+            if root.is_empty() {
+                d.to_owned()
+            } else {
+                format!("{root}/{d}")
+            }
+        };
+        let source_path = if JobKind::parse(&job.kind)? == JobKind::Repair {
+            // A repair's entries come from the destination: where the name was found there.
+            let options: SendOptions = serde_json::from_value(job.options).unwrap_or_default();
+            let rel = String::from_utf8_lossy(&e.entry.raw_path).into_owned();
+            at_root(&under(options.target_dir.as_deref(), rel))
+        } else {
+            let source_root = job
+                .sources
+                .get(e.entry.source as usize)
+                .map(|s| source_parent(&bytes_path(s)))
+                .unwrap_or_default();
+            source_root
+                .join(bytes_path(&e.entry.raw_path))
+                .to_string_lossy()
+                .into_owned()
+        };
         let source_path_hex = std::str::from_utf8(&e.entry.raw_path)
             .is_err()
             .then(|| hex(&e.entry.raw_path));
-        let root = profile.destination.root.trim_end_matches('/');
         let path_of_raw = String::from_utf8_lossy(&e.entry.raw_path).into_owned();
         let mut views = Vec::with_capacity(issues.len());
         for r in issues {
@@ -125,15 +143,9 @@ impl Engine {
         }
         Ok(EntryDetail {
             view: view(&row),
-            source_path: source_path.to_string_lossy().into_owned(),
+            source_path,
             source_path_hex,
-            dest_path: e.dest_path.as_ref().map(|d| {
-                if root.is_empty() {
-                    d.clone()
-                } else {
-                    format!("{root}/{d}")
-                }
-            }),
+            dest_path: e.dest_path.as_deref().map(at_root),
             mtime: e.entry.mtime,
             hash: e.entry.hash.as_ref().map(|h| HashView {
                 algo: e.entry.hash_algo.clone().unwrap_or_else(|| "sha256".into()),

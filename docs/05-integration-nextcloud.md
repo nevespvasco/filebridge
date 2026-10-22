@@ -26,14 +26,23 @@ network (like the 500 GB initial migration).
   `{ "mode": "webdav", "server", "user" }`. The wizard (`add_nextcloud_webdav`, the window's
   "Over the internet (WebDAV)" form, `filebridge profile add-nextcloud-webdav`) normalises what
   is typed (`cloud.example.com`, or a WebDAV address copied from Nextcloud) to
-  `https://…/remote.php/dav/files/<user>/` — plain `http` only on this machine — keeps the app
+  `https://…/remote.php/dav/files/<id>/` — plain `http` only on this machine (`localhost` or a
+  loopback IP as parsed by the `url` crate, never a name like `127.example.org`); an address with
+  a user or password in it is refused, as are bad ports and IPv6 literals. `<id>` is the login,
+  or the user id from a pasted WebDAV address (`…/dav/files/<id>/`) when it differs, as with
+  email or LDAP logins (settings `user_id`); a missing user folder suggests pasting it. It keeps the app
   password in the OS keyring under a fresh profile id, signs in (lists the user's files), looks
   at the folder (missing = created by the first send) and the quota, and saves the profile only
   when sign-in works; a refused sign-in removes the password again.
 - Preflight adds nothing to the transport's (sign-in, quota); after the transfer there is nothing
   to do. Verification hashes by download (Nextcloud can't give SHA-256), so it costs a second
   pass over the data.
-- A wrong app password is an `Auth` error (WebDAV's 401), not a retry.
+- A wrong app password is an `Auth` error (WebDAV's 401), not a retry; the transfer stops at the
+  first one instead of signing in once per file (Nextcloud's brute-force protection counts
+  each). HTTP statuses are read from their token (`401 Unauthorized`), never from free text:
+  `403` (a blocked name) and `413` are `Other`, `507` is `Other` with "no space left at the
+  destination", other `5xx`, `423` and `429` are `Transient`.
+- Removing the app password of a WebDAV profile is refused: the profile needs it.
 - Mode auto-selection below is not built: the user picks the mode in the wizard.
 
 ### Mode auto-selection

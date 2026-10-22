@@ -86,12 +86,23 @@ macro_rules! for_each_operation {
             /// Deletes filebridge's key from the server and the keyring, puts the profile back on
             /// its key file or agent, and proves the old key no longer signs in.
             RemoveAccess remove_access(profile_id: String) -> $crate::AccessReport;
+            /// Connects to an SSH server only far enough to read its host key (never signs in) and
+            /// says whether `known_hosts_file` (default `~/.ssh/known_hosts`) knows it, has no key
+            /// for the host, or has another one. Writes nothing.
+            ScanHostKey scan_host_key(host: String, port: u16, known_hosts_file: Option<String>) -> $crate::HostKeyView;
+            /// Adds the server's host key to the known_hosts file once the user has checked its
+            /// `fingerprint`: only when the host has no key there yet and the server still
+            /// presents that key. A changed key is refused (`host_key_changed`), never replaced.
+            TrustHostKey trust_host_key(host: String, port: u16, known_hosts_file: Option<String>, fingerprint: String) -> $crate::HostKeyView;
             /// Stores the profile's password in the OS keyring (`None` removes it); the profile
             /// keeps only its reference (ADR 0004). Never logged, never in a Details panel.
-            SetProfilePassword set_profile_password(profile_id: String, password: Option<String>) -> $crate::Profile;
+            SetProfilePassword set_profile_password(profile_id: String, password: Option<$crate::Password>) -> $crate::Profile;
             /// A draft "Repair destination" job for a folder of a profile (`None` = its root):
             /// `analyse`, the decisions and `start` then work on it like on a send.
             CreateRepairJob create_repair_job(profile_id: String, dir: Option<String>) -> String;
+            /// How many entries a Repair job would rename with its decisions as they are: what
+            /// the confirmation counts. Refused while a decision is pending.
+            PlannedRenames planned_renames(job_id: String) -> u64;
             /// What each chosen source is and what is wrong with it, without reading contents.
             InspectSources inspect_sources(paths: Vec<String>) -> Vec<$crate::SourceInfo>;
             /// One page of a job's files, filtered and sorted (at most 500).

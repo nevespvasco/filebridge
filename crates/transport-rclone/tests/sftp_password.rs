@@ -9,7 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, reference};
+use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, StoreResolver, reference};
 use filebridge_transport_api::{Backend, Destination, ErrorKind, Transport};
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
 
@@ -112,7 +112,8 @@ async fn sftp_with_a_password_from_the_keyring() {
     let pass_ref = reference("p-sftp", SecretKind::AppPassword);
     store.set(&pass_ref, PASSWORD).unwrap();
     let rcd = Arc::new(Rcd::start(&binary).await.unwrap());
-    let transport = RcloneTransport::new(rcd, Strategy::PerFile).with_secrets(store.clone());
+    let transport = RcloneTransport::new(rcd, Strategy::PerFile)
+        .with_secrets(Arc::new(StoreResolver(store.clone())));
     let dest = Destination {
         transport: "rclone".into(),
         backend: Backend::Sftp {
@@ -188,7 +189,8 @@ async fn sftp_with_filebridges_own_key_from_the_keyring() {
     let key_ref = reference("p-key", SecretKind::SshKey);
     store.set(&key_ref, &pem).unwrap();
     let rcd = Arc::new(Rcd::start(&binary).await.unwrap());
-    let transport = RcloneTransport::new(rcd, Strategy::PerFile).with_secrets(store.clone());
+    let transport = RcloneTransport::new(rcd, Strategy::PerFile)
+        .with_secrets(Arc::new(StoreResolver(store.clone())));
     let dest = Destination {
         transport: "rclone".into(),
         backend: Backend::Sftp {

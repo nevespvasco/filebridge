@@ -33,13 +33,19 @@
     "connected": "Motor de cópia a funcionar",
     "connecting": "A iniciar o motor de cópia…",
     "disconnected": "Motor de cópia sem resposta",
+    "replacing": "A atualizar o motor de cópia…",
     "short": {
       "connecting": "A ligar…",
-      "disconnected": "Sem ligação"
+      "disconnected": "Sem ligação",
+      "replacing": "A atualizar…"
     },
     "retry": "Tentar de novo",
     "tip": "O motor de cópia copia os seus ficheiros em segundo plano, mesmo com esta janela fechada. Isto mostra se a janela o consegue contactar.",
     "problem": {
+      "replacing": {
+        "title": "A atualizar o motor de cópia…",
+        "body": "Estava a funcionar um motor de cópia de uma versão anterior do filebridge, que está a ser substituído pelo desta versão. Demora alguns segundos e a janela espera por ele. Os envios em curso continuam no novo."
+      },
       "version": {
         "title": "O motor de cópia é de outra versão do filebridge.",
         "body": "Feche todas as janelas do filebridge e abra-o de novo. Os envios em curso não se perdem: continuam quando o motor voltar a arrancar."
@@ -277,6 +283,7 @@
     "skip": "Saltar",
     "edit": "Editar",
     "notSent": "(não enviado)",
+    "keptClash": "Enviado como “{name}”: o mesmo nome que outro, por isso o envio espera até um deles mudar.",
     "bulkLabel": "Os {n} por decidir:",
     "acceptAll": "Aceitar todos",
     "keepAll": "Manter todos",
@@ -516,7 +523,9 @@
     "deleteTitle": "Apagar este destino?",
     "deleteForgets": "O filebridge esquece o perfil “{name}”.",
     "deleteNoFiles": "Nenhum ficheiro é apagado, nem no destino nem em lado nenhum.",
-    "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele.",
+    "deleteJobs": "Os envios que o usaram mantêm o histórico. Os que não terminaram (rascunhos incluídos) têm de ser cancelados antes, ou de terminar.",
+    "deleteKey": "Este destino entra com a chave própria do filebridge. Apagá-lo esquece a chave aqui, mas a linha dela fica no authorized_keys do servidor.",
+    "deleteRemoveFirst": "Remover acesso primeiro…",
     "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada nova transferência.",
     "emptyHint": "Crie o seu primeiro destino: um disco externo, um servidor (SFTP) ou o Nextcloud.",
     "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado.",
@@ -590,7 +599,8 @@
     },
     "password": "Palavra-passe",
     "passwordHint": "opcional: vazio = chave ou agente SSH",
-    "firstConnect": "Antes de usar aqui um servidor pela primeira vez, ligue-se a ele uma vez num terminal (ssh utilizador{'@'}servidor) e aceite-o, para este computador o conhecer."
+    "passwordNotSaved": "O destino foi guardado, mas a palavra-passe não chegou ao cofre do sistema: {error}. Tente de novo: o mesmo destino é atualizado, não é criado outro.",
+    "firstConnect": "Na primeira vez que o filebridge se liga a um servidor, mostra a impressão digital da chave do servidor e pede-lhe que a confirme."
   },
   "nextcloud": {
     "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox (e encontra o contentor do Nextcloud) ou diretamente à máquina onde o Nextcloud corre, e verifica cada passo. Nada é alterado durante a deteção.",
@@ -1038,6 +1048,7 @@
   },
   "repair": {
     "title": "Reparar nomes no destino",
+    "continue": "Continuar a reparação",
     "lead": "Nomes que já estão em {folder} em {destination}, verificados com as mesmas regras de um envio. Nada é renomeado até confirmar.",
     "label": "Reparação · {folder}",
     "root": "todo o destino",
@@ -1054,7 +1065,7 @@
     "rename": "Renomear no destino",
     "fromProblems": "Reparar estes nomes",
     "confirm": {
-      "title": "Renomear até {n} nome? | Renomear até {n} nomes?",
+      "title": "Renomear {n} nome? | Renomear {n} nomes?",
       "where": "Os nomes mudam diretamente em {destination}, em {folder}.",
       "onlyNames": "Os ficheiros não são copiados, alterados nem apagados: só renomeados. Os nomes antigos ficam no relatório desta tarefa.",
       "taken": "Um nome novo que já esteja ocupado fica como estava e é reportado.",
@@ -1083,7 +1094,7 @@
       "space": "Espaço"
     },
     "help": {
-      "server": "O endereço onde abre o Nextcloud no navegador, por exemplo cloud.example.com. Um endereço WebDAV copiado das definições de Ficheiros do Nextcloud também serve.",
+      "server": "O endereço onde abre o Nextcloud no navegador, por exemplo cloud.example.com. Um endereço WebDAV copiado das definições de Ficheiros do Nextcloud também serve, e é preciso quando entra com um endereço de email ou uma conta da empresa.",
       "appPassword": "Crie uma no Nextcloud: Definições → Segurança → Dispositivos e sessões → “Criar nova palavra-passe de aplicação”. Pode ser revogada lá a qualquer momento e não é a palavra-passe da sua conta. O filebridge guarda-a no cofre do sistema.",
       "folder": "Para onde vão os envios, dentro dos ficheiros do utilizador, por exemplo Backup/Fotos. É criada pelo primeiro envio se não existir."
     },
@@ -1105,18 +1116,22 @@
       "what4": "Entra com a chave nova antes de mudar. Se algum passo falhar, tudo é desfeito.",
       "confirm": "Instalar a chave",
       "ok": "Feito: este destino usa agora a chave própria do filebridge.",
-      "failed": "Não instalada: nada foi alterado."
+      "unconfirmed": "Instalada, mas nem todas as verificações foram feitas: veja os passos marcados !.",
+      "failed": "Não instalada: cada passo abaixo diz o que foi desfeito.",
+      "failedUndo": "Não instalada, e não foi possível desfazer tudo: veja nos passos marcados ✗ o que ficou."
     },
     "remove": {
       "button": "Remover acesso…",
       "tip": "Apagar a chave do filebridge do servidor e do cofre, e confirmar que já não entra",
       "title": "Remover o acesso do filebridge a “{name}”?",
       "what1": "O filebridge apaga a sua própria linha do ~/.ssh/authorized_keys de {who}, e mais nada.",
-      "what2": "Apaga a chave do cofre do sistema.",
-      "what3": "Este destino volta a entrar com o seu ficheiro de chave ou agente SSH, se tiver.",
-      "what4": "Por fim, tenta a chave antiga mais uma vez e confirma que o servidor a recusa.",
+      "what2": "Tenta a chave antiga mais uma vez e confirma que o servidor a recusa; se o servidor ainda a aceitar, mais nada muda.",
+      "what3": "Só então este destino volta a entrar com o seu ficheiro de chave ou agente SSH, se tiver.",
+      "what3Password": "Só então este destino volta a entrar com a sua palavra-passe.",
+      "what4": "Por fim, apaga a chave do cofre do sistema.",
       "confirm": "Remover acesso",
       "ok": "Feito: a chave do filebridge foi apagada e já não entra.",
+      "unconfirmed": "Removida, mas nem tudo pôde ser confirmado: veja os passos marcados !.",
       "failed": "Não terminou: veja o passo que falhou."
     },
     "steps": {
@@ -1131,5 +1146,23 @@
       "proof": "Confirmação"
     },
     "offer": "Terminou os envios para “{name}”? Quando não for enviar mais para lá, remova a chave do filebridge do servidor."
+  },
+  "hostKey": {
+    "title": "Confiar neste servidor?",
+    "intro": "O filebridge ainda não se ligou a {host}. Confirme que é mesmo o seu servidor antes de continuar: alguém na rede pode estar a fazer-se passar por ele.",
+    "server": "Servidor",
+    "type": "Tipo de chave",
+    "fingerprint": "Impressão digital",
+    "howToCheck": "Compare-a com a impressão digital que o servidor mostra: pergunte a quem o gere, ou execute isto no servidor. Confie só se forem iguais.",
+    "savedIn": "Será acrescentada a {file}, e não voltará a ser perguntado por este servidor.",
+    "trust": "Confiar e continuar",
+    "trusting": "A acrescentar…",
+    "changedTitle": "A chave deste servidor mudou",
+    "changed": "{host} apresentou uma chave diferente da guardada em {file} (linha {line}). O filebridge não se vai ligar.",
+    "presented": "Chave apresentada agora",
+    "changedWhat": "Ou o servidor foi reinstalado ou as chaves foram substituídas, ou alguém está a intercetar a ligação. Se quem gere o servidor confirmar a mudança, apague a linha antiga desse ficheiro e tente de novo.",
+    "close": "Fechar",
+    "unreachable": "Não foi possível verificar a chave do servidor: {error}",
+    "checking": "A verificar a chave do servidor…"
   }
 }

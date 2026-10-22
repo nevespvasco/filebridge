@@ -31,6 +31,7 @@ macro_rules! service_commands {
             tauri_specta::collect_commands![
                 $($name,)*
                 service_endpoint,
+                service_replacing,
                 set_tray_labels,
                 platform,
                 pick_folder,
@@ -50,6 +51,14 @@ filebridge_ipc::for_each_operation!(service_commands);
 #[specta::specta]
 pub fn service_endpoint(svc: State<'_, Service>) -> String {
     svc.endpoint()
+}
+
+/// Whether an older copy engine is being replaced right now (`ConnectionChanged` says when it
+/// starts and ends; this covers one that started before the window listened).
+#[tauri::command]
+#[specta::specta]
+pub fn service_replacing(svc: State<'_, Service>) -> bool {
+    svc.replacing()
 }
 
 /// Translated tray menu labels; the strings live in the UI's i18n files.
