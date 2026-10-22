@@ -23,7 +23,7 @@ flowchart LR
 | 2 | Analyse | Source paths | Manifest entries: raw name bytes, size, mtime, (hash); totals; `PreflightReport`s | `Transport::preflight`, `Integration::preflight`, `scanner` |
 | 3 | Fix names | Manifest entries, active rules | `issues` + `name_map` (source → destination name), each with `auto` / `pending` / `approved` / `rejected` | `NameRule` |
 | 4 | Transfer | Approved name map | Per-entry transfer state (`pending` / `partial` / `done` / `failed`) | `Transport::transfer` |
-| 5 | Verify (optional) | Source SHA-256, computed at verify time in Phase 1 (stored in the manifest from Phase 2) | Per-entry verify result; mismatched or missing files resent; unhashable destinations reported | `Transport::hash` |
+| 5 | Verify (optional) | Source SHA-256, computed at verify time in Phase 1 (stored in the manifest from Phase 2) | Per-entry verify result; mismatched or missing files resent; unhashable destinations reported | `Transport::hash_many`, in batches (files and bytes capped) while the source is hashed |
 | 6 | Update tool | Exact list of changed remote paths | Integration result + report | `Integration::after_transfer` |
 
 Stages 1–3 run **before a single byte is sent**: the user sees and approves everything that will
