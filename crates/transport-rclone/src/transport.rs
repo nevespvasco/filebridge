@@ -52,6 +52,9 @@ impl RcloneTransport {
         let password = match &dest.backend {
             Backend::Sftp {
                 password: Some(r), ..
+            }
+            | Backend::Webdav {
+                password: Some(r), ..
             } => r.clone(),
             _ => return Ok(Creds::default()),
         };

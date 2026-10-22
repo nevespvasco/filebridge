@@ -37,6 +37,7 @@ impl ReportDestination {
             backend: match p.destination.backend {
                 Backend::Local => "local",
                 Backend::Sftp { .. } => "sftp",
+                Backend::Webdav { .. } => "webdav",
             },
             root: p.destination.root.clone(),
             integration: p.integration.clone(),

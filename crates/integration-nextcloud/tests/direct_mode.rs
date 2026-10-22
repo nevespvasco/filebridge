@@ -63,7 +63,7 @@ fn ctx(root: &str, caps: TransportCaps) -> JobContext {
                 backend: Backend::Local,
                 root: root.into(),
             },
-            settings: serde_json::to_value(NextcloudSettings::Direct(profile())).unwrap(),
+            settings: serde_json::to_value(NextcloudSettings::Direct(Box::new(profile()))).unwrap(),
         },
         caps,
     }

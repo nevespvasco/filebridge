@@ -19,6 +19,23 @@ network (like the 500 GB initial migration).
 | Works away from home | Yes | Only on LAN or VPN |
 | Recommended for | Up to tens of GB, daily use | Large initial migrations |
 
+### As built (Phase 2)
+
+- **WebDAV mode** (`crates/integration-nextcloud/src/webdav.rs`): `Backend::Webdav { url, user,
+  password, vendor: "nextcloud" }` through rclone's `webdav` backend; settings
+  `{ "mode": "webdav", "server", "user" }`. The wizard (`add_nextcloud_webdav`, the window's
+  "Over the internet (WebDAV)" form, `filebridge profile add-nextcloud-webdav`) normalises what
+  is typed (`cloud.example.com`, or a WebDAV address copied from Nextcloud) to
+  `https://…/remote.php/dav/files/<user>/` — plain `http` only on this machine — keeps the app
+  password in the OS keyring under a fresh profile id, signs in (lists the user's files), looks
+  at the folder (missing = created by the first send) and the quota, and saves the profile only
+  when sign-in works; a refused sign-in removes the password again.
+- Preflight adds nothing to the transport's (sign-in, quota); after the transfer there is nothing
+  to do. Verification hashes by download (Nextcloud can't give SHA-256), so it costs a second
+  pass over the data.
+- A wrong app password is an `Auth` error (WebDAV's 401), not a retry.
+- Mode auto-selection below is not built: the user picks the mode in the wizard.
+
 ### Mode auto-selection
 
 - Profile has only WebDAV credentials → WebDAV.

@@ -375,7 +375,10 @@ async fn the_wizard_falls_back_to_the_host_when_pct_is_missing() {
     nextcloud
         .check_profile(&parts.destination, &parts.settings)
         .unwrap();
-    let NextcloudSettings::Direct(nc) = serde_json::from_value(parts.settings.clone()).unwrap();
+    let NextcloudSettings::Direct(nc) = serde_json::from_value(parts.settings.clone()).unwrap()
+    else {
+        panic!("the wizard saves a direct-mode profile");
+    };
     assert_eq!(nc.runtime, Runtime::Host);
 
     // The saved profile works in direct mode: preflight runs plain host commands.

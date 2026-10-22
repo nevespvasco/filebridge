@@ -325,7 +325,9 @@
     "modes": {
       "local": "Copy to a folder",
       "sftp": "Copy over SFTP",
-      "nextcloud": "Nextcloud (direct mode): files are copied, then Nextcloud indexes them"
+      "nextcloud": "Nextcloud (direct mode): files are copied, then Nextcloud indexes them",
+      "nextcloudWebdav": "Nextcloud (WebDAV): files go through Nextcloud, which indexes them as they arrive",
+      "webdav": "Copy over WebDAV"
     },
     "verify": "Verify every file at the end",
     "verifyHint": "After copying, filebridge reads every file again at the source and at the destination and confirms they're identical (SHA-256). It takes longer, but you know for sure nothing was lost.",
@@ -517,12 +519,13 @@
     "kinds": {
       "local": "Local folder",
       "sftp": "SFTP",
-      "nextcloud": "Nextcloud"
+      "nextcloud": "Nextcloud",
+      "webdav": "WebDAV"
     },
     "kindsHint": {
       "local": "An external disk, a USB stick or another folder on this computer",
       "sftp": "A server or NAS you reach over SSH (Synology, TrueNAS, Raspberry Pi…)",
-      "nextcloud": "Nextcloud on Proxmox or on its own server (advanced)"
+      "nextcloud": "Your Nextcloud, over the internet with an app password, or directly on its server"
     },
     "name": "Name",
     "nameHintLocal": "External disk",
@@ -1047,6 +1050,37 @@
       "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this job's report.",
       "taken": "A new name that is already taken is left as it was and reported.",
       "nextcloud": "Nextcloud then rescans the folders that changed, so it shows the new names."
+    }
+  },
+  "webdav": {
+    "mode": "How filebridge reaches Nextcloud",
+    "modeWebdav": "Over the internet (WebDAV)",
+    "modeDirect": "Directly on the server (SSH)",
+    "modeHint": {
+      "webdav": "Recommended: needs only Nextcloud's address and an app password, works from anywhere, and Nextcloud indexes the files as they arrive.",
+      "direct": "For big first migrations on your own network: writes straight into Nextcloud's data folder over SSH, then asks Nextcloud to index what arrived."
+    },
+    "intro": "filebridge signs in to Nextcloud with an app password, like the desktop and phone apps do. Nothing needs to be set up on the server.",
+    "server": "Nextcloud address",
+    "appPassword": "App password",
+    "https": "Use https://: an app password must not travel unencrypted.",
+    "folderHint": "empty = the user's files root",
+    "check": "Check and save",
+    "checking": "Checking…",
+    "steps": {
+      "address": "Address",
+      "sign-in": "Sign-in",
+      "folder": "Folder",
+      "space": "Space"
+    },
+    "help": {
+      "server": "The address you open Nextcloud at in the browser, e.g. cloud.example.com. A WebDAV address copied from Nextcloud's Files settings works too.",
+      "appPassword": "Create one in Nextcloud: Settings → Security → Devices & sessions → “Create new app password”. It can be revoked there at any time, and it is not your account password. filebridge keeps it in the system keyring.",
+      "folder": "Where sends go, inside the user's files, e.g. Backup/Fotos. It is created by the first send if it doesn't exist."
+    },
+    "modeShort": {
+      "webdav": "WebDAV",
+      "direct": "direct (SSH)"
     }
   }
 }

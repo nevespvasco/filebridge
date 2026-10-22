@@ -653,10 +653,37 @@ const handlers: Handlers = {
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
   },
+  addNextcloudWebdav: async (a) => {
+    const req = a.req as { name: string; server: string; user: string; app_password: string; folder: string };
+    await sleep(600);
+    const host = req.server.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    if (/^http:\/\//.test(req.server)) throw fail("invalid", "the address must start with https://: an app password must not travel unencrypted");
+    const url = `https://${host}/remote.php/dav/files/${encodeURIComponent(req.user)}/`;
+    const steps = [{ id: "address", status: "ok", message: `WebDAV address ${url}`, commands: [] as string[] }];
+    // Demo: any app password shorter than 10 characters is refused, like a mistyped one.
+    if (req.app_password.length < 10) {
+      steps.push({ id: "sign-in", status: "fail", message: `Nextcloud refused ${req.user} with this app password (401 Unauthorized)`, commands: [] });
+      return { detector: "webdav", steps, containers: [], profile: null };
+    }
+    steps.push({ id: "sign-in", status: "ok", message: `signed in as ${req.user}`, commands: [] });
+    if (req.folder) steps.push({ id: "folder", status: "warn", message: `folder ${req.folder} doesn't exist yet: the first send creates it`, commands: [] });
+    steps.push({ id: "space", status: "ok", message: "312.4 GB free of 1000.0 GB", commands: [] });
+    const id = newId("p");
+    const profile: Profile_Serialize = {
+      id,
+      name: req.name,
+      destination: { transport: "rclone", backend: { kind: "webdav", url, user: req.user, password: `filebridge/${id}/app-password`, vendor: "nextcloud" }, root: req.folder },
+      integration: "nextcloud",
+      integration_settings: { mode: "webdav", server: `https://${host}`, user: req.user },
+      target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
+    };
+    profiles.push(profile);
+    return { detector: "webdav", steps, containers: [], profile };
+  },
   setProfilePassword: (a) => {
     const p = profiles.find((x) => x.id === a.profileId);
     if (!p) throw fail("not_found", `no profile ${a.profileId as string}`);
-    if (p.destination.backend.kind !== "sftp") throw fail("invalid", "a local folder has no password");
+    if (p.destination.backend.kind === "local") throw fail("invalid", "a local folder has no password");
     // Like the service: only the reference is kept; the mock forgets the value.
     p.destination.backend.password = a.password ? `filebridge/${p.id}/app-password` : null;
     return p;

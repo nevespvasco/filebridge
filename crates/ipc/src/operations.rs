@@ -33,6 +33,10 @@ macro_rules! for_each_operation {
             /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
             /// Nextcloud on the SSH host itself). Saves the profile when every step passes.
             DetectNextcloud detect_nextcloud(req: $crate::DetectNextcloudRequest) -> $crate::DetectNextcloudResponse;
+            /// Nextcloud WebDAV-mode profile wizard: checks the address, the sign-in, the folder
+            /// and the space, and saves the profile (its app password in the keyring) when they
+            /// pass. Same answer as `detect_nextcloud`.
+            AddNextcloudWebdav add_nextcloud_webdav(req: $crate::NextcloudWebdavRequest) -> $crate::DetectNextcloudResponse;
             /// A draft job; nothing is read from the sources yet.
             CreateJob create_job(sources: Vec<String>, profile_id: String, options: $crate::SendOptions) -> String;
             /// Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready).

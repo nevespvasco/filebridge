@@ -325,7 +325,9 @@
     "modes": {
       "local": "Cópia para uma pasta",
       "sftp": "Cópia por SFTP",
-      "nextcloud": "Nextcloud (modo direto): os ficheiros são copiados e depois indexados pelo Nextcloud"
+      "nextcloud": "Nextcloud (modo direto): os ficheiros são copiados e depois indexados pelo Nextcloud",
+      "nextcloudWebdav": "Nextcloud (WebDAV): os ficheiros passam pelo Nextcloud, que os indexa à chegada",
+      "webdav": "Copiar por WebDAV"
     },
     "verify": "Verificar cada ficheiro no fim",
     "verifyHint": "Depois de copiar, o filebridge lê de novo cada ficheiro na origem e no destino e confirma que são idênticos (SHA-256). Demora mais, mas fica com a certeza de que nada se perdeu.",
@@ -517,12 +519,13 @@
     "kinds": {
       "local": "Pasta local",
       "sftp": "SFTP",
-      "nextcloud": "Nextcloud"
+      "nextcloud": "Nextcloud",
+      "webdav": "WebDAV"
     },
     "kindsHint": {
       "local": "Um disco externo, uma pen USB ou outra pasta deste computador",
       "sftp": "Um servidor ou NAS a que acede por SSH (Synology, TrueNAS, Raspberry Pi…)",
-      "nextcloud": "Nextcloud no Proxmox ou no seu próprio servidor (avançado)"
+      "nextcloud": "O seu Nextcloud, pela internet com uma palavra-passe de aplicação, ou diretamente no servidor"
     },
     "name": "Nome",
     "nameHintLocal": "Disco externo",
@@ -1047,6 +1050,37 @@
       "onlyNames": "Os ficheiros não são copiados, alterados nem apagados: só renomeados. Os nomes antigos ficam no relatório desta tarefa.",
       "taken": "Um nome novo que já esteja ocupado fica como estava e é reportado.",
       "nextcloud": "O Nextcloud volta depois a analisar as pastas que mudaram, para mostrar os nomes novos."
+    }
+  },
+  "webdav": {
+    "mode": "Como o filebridge chega ao Nextcloud",
+    "modeWebdav": "Pela internet (WebDAV)",
+    "modeDirect": "Diretamente no servidor (SSH)",
+    "modeHint": {
+      "webdav": "Recomendado: só precisa do endereço do Nextcloud e de uma palavra-passe de aplicação, funciona de qualquer sítio, e o Nextcloud indexa os ficheiros à chegada.",
+      "direct": "Para grandes migrações iniciais na sua rede: escreve diretamente na pasta de dados do Nextcloud por SSH e depois pede ao Nextcloud para indexar o que chegou."
+    },
+    "intro": "O filebridge entra no Nextcloud com uma palavra-passe de aplicação, como fazem as apps de computador e telemóvel. Não é preciso configurar nada no servidor.",
+    "server": "Endereço do Nextcloud",
+    "appPassword": "Palavra-passe de aplicação",
+    "https": "Use https://: uma palavra-passe de aplicação não pode viajar sem cifra.",
+    "folderHint": "vazio = a raiz dos ficheiros do utilizador",
+    "check": "Verificar e guardar",
+    "checking": "A verificar…",
+    "steps": {
+      "address": "Endereço",
+      "sign-in": "Entrada",
+      "folder": "Pasta",
+      "space": "Espaço"
+    },
+    "help": {
+      "server": "O endereço onde abre o Nextcloud no navegador, por exemplo cloud.example.com. Um endereço WebDAV copiado das definições de Ficheiros do Nextcloud também serve.",
+      "appPassword": "Crie uma no Nextcloud: Definições → Segurança → Dispositivos e sessões → “Criar nova palavra-passe de aplicação”. Pode ser revogada lá a qualquer momento e não é a palavra-passe da sua conta. O filebridge guarda-a no cofre do sistema.",
+      "folder": "Para onde vão os envios, dentro dos ficheiros do utilizador, por exemplo Backup/Fotos. É criada pelo primeiro envio se não existir."
+    },
+    "modeShort": {
+      "webdav": "WebDAV",
+      "direct": "direto (SSH)"
     }
   }
 }

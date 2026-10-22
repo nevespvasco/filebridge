@@ -9,7 +9,7 @@ import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
 import { minutesToTime } from "@/lib/format";
 import { useJobs } from "@/stores/jobs";
-import { profileKind, profileWhere, useProfiles } from "@/stores/profiles";
+import { sendMode, profileWhere, useProfiles } from "@/stores/profiles";
 import { useSettings } from "@/stores/settings";
 import { useWizard } from "@/stores/wizard";
 
@@ -27,7 +27,7 @@ const profile = computed(() => (wizard.profileId ? profiles.byId[wizard.profileI
 const job = computed(() => (wizard.jobId ? jobs.byId[wizard.jobId] : undefined));
 const totals = computed(() => wizard.analysis ?? job.value?.counts);
 const renames = computed(() => wizard.ruleCounts.reduce((n, r) => n + r.total, 0));
-const mode = computed(() => (profile.value ? profileKind(profile.value) : "local"));
+const mode = computed(() => (profile.value ? sendMode(profile.value) : "local"));
 
 onMounted(() => profiles.ensure(wizard.profileId));
 

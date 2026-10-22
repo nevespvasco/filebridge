@@ -114,7 +114,7 @@ impl Nextcloud {
             root,
         };
         Self::check_direct(&destination, &nc).map_err(|e| SetupError::Invalid(e.message))?;
-        let settings = serde_json::to_value(NextcloudSettings::Direct(nc))
+        let settings = serde_json::to_value(NextcloudSettings::Direct(Box::new(nc)))
             .map_err(|e| SetupError::Invalid(e.to_string()))?;
         Ok(Setup {
             detection,

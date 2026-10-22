@@ -11,8 +11,9 @@ use crate::shell::SshTarget;
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum NextcloudSettings {
     /// SFTP into the data folder; owner/mode and `occ files:scan` done over SSH.
-    Direct(NextcloudDirectProfile),
-    // WebDAV lands in Phase 2.
+    Direct(Box<NextcloudDirectProfile>),
+    /// Nextcloud's own WebDAV API with an app password (docs/05: the default mode).
+    Webdav(crate::webdav::NextcloudWebdavProfile),
 }
 
 /// Where Nextcloud runs, seen from the SSH host.
@@ -450,7 +451,7 @@ pub(crate) mod tests {
 
     #[test]
     fn settings_json_shape() {
-        let s = NextcloudSettings::Direct(sample());
+        let s = NextcloudSettings::Direct(Box::new(sample()));
         let v = serde_json::to_value(&s).unwrap();
         assert_eq!(v["mode"], "direct");
         assert_eq!(v["runtime"]["kind"], "proxmox_lxc");
@@ -458,7 +459,7 @@ pub(crate) mod tests {
         let back: NextcloudSettings = serde_json::from_value(v).unwrap();
         assert_eq!(back, s);
 
-        let h = NextcloudSettings::Direct(sample_host());
+        let h = NextcloudSettings::Direct(Box::new(sample_host()));
         let v = serde_json::to_value(&h).unwrap();
         assert_eq!(v["runtime"], serde_json::json!({ "kind": "host" }));
         assert_eq!(serde_json::from_value::<NextcloudSettings>(v).unwrap(), h);

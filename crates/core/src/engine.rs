@@ -259,8 +259,9 @@ impl Engine {
     /// Saves a profile, giving it an id if it has none. Rejects unknown plugins and
     /// transport/integration combinations that can't work.
     pub async fn save_profile(&self, mut profile: Profile) -> Result<Profile> {
-        let new = profile.id.is_empty();
-        if new {
+        // New: no id yet, or one chosen ahead (a wizard that keeps a secret under it first).
+        let new = profile.id.is_empty() || self.store.get_profile(&profile.id).await.is_err();
+        if profile.id.is_empty() {
             profile.id = uuid::Uuid::new_v4().to_string();
         }
         self.registry.check_profile(&profile)?;

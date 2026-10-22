@@ -33,13 +33,7 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
         } => {
             let mut params = vec![("host", host.clone())];
             if password.is_some() {
-                let pass = creds.pass.as_ref().ok_or_else(|| {
-                    TransportError::new(
-                        filebridge_transport_api::ErrorKind::Auth,
-                        "the SFTP password is not in the keyring; set it again",
-                    )
-                })?;
-                params.push(("pass", pass.0.clone()));
+                params.push(("pass", needed(&creds.pass, "SFTP")?));
             }
             if let Some(port) = port {
                 params.push(("port", port.to_string()));
@@ -59,13 +53,42 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
                 params.push(("host_key_algorithms", algos));
             }
             params.push(("known_hosts_file", known_hosts));
-            let params: Vec<String> = params
-                .into_iter()
-                .map(|(k, v)| format!("{k}={}", quote(&v)))
-                .collect();
-            Ok(format!(":sftp,{}:{path}", params.join(",")))
+            Ok(format!(":sftp,{}:{path}", connection(params)))
+        }
+        Backend::Webdav {
+            url,
+            user,
+            password,
+            vendor,
+        } => {
+            let mut params = vec![("url", url.clone()), ("user", user.clone())];
+            if let Some(vendor) = vendor {
+                params.push(("vendor", vendor.clone()));
+            }
+            if password.is_some() {
+                params.push(("pass", needed(&creds.pass, "WebDAV")?));
+            }
+            Ok(format!(":webdav,{}:{path}", connection(params)))
         }
     }
+}
+
+fn connection(params: Vec<(&str, String)>) -> String {
+    params
+        .into_iter()
+        .map(|(k, v)| format!("{k}={}", quote(&v)))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// The obscured password a profile says it has: missing from the keyring is an `Auth` error.
+fn needed(pass: &Option<Redacted<String>>, what: &str) -> Result<String> {
+    pass.as_ref().map(|p| p.0.clone()).ok_or_else(|| {
+        TransportError::new(
+            filebridge_transport_api::ErrorKind::Auth,
+            format!("the {what} password is not in the keyring; set it again"),
+        )
+    })
 }
 
 /// `message` with the value of every secret connection-string parameter (`pass="…"`,

@@ -80,6 +80,7 @@ export const ICONS = {
   local: PhHardDrive,
   sftp: PhTerminalWindow,
   nextcloud: PhCloud,
+  webdav: PhCloud,
   // Guides and notices
   lightbulb: PhLightbulb,
   pointing: PhHandPointing,

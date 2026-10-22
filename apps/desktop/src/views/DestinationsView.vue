@@ -107,7 +107,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
             <AppIcon :name="profileKind(p)" :size="20" class="kind" />
             <span class="badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
             <strong>{{ p.name }}</strong>
-            <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: nextcloudMode(p) }) }}</span>
+            <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: $t(`webdav.modeShort.${nextcloudMode(p)}`) }) }}</span>
           </div>
           <div class="actions">
             <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running" @click="profiles.test(p.id)">{{ $t("dest.test") }}</button>

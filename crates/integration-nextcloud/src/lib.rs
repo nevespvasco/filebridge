@@ -13,6 +13,7 @@ pub mod rules;
 pub mod setup;
 pub mod shell;
 pub mod ssh;
+pub mod webdav;
 
 use std::sync::Arc;
 
@@ -29,6 +30,7 @@ pub use rules::{NextcloudNfc, NextcloudReserved};
 pub use setup::{ProfileParts, Setup, SetupError, SetupRequest};
 pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};
 pub use ssh::{SshConnector, SshShell};
+pub use webdav::NextcloudWebdavProfile;
 
 pub const INTEGRATION_ID: &str = "nextcloud";
 
@@ -62,10 +64,13 @@ impl Nextcloud {
         vec![Box::new(LxcDetector), Box::new(HostDetector)]
     }
 
-    fn direct_profile(ctx: &JobContext) -> Result<NextcloudDirectProfile> {
-        let NextcloudSettings::Direct(profile) = ctx.profile.settings_as::<NextcloudSettings>()?;
-        profile.validate()?;
-        Ok(profile)
+    fn settings(ctx: &JobContext) -> Result<NextcloudSettings> {
+        let settings = ctx.profile.settings_as::<NextcloudSettings>()?;
+        match &settings {
+            NextcloudSettings::Direct(p) => p.validate()?,
+            NextcloudSettings::Webdav(p) => p.validate()?,
+        }
+        Ok(settings)
     }
 }
 
@@ -85,14 +90,21 @@ impl Integration for Nextcloud {
     }
 
     fn check_profile(&self, destination: &Destination, settings: &serde_json::Value) -> Result<()> {
-        let NextcloudSettings::Direct(nc) = serde_json::from_value(settings.clone())
-            .map_err(|e| IntegrationError::fatal(format!("Nextcloud settings: {e}")))?;
-        Self::check_direct(destination, &nc)
+        match serde_json::from_value(settings.clone())
+            .map_err(|e| IntegrationError::fatal(format!("Nextcloud settings: {e}")))?
+        {
+            NextcloudSettings::Direct(nc) => Self::check_direct(destination, &nc),
+            NextcloudSettings::Webdav(nc) => nc.check(destination),
+        }
     }
 
     async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport> {
-        let profile = Self::direct_profile(ctx)?;
-        direct::preflight(&profile, ctx, self.connector.as_ref()).await
+        match Self::settings(ctx)? {
+            NextcloudSettings::Direct(p) => {
+                direct::preflight(&p, ctx, self.connector.as_ref()).await
+            }
+            NextcloudSettings::Webdav(p) => webdav::preflight(&p, ctx),
+        }
     }
 
     async fn after_transfer(
@@ -101,15 +113,19 @@ impl Integration for Nextcloud {
         changed: &[RemotePath],
         progress: IntegrationSink,
     ) -> Result<AfterTransferReport> {
-        let profile = Self::direct_profile(ctx)?;
-        direct::after_transfer(
-            &profile,
-            ctx,
-            changed,
-            &progress,
-            self.connector.as_ref(),
-            &self.options,
-        )
-        .await
+        match Self::settings(ctx)? {
+            NextcloudSettings::Direct(p) => {
+                direct::after_transfer(
+                    &p,
+                    ctx,
+                    changed,
+                    &progress,
+                    self.connector.as_ref(),
+                    &self.options,
+                )
+                .await
+            }
+            NextcloudSettings::Webdav(_) => Ok(webdav::after_transfer(changed)),
+        }
     }
 }

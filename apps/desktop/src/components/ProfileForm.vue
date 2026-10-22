@@ -10,6 +10,8 @@ import { useProfiles } from "@/stores/profiles";
 import { useI18n } from "vue-i18n";
 import HelpTip from "./HelpTip.vue";
 import NextcloudDetect from "./NextcloudDetect.vue";
+import NextcloudWebdav from "./NextcloudWebdav.vue";
+import SegmentedControl from "./SegmentedControl.vue";
 
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const profiles = useProfiles();
@@ -17,6 +19,12 @@ const { t } = useI18n();
 
 type Kind = "local" | "sftp" | "nextcloud";
 const kind = ref<Kind>("local");
+/** Nextcloud's two modes (docs/05): WebDAV by default, direct on the server for big loads. */
+const ncMode = ref<"webdav" | "direct">("webdav");
+const ncModes = computed(() => [
+  { value: "webdav" as const, label: t("webdav.modeWebdav"), icon: "nextcloud" as const },
+  { value: "direct" as const, label: t("webdav.modeDirect"), icon: "sftp" as const },
+]);
 const form = reactive({
   name: "",
   root: "",
@@ -125,7 +133,14 @@ async function save() {
       </button>
     </div>
 
-    <NextcloudDetect v-if="kind === 'nextcloud'" @saved="emit('saved', $event)" @cancel="emit('cancel')" />
+    <template v-if="kind === 'nextcloud'">
+      <div class="nc-mode">
+        <SegmentedControl v-model="ncMode" :options="ncModes" :label="$t('webdav.mode')" />
+        <span class="small muted">{{ $t(`webdav.modeHint.${ncMode}`) }}</span>
+      </div>
+      <NextcloudWebdav v-if="ncMode === 'webdav'" @saved="emit('saved', $event)" @cancel="emit('cancel')" />
+      <NextcloudDetect v-else @saved="emit('saved', $event)" @cancel="emit('cancel')" />
+    </template>
 
     <form v-else @submit.prevent="save">
       <div class="grid">
@@ -241,6 +256,7 @@ async function save() {
 </template>
 
 <style scoped>
+.nc-mode { display: grid; gap: 0.35rem; margin: 0.5rem 0 1rem; }
 .q-title { margin: 0 0 0.6rem; font-size: 1rem; }
 .kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
 .kind {

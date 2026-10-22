@@ -35,6 +35,12 @@ export const commands = {
 	 *  Nextcloud on the SSH host itself). Saves the profile when every step passes.
 	 */
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
+	/**
+	 *  Nextcloud WebDAV-mode profile wizard: checks the address, the sign-in, the folder
+	 *  and the space, and saves the profile (its app password in the keyring) when they
+	 *  pass. Same answer as `detect_nextcloud`.
+	 */
+	addNextcloudWebdav: (req: NextcloudWebdavRequest) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_nextcloud_webdav", { req })),
 	/**  A draft job; nothing is read from the sources yet. */
 	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
@@ -125,7 +131,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 17 as const;
+export const PROTOCOL_VERSION = 18 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -211,13 +217,35 @@ export type Backend_Deserialize = { kind: "local" } | { kind: "sftp"; host: stri
 /**  Private key file; when absent the SSH agent is used. */
 key_file?: string | null; 
 /**  Host keys are always verified; defaults to `~/.ssh/known_hosts`. */
-known_hosts_file?: string | null; password?: KeyringRef | null };
+known_hosts_file?: string | null; password?: KeyringRef | null } | 
+/**
+ *  A WebDAV server (Nextcloud's own API in WebDAV mode, docs/05). `root` is relative to
+ *  `url`.
+ */
+{ kind: "webdav"; 
+/**  Base URL of the user's files, e.g. `https://cloud.example.com/remote.php/dav/files/alice/`. */
+url: string; user: string; 
+/**  The password (a Nextcloud app password) in the keyring. */
+password?: KeyringRef | null; 
+/**  Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV. */
+vendor?: string | null };
 
 export type Backend_Serialize = { kind: "local" } | { kind: "sftp"; host: string; port: number | null; user: string | null; 
 /**  Private key file; when absent the SSH agent is used. */
 key_file: string | null; 
 /**  Host keys are always verified; defaults to `~/.ssh/known_hosts`. */
-known_hosts_file: string | null; password: KeyringRef | null };
+known_hosts_file: string | null; password: KeyringRef | null } | 
+/**
+ *  A WebDAV server (Nextcloud's own API in WebDAV mode, docs/05). `root` is relative to
+ *  `url`.
+ */
+{ kind: "webdav"; 
+/**  Base URL of the user's files, e.g. `https://cloud.example.com/remote.php/dav/files/alice/`. */
+url: string; user: string; 
+/**  The password (a Nextcloud app password) in the keyring. */
+password: KeyringRef | null; 
+/**  Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV. */
+vendor: string | null };
 
 export type BlockerView = BlockerView_Serialize | BlockerView_Deserialize;
 
@@ -843,6 +871,22 @@ export type LogEntry = {
 };
 
 export type LogLevel = "info" | "warn" | "error";
+
+/**
+ *  Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
+ *  password, which goes to the OS keyring and nowhere else.
+ */
+export type NextcloudWebdavRequest = {
+	/**  Name for the profile saved when every check passes. */
+	name: string,
+	/**  What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud. */
+	server: string,
+	user: string,
+	/**  A Nextcloud app password (Settings → Security), never the account password. */
+	app_password: string,
+	/**  Folder inside the user's files that receives sends (`""` for the root). */
+	folder: string,
+};
 
 export type Pong = {
 	protocol: number,

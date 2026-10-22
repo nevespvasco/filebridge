@@ -56,7 +56,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 15: `inspect_sources`; nested or repeated sources refused by `create_job`.
 /// 16: `create_repair_job` (`JobKind::Repair`); `TargetSpec` limits; rules `mojibake`, `length`.
 /// 17: `set_profile_password` (SFTP password in the OS keyring).
-pub const PROTOCOL_VERSION: u32 = 17;
+/// 18: `add_nextcloud_webdav`; `Backend::Webdav`; Nextcloud settings `mode: "webdav"`.
+pub const PROTOCOL_VERSION: u32 = 18;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {
@@ -95,6 +96,33 @@ pub struct ErrorBody {
 pub struct Pong {
     pub protocol: u32,
     pub version: String,
+}
+
+/// Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
+/// password, which goes to the OS keyring and nowhere else.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct NextcloudWebdavRequest {
+    /// Name for the profile saved when every check passes.
+    pub name: String,
+    /// What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud.
+    pub server: String,
+    pub user: String,
+    /// A Nextcloud app password (Settings → Security), never the account password.
+    pub app_password: String,
+    /// Folder inside the user's files that receives sends (`""` for the root).
+    pub folder: String,
+}
+
+impl std::fmt::Debug for NextcloudWebdavRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NextcloudWebdavRequest")
+            .field("name", &self.name)
+            .field("server", &self.server)
+            .field("user", &self.user)
+            .field("app_password", &"***")
+            .field("folder", &self.folder)
+            .finish()
+    }
 }
 
 /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the

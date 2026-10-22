@@ -103,6 +103,9 @@ pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
         Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
     ) || has("unable to authenticate")
         || has("authentication failed")
+        // WebDAV servers (Nextcloud) answer a wrong password with HTTP 401, which rclone
+        // repeats inside its own 500 answer.
+        || has("401 unauthorized")
     {
         ErrorKind::Auth
     } else if status.is_none_or(|s| s.is_server_error()) {
@@ -134,6 +137,13 @@ mod tests {
         );
         assert_eq!(
             k(None, "ssh: handshake failed: ssh: unable to authenticate"),
+            ErrorKind::Auth
+        );
+        assert_eq!(
+            k(
+                Some(500),
+                "read metadata failed: 401 Unauthorized: 401 Unauthorized"
+            ),
             ErrorKind::Auth
         );
         assert_eq!(

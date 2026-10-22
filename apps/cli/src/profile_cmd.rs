@@ -71,6 +71,21 @@ pub enum ProfileCmd {
     /// Nextcloud direct mode, over SSH to the Proxmox node (Nextcloud in an LXC) or to the
     /// machine Nextcloud runs on: detects the container, data folder, `occ` and owner, then
     /// saves the profile. Runs read-only commands on the host.
+    /// Nextcloud over its own WebDAV API with an app password (the default mode; nothing to set
+    /// up on the server). The app password is asked without echo, or read from stdin.
+    AddNextcloudWebdav {
+        #[arg(long)]
+        name: String,
+        /// The Nextcloud address, e.g. `cloud.example.com` (https), or its WebDAV address.
+        #[arg(long)]
+        server: String,
+        /// The Nextcloud user.
+        #[arg(long)]
+        user: String,
+        /// Folder inside that user's files, e.g. `Backup` (default: the files root).
+        #[arg(long, default_value = "")]
+        folder: String,
+    },
     AddNextcloud {
         #[arg(long)]
         name: String,
@@ -179,6 +194,39 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             )
             .await
         }
+        ProfileCmd::AddNextcloudWebdav {
+            name,
+            server,
+            user,
+            folder,
+        } => {
+            let app = App::open(g, Access::Exclusive, true).await?;
+            let app_password = read_password(&format!("App password for {user}: "))?;
+            let res = app
+                .ops
+                .add_nextcloud_webdav(filebridge_ipc::NextcloudWebdavRequest {
+                    name,
+                    server,
+                    user,
+                    app_password,
+                    folder,
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+            for step in &res.steps {
+                let mark = match step.status.as_str() {
+                    "ok" => "✓",
+                    "warn" => "!",
+                    _ => "✗",
+                };
+                println!("  {mark} {:<10} {}", step.id, step.message);
+            }
+            let Some(saved) = res.profile else {
+                bail!("the profile was not saved; fix the failed step and try again");
+            };
+            println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
+            Ok(())
+        }
         ProfileCmd::AddNextcloud {
             name,
             ssh,
@@ -259,6 +307,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                     Backend::Sftp { host, user, .. } => {
                         format!("sftp {}@{host}", user.as_deref().unwrap_or(""))
                     }
+                    Backend::Webdav { url, .. } => format!("webdav {url}"),
                 };
                 println!(
                     "{}  {:<24} {backend}:{}{}",

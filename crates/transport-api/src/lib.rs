@@ -106,6 +106,17 @@ pub enum Backend {
         known_hosts_file: Option<PathBuf>,
         password: Option<KeyringRef>,
     },
+    /// A WebDAV server (Nextcloud's own API in WebDAV mode, docs/05). `root` is relative to
+    /// `url`.
+    Webdav {
+        /// Base URL of the user's files, e.g. `https://cloud.example.com/remote.php/dav/files/alice/`.
+        url: String,
+        user: String,
+        /// The password (a Nextcloud app password) in the keyring.
+        password: Option<KeyringRef>,
+        /// Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV.
+        vendor: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

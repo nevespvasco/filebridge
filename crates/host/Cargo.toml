@@ -18,7 +18,8 @@ filebridge-transport-api.workspace = true
 filebridge-transport-fake.workspace = true
 filebridge-transport-rclone.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "rt"] }
+uuid.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]

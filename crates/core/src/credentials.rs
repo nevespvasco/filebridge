@@ -16,7 +16,7 @@ impl Engine {
     ) -> Result<Profile> {
         let mut profile = self.get_profile(id).await?;
         let slot = match &mut profile.destination.backend {
-            Backend::Sftp { password, .. } => password,
+            Backend::Sftp { password, .. } | Backend::Webdav { password, .. } => password,
             Backend::Local => {
                 return Err(CoreError::Invalid("a local folder has no password".into()));
             }
