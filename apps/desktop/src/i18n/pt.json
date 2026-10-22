@@ -244,7 +244,18 @@
     "bytesTip": "Vista técnica: os bytes do nome antes (vermelho) e depois (verde). Mostram a mudança quando o texto parece idêntico.",
     "editHint": "Só muda o nome, não a pasta onde está.",
     "carried": "Decidido da última vez",
-    "carriedTip": "Copiado da transferência que esta repete. Pode mudar."
+    "carriedTip": "Copiado da transferência que esta repete. Pode mudar.",
+    "filter": "Filtrar por caminho…",
+    "selectPage": "Selecionar esta página",
+    "selectRow": "Selecionar {path}",
+    "selectMatching": "Selecionar o {n} pendente que corresponde | Selecionar os {n} pendentes que correspondem",
+    "oneGroup": "Seleção limpa: um grupo de cada vez.",
+    "applied": {
+      "accept": "{n} aceite | {n} aceites",
+      "keep_original": "{n} mantido como está | {n} mantidos como estão",
+      "skip": "{n} ignorado | {n} ignorados"
+    },
+    "partial": "{n} não pôde mudar: {reason} | {n} não puderam mudar. Primeiro: {reason}"
   },
   "decision": {
     "pending": "Por decidir",
@@ -800,5 +811,10 @@
     "profileRemoved": "Destino \"{name}\" removido",
     "empty": "Ainda nada aconteceu. O que as transferências fazem, mesmo com a janela fechada, aparece aqui.",
     "error": "Não foi possível ler a atividade."
+  },
+  "selection": {
+    "label": "Seleção",
+    "count": "{n} selecionado | {n} selecionados",
+    "clear": "Limpar"
   }
 }

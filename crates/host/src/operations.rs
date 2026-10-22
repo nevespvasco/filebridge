@@ -8,7 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_ipc::{
-    ActivityItem, AnalysisSummary, AppSettings, CategoryCount, DecisionInput,
+    ActivityItem, AnalysisSummary, AppSettings, CategoryCount, DecideManyResult, DecisionInput,
     DetectNextcloudRequest, DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets,
     EntryFilter, EntryPage, ErrorBody, Handler, IssueView, JobFilter, JobPage, JobSummary,
     LogEntry, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, RuleCount,
@@ -114,8 +114,11 @@ impl Operations for EngineOperations {
         self.engine.analyse(&job_id).await.map_err(to_error)
     }
 
-    async fn rule_counts(&self, job_id: String) -> Res<Vec<RuleCount>> {
-        self.engine.rule_counts(&job_id).await.map_err(to_error)
+    async fn rule_counts(&self, job_id: String, query: Option<String>) -> Res<Vec<RuleCount>> {
+        self.engine
+            .rule_counts_matching(&job_id, query)
+            .await
+            .map_err(to_error)
     }
 
     async fn issues(
@@ -124,9 +127,10 @@ impl Operations for EngineOperations {
         rule: Option<String>,
         after_id: Option<i64>,
         limit: u32,
+        query: Option<String>,
     ) -> Res<Vec<IssueView>> {
         self.engine
-            .issues(&job_id, rule, after_id, limit.min(1000))
+            .issues_matching(&job_id, rule, after_id, limit.min(1000), query)
             .await
             .map_err(to_error)
     }
@@ -143,9 +147,22 @@ impl Operations for EngineOperations {
         job_id: String,
         rule: Option<String>,
         decision: DecisionInput,
+        query: Option<String>,
     ) -> Res<u64> {
         self.engine
-            .decide_all(&job_id, rule, decision)
+            .decide_all_matching(&job_id, rule, decision, query)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn decide_many(
+        &self,
+        job_id: String,
+        issue_ids: Vec<i64>,
+        decision: DecisionInput,
+    ) -> Res<DecideManyResult> {
+        self.engine
+            .decide_many(&job_id, issue_ids, decision)
             .await
             .map_err(to_error)
     }

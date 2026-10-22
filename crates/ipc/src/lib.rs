@@ -25,12 +25,12 @@ pub use server::{Handler, bind, serve};
 /// carry, so clients need only this crate. It doesn't depend on `core`: a client never compiles
 /// the engine (ADR 0008: the window reaches `core` only through `ipc`).
 pub use filebridge_model::{
-    ActivityItem, AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput,
-    EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
-    EntryView, Event, Family, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
-    JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
-    Profile, ProfileTest, RecentSource, RuleCount, SendOptions, SendWindow, SpaceView, StatusCount,
-    StorageView, TargetSpec, job_operations,
+    ActivityItem, AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecideManyResult,
+    DecisionInput, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort,
+    EntryStatus, EntryView, Event, Family, HashView, IssueDecision, IssueSeverity, IssueView,
+    JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
+    PreflightView, Profile, ProfileTest, RecentSource, RefusedIssue, RuleCount, SendOptions,
+    SendWindow, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -46,7 +46,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 8: `profile_storage`; preflight views carry total and used space.
 /// 9: `list_jobs` takes a filter and answers a page; `set_label`, `send_again`; jobs have a label.
 /// 10: `activity`.
-pub const PROTOCOL_VERSION: u32 = 10;
+/// 11: `decide_many`; `issues`, `rule_counts` and `decide_all` take a path `query`.
+pub const PROTOCOL_VERSION: u32 = 11;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

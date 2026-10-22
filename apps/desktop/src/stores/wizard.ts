@@ -104,7 +104,7 @@ export const useWizard = defineStore("wizard", () => {
 
   async function refreshRuleCounts() {
     if (!jobId.value) return;
-    ruleCounts.value = await api.ruleCounts(jobId.value);
+    ruleCounts.value = await api.ruleCounts(jobId.value, null);
   }
 
   async function decide(issueId: number, decision: DecisionInput) {
@@ -114,16 +114,31 @@ export const useWizard = defineStore("wizard", () => {
     await refreshRuleCounts();
   }
 
-  /** Applies one decision to every pending issue of `rule` in one call; returns how many changed. */
-  async function decideAll(rule: string, decision: DecisionInput): Promise<number> {
+  /** Applies one decision to every pending issue of `rule` (whose path contains `query`, when
+   *  given) in one call; returns how many changed. */
+  async function decideAll(rule: string, decision: DecisionInput, query: string | null = null): Promise<number> {
     if (!jobId.value) return 0;
     try {
-      return await api.decideAll(jobId.value, rule, decision);
+      return await api.decideAll(jobId.value, rule, decision, query);
     } finally {
       decisionsVersion.value++;
       await refreshRuleCounts();
     }
   }
+
+  /** One decision for each selected issue; the ones refused keep theirs (docs/design/specs/D08). */
+  async function decideMany(ids: number[], decision: DecisionInput) {
+    if (!jobId.value) return { changed: 0, refused: [] };
+    try {
+      return await api.decideMany(jobId.value, ids, decision);
+    } finally {
+      decisionsVersion.value++;
+      await refreshRuleCounts();
+    }
+  }
+
+  /** The rule whose issues are selected: one group at a time. */
+  const selectionGroup = ref<string | null>(null);
 
   const optionsChanged = computed(
     () => !!jobOptions.value && JSON.stringify(jobOptions.value) !== JSON.stringify(options.value),
@@ -208,6 +223,8 @@ export const useWizard = defineStore("wizard", () => {
     refreshRuleCounts,
     decide,
     decideAll,
+    decideMany,
+    selectionGroup,
     changeOptions,
     send,
     openJob,

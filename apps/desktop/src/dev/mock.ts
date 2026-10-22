@@ -184,12 +184,25 @@ function issue(def: RuleDef, i: number): IssueView_Serialize {
   };
 }
 
-function ruleCounts(jobId: string): RuleCount[] {
-  return rulesFor(jobId).map((def) => {
-    let pending = 0;
-    if (!def.auto) for (let i = 0; i < def.total; i++) if ((decisions.get(def.base + i)?.decision ?? "pending") === "pending") pending++;
-    return { rule: def.rule, total: def.total, pending };
-  });
+/** Whether issue `i` of `def` matches a path filter (like the engine: a substring, ASCII case). */
+function matches(def: RuleDef, i: number, query: string | null | undefined): boolean {
+  if (!query) return true;
+  return issue(def, i).path.toLowerCase().includes(query.trim().toLowerCase());
+}
+
+function ruleCounts(jobId: string, query: string | null = null): RuleCount[] {
+  return rulesFor(jobId)
+    .map((def) => {
+      let pending = 0;
+      let total = 0;
+      for (let i = 0; i < def.total; i++) {
+        if (query && !matches(def, i, query)) continue;
+        total++;
+        if (!def.auto && (decisions.get(def.base + i)?.decision ?? "pending") === "pending") pending++;
+      }
+      return { rule: def.rule, total, pending };
+    })
+    .filter((r) => r.total > 0);
 }
 
 function send(ev: Event_Serialize) {
@@ -549,14 +562,14 @@ const handlers: Handlers = {
     };
     return summary;
   },
-  ruleCounts: (a) => ruleCounts(a.jobId as string),
+  ruleCounts: (a) => ruleCounts(a.jobId as string, a.query as string | null),
   issues: (a) => {
     const defs = rulesFor(a.jobId as string).filter((d) => !a.rule || d.rule === a.rule);
     const after = (a.afterId as number | null) ?? 0;
     const out: IssueView_Serialize[] = [];
     for (const d of defs) {
       const start = Math.max(0, after - d.base + 1);
-      for (let i = start; i < d.total && out.length < (a.limit as number); i++) out.push(issue(d, i));
+      for (let i = start; i < d.total && out.length < (a.limit as number); i++) if (matches(d, i, a.query as string | null)) out.push(issue(d, i));
     }
     return out;
   },
@@ -568,6 +581,19 @@ const handlers: Handlers = {
     readyIfDecided(job);
     return null;
   },
+  decideMany: (a) => {
+    const d = a.decision as DecisionInput;
+    if (d.kind === "edit") throw fail("invalid", "an edited name applies to one issue, not to many");
+    const job = find(a.jobId);
+    allow("decide", job);
+    let changed = 0;
+    for (const id of a.issueIds as number[]) {
+      decisions.set(id, { decision: DECIDED[d.kind], custom_name: null });
+      changed++;
+    }
+    readyIfDecided(job);
+    return { changed, refused: [] };
+  },
   decideAll: (a) => {
     const d = a.decision as DecisionInput;
     if (d.kind === "edit") throw fail("invalid", "an edited name applies to one issue, not to many");
@@ -578,6 +604,7 @@ const handlers: Handlers = {
       if (def.auto || (a.rule && def.rule !== a.rule)) continue;
       for (let i = 0; i < def.total; i++) {
         if ((decisions.get(def.base + i)?.decision ?? "pending") !== "pending") continue;
+        if (!matches(def, i, a.query as string | null)) continue;
         decisions.set(def.base + i, { decision: DECIDED[d.kind], custom_name: null });
         n++;
       }

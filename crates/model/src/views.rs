@@ -338,3 +338,18 @@ pub struct JobPage {
     /// How many jobs match in all.
     pub total: u64,
 }
+
+/// An issue `decide_many` left as it was, and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RefusedIssue {
+    pub id: i64,
+    pub reason: String,
+}
+
+/// What `decide_many` did (docs/design/specs/D08).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct DecideManyResult {
+    pub changed: u64,
+    /// The issues the name rules refused that decision for; they keep theirs.
+    pub refused: Vec<RefusedIssue>,
+}

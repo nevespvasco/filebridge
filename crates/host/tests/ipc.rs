@@ -87,7 +87,7 @@ async fn client_drives_a_job_over_the_socket() {
     assert_eq!(err.code, "pending_decisions");
 
     let issues = client
-        .issues(job.clone(), Some("collision".into()), None, 50)
+        .issues(job.clone(), Some("collision".into()), None, 50, None)
         .await
         .unwrap();
     client
@@ -212,12 +212,17 @@ async fn set_options_and_decide_all_over_the_socket() {
     assert_eq!(missing.code, "not_found");
 
     let edit = client
-        .decide_all(job.clone(), None, DecisionInput::Edit("x".into()))
+        .decide_all(job.clone(), None, DecisionInput::Edit("x".into()), None)
         .await
         .unwrap_err();
     assert_eq!(edit.code, "invalid");
     let changed = client
-        .decide_all(job.clone(), Some("collision".into()), DecisionInput::Accept)
+        .decide_all(
+            job.clone(),
+            Some("collision".into()),
+            DecisionInput::Accept,
+            None,
+        )
         .await
         .unwrap();
     assert_eq!(changed, 2);

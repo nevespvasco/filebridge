@@ -33,15 +33,21 @@ export const commands = {
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
 	setOptions: (jobId: string, options: SendOptions) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
 	analyse: (jobId: string) => typedError<AnalysisSummary_Serialize, ErrorBody>(__TAURI_INVOKE("analyse", { jobId })),
-	ruleCounts: (jobId: string) => typedError<RuleCount[], ErrorBody>(__TAURI_INVOKE("rule_counts", { jobId })),
+	/**  Per-rule counts; with `query`, only issues whose source path contains it. */
+	ruleCounts: (jobId: string, query: string | null) => typedError<RuleCount[], ErrorBody>(__TAURI_INVOKE("rule_counts", { jobId, query })),
 	/**  One page of a job's issues (optionally of one rule), by id after `after_id`. */
-	issues: (jobId: string, rule: string | null, afterId: number | null, limit: number) => typedError<IssueView_Serialize[], ErrorBody>(__TAURI_INVOKE("issues", { jobId, rule, afterId, limit })),
+	issues: (jobId: string, rule: string | null, afterId: number | null, limit: number, query: string | null) => typedError<IssueView_Serialize[], ErrorBody>(__TAURI_INVOKE("issues", { jobId, rule, afterId, limit, query })),
 	decide: (jobId: string, issueId: number, decision: DecisionInput) => typedError<null, ErrorBody>(__TAURI_INVOKE("decide", { jobId, issueId, decision })),
 	/**
 	 *  One decision for every pending issue of the job (or of `rule`). Not `edit`.
 	 *  Answers with the number of issues changed.
 	 */
-	decideAll: (jobId: string, rule: string | null, decision: DecisionInput) => typedError<number, ErrorBody>(__TAURI_INVOKE("decide_all", { jobId, rule, decision })),
+	decideAll: (jobId: string, rule: string | null, decision: DecisionInput, query: string | null) => typedError<number, ErrorBody>(__TAURI_INVOKE("decide_all", { jobId, rule, decision, query })),
+	/**
+	 *  One decision (not `edit`) for each listed issue; the ones the name rules refuse
+	 *  keep theirs and are reported.
+	 */
+	decideMany: (jobId: string, issueIds: number[], decision: DecisionInput) => typedError<DecideManyResult, ErrorBody>(__TAURI_INVOKE("decide_many", { jobId, issueIds, decision })),
 	start: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("start", { jobId })),
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
@@ -92,7 +98,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 10 as const;
+export const PROTOCOL_VERSION = 11 as const;
 
 /* Types */
 /**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
@@ -219,6 +225,13 @@ export type Counts = {
 	bytes_done: number,
 	verified_ok: number,
 	mismatch: number,
+};
+
+/**  What `decide_many` did (docs/design/specs/D08). */
+export type DecideManyResult = {
+	changed: number,
+	/**  The issues the name rules refused that decision for; they keep theirs. */
+	refused: RefusedIssue[],
 };
 
 /**  What the user decides about one issue. */
@@ -795,6 +808,12 @@ export type RecentSource = {
 	last_sent_at: number,
 	/**  Whether it is there now (a disk may be unplugged, a folder renamed). */
 	exists: boolean,
+};
+
+/**  An issue `decide_many` left as it was, and why. */
+export type RefusedIssue = {
+	id: number,
+	reason: string,
 };
 
 export type RuleCount = {

@@ -33,13 +33,17 @@ macro_rules! for_each_operation {
             /// Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready).
             SetOptions set_options(job_id: String, options: $crate::SendOptions) -> ();
             Analyse analyse(job_id: String) -> $crate::AnalysisSummary;
-            RuleCounts rule_counts(job_id: String) -> Vec<$crate::RuleCount>;
+            /// Per-rule counts; with `query`, only issues whose source path contains it.
+            RuleCounts rule_counts(job_id: String, query: Option<String>) -> Vec<$crate::RuleCount>;
             /// One page of a job's issues (optionally of one rule), by id after `after_id`.
-            Issues issues(job_id: String, rule: Option<String>, after_id: Option<i64>, limit: u32) -> Vec<$crate::IssueView>;
+            Issues issues(job_id: String, rule: Option<String>, after_id: Option<i64>, limit: u32, query: Option<String>) -> Vec<$crate::IssueView>;
             Decide decide(job_id: String, issue_id: i64, decision: $crate::DecisionInput) -> ();
             /// One decision for every pending issue of the job (or of `rule`). Not `edit`.
             /// Answers with the number of issues changed.
-            DecideAll decide_all(job_id: String, rule: Option<String>, decision: $crate::DecisionInput) -> u64;
+            DecideAll decide_all(job_id: String, rule: Option<String>, decision: $crate::DecisionInput, query: Option<String>) -> u64;
+            /// One decision (not `edit`) for each listed issue; the ones the name rules refuse
+            /// keep theirs and are reported.
+            DecideMany decide_many(job_id: String, issue_ids: Vec<i64>, decision: $crate::DecisionInput) -> $crate::DecideManyResult;
             Start start(job_id: String) -> ();
             Pause pause(job_id: String) -> ();
             Resume resume(job_id: String) -> ();

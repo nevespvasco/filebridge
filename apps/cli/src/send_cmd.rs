@@ -135,14 +135,14 @@ pub async fn resume(g: &Global, job: Option<String>) -> Result<()> {
 pub async fn issues(g: &Global, job: &str, rule: Option<String>, all: bool) -> Result<()> {
     let app = App::open(g, Access::Read, false).await?;
     let job = app.job(job).await?;
-    for r in app.ops.rule_counts(job.id.clone()).await? {
+    for r in app.ops.rule_counts(job.id.clone(), None).await? {
         println!("{:<18} {:>7} names, {} pending", r.rule, r.total, r.pending);
     }
     let mut after = None;
     loop {
         let page = app
             .ops
-            .issues(job.id.clone(), rule.clone(), after, 500)
+            .issues(job.id.clone(), rule.clone(), after, 500, None)
             .await?;
         let Some(last) = page.last() else { break };
         after = Some(last.id);
@@ -206,7 +206,10 @@ pub async fn decide_all(
         DecisionArg::Skip => DecisionInput::Skip,
         DecisionArg::Edit => bail!("an edited name applies to one issue; use `decide`"),
     };
-    let n = app.ops.decide_all(job.id.clone(), rule, input).await?;
+    let n = app
+        .ops
+        .decide_all(job.id.clone(), rule, input, None)
+        .await?;
     let job = app.ops.job(job.id).await?;
     println!(
         "{n} issues decided; job {} is {}",

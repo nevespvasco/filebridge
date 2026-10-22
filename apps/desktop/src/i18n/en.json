@@ -244,7 +244,18 @@
     "bytesTip": "Technical view: the bytes of the name before (red) and after (green). They show the change when the text looks identical.",
     "editHint": "Only the name changes, not the folder it's in.",
     "carried": "Decided last time",
-    "carriedTip": "Copied from the transfer this one repeats. You can change it."
+    "carriedTip": "Copied from the transfer this one repeats. You can change it.",
+    "filter": "Filter by path…",
+    "selectPage": "Select this page",
+    "selectRow": "Select {path}",
+    "selectMatching": "Select the {n} pending one that matches | Select the {n} pending that match",
+    "oneGroup": "Selection cleared: one group at a time.",
+    "applied": {
+      "accept": "{n} accepted | {n} accepted",
+      "keep_original": "{n} kept as they are | {n} kept as they are",
+      "skip": "{n} skipped | {n} skipped"
+    },
+    "partial": "{n} couldn't change: {reason} | {n} couldn't change. First: {reason}"
   },
   "decision": {
     "pending": "Pending",
@@ -800,5 +811,10 @@
     "profileRemoved": "Removed destination \"{name}\"",
     "empty": "Nothing happened yet. What your transfers do, even with the window closed, appears here.",
     "error": "Couldn't read the activity."
+  },
+  "selection": {
+    "label": "Selection",
+    "count": "{n} selected | {n} selected",
+    "clear": "Clear"
   }
 }

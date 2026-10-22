@@ -1,6 +1,6 @@
 # D08 — Issue selection in the Analysis step
 
-- ID: D08 · Status: Proposed · Phase: 2
+- ID: D08 · Status: **Built** · Phase: 2
 - Inspired by: F10 (Vault & Vine multi-select with a "1 Selected" bar), A6 (checkbox column),
   A8 (search over the table)
 - Layers touched: `crates/store` (bulk decide by ids, path filter), `crates/core`
@@ -64,6 +64,15 @@ COLLISIONS · 2 014 (1 870 pending)                        [Accept all] [Keep al
   selection clears, and the bar announces the result: "143 skipped".
 - `Shift + click` selects a range of loaded rows; `Space` toggles the focused row
   ([02 — Keyboard](../02-information-architecture.md#keyboard)).
+
+### As built
+
+- "Select the N that match" selects the **pending** issues that match (it uses `decide_all`, which
+  only changes pending ones), so the "their decision will change" confirmation isn't needed.
+- `decide_many` answers a `DecideManyResult { changed, refused: [{ id, reason }] }` instead of a
+  `partial` error: what it could apply is applied, and the window lists the first refusal.
+- The path filter matches like the store's `LIKE`: a substring, ASCII letters in any case. The
+  engine's own pre-check uses the same rule, so the two never disagree on which issues match.
 
 ## States
 

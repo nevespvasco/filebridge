@@ -569,6 +569,71 @@ async fn transfers_are_named_found_and_sent_again_with_their_decisions() {
 }
 
 #[tokio::test]
+async fn issues_are_decided_by_selection_or_by_path() {
+    let s = setup().await;
+    // Two collisions, in two folders.
+    std::fs::write(s.src.join("Fotos/Ver\u{e3}o.jpg"), b"other summer").unwrap();
+    std::fs::create_dir_all(s.src.join("Contratos")).unwrap();
+    std::fs::write(s.src.join("Contratos/Ata\u{301}.pdf"), b"a").unwrap();
+    std::fs::write(s.src.join("Contratos/At\u{e1}.pdf"), b"b").unwrap();
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(s.engine.analyse(&job).await.unwrap().pending_decisions, 2);
+
+    let in_contratos = s
+        .engine
+        .rule_counts_matching(&job, Some("contratos".into()))
+        .await
+        .unwrap();
+    let collisions = in_contratos.iter().find(|r| r.rule == "collision").unwrap();
+    assert_eq!(collisions.pending, 1, "ASCII case doesn't matter");
+    let n = s
+        .engine
+        .decide_all_matching(
+            &job,
+            Some("collision".into()),
+            DecisionInput::Skip,
+            Some("Contratos".into()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "only the issue under Contratos");
+    assert_eq!(
+        s.engine.job(&job).await.unwrap().state,
+        JobState::AwaitingApproval
+    );
+
+    // By selection: the other one.
+    let left: Vec<i64> = s
+        .engine
+        .issues(&job, Some("collision".into()), None, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.decision == IssueDecision::Pending)
+        .map(|i| i.id)
+        .collect();
+    assert_eq!(left.len(), 1);
+    let done = s
+        .engine
+        .decide_many(&job, left, DecisionInput::Accept)
+        .await
+        .unwrap();
+    assert_eq!((done.changed, done.refused.len()), (1, 0));
+    assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Ready);
+    assert!(
+        s.engine
+            .decide_many(&job, vec![1], DecisionInput::Edit("x".into()))
+            .await
+            .is_err(),
+        "an edit is for one issue"
+    );
+}
+
+#[tokio::test]
 async fn collisions_wait_for_a_decision() {
     let s = setup().await;
     // Same visible name twice: NFC and NFD.

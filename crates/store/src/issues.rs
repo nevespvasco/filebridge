@@ -73,6 +73,22 @@ pub struct RuleSummary {
     pub pending: u64,
 }
 
+/// The condition "the issue's entry's source path is LIKE parameter `?n`" (true when NULL).
+fn matching(n: u8) -> String {
+    format!(
+        "(?{n} IS NULL OR EXISTS (SELECT 1 FROM manifest_entries m WHERE m.job_id = issues.job_id \
+         AND m.idx = issues.entry_idx AND CAST(m.raw_path AS TEXT) LIKE ?{n} ESCAPE '\\'))"
+    )
+}
+
+/// A substring search as a LIKE pattern, `%`/`_` literal; `None` for no filter.
+fn like_pattern(query: Option<String>) -> Option<String> {
+    query
+        .map(|q| q.trim().to_owned())
+        .filter(|q| !q.is_empty())
+        .map(|q| format!("%{}%", crate::manifest::like_escape(&q)))
+}
+
 const COLUMNS: &str = "id, entry_idx, rule, severity, message_key, before, after, decision, \
                        custom_name, decided_at, carried_over";
 
@@ -145,14 +161,31 @@ impl Store {
         after_id: Option<i64>,
         limit: u32,
     ) -> Result<Vec<IssueRow>> {
+        self.issues_page_matching(job_id, rule, after_id, limit, None)
+            .await
+    }
+
+    /// [`Self::issues_page`], only issues whose entry's source path contains `query`
+    /// (docs/design/specs/D08).
+    pub async fn issues_page_matching(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+        after_id: Option<i64>,
+        limit: u32,
+        query: Option<String>,
+    ) -> Result<Vec<IssueRow>> {
         let job_id = job_id.to_owned();
+        let pattern = like_pattern(query);
         self.call(move |c| {
             let mut stmt = c.prepare_cached(&format!(
                 "SELECT {COLUMNS} FROM issues
                  WHERE job_id = ?1 AND (?2 IS NULL OR rule = ?2) AND (?3 IS NULL OR id > ?3)
-                 ORDER BY id LIMIT ?4"
+                   AND {}
+                 ORDER BY id LIMIT ?4",
+                matching(5)
             ))?;
-            let rows = stmt.query_map(params![job_id, rule, after_id, limit], from_row)?;
+            let rows = stmt.query_map(params![job_id, rule, after_id, limit, pattern], from_row)?;
             rows.map(|r| {
                 let (mut row, decision) = r?;
                 row.issue.decision = Decision::parse(&decision)?;
@@ -164,13 +197,24 @@ impl Store {
     }
 
     pub async fn issue_summary(&self, job_id: &str) -> Result<Vec<RuleSummary>> {
+        self.issue_summary_matching(job_id, None).await
+    }
+
+    /// Per-rule counts of the issues whose entry's source path contains `query`.
+    pub async fn issue_summary_matching(
+        &self,
+        job_id: &str,
+        query: Option<String>,
+    ) -> Result<Vec<RuleSummary>> {
         let job_id = job_id.to_owned();
+        let pattern = like_pattern(query);
         self.call(move |c| {
-            let mut stmt = c.prepare_cached(
+            let mut stmt = c.prepare_cached(&format!(
                 "SELECT rule, COUNT(*), SUM(decision = 'pending')
-                 FROM issues WHERE job_id = ?1 GROUP BY rule ORDER BY rule",
-            )?;
-            let rows = stmt.query_map([&job_id], |r| {
+                 FROM issues WHERE job_id = ?1 AND {} GROUP BY rule ORDER BY rule",
+                matching(2)
+            ))?;
+            let rows = stmt.query_map(params![job_id, pattern], |r| {
                 Ok(RuleSummary {
                     rule: r.get(0)?,
                     total: r.get(1)?,
@@ -325,6 +369,51 @@ impl Store {
         rule: Option<String>,
         decision: Decision,
     ) -> Result<u64> {
+        self.decide_pending_issues_matching(job_id, rule, decision, None)
+            .await
+    }
+
+    /// [`Self::decide_pending_issues`], only for issues whose entry's source path contains
+    /// `query` (docs/design/specs/D08, "Select the N that match").
+    pub async fn decide_pending_issues_matching(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+        decision: Decision,
+        query: Option<String>,
+    ) -> Result<u64> {
+        if matches!(decision, Decision::Pending | Decision::Edited) {
+            return Err(StoreError::Invalid(format!(
+                "cannot decide issues in bulk as {}",
+                decision.as_str()
+            )));
+        }
+        let job_id = job_id.to_owned();
+        let pattern = like_pattern(query);
+        self.call(move |c| {
+            let n = c.execute(
+                &format!(
+                    "UPDATE issues SET decision = ?3, custom_name = NULL, decided_at = ?4,
+                         carried_over = 0
+                     WHERE job_id = ?1 AND decision = 'pending' AND (?2 IS NULL OR rule = ?2)
+                       AND {}",
+                    matching(5)
+                ),
+                params![job_id, rule, decision.as_str(), now_ms(), pattern],
+            )?;
+            Ok(n as u64)
+        })
+        .await
+    }
+
+    /// One decision for each listed issue of the job (not `Edited`), in one transaction.
+    /// Issues of another job are ignored. Returns how many changed.
+    pub async fn decide_issues(
+        &self,
+        job_id: &str,
+        ids: Vec<i64>,
+        decision: Decision,
+    ) -> Result<u64> {
         if matches!(decision, Decision::Pending | Decision::Edited) {
             return Err(StoreError::Invalid(format!(
                 "cannot decide issues in bulk as {}",
@@ -333,11 +422,20 @@ impl Store {
         }
         let job_id = job_id.to_owned();
         self.call(move |c| {
-            let n = c.execute(
-                "UPDATE issues SET decision = ?3, custom_name = NULL, decided_at = ?4
-                 WHERE job_id = ?1 AND decision = 'pending' AND (?2 IS NULL OR rule = ?2)",
-                params![job_id, rule, decision.as_str(), now_ms()],
-            )?;
+            let tx = c.transaction()?;
+            let mut n = 0;
+            {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE issues SET decision = ?3, custom_name = NULL, decided_at = ?4,
+                         carried_over = 0
+                     WHERE job_id = ?1 AND id = ?2",
+                )?;
+                let now = now_ms();
+                for id in &ids {
+                    n += stmt.execute(params![job_id, id, decision.as_str(), now])?;
+                }
+            }
+            tx.commit()?;
             Ok(n as u64)
         })
         .await

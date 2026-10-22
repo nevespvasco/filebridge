@@ -25,7 +25,8 @@ use crate::{
     JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
 };
 use filebridge_model::{
-    ActivityItem, CategoryCount, FileCategory, LogEntry, Op, RecentSource, default_label, log_level,
+    ActivityItem, CategoryCount, DecideManyResult, FileCategory, LogEntry, Op, RecentSource,
+    RefusedIssue, default_label, log_level,
 };
 
 const INSERT_BATCH: usize = 10_000;
@@ -545,9 +546,18 @@ impl Engine {
     }
 
     pub async fn rule_counts(&self, job_id: &str) -> Result<Vec<RuleCount>> {
+        self.rule_counts_matching(job_id, None).await
+    }
+
+    /// Per-rule counts of the issues whose source path contains `query`.
+    pub async fn rule_counts_matching(
+        &self,
+        job_id: &str,
+        query: Option<String>,
+    ) -> Result<Vec<RuleCount>> {
         Ok(self
             .store
-            .issue_summary(job_id)
+            .issue_summary_matching(job_id, query)
             .await?
             .into_iter()
             .map(|s| RuleCount {
@@ -566,9 +576,22 @@ impl Engine {
         after_id: Option<i64>,
         limit: u32,
     ) -> Result<Vec<IssueView>> {
+        self.issues_matching(job_id, rule, after_id, limit, None)
+            .await
+    }
+
+    /// [`Self::issues`], only those whose source path contains `query`.
+    pub async fn issues_matching(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+        after_id: Option<i64>,
+        limit: u32,
+        query: Option<String>,
+    ) -> Result<Vec<IssueView>> {
         let rows = self
             .store
-            .issues_page(job_id, rule, after_id, limit)
+            .issues_page_matching(job_id, rule, after_id, limit, query)
             .await?;
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
@@ -636,7 +659,24 @@ impl Engine {
         rule: Option<String>,
         input: DecisionInput,
     ) -> Result<u64> {
+        self.decide_all_matching(job_id, rule, input, None).await
+    }
+
+    /// [`Self::decide_all`], only for issues whose source path contains `query`.
+    pub async fn decide_all_matching(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+        input: DecisionInput,
+        query: Option<String>,
+    ) -> Result<u64> {
         let choice = decisions::choice(input);
+        // Matches like the store's LIKE does: a substring, ASCII letters in any case.
+        let needle = query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+            .map(|q| q.to_ascii_lowercase());
         if matches!(choice, Choice::Edit(_)) {
             return Err(CoreError::Invalid(
                 "an edited name applies to one issue, not to many".into(),
@@ -650,7 +690,15 @@ impl Engine {
                 .all_issues(job_id, rule.clone())
                 .await?
                 .into_iter()
-                .filter(|r| r.issue.decision == Decision::Pending);
+                .filter(|r| r.issue.decision == Decision::Pending)
+                .filter(
+                    |r| match (&needle, entries.get(r.issue.entry_idx as usize)) {
+                        (Some(n), Some(e)) => String::from_utf8_lossy(&e.raw_path)
+                            .to_ascii_lowercase()
+                            .contains(n.as_str()),
+                        _ => true,
+                    },
+                );
             let mut refused = pending.filter_map(|r| {
                 let entry = entries.get(r.issue.entry_idx as usize)?;
                 names.check(entry, &r.issue.rule, &choice).err()
@@ -666,7 +714,7 @@ impl Engine {
         let (decision, _) = decisions::stored(choice);
         let n = self
             .store
-            .decide_pending_issues(job_id, rule.clone(), decision)
+            .decide_pending_issues_matching(job_id, rule.clone(), decision, query)
             .await?;
         if n > 0 {
             self.log(
@@ -678,6 +726,70 @@ impl Engine {
         }
         self.ready_if_decided(&mut job).await?;
         Ok(n)
+    }
+
+    /// One decision (not `Edit`) for each listed issue; the ones the name rules refuse keep
+    /// theirs and are reported, the rest change in one transaction (docs/design/specs/D08).
+    pub async fn decide_many(
+        &self,
+        job_id: &str,
+        issue_ids: Vec<i64>,
+        input: DecisionInput,
+    ) -> Result<DecideManyResult> {
+        const MAX: usize = 10_000;
+        let choice = decisions::choice(input);
+        if matches!(choice, Choice::Edit(_)) {
+            return Err(CoreError::Invalid(
+                "an edited name applies to one issue, not to many".into(),
+            ));
+        }
+        if issue_ids.len() > MAX {
+            return Err(CoreError::Invalid(format!(
+                "at most {MAX} issues at once; select by path instead"
+            )));
+        }
+        let mut job = self.begin(job_id, Op::Decide).await?;
+        let names = self.job_name_plan(job_id).await?;
+        let entries = self.entries(job_id).await?;
+        let (mut ok, mut refused) = (Vec::new(), Vec::new());
+        for id in issue_ids {
+            let row = match self.store.issue(job_id, id).await {
+                Ok(r) => r,
+                Err(e) => {
+                    refused.push(RefusedIssue {
+                        id,
+                        reason: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+            let check = entries
+                .get(row.issue.entry_idx as usize)
+                .map(|e| names.check(e, &row.issue.rule, &choice));
+            match check {
+                Some(Ok(())) => ok.push(id),
+                Some(Err(e)) => refused.push(RefusedIssue {
+                    id,
+                    reason: e.to_string(),
+                }),
+                None => refused.push(RefusedIssue {
+                    id,
+                    reason: "not in the manifest".into(),
+                }),
+            }
+        }
+        let (decision, _) = decisions::stored(choice);
+        let changed = self.store.decide_issues(job_id, ok, decision).await?;
+        if changed > 0 {
+            self.log(
+                Some(job_id),
+                "decisions",
+                serde_json::json!({ "decision": decision.as_str(), "count": changed, "selected": true }),
+            )
+            .await?;
+        }
+        self.ready_if_decided(&mut job).await?;
+        Ok(DecideManyResult { changed, refused })
     }
 
     async fn ready_if_decided(&self, job: &mut JobLock<'_>) -> Result<()> {

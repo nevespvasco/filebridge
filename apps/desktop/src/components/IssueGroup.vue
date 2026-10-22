@@ -2,7 +2,9 @@
 // One name rule's issues ("312 names with decomposed accents"). Rows are paged from SQLite with
 // `after_id`, so a rule with hundreds of thousands of issues never loads at once (docs/06).
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
+import SearchField from "./SearchField.vue";
+import SelectionBar from "./SelectionBar.vue";
 import { useI18n } from "vue-i18n";
 import type { DecisionInput, IssueDecision, IssueView_Serialize, RuleCount } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
@@ -29,6 +31,8 @@ const busyRow = ref<number | null>(null);
 const bulk = ref(false);
 const editing = ref<IssueView_Serialize | null>(null);
 const editName = ref("");
+/** Path filter of this group (docs/design/specs/D08). */
+const query = ref("");
 
 const title = computed(() => {
   const key = `rules.${props.rule.rule}.title`;
@@ -52,7 +56,7 @@ async function load() {
   error.value = null;
   try {
     const after = cursors.value[cursors.value.length - 1];
-    const got = await api.issues(props.jobId, props.rule.rule, after, PAGE + 1);
+    const got = await api.issues(props.jobId, props.rule.rule, after, PAGE + 1, query.value.trim() || null);
     hasNext.value = got.length > PAGE;
     rows.value = got.slice(0, PAGE);
   } catch (e) {
@@ -132,6 +136,102 @@ async function decideAllPending(decision: DecisionInput) {
   }
 }
 
+// ---- filter and selection (docs/design/specs/D08) ----
+/** Pending issues of this rule whose path matches the filter (for "Select the N that match"). */
+const matchingPending = ref<number | null>(null);
+watch(query, async (q) => {
+  cursors.value = [null];
+  clearSelection();
+  await load();
+  matchingPending.value = null;
+  if (!q.trim()) return;
+  try {
+    const counts = await api.ruleCounts(props.jobId, q.trim());
+    matchingPending.value = counts.find((r) => r.rule === props.rule.rule)?.pending ?? 0;
+  } catch {
+    matchingPending.value = null;
+  }
+});
+
+const selected = ref<Set<number>>(new Set());
+/** Every pending issue that matches the filter, including pages not loaded: kept as a query. */
+const selectAllMatching = ref(false);
+const lastClicked = ref<number | null>(null);
+const notice = ref<string | null>(null);
+const selectedCount = computed(() => (selectAllMatching.value ? (matchingPending.value ?? props.rule.pending) : selected.value.size));
+
+function claimGroup() {
+  if (wizard.selectionGroup && wizard.selectionGroup !== props.rule.rule) notice.value = null;
+  wizard.selectionGroup = props.rule.rule;
+}
+// Selecting in another group clears this one, and says so.
+watch(
+  () => wizard.selectionGroup,
+  (g) => {
+    if (g !== props.rule.rule && (selected.value.size || selectAllMatching.value)) {
+      clearSelection();
+      notice.value = t("issues.oneGroup");
+    }
+  },
+);
+function clearSelection() {
+  selected.value = new Set();
+  selectAllMatching.value = false;
+}
+function toggleRow(row: IssueView_Serialize, index: number, e: MouseEvent | KeyboardEvent) {
+  claimGroup();
+  selectAllMatching.value = false;
+  const next = new Set(selected.value);
+  if ("shiftKey" in e && e.shiftKey && lastClicked.value != null) {
+    const [a, b] = [Math.min(lastClicked.value, index), Math.max(lastClicked.value, index)];
+    for (const r of rows.value.slice(a, b + 1)) next.add(r.id);
+  } else if (next.has(row.id)) next.delete(row.id);
+  else next.add(row.id);
+  lastClicked.value = index;
+  selected.value = next;
+}
+const pageAllSelected = computed(() => rows.value.length > 0 && rows.value.every((r) => selected.value.has(r.id)));
+function togglePage() {
+  claimGroup();
+  selectAllMatching.value = false;
+  const next = new Set(selected.value);
+  if (pageAllSelected.value) for (const r of rows.value) next.delete(r.id);
+  else for (const r of rows.value) next.add(r.id);
+  selected.value = next;
+}
+function selectMatching() {
+  claimGroup();
+  selected.value = new Set();
+  selectAllMatching.value = true;
+}
+
+const selectionActions = computed(() => [
+  ...(hasProposal.value ? [{ id: "accept", label: t("issues.accept"), primary: true }, { id: "keep_original", label: t("issues.keep") }] : []),
+  { id: "skip", label: t("issues.skip") },
+]);
+async function applySelection(kind: string) {
+  const decision = { kind } as DecisionInput;
+  bulk.value = true;
+  error.value = null;
+  notice.value = null;
+  try {
+    if (selectAllMatching.value) {
+      const n = await wizard.decideAll(props.rule.rule, decision, query.value.trim() || null);
+      notice.value = t(`issues.applied.${kind}`, { n: fmt.count(n) }, n);
+    } else {
+      const res = await wizard.decideMany([...selected.value], decision);
+      notice.value = t(`issues.applied.${kind}`, { n: fmt.count(res.changed) }, res.changed);
+      if (res.refused.length) error.value = t("issues.partial", { n: res.refused.length, reason: res.refused[0].reason }, res.refused.length);
+    }
+    clearSelection();
+  } catch (e) {
+    error.value = errorMessage(e);
+  } finally {
+    bulk.value = false;
+    await load();
+  }
+}
+
 function decisionLabel(row: IssueView_Serialize) {
   return t(`decision.${row.decision}`);
 }
@@ -165,6 +265,18 @@ function decisionLabel(row: IssueView_Serialize) {
         </template>
       </div>
 
+      <div v-if="!readonly" class="select-tools">
+        <SearchField v-model="query" :placeholder="$t('issues.filter')" />
+        <label v-if="rows.length" class="check small">
+          <input type="checkbox" :checked="pageAllSelected" @change="togglePage" />
+          <span>{{ $t("issues.selectPage") }}</span>
+        </label>
+        <button v-if="query.trim() && matchingPending" class="link small" @click="selectMatching">
+          {{ $t("issues.selectMatching", { n: fmt.count(matchingPending) }, matchingPending) }}
+        </button>
+      </div>
+
+      <p v-if="notice" class="small ok-text" role="status">{{ notice }}</p>
       <p v-if="error" class="error small">{{ error }}</p>
       <p v-if="loading && !rows.length" class="muted small">{{ $t("common.loading") }}</p>
 
@@ -173,7 +285,15 @@ function decisionLabel(row: IssueView_Serialize) {
         <span v-if="!readonly">{{ $t("issues.colChoose") }}</span>
       </div>
       <ol class="rows" :class="{ dim: loading }">
-        <li v-for="row in rows" :key="row.id" class="row" :class="`d-${row.decision}`">
+        <li v-for="(row, index) in rows" :key="row.id" class="row" :class="[`d-${row.decision}`, { selectable: !readonly, selected: selected.has(row.id) || selectAllMatching }]">
+          <input
+            v-if="!readonly"
+            type="checkbox"
+            class="pick"
+            :checked="selected.has(row.id) || (selectAllMatching && row.decision === 'pending')"
+            :aria-label="$t('issues.selectRow', { path: row.path })"
+            @click="toggleRow(row, index, $event)"
+          />
           <div class="names">
             <div class="path small muted" :title="row.path">{{ row.path }}</div>
             <div class="change">
@@ -202,6 +322,8 @@ function decisionLabel(row: IssueView_Serialize) {
           </div>
         </li>
       </ol>
+
+      <SelectionBar :count="selectedCount" :busy="bulk" :actions="selectionActions" @act="applySelection" @clear="clearSelection" />
 
       <div v-if="cursors.length > 1 || hasNext" class="pager">
         <button class="btn btn-small" :disabled="cursors.length <= 1 || loading" @click="prev"><AppIcon name="back" /> {{ $t("common.previous") }}</button>
@@ -263,6 +385,13 @@ function decisionLabel(row: IssueView_Serialize) {
   border-bottom: 1px solid var(--border);
 }
 .row.d-pending { background: linear-gradient(90deg, var(--warn-soft), transparent 40%); }
+.row.selectable { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.row.selected { background: var(--accent-soft); }
+.pick { width: 1rem; height: 1rem; }
+.select-tools { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.check { display: inline-flex; gap: 0.35rem; align-items: center; cursor: pointer; }
+.link { all: unset; cursor: pointer; color: var(--accent); }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .names { min-width: 0; }
 .path, .before, .after { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .change { display: flex; gap: 0.4rem; align-items: baseline; min-width: 0; }
@@ -281,7 +410,7 @@ function decisionLabel(row: IssueView_Serialize) {
 .edit h2 { margin-top: 0; font-size: 1.1rem; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 @media (max-width: 900px) {
-  .row { grid-template-columns: minmax(0, 1fr) auto; }
+  .row, .row.selectable { grid-template-columns: auto minmax(0, 1fr) auto; }
   .actions { grid-column: 1 / -1; justify-content: flex-start; }
 }
 </style>
