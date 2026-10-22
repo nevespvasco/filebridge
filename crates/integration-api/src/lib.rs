@@ -46,8 +46,8 @@ impl IntegrationError {
 impl From<TransportError> for IntegrationError {
     fn from(e: TransportError) -> Self {
         Self {
+            retryable: e.is_retryable(),
             message: e.message,
-            retryable: e.retryable,
         }
     }
 }
@@ -196,8 +196,16 @@ pub trait Integration: Send + Sync {
     fn id(&self) -> &str;
     /// Checked against the transport's capabilities when a profile is created.
     fn required_caps(&self) -> TransportCaps;
-    /// Name rules the tool imposes, added to the general rules for the job.
-    fn name_rules(&self) -> Vec<Box<dyn NameRule>>;
+    /// Name rules the tool imposes for a profile with these `settings`, added to the general
+    /// rules for its jobs. A rule may depend on how that server is set up.
+    fn name_rules(&self, settings: &serde_json::Value) -> Vec<Box<dyn NameRule>>;
+    /// Refuses a profile this integration can't work with: its own settings, and how they fit
+    /// the destination. Called whenever a profile is saved, so a bad one fails then and not at
+    /// send time. Nothing is contacted. The default accepts anything.
+    fn check_profile(&self, destination: &Destination, settings: &serde_json::Value) -> Result<()> {
+        let _ = (destination, settings);
+        Ok(())
+    }
     async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport>;
     /// Updates the tool for exactly the `changed` paths. Problems that don't stop the step go in
     /// the report; `Err` means the step itself failed.

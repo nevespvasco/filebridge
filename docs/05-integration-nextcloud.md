@@ -53,6 +53,12 @@ v1 targets **Nextcloud in a Proxmox LXC** (the author's setup). Docker, AIO and 
 [10 — Risks](10-risks-and-open-decisions.md)). Detection is structured as a list of `Detector`s so
 adding `DockerDetector` doesn't change the wizard.
 
+The wizard lives in the plugin (`Nextcloud::set_up`): it detects over the integration's own
+`ShellConnector` (so it is tested with the fake shell) and builds the whole profile: SFTP to the
+same host as SSH, rooted at `<user>/files/<folder>`. The hosts only save it. Every saved
+profile is checked by `Integration::check_profile` (same SFTP and SSH host, root inside the
+files folder, valid settings), whether the wizard, the CLI or the UI saves it.
+
 ## Name rules contributed
 
 - `nextcloud-nfc` — names must be NFC (Nextcloud rejects NFD).

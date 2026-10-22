@@ -90,6 +90,12 @@ CREATE TABLE settings (
     value TEXT NOT NULL
 );
 "#,
+    // 2: what a job's finished stages produced, saved with each state change so a resumed job
+    // ends with the warnings and verify rounds it had before the restart.
+    r#"
+ALTER TABLE jobs ADD COLUMN warnings TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE jobs ADD COLUMN verify_rounds INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

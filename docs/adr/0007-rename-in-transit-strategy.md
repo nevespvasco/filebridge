@@ -44,7 +44,9 @@ Use **plan A**: `Transport::transfer` sends each file straight to its mapped nam
 
 The gate is **not** closed yet. This ADR becomes Accepted (or is revised) after
 `filebridge bench` runs against the real Nextcloud server with a subset of the real `Backup`
-folder, and plan A stays within about 0.8× of the baseline there.
+folder, and plan A stays within about 0.8× of the baseline there. The run must include the
+`engine` mode (plan A sent through the Engine, with its SQLite manifest and batches, as the app
+sends): the `plan-a` mode alone calls the transport directly and leaves that cost out.
 
 ## Consequences
 - Renaming in transit costs about the same as not renaming. The source is never touched, and

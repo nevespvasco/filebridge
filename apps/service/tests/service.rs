@@ -1,5 +1,5 @@
-//! Runs the real `filebridge-service` binary with real rclone (skipped when rclone is missing)
-//! and drives it over the socket like the desktop app does.
+//! Runs the real `filebridge-service` binary and drives it over the socket like the desktop app
+//! does: with real rclone when it is installed, else with the local-disk fake transport.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -7,21 +7,36 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use filebridge_core::{Event, JobState, Profile, SendOptions, TargetSpec};
-use filebridge_ipc::{Client, Endpoint, PROTOCOL_VERSION};
+use filebridge_ipc::{Client, Endpoint, Operations, PROTOCOL_VERSION};
 use filebridge_transport_api::{Backend, Destination};
 
 struct Env {
     dir: tempfile::TempDir,
-    rclone: PathBuf,
+    /// `None`: the service runs with `--fake-transport`.
+    rclone: Option<PathBuf>,
 }
 
 impl Env {
-    fn new() -> Option<Self> {
-        let rclone = filebridge_host::find_rclone(None).ok()?;
-        Some(Self {
+    /// Real rclone if installed, else the fake transport.
+    fn new() -> Self {
+        Self {
             dir: tempfile::tempdir().unwrap(),
-            rclone,
-        })
+            rclone: filebridge_host::find_rclone(None).ok(),
+        }
+    }
+
+    /// Only with real rclone (the test needs a transfer slow enough to interrupt).
+    fn with_rclone() -> Option<Self> {
+        let env = Self::new();
+        env.rclone.is_some().then_some(env)
+    }
+
+    fn transport(&self) -> &'static str {
+        if self.rclone.is_some() {
+            "rclone"
+        } else {
+            "fake"
+        }
     }
 
     fn socket(&self) -> PathBuf {
@@ -29,14 +44,16 @@ impl Env {
     }
 
     fn spawn(&self) -> Child {
-        Command::new(env!("CARGO_BIN_EXE_filebridge-service"))
-            .arg("--data-dir")
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_filebridge-service"));
+        cmd.arg("--data-dir")
             .arg(self.dir.path().join("data"))
             .arg("--socket")
-            .arg(self.socket())
-            .arg("--rclone")
-            .arg(&self.rclone)
-            .arg("run")
+            .arg(self.socket());
+        match &self.rclone {
+            Some(rclone) => cmd.arg("--rclone").arg(rclone),
+            None => cmd.arg("--fake-transport"),
+        };
+        cmd.arg("run")
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
@@ -77,14 +94,14 @@ fn fixture(root: &Path, files: usize, size: usize) -> PathBuf {
     src
 }
 
-async fn local_profile(client: &Client, dest: &Path) -> Profile {
+async fn local_profile(env: &Env, client: &Client, dest: &Path) -> Profile {
     std::fs::create_dir_all(dest).unwrap();
     client
         .save_profile(Profile {
             id: String::new(),
             name: "local".into(),
             destination: Destination {
-                transport: "rclone".into(),
+                transport: env.transport().into(),
                 backend: Backend::Local,
                 root: dest.to_string_lossy().into_owned(),
             },
@@ -110,10 +127,7 @@ async fn wait_finished(client: &Client, job: &str, timeout: Duration) -> JobStat
 
 #[tokio::test]
 async fn serves_a_send_refuses_a_second_instance_and_stops_cleanly() {
-    let Some(env) = Env::new() else {
-        eprintln!("skipped: rclone not found");
-        return;
-    };
+    let env = Env::new();
     let mut service = env.spawn();
     let client = env.connect().await;
     assert_eq!(client.ping().await.unwrap().protocol, PROTOCOL_VERSION);
@@ -126,7 +140,7 @@ async fn serves_a_send_refuses_a_second_instance_and_stops_cleanly() {
 
     let src = fixture(env.dir.path(), 5, 1000);
     let dest = env.dir.path().join("dest");
-    let profile = local_profile(&client, &dest).await;
+    let profile = local_profile(&env, &client, &dest).await;
     let mut events = client.events().await.unwrap();
     let job = client
         .create_job(
@@ -163,7 +177,7 @@ async fn serves_a_send_refuses_a_second_instance_and_stops_cleanly() {
 
 #[tokio::test]
 async fn a_killed_service_resumes_its_jobs_on_restart() {
-    let Some(env) = Env::new() else {
+    let Some(env) = Env::with_rclone() else {
         eprintln!("skipped: rclone not found");
         return;
     };
@@ -171,7 +185,7 @@ async fn a_killed_service_resumes_its_jobs_on_restart() {
     let client = env.connect().await;
     let src = fixture(env.dir.path(), 20, 100_000);
     let dest = env.dir.path().join("dest");
-    let profile = local_profile(&client, &dest).await;
+    let profile = local_profile(&env, &client, &dest).await;
     let job = client
         .create_job(
             vec![src.to_string_lossy().into_owned()],

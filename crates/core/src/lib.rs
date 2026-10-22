@@ -6,24 +6,22 @@
 
 mod analyse;
 pub mod backoff;
+mod decisions;
 mod engine;
-mod event;
 pub mod inhibit;
-mod paths;
+mod lifecycle;
 mod profile;
 mod registry;
 mod run;
-mod state;
 
-pub use analyse::{RULE_COLLISION, RULE_UNDECODABLE};
-pub use engine::{
-    AnalysisSummary, CheckView, Counts, DecisionInput, Engine, EngineOptions, IssueView,
-    JobSummary, PreflightView, ProfileTest, RuleCount, SendOptions,
+pub use engine::{Engine, EngineOptions};
+/// The shared types and rules, so `core`'s callers keep their paths.
+pub use filebridge_model::{
+    AnalysisSummary, CheckView, Counts, DecisionInput, Event, Family, IssueDecision, IssueSeverity,
+    IssueView, JobKind, JobState, JobSummary, PreflightView, Profile, ProfileTest, RuleCount,
+    SendOptions, TargetSpec, UnknownValue, job_operations,
 };
-pub use event::Event;
-pub use profile::{Family, Profile, TargetSpec};
 pub use registry::Registry;
-pub use state::{JobKind, JobState};
 
 pub use filebridge_store::{Store, StoreError};
 
@@ -47,4 +45,10 @@ pub enum CoreError {
     PendingDecisions(u64),
     #[error("{0}")]
     Invalid(String),
+}
+
+impl From<UnknownValue> for CoreError {
+    fn from(e: UnknownValue) -> Self {
+        CoreError::Invalid(e.to_string())
+    }
 }

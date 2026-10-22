@@ -13,20 +13,31 @@ Messages between clients (the Tauri window) and `filebridge-service`.
   concurrently.
 - Error `code`s are stable: `pending_decisions`, `invalid_transition`, `not_found`, `invalid`,
   `unsupported`, `internal`, `disconnected` (client side).
-- `PROTOCOL_VERSION` is 2 (`set_options` and `decide_all` were added); `ping` returns it and
-  clients refuse a service that speaks another one.
-- `Request` mirrors the `core::Engine` API, plus `detect_nextcloud`. `set_options` changes a
-  job's `SendOptions` until it is sent (Draft, AwaitingApproval, Ready); `decide_all` applies one
-  decision (not `edit`) to every pending issue of a job or of one rule and answers with the count. Plugin-specific requests
-  go through the `Extensions` trait, which the service binary implements, because only it may
-  know plugins.
+- `PROTOCOL_VERSION` is 3 (2: `set_options` and `decide_all`; 3: requests generated from the
+  catalogue, an issue's `decision` and `severity` as enums); `ping` returns it and clients refuse
+  a service that speaks another one.
+
+## The operation catalogue
+Every operation is written **once**, in `src/operations.rs` (`for_each_operation!`): its name,
+arguments and answer type. Everything that carries an operation is generated from that list:
+- the wire `Request` enum;
+- the `Operations` trait, one typed method per operation. `Client` implements it over the
+  socket; `filebridge_host::EngineOperations` implements it with the engine and the plugins
+  (only the host may know plugins, so `detect_nextcloud` is answered there);
+- the server's dispatch, which serializes each answer with its declared type;
+- the desktop app's Tauri commands (`apps/desktop/src-tauri/src/commands.rs` calls
+  `for_each_operation!` with its own generator).
+
+A new operation is one line in the catalogue plus its method in `EngineOperations`; the compiler
+points at every other place. Bump `PROTOCOL_VERSION` with it.
 
 ## API
-- Service: `bind(&Endpoint)` (replaces a stale socket) and `serve(listener, engine, extensions)`.
-- Client: `Client::connect(&Endpoint)`, typed methods (`list_jobs`, `start`, `analyse`, …) and
-  `events()`. When the connection drops, every `events()` receiver reports `Closed` and later
+- Service: `bind(&Endpoint)` (replaces a stale socket) and `serve(listener, handler)`, where the
+  `Handler` is the `Operations` plus the engine's event stream.
+- Client: `Client::connect(&Endpoint)`, every operation through `Operations` (`use
+  filebridge_ipc::Operations`), and `events()`. When the connection drops, every `events()` receiver reports `Closed` and later
   calls fail at once with `disconnected`.
-- The `core` and `transport-api` types that requests, responses and events carry (`Profile`,
+- The `model` and `transport-api` types that requests, responses and events carry (`Profile`,
   `SendOptions`, `JobSummary`, `Event`, `Destination`, …) are re-exported, so clients depend on
   this crate only.
 
@@ -37,11 +48,11 @@ default. The desktop export should remap them to `number` with `specta_util::Rem
 (byte counts and millisecond timestamps stay far below 2^53).
 
 ## Tests
-`tests/roundtrip.rs` (Unix): a real socket, a real engine with a fake transport, and the
-client. It drives a job through analysis, a collision decision, start, events and
+`crates/host/tests/ipc.rs` (Unix), next to the engine adapter: a real socket, a real engine with
+the shared fake transport, and the client. It drives a job through analysis, a collision decision, start, events and
 completion, and checks error codes and the 0700 directory; `set_options` and `decide_all` over
 the socket; and that event streams close when the service hangs up.
 
 ## Allowed dependencies
-`core`, `transport-api` (for the types it re-exports), `interprocess`, `tokio`, `serde`,
-`serde_json`, `specta`, `async-trait`.
+`model` and `transport-api` (for the types it re-exports), `interprocess`, `tokio`, `serde`,
+`serde_json`, `specta`, `async-trait`. **Never `core`**: a client must not compile the engine.

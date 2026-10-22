@@ -24,15 +24,15 @@ pub trait Transport: Send + Sync {
 pub trait NameRule: Send + Sync {
     fn id(&self) -> &str;
     fn applies_to(&self, target: &TargetProfile) -> bool;
-    fn check(&self, entry: &Entry) -> Option<Issue>;     // what is wrong
-    fn propose(&self, entry: &Entry) -> Option<String>;  // suggested name
+    fn check(&self, entry: &Entry) -> Option<Issue>;     // what is wrong; `after` is the fix
 }
 
 #[async_trait]
 pub trait Integration: Send + Sync {
     fn id(&self) -> &str;
     fn required_caps(&self) -> TransportCaps;
-    fn name_rules(&self) -> Vec<Box<dyn NameRule>>; // rules the tool imposes
+    fn name_rules(&self, settings: &Value) -> Vec<Box<dyn NameRule>>; // rules the tool imposes, per profile
+    fn check_profile(&self, dest: &Destination, settings: &Value) -> Result<()>; // on every save; default: accept
     async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport>;
     async fn after_transfer(
         &self,
@@ -56,7 +56,7 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 | `RemotePath` | transport-api | destination-relative path, always valid UTF-8 NFC |
 | `PreflightReport` | transport-api | `free_bytes: Option<u64>`, `writable: bool`, `latency_ms`, `checks: Vec<Check { id, status: Ok/Warn/Fail, message }>` |
 | `TransferJob` | transport-api | job id, list of `TransferItem { source: PathBuf (raw bytes OK), dest: RemotePath, size, expected_hash }`, options (bandwidth, checksum, owner/mode) |
-| `TransferResult` | transport-api | per-item outcome (`Done` / `Failed(err, retryable)`), bytes moved |
+| `TransferResult` | transport-api | per-item outcome (`Done` / `Failed(err)`), bytes moved |
 | `HashAlgo` / `Digest` | transport-api | `Sha256` / `Xxh3_128`; digest as bytes + hex |
 | `ProgressSink` | transport-api | cloneable handle wrapping an mpsc sender of typed progress events; cheap to call per file |
 | `Entry` | names | source path as raw bytes (`OsString` / `Vec<u8>`), decoded name if valid UTF-8, size, is_dir, parent id |
@@ -75,7 +75,14 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
   profile is created; incompatible combinations are rejected in the UI, not at send time.
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
   `JobContext`.
-- Errors carry a `retryable` flag so `core` decides between backoff and failure.
+- Transport errors carry a **kind** (`Transient`, `NotFound`, `Unsupported`, `Auth`, `Other`).
+  Only `Transient` is retried; `core` decides on the kind and never reads the message. Each
+  adapter maps its own errors to kinds (rclone: `transport-rclone/src/client.rs`, `kind_of`).
+  Integration errors still carry a `retryable` flag.
+- **Every `Transport` adapter runs the shared contract suite** (`filebridge_transport_api::
+  contract::check`, feature `contract`): rclone against a real `rclone rcd`, and the local-disk
+  fake (`crates/transport-fake`) that `core`, `ipc` and the service tests use. A new adapter
+  adds the same one-function test.
 
 ## Registry
 

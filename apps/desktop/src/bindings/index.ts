@@ -7,24 +7,44 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 
 /** Commands */
 export const commands = {
+	/**
+	 *  The protocol and service versions; a mismatch means the window and the service
+	 *  don't fit.
+	 */
 	ping: () => typedError<Pong, ErrorBody>(__TAURI_INVOKE("ping")),
 	listProfiles: () => typedError<Profile_Serialize[], ErrorBody>(__TAURI_INVOKE("list_profiles")),
+	/**
+	 *  Saves a profile, giving it an id if it has none. Refused if its plugins don't
+	 *  accept it.
+	 */
 	saveProfile: (profile: Profile_Deserialize) => typedError<Profile_Serialize, ErrorBody>(__TAURI_INVOKE("save_profile", { profile })),
 	deleteProfile: (id: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("delete_profile", { id })),
+	/**  Connection test: the transport's and the integration's preflight. */
 	testProfile: (id: string) => typedError<ProfileTest_Serialize, ErrorBody>(__TAURI_INVOKE("test_profile", { id })),
+	/**
+	 *  Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH). Saves the
+	 *  profile when every step passes.
+	 */
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
+	/**  A draft job; nothing is read from the sources yet. */
 	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
+	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
 	setOptions: (jobId: string, options: SendOptions_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
 	analyse: (jobId: string) => typedError<AnalysisSummary_Serialize, ErrorBody>(__TAURI_INVOKE("analyse", { jobId })),
 	ruleCounts: (jobId: string) => typedError<RuleCount[], ErrorBody>(__TAURI_INVOKE("rule_counts", { jobId })),
+	/**  One page of a job's issues (optionally of one rule), by id after `after_id`. */
 	issues: (jobId: string, rule: string | null, afterId: number | null, limit: number) => typedError<IssueView_Serialize[], ErrorBody>(__TAURI_INVOKE("issues", { jobId, rule, afterId, limit })),
 	decide: (jobId: string, issueId: number, decision: DecisionInput) => typedError<null, ErrorBody>(__TAURI_INVOKE("decide", { jobId, issueId, decision })),
-	/**  Returns how many issues changed. */
+	/**
+	 *  One decision for every pending issue of the job (or of `rule`). Not `edit`.
+	 *  Answers with the number of issues changed.
+	 */
 	decideAll: (jobId: string, rule: string | null, decision: DecisionInput) => typedError<number, ErrorBody>(__TAURI_INVOKE("decide_all", { jobId, rule, decision })),
 	start: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("start", { jobId })),
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
 	cancel: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("cancel", { jobId })),
+	/**  Newest first. */
 	listJobs: (limit: number, offset: number) => typedError<JobSummary_Serialize[], ErrorBody>(__TAURI_INVOKE("list_jobs", { limit, offset })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
@@ -38,6 +58,11 @@ export const events = {
 	connectionChanged: makeEvent<ConnectionChanged, ConnectionChanged>("connection-changed"),
 	serviceEvent: makeEvent<ServiceEvent_Serialize, ServiceEvent_Deserialize>("service-event"),
 };
+
+/* Constants */
+export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
+
+export const PROTOCOL_VERSION = 3 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -223,6 +248,12 @@ waiting: string | null } | { type: "integration_problem"; job_id: string; code: 
 /**  What the destination filesystem accepts; decides which general name rules apply. */
 export type Family = "unix" | "windows" | "macos";
 
+/**  Where the decision on an issue stands, as the UI shows it. `rejected`: keep the original name. */
+export type IssueDecision = "pending" | "accepted" | "edited" | "rejected" | "skipped";
+
+/**  Whether an issue's fix is applied unless overridden, or waits for the user. */
+export type IssueSeverity = "auto" | "needs_decision";
+
 export type IssueView = IssueView_Serialize | IssueView_Deserialize;
 
 export type IssueView_Deserialize = {
@@ -231,15 +262,13 @@ export type IssueView_Deserialize = {
 	/**  Source path relative to the source's parent, lossily decoded. */
 	path: string,
 	rule: string,
-	/**  `auto` or `needs_decision`. */
-	severity: string,
+	severity: IssueSeverity,
 	message_key: string,
 	before: number[],
 	after: number[],
 	before_text: string,
 	after_text: string,
-	/**  `pending`, `accepted`, `edited`, `rejected` or `skipped`. */
-	decision: string,
+	decision: IssueDecision,
 	custom_name?: string | null,
 };
 
@@ -249,15 +278,13 @@ export type IssueView_Serialize = {
 	/**  Source path relative to the source's parent, lossily decoded. */
 	path: string,
 	rule: string,
-	/**  `auto` or `needs_decision`. */
-	severity: string,
+	severity: IssueSeverity,
 	message_key: string,
 	before: number[],
 	after: number[],
 	before_text: string,
 	after_text: string,
-	/**  `pending`, `accepted`, `edited`, `rejected` or `skipped`. */
-	decision: string,
+	decision: IssueDecision,
 	custom_name: string | null,
 };
 

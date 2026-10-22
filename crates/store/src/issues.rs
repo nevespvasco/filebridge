@@ -1,7 +1,7 @@
 //! Name issues found in stage 3 and the user's decisions on them. Decisions are persisted per
 //! issue, so a resumed job never asks twice (docs/04, "Decisions model").
 
-use rusqlite::{Row, params};
+use rusqlite::{OptionalExtension, Row, params};
 
 use crate::{Result, Store, StoreError, now_ms};
 
@@ -191,9 +191,31 @@ impl Store {
         .await
     }
 
-    /// Records a decision. `Edited` requires `custom_name`; other decisions clear it.
+    /// One issue of a job. `NotFound` if the id belongs to another job.
+    pub async fn issue(&self, job_id: &str, issue_id: i64) -> Result<IssueRow> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let found = c
+                .query_row(
+                    &format!("SELECT {COLUMNS} FROM issues WHERE job_id = ?1 AND id = ?2"),
+                    params![job_id, issue_id],
+                    from_row,
+                )
+                .optional()?;
+            let Some((mut row, decision)) = found else {
+                return Err(StoreError::NotFound(format!("issue {issue_id}")));
+            };
+            row.issue.decision = Decision::parse(&decision)?;
+            Ok(row)
+        })
+        .await
+    }
+
+    /// Records a decision on one issue of a job. `Edited` requires `custom_name`; other
+    /// decisions clear it. `NotFound` if the issue belongs to another job.
     pub async fn decide_issue(
         &self,
+        job_id: &str,
         issue_id: i64,
         decision: Decision,
         custom_name: Option<String>,
@@ -212,10 +234,12 @@ impl Store {
             _ => {}
         }
         let custom_name = custom_name.filter(|_| decision == Decision::Edited);
+        let job_id = job_id.to_owned();
         self.call(move |c| {
             let n = c.execute(
-                "UPDATE issues SET decision = ?2, custom_name = ?3, decided_at = ?4 WHERE id = ?1",
-                params![issue_id, decision.as_str(), custom_name, now_ms()],
+                "UPDATE issues SET decision = ?3, custom_name = ?4, decided_at = ?5
+                 WHERE job_id = ?1 AND id = ?2",
+                params![job_id, issue_id, decision.as_str(), custom_name, now_ms()],
             )?;
             if n == 0 {
                 return Err(StoreError::NotFound(format!("issue {issue_id}")));
@@ -311,15 +335,22 @@ mod tests {
         assert_eq!(moji[0].issue.before, b"Vera\xcc\x83o");
 
         assert!(matches!(
-            store.decide_issue(moji[0].id, Decision::Edited, None).await,
+            store
+                .decide_issue(&job, moji[0].id, Decision::Edited, None)
+                .await,
             Err(StoreError::Invalid(_))
         ));
         store
-            .decide_issue(moji[0].id, Decision::Edited, Some("Patológica".into()))
+            .decide_issue(
+                &job,
+                moji[0].id,
+                Decision::Edited,
+                Some("Patológica".into()),
+            )
             .await
             .unwrap();
         store
-            .decide_issue(moji[1].id, Decision::Skipped, Some("ignored".into()))
+            .decide_issue(&job, moji[1].id, Decision::Skipped, Some("ignored".into()))
             .await
             .unwrap();
         assert_eq!(store.pending_issue_count(&job).await.unwrap(), 0);
@@ -363,7 +394,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .decide_issue(first[0].id, Decision::Edited, Some("mine".into()))
+            .decide_issue(&job, first[0].id, Decision::Edited, Some("mine".into()))
             .await
             .unwrap();
 
@@ -400,5 +431,37 @@ mod tests {
             .unwrap();
         assert_eq!(n, 1);
         assert_eq!(store.pending_issue_count(&job).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn an_issue_is_only_reached_through_its_own_job() {
+        let (store, job) = store_with_job().await;
+        store
+            .insert_issues(&job, vec![issue(0, "collision", Decision::Pending)])
+            .await
+            .unwrap();
+        let id = store.issues_page(&job, None, None, 1).await.unwrap()[0].id;
+
+        let other = "another-job";
+        assert!(matches!(
+            store.issue(other, id).await,
+            Err(StoreError::NotFound(_))
+        ));
+        assert!(matches!(
+            store.decide_issue(other, id, Decision::Skipped, None).await,
+            Err(StoreError::NotFound(_))
+        ));
+        assert_eq!(
+            store.issue(&job, id).await.unwrap().issue.decision,
+            Decision::Pending
+        );
+        store
+            .decide_issue(&job, id, Decision::Skipped, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            store.issue(&job, id).await.unwrap().issue.decision,
+            Decision::Skipped
+        );
     }
 }

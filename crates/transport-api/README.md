@@ -4,14 +4,22 @@ The `Transport` trait and its types. **Lands in:** Phase 0.
 
 ## Contents
 `Transport`, `TransportCaps`, `Destination`, `RemotePath`, `PreflightReport`, `TransferJob`,
-`TransferItem`, `TransferResult`, `HashAlgo`, `Digest`, `ProgressSink`, error type with a
-`retryable` flag.
+`TransferItem`, `TransferResult`, `HashAlgo`, `Digest`, `ProgressSink`, and `TransportError`
+with an `ErrorKind` (`Transient` is the only retryable kind; `NotFound`, `Unsupported`, `Auth`,
+`Other`).
+
+## Contract suite
+`contract::check(transport, dest, scratch)` (feature `contract`) is the contract as a test: names
+corrected in transit with new parent directories, one outcome per item in order, a missing
+source as `NotFound`, `ItemDone` per file, hashes, `NotFound` / `Unsupported` from `hash`. Every
+adapter runs it from its own tests.
 
 ## Rules
 - No implementation code. Stable, small, documented.
 - Types that cross into the UI derive `serde` + `specta::Type`.
 
 ## Allowed dependencies
-`async-trait`, `serde`, `specta`, `bitflags`, `thiserror`, `tokio` (sync primitives only).
+`async-trait`, `serde`, `specta`, `bitflags`, `thiserror`, `tokio` (sync primitives only; `fs`
+with `contract`), `sha2` (only with `contract`).
 
 See [docs/03-extension-contracts.md](../../docs/03-extension-contracts.md).

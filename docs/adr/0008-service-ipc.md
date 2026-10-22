@@ -19,6 +19,10 @@ events, with TypeScript types generated from Rust.
   that turns the connection into an `Event` stream.
 - The message types live in **`crates/ipc`** and derive `serde` + `specta::Type`; the Tauri app's
   commands forward to the IPC client, so tauri-specta generates matching TypeScript.
+  *Amended (Phase 1):* the types the engine produces (`Profile`, `JobSummary`, `Event`, …) live in
+  **`crates/model`**, which `ipc` re-exports; `ipc` no longer depends on `core`. Every operation
+  is written once in `ipc`'s catalogue, which generates the request, the client, the dispatch and
+  the Tauri commands.
 - The Tauri app **starts the service if the socket is missing** (and on Linux offers to install
   it as a `systemd --user` unit).
 - In Phase 1 the **CLI runs the `Engine` in-process** (headless servers have no service). It may

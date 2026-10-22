@@ -1,0 +1,15 @@
+[package]
+name = "filebridge-model"
+description = "The types the UI and the service share (profiles, jobs, states, issues, events) and the job state rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+filebridge-names.workspace = true
+filebridge-transport-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+specta = { workspace = true, features = ["derive", "serde_json"] }
+thiserror.workspace = true

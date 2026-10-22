@@ -48,13 +48,25 @@ pub const PROBLEM_SCAN_ERROR: &str = "nextcloud.scan-error";
 pub const PROBLEM_SCAN_FAILED: &str = "nextcloud.scan-failed";
 
 /// The destination root, relative to the user's files folder (`""` when it is that folder).
+/// A root that climbs out with `..` (or has `.` or empty segments) is refused: the permission fix
+/// runs `chown`/`chmod` as root on the paths built from it.
 pub fn files_prefix(profile: &NextcloudDirectProfile, root: &str) -> Result<String> {
     let root = root.trim_end_matches('/');
     for base in [profile.host_files_dir(), profile.container_files_dir()] {
         if let Some(rest) = root.strip_prefix(base.as_str())
             && (rest.is_empty() || rest.starts_with('/'))
         {
-            return Ok(rest.trim_start_matches('/').to_string());
+            let rest = rest.trim_start_matches('/');
+            if !rest.is_empty()
+                && rest
+                    .split('/')
+                    .any(|s| s.is_empty() || s == "." || s == "..")
+            {
+                return Err(IntegrationError::fatal(format!(
+                    "destination root {root:?} has an empty, \".\" or \"..\" segment"
+                )));
+            }
+            return Ok(rest.to_string());
         }
     }
     Err(IntegrationError::fatal(format!(
@@ -614,6 +626,19 @@ mod tests {
         );
         assert!(files_prefix(&p, "/tank/nextcloud-data/alice/filesX").is_err());
         assert!(files_prefix(&p, "/tank/nextcloud-data/other/files").is_err());
+    }
+
+    #[test]
+    fn prefix_refuses_climbing_out() {
+        let p = sample();
+        for root in [
+            "/tank/nextcloud-data/alice/files/../../../../etc",
+            "/tank/nextcloud-data/alice/files/a/..",
+            "/tank/nextcloud-data/alice/files/./a",
+            "/tank/nextcloud-data/alice/files/a//b",
+        ] {
+            assert!(files_prefix(&p, root).is_err(), "{root}");
+        }
     }
 
     #[test]

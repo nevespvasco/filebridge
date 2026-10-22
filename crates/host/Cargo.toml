@@ -14,9 +14,13 @@ filebridge-integration-api.workspace = true
 filebridge-integration-nextcloud.workspace = true
 filebridge-ipc.workspace = true
 filebridge-transport-api.workspace = true
+filebridge-transport-fake.workspace = true
 filebridge-transport-rclone.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
+interprocess.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "time"] }

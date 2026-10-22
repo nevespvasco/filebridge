@@ -6,12 +6,16 @@
 
 mod forbidden_chars;
 mod nfc;
+mod plan;
 mod reserved;
 mod rule_set;
 mod trailing;
 
 pub use forbidden_chars::ForbiddenChars;
 pub use nfc::Nfc;
+pub use plan::{
+    Choice, Decided, NameError, NamePlan, Planned, RULE_COLLISION, RULE_ENCODING, with_suffix,
+};
 pub use reserved::{Reserved, WINDOWS_DEVICE_NAMES};
 pub use rule_set::{Mapped, RULE_ORDER, RuleSet};
 pub use trailing::Trailing;
@@ -169,8 +173,6 @@ pub fn general_rules(windows_compat: ActiveFor) -> Vec<Box<dyn NameRule>> {
 pub trait NameRule: Send + Sync {
     fn id(&self) -> &str;
     fn applies_to(&self, target: &TargetProfile) -> bool;
-    /// What is wrong with `entry`'s name, if anything.
+    /// What is wrong with `entry`'s name, if anything; the issue's `after` is the corrected name.
     fn check(&self, entry: &Entry) -> Option<Issue>;
-    /// The corrected name, if this rule would change it.
-    fn propose(&self, entry: &Entry) -> Option<String>;
 }

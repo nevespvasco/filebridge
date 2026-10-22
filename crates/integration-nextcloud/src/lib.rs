@@ -10,6 +10,7 @@ pub mod parse;
 pub mod profile;
 pub mod quote;
 pub mod rules;
+pub mod setup;
 pub mod shell;
 pub mod ssh;
 
@@ -17,14 +18,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use filebridge_integration_api::{
-    AfterTransferReport, Integration, IntegrationSink, JobContext, NameRule, PreflightReport,
-    RemotePath, Result, TransportCaps,
+    AfterTransferReport, Destination, Integration, IntegrationError, IntegrationSink, JobContext,
+    NameRule, PreflightReport, RemotePath, Result, TransportCaps,
 };
 
 pub use detect::{DetectInput, Detection, Detector, LxcDetector};
 pub use direct::DirectOptions;
 pub use profile::{NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
 pub use rules::{NextcloudNfc, NextcloudReserved};
+pub use setup::{ProfileParts, Setup, SetupError, SetupRequest};
 pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};
 pub use ssh::{SshConnector, SshShell};
 
@@ -77,8 +79,14 @@ impl Integration for Nextcloud {
         TransportCaps::empty()
     }
 
-    fn name_rules(&self) -> Vec<Box<dyn NameRule>> {
+    fn name_rules(&self, _settings: &serde_json::Value) -> Vec<Box<dyn NameRule>> {
         vec![Box::new(NextcloudNfc), Box::new(NextcloudReserved)]
+    }
+
+    fn check_profile(&self, destination: &Destination, settings: &serde_json::Value) -> Result<()> {
+        let NextcloudSettings::Direct(nc) = serde_json::from_value(settings.clone())
+            .map_err(|e| IntegrationError::fatal(format!("Nextcloud settings: {e}")))?;
+        Self::check_direct(destination, &nc)
     }
 
     async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport> {

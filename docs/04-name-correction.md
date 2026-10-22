@@ -53,6 +53,18 @@ destination path.
 
 Decisions are persisted per issue, so a resumed job never asks twice.
 
+What each decision means, and when it is checked (the Name plan in `crates/names`):
+- **Accept**: use the rule's proposal. Refused on an undecodable name (`encoding`): there is no
+  proposal, so it can only be edited or skipped.
+- **Keep original**: don't apply *this* rule to this name; the other rules still apply. Refused if
+  another rule would then change the name instead (Nextcloud's own NFC rule takes over when the
+  general `nfc` is kept out).
+- **Edit**: the user's name must pass every active rule (no `CON`, `x.part`, NFD on Nextcloud…).
+- **Skip**: the entry and everything under it stay out of the send.
+
+All of these are checked **when the user decides**, one by one or in bulk, and once more at Send
+(two entries on one path is only known then). A decision always belongs to its own job.
+
 ## Mojibake detection (approach)
 
 - Candidate if the decoded name contains sequences typical of UTF-8-read-as-Latin-1/CP1252

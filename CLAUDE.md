@@ -22,8 +22,9 @@ real-server benchmark is still pending and can reopen it.
 - **Layering:** Vue UI → Tauri commands → `ipc` → `filebridge-service` → `core` → contracts
   (`transport-api`, `integration-api`, `names`) → plugins. The UI reaches `core` only through
   `ipc` (ADR 0008); `core` talks only to contracts.
-- **`core` depends only on `*-api` crates** (and `names`, `store`, `scanner`, `secrets`), never on a
-  concrete `transport-*` or `integration-*` crate. Only `crates/host` (used by `apps/service` and
+- **`ipc` never depends on `core`**: the types both sides share live in `model`.
+- **`core` depends only on `*-api` crates** (and `model`, `names`, `store`, `scanner`,
+  `secrets`), never on a concrete `transport-*` or `integration-*` crate. Only `crates/host` (used by `apps/service` and
   `apps/cli`) wires implementations into the `Registry`.
 - **A new plugin is a new crate plus one line in the `Registry`.** If adding one needs a change in
   `core`, the contract is wrong — fix the contract.

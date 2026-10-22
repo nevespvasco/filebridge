@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use filebridge_core::{Engine, JobSummary, Profile};
-use filebridge_host::{Access, Host, HostOptions};
+use filebridge_host::{Access, EngineOperations, Host, HostOptions, TransportChoice};
+use filebridge_ipc::Operations;
 
 /// Options shared by every engine command.
 #[derive(clap::Args, Clone)]
@@ -19,8 +20,11 @@ pub struct Global {
 }
 
 pub struct App {
+    /// For what isn't an operation: raw source paths, events, waiting, resuming at startup.
     pub engine: Arc<Engine>,
-    _host: Host,
+    /// Every operation, through the same interface the window uses (`filebridge_ipc::Operations`).
+    pub ops: EngineOperations,
+    pub host: Host,
 }
 
 impl App {
@@ -28,24 +32,30 @@ impl App {
     /// directory's lock (refused while `filebridge-service` runs), and those that reach a
     /// destination also start rclone.
     pub async fn open(g: &Global, access: Access, with_transport: bool) -> Result<Self> {
+        let transport = if with_transport {
+            TransportChoice::Rclone
+        } else {
+            TransportChoice::None
+        };
         let host = Host::open(
             &HostOptions {
                 data_dir: g.data_dir.clone(),
                 rclone: g.rclone.clone(),
+                transport,
             },
             access,
-            with_transport,
         )
         .await?;
         Ok(Self {
             engine: host.engine.clone(),
-            _host: host,
+            ops: host.operations(),
+            host,
         })
     }
 
     /// A profile by exact id or name.
     pub async fn profile(&self, key: &str) -> Result<Profile> {
-        let profiles = self.engine.list_profiles().await?;
+        let profiles = self.ops.list_profiles().await?;
         if let Some(p) = profiles.iter().find(|p| p.id == key || p.name == key) {
             return Ok(p.clone());
         }
@@ -53,7 +63,8 @@ impl App {
         bail!("no profile {key:?} (have: {})", names.join(", "))
     }
 
-    /// A job by id or unique id prefix.
+    /// A job by id or unique id prefix. Straight from the engine: `list_jobs` over ipc pages by
+    /// 1000, and the prefix must be unique among all jobs.
     pub async fn job(&self, key: &str) -> Result<JobSummary> {
         let jobs = self.engine.list_jobs(10_000, 0).await?;
         let found: Vec<_> = jobs.into_iter().filter(|j| j.id.starts_with(key)).collect();

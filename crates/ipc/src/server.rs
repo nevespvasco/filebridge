@@ -1,30 +1,22 @@
-//! The service side: accept connections and dispatch requests to the [`Engine`].
+//! The service side: accept connections and run each request against a [`Handler`].
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use filebridge_core::{CoreError, Engine};
 use interprocess::local_socket::ListenerOptions;
 use interprocess::local_socket::tokio::{Listener, Stream, prelude::*};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::{
-    DetectNextcloudRequest, DetectNextcloudResponse, Endpoint, Envelope, ErrorBody, Outgoing,
-    PROTOCOL_VERSION, Pong, Request,
-};
+use crate::operations::dispatch;
+use crate::{Endpoint, Envelope, ErrorBody, Event, Operations, Outgoing, Request};
 
-/// Requests that need a concrete plugin, implemented by the binary that hosts the engine (it
-/// is the only one allowed to know plugins).
-#[async_trait]
-pub trait Extensions: Send + Sync {
-    async fn detect_nextcloud(
-        &self,
-        engine: &Arc<Engine>,
-        req: DetectNextcloudRequest,
-    ) -> Result<DetectNextcloudResponse, ErrorBody>;
+/// What the service serves: every operation, and the engine's events for subscribers.
+/// Implemented by the binary that hosts the engine (`crates/host`), the only one allowed to know
+/// plugins.
+pub trait Handler: Operations {
+    fn subscribe(&self) -> broadcast::Receiver<Event>;
 }
 
 /// Creates the listener. On Unix the socket's directory is created (or tightened) to 0700, so
@@ -62,27 +54,19 @@ fn prepare_dir(path: &std::path::Path) -> std::io::Result<()> {
 }
 
 /// Serves until the listener fails. Each connection runs in its own task.
-pub async fn serve(
-    listener: Listener,
-    engine: Arc<Engine>,
-    extensions: Option<Arc<dyn Extensions>>,
-) -> std::io::Result<()> {
+pub async fn serve(listener: Listener, handler: Arc<dyn Handler>) -> std::io::Result<()> {
     loop {
         let conn = listener.accept().await?;
-        let (engine, extensions) = (engine.clone(), extensions.clone());
+        let handler = handler.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(conn, engine, extensions).await {
+            if let Err(e) = handle_connection(conn, handler).await {
                 tracing::debug!("ipc connection ended: {e}");
             }
         });
     }
 }
 
-async fn handle_connection(
-    conn: Stream,
-    engine: Arc<Engine>,
-    extensions: Option<Arc<dyn Extensions>>,
-) -> std::io::Result<()> {
+async fn handle_connection(conn: Stream, handler: Arc<dyn Handler>) -> std::io::Result<()> {
     let (recv, mut send) = conn.split();
     let (out_tx, mut out_rx) = mpsc::channel::<Outgoing>(256);
     let writer = tokio::spawn(async move {
@@ -117,7 +101,7 @@ async fn handle_connection(
         if matches!(env.request, Request::Subscribe) {
             if !subscribed {
                 subscribed = true;
-                let mut rx = engine.subscribe();
+                let mut rx = handler.subscribe();
                 let tx = out_tx.clone();
                 tokio::spawn(async move {
                     loop {
@@ -138,9 +122,9 @@ async fn handle_connection(
             let _ = out_tx.send(ok_response(env.id, &())).await;
             continue;
         }
-        let (engine, extensions, tx) = (engine.clone(), extensions.clone(), out_tx.clone());
+        let (handler, tx) = (handler.clone(), out_tx.clone());
         tokio::spawn(async move {
-            let msg = match dispatch(&engine, extensions.as_deref(), env.request).await {
+            let msg = match dispatch(handler.as_ref(), env.request).await {
                 Ok(value) => Outgoing::Response {
                     id: env.id,
                     ok: Some(value),
@@ -176,108 +160,5 @@ fn error_response(id: u64, code: &str, message: String) -> Outgoing {
             code: code.into(),
             message,
         }),
-    }
-}
-
-fn to_error(e: CoreError) -> ErrorBody {
-    let code = match &e {
-        CoreError::PendingDecisions(_) => "pending_decisions",
-        CoreError::InvalidTransition { .. } => "invalid_transition",
-        CoreError::Store(filebridge_core::StoreError::NotFound(_)) => "not_found",
-        CoreError::Invalid(_) => "invalid",
-        _ => "internal",
-    };
-    ErrorBody {
-        code: code.into(),
-        message: e.to_string(),
-    }
-}
-
-fn json<T: Serialize>(v: T) -> Result<serde_json::Value, ErrorBody> {
-    serde_json::to_value(v).map_err(|e| ErrorBody {
-        code: "internal".into(),
-        message: e.to_string(),
-    })
-}
-
-async fn dispatch(
-    engine: &Arc<Engine>,
-    extensions: Option<&dyn Extensions>,
-    request: Request,
-) -> Result<serde_json::Value, ErrorBody> {
-    let e = engine;
-    match request {
-        Request::Ping => json(Pong {
-            protocol: PROTOCOL_VERSION,
-            version: env!("CARGO_PKG_VERSION").into(),
-        }),
-        Request::ListProfiles => json(e.list_profiles().await.map_err(to_error)?),
-        Request::SaveProfile { profile } => json(e.save_profile(profile).await.map_err(to_error)?),
-        Request::DeleteProfile { id } => json(e.delete_profile(&id).await.map_err(to_error)?),
-        Request::TestProfile { id } => json(e.test_profile(&id).await.map_err(to_error)?),
-        Request::DetectNextcloud(req) => match extensions {
-            Some(x) => json(x.detect_nextcloud(engine, req).await?),
-            None => Err(ErrorBody {
-                code: "unsupported".into(),
-                message: "this service has no Nextcloud support".into(),
-            }),
-        },
-        Request::CreateJob {
-            sources,
-            profile_id,
-            options,
-        } => json(
-            e.create_job(
-                sources.into_iter().map(PathBuf::from).collect(),
-                &profile_id,
-                options,
-            )
-            .await
-            .map_err(to_error)?,
-        ),
-        Request::SetOptions { job_id, options } => {
-            json(e.set_options(&job_id, options).await.map_err(to_error)?)
-        }
-        Request::Analyse { job_id } => json(e.analyse(&job_id).await.map_err(to_error)?),
-        Request::RuleCounts { job_id } => json(e.rule_counts(&job_id).await.map_err(to_error)?),
-        Request::Issues {
-            job_id,
-            rule,
-            after_id,
-            limit,
-        } => json(
-            e.issues(&job_id, rule, after_id, limit.min(1000))
-                .await
-                .map_err(to_error)?,
-        ),
-        Request::Decide {
-            job_id,
-            issue_id,
-            decision,
-        } => json(
-            e.decide_issue(&job_id, issue_id, decision)
-                .await
-                .map_err(to_error)?,
-        ),
-        Request::DecideAll {
-            job_id,
-            rule,
-            decision,
-        } => json(
-            e.decide_all(&job_id, rule, decision)
-                .await
-                .map_err(to_error)?,
-        ),
-        Request::Start { job_id } => json(e.start(&job_id).await.map_err(to_error)?),
-        Request::Pause { job_id } => json(e.pause(&job_id).await.map_err(to_error)?),
-        Request::Resume { job_id } => json(e.resume(&job_id).await.map_err(to_error)?),
-        Request::Cancel { job_id } => json(e.cancel(&job_id).await.map_err(to_error)?),
-        Request::ListJobs { limit, offset } => json(
-            e.list_jobs(limit.min(1000), offset)
-                .await
-                .map_err(to_error)?,
-        ),
-        Request::Job { job_id } => json(e.job(&job_id).await.map_err(to_error)?),
-        Request::Subscribe => unreachable!("handled per connection"),
     }
 }

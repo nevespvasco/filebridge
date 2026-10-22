@@ -9,6 +9,22 @@ The `NameRule` trait and the **general** name rules. **Lands in:** Phase 0 (NFC)
   (Windows set), `collision`, `length`.
 - A `RuleSet` that runs active rules in the fixed order and returns the `source → destination`
   name map plus issues.
+- The **Name plan** (`NamePlan`): entries plus the user's decisions in, the final destination path
+  (or skip) of every entry out. `core` only persists what it returns.
+
+## Name plan
+
+One module owns every step from raw name bytes to the destination path, so the rules hold for
+names the user keeps or types too:
+
+| Call | When | Does |
+|---|---|---|
+| `propose(entries)` | Analysis (stage 3) | Runs the rules; adds an `encoding` issue for a name no rule could decode and a `collision` issue (with a ` (2)` suffix proposal) for a path already taken |
+| `check(entry, rule, choice)` | The user decides | Refuses a choice that can't work: Accept on an undecodable name, an edited name an active rule would still change, or Keep original when another rule would then change the name (Nextcloud's own NFC rule once the general one is kept out) |
+| `resolve(entries, decisions)` | Send | Re-runs the rules with the decisions applied: Keep original leaves out **only that rule**, Edit replaces the name, Skip skips the entry and everything under it, an accepted collision takes its suffix. Fails on pending decisions and on two entries landing on one path |
+
+`Choice` is the user's decision (`Accept`, `KeepOriginal`, `Edit(name)`, `Skip`); `core` maps the
+store's `Decision` to it in one place (`crates/core/src/decisions.rs`).
 
 ## What exists now
 

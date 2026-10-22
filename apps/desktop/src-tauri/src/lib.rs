@@ -9,7 +9,7 @@ mod service;
 mod tray;
 
 use tauri::{Manager, WindowEvent};
-use tauri_specta::{Builder, collect_commands, collect_events};
+use tauri_specta::{Builder, collect_events};
 
 pub use service::{ConnectionChanged, Service, ServiceEvent};
 
@@ -19,30 +19,12 @@ pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bin
 /// Commands and events, as both Tauri and the TypeScript exporter see them.
 pub fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
-        .commands(collect_commands![
-            commands::ping,
-            commands::list_profiles,
-            commands::save_profile,
-            commands::delete_profile,
-            commands::test_profile,
-            commands::detect_nextcloud,
-            commands::create_job,
-            commands::set_options,
-            commands::analyse,
-            commands::rule_counts,
-            commands::issues,
-            commands::decide,
-            commands::decide_all,
-            commands::start,
-            commands::pause,
-            commands::resume,
-            commands::cancel,
-            commands::list_jobs,
-            commands::job,
-            commands::service_endpoint,
-            commands::set_tray_labels,
-        ])
+        .commands(commands::all())
         .events(collect_events![ServiceEvent, ConnectionChanged])
+        // Which job operation is allowed in which state, from the engine's own table: the dev
+        // mock (`src/dev/mock.ts`) reads it instead of keeping a copy.
+        .constant("JOB_OPERATIONS", filebridge_ipc::job_operations())
+        .constant("PROTOCOL_VERSION", filebridge_ipc::PROTOCOL_VERSION)
         // Byte counts and millisecond timestamps (u64/i64) stay far below 2^53, so they are
         // exported as `number`. specta-typescript refuses 64-bit integers otherwise.
         .dangerously_cast_bigints_to_number()

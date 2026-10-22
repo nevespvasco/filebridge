@@ -1,129 +1,30 @@
-//! End-to-end engine tests with a local-disk fake transport and a recording fake integration.
+//! End-to-end engine tests with the shared local-disk fake transport and a recording fake
+//! integration.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
-    CoreError, DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry,
-    SendOptions, Store, StoreError, TargetSpec,
+    CoreError, DecisionInput, Engine, EngineOptions, Event, IssueDecision, JobState, Profile,
+    Registry, SendOptions, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
     Problem, StepProgress,
 };
-use filebridge_transport_api::{
-    Backend, Destination, Digest, HashAlgo, ItemOutcome, PreflightReport, ProgressEvent,
-    ProgressSink, RemotePath, Result as TResult, StatsSnapshot, TransferJob, TransferResult,
-    Transport, TransportCaps, TransportError,
-};
-use sha2::{Digest as _, Sha256};
-
-#[derive(Default)]
-struct FakeTransport {
-    /// Whole transfer calls that fail with a retryable error before succeeding.
-    fail_calls: AtomicU32,
-    /// File names that always fail with a fatal error.
-    fatal_names: Mutex<HashSet<String>>,
-    /// File names written corrupted the first time.
-    corrupt_once: Mutex<HashSet<String>>,
-    /// Delay per file, to make pausing observable.
-    per_file: Mutex<Duration>,
-    calls: AtomicU32,
-    /// The destination can't compute hashes.
-    no_hash: std::sync::atomic::AtomicBool,
-}
-
-#[async_trait]
-impl Transport for FakeTransport {
-    fn id(&self) -> &str {
-        "fake"
-    }
-
-    fn capabilities(&self) -> TransportCaps {
-        TransportCaps::RESUME | TransportCaps::HASH_SHA256 | TransportCaps::RENAME
-    }
-
-    async fn preflight(&self, _dest: &Destination) -> TResult<PreflightReport> {
-        Ok(PreflightReport {
-            free_bytes: Some(1 << 40),
-            writable: true,
-            ..Default::default()
-        })
-    }
-
-    async fn transfer(
-        &self,
-        dest: &Destination,
-        job: &TransferJob,
-        progress: ProgressSink,
-    ) -> TResult<TransferResult> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        if self
-            .fail_calls
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok()
-        {
-            return Err(TransportError::retryable("connection reset by peer"));
-        }
-        let delay = *self.per_file.lock().unwrap();
-        let mut items = Vec::new();
-        let mut bytes = 0;
-        for (i, item) in job.items.iter().enumerate() {
-            if !delay.is_zero() {
-                tokio::time::sleep(delay).await;
-            }
-            let name = item.dest.file_name().to_owned();
-            if self.fatal_names.lock().unwrap().contains(&name) {
-                items.push(ItemOutcome::Failed(TransportError::fatal(
-                    "permission denied",
-                )));
-                continue;
-            }
-            let from = job.source_root.join(&item.source);
-            let to = Path::new(&dest.root).join(item.dest.as_str());
-            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-            if self.corrupt_once.lock().unwrap().remove(&name) {
-                std::fs::write(&to, b"garbage").unwrap();
-            } else {
-                std::fs::copy(&from, &to).unwrap();
-            }
-            bytes += item.size;
-            progress.send(ProgressEvent::ItemDone { index: i, ok: true });
-            progress.send(ProgressEvent::Stats(StatsSnapshot {
-                bytes,
-                files_done: i as u64 + 1,
-                bytes_per_sec: 1000.0,
-                ..Default::default()
-            }));
-            items.push(ItemOutcome::Done);
-        }
-        Ok(TransferResult { items, bytes })
-    }
-
-    async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> TResult<Digest> {
-        if self.no_hash.load(Ordering::SeqCst) {
-            return Err(TransportError::fatal(
-                "hash unsupported: hash type not supported",
-            ));
-        }
-        let data = std::fs::read(Path::new(&dest.root).join(path.as_str()))
-            .map_err(|e| TransportError::fatal(e.to_string()))?;
-        Ok(Digest {
-            algo,
-            bytes: Sha256::digest(&data).to_vec(),
-        })
-    }
-}
+use filebridge_transport_api::{Backend, Destination, PreflightReport, RemotePath, TransportCaps};
+use filebridge_transport_fake::FakeTransport;
 
 #[derive(Default)]
 struct FakeIntegration {
     changed: Mutex<Vec<String>>,
     problem: Mutex<Option<Problem>>,
+    /// `after_transfer` never returns, as if the app died during stage 6.
+    hang: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
@@ -136,7 +37,7 @@ impl Integration for FakeIntegration {
         TransportCaps::empty()
     }
 
-    fn name_rules(&self) -> Vec<Box<dyn NameRule>> {
+    fn name_rules(&self, _settings: &serde_json::Value) -> Vec<Box<dyn NameRule>> {
         Vec::new()
     }
 
@@ -153,6 +54,9 @@ impl Integration for FakeIntegration {
         changed: &[RemotePath],
         progress: IntegrationSink,
     ) -> filebridge_integration_api::Result<AfterTransferReport> {
+        if self.hang.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         progress.send(IntegrationEvent::Stage("fake.scan".into()));
         progress.send(IntegrationEvent::Progress(StepProgress {
             step: "fake.scan".into(),
@@ -474,7 +378,14 @@ async fn resumes_unfinished_jobs_on_startup() {
     let job = ready_job(&s, SendOptions::default()).await;
     // Simulate a crash mid-transfer: the job is stored as Transferring, nothing runs it.
     s.store
-        .set_job_state(&job, "transferring", None)
+        .change_job_state(
+            &job,
+            filebridge_store::StateChange {
+                from: "ready".into(),
+                to: "transferring".into(),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
 
@@ -717,7 +628,7 @@ async fn decide_all_applies_one_decision_to_every_pending_issue() {
         .into_iter()
         .map(|i| i.decision)
         .collect();
-    assert_eq!(decisions, ["skipped", "accepted"]);
+    assert_eq!(decisions, [IssueDecision::Skipped, IssueDecision::Accepted]);
 
     // Ready stays Ready; nothing is pending any more.
     let n = s
@@ -733,4 +644,199 @@ async fn decide_all_applies_one_decision_to_every_pending_issue() {
         s.engine.decide_all(&job, None, DecisionInput::Accept).await,
         Err(CoreError::Invalid(_))
     ));
+}
+
+#[tokio::test]
+async fn an_issue_is_decided_only_through_its_own_job() {
+    let s = setup().await;
+    std::fs::write(s.src.join("Fotos/Ver\u{e3}o.jpg"), b"other summer").unwrap();
+    let mut jobs = Vec::new();
+    for _ in 0..2 {
+        let job = s
+            .engine
+            .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+            .await
+            .unwrap();
+        s.engine.analyse(&job).await.unwrap();
+        jobs.push(job);
+    }
+    let theirs = s
+        .engine
+        .issues(&jobs[0], Some("collision".into()), None, 1)
+        .await
+        .unwrap();
+    assert!(matches!(
+        s.engine
+            .decide_issue(&jobs[1], theirs[0].id, DecisionInput::Skip)
+            .await,
+        Err(CoreError::Store(StoreError::NotFound(_)))
+    ));
+    assert_eq!(s.store.pending_issue_count(&jobs[0]).await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn edited_names_are_checked_when_decided() {
+    let s = setup().await;
+    std::fs::write(s.src.join("Fotos/Ver\u{e3}o.jpg"), b"other summer").unwrap();
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    s.engine.analyse(&job).await.unwrap();
+    let issue = s
+        .engine
+        .issues(&job, Some("collision".into()), None, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    for bad in ["a/b", "..", "Vera\u{303}o de 2024.jpg"] {
+        assert!(
+            matches!(
+                s.engine
+                    .decide_issue(&job, issue.id, DecisionInput::Edit(bad.into()))
+                    .await,
+                Err(CoreError::Invalid(_))
+            ),
+            "{bad:?} is refused when decided"
+        );
+    }
+    assert_eq!(
+        s.engine.job(&job).await.unwrap().state,
+        JobState::AwaitingApproval
+    );
+    s.engine
+        .decide_issue(
+            &job,
+            issue.id,
+            DecisionInput::Edit("Verão de 2024.jpg".into()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert!(dest_files(&s.dest).contains(&"Acme/Fotos/Verão de 2024.jpg".to_owned()));
+}
+
+#[tokio::test]
+async fn keeping_the_original_skips_only_that_rule() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    let nfc = s
+        .engine
+        .issues(&job, Some("nfc".into()), None, 10)
+        .await
+        .unwrap();
+    let report = nfc
+        .iter()
+        .find(|i| i.path.ends_with(".pdf"))
+        .expect("the report has an nfc issue");
+    s.engine
+        .decide_issue(&job, report.id, DecisionInput::KeepOriginal)
+        .await
+        .unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let files = dest_files(&s.dest);
+    assert!(
+        files.contains(&"Acme/Relato\u{301}rio.pdf".to_owned()),
+        "{files:?}"
+    );
+    assert!(files.contains(&"Acme/Fotos/Verão.jpg".to_owned()));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn an_undecodable_name_can_only_be_edited_or_skipped() {
+    use std::os::unix::ffi::OsStrExt;
+    let s = setup().await;
+    std::fs::write(
+        s.src
+            .join(std::ffi::OsStr::from_bytes(b"Patol\xf3gica.pdf")),
+        b"latin-1",
+    )
+    .unwrap();
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    s.engine.analyse(&job).await.unwrap();
+    for input in [DecisionInput::Accept, DecisionInput::KeepOriginal] {
+        assert!(matches!(
+            s.engine
+                .decide_all(&job, Some("encoding".into()), input)
+                .await,
+            Err(CoreError::Invalid(_))
+        ));
+    }
+    assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 1);
+    let n = s
+        .engine
+        .decide_all(&job, Some("encoding".into()), DecisionInput::Skip)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+}
+
+#[tokio::test]
+async fn warnings_of_earlier_stages_survive_a_restart() {
+    let s = setup().await;
+    s.transport.no_hash.store(true, Ordering::SeqCst);
+    s.integration.hang.store(true, Ordering::SeqCst);
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    s.engine.start(&job).await.unwrap();
+    // Verification can't hash anything (a warning), then stage 6 hangs: the app "dies" there.
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while s.engine.job(&job).await.unwrap().state != JobState::Integrating {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    s.integration.hang.store(false, Ordering::SeqCst);
+    let engine = engine_with(s.store.clone(), s.transport.clone(), s.integration.clone());
+    assert_eq!(engine.resume_unfinished().await.unwrap(), vec![job.clone()]);
+    let state = tokio::time::timeout(Duration::from_secs(20), engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::CompletedWithWarnings);
+    let error = engine.job(&job).await.unwrap().error.unwrap_or_default();
+    assert!(error.contains("could not be verified"), "{error}");
+}
+
+#[tokio::test]
+async fn a_file_missing_at_the_destination_is_sent_again() {
+    let s = setup().await;
+    s.transport
+        .lose_once
+        .lock()
+        .unwrap()
+        .insert("Inverno.jpg".into());
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    let calls = s.transport.calls.load(Ordering::SeqCst);
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert!(dest_files(&s.dest).contains(&"Acme/Fotos/Inverno.jpg".to_owned()));
+    assert_eq!(
+        s.transport.calls.load(Ordering::SeqCst) - calls,
+        2,
+        "one more call for the missing file"
+    );
+    assert_eq!(s.engine.job(&job).await.unwrap().counts.verified_ok, 3);
 }

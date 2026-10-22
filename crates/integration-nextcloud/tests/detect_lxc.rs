@@ -1,11 +1,14 @@
 //! `LxcDetector` end to end over `FakeShell`, with captured-style Proxmox and Nextcloud output.
 
-use filebridge_integration_api::CheckStatus;
-use filebridge_integration_nextcloud::fake::FakeShell;
+use std::sync::Arc;
+
+use filebridge_integration_api::{CheckStatus, Integration};
+use filebridge_integration_nextcloud::fake::{FakeConnector, FakeShell};
 use filebridge_integration_nextcloud::{
-    DetectInput, Detector, LxcDetector, NextcloudDirectProfile, Output, Owner, RunAs, Runtime,
-    SshTarget,
+    DetectInput, Detector, LxcDetector, Nextcloud, NextcloudDirectProfile, Output, Owner, RunAs,
+    Runtime, SetupError, SetupRequest, SshTarget,
 };
+use filebridge_transport_api::Backend;
 
 const PCT_LIST: &str = include_str!("fixtures/pct_list.txt");
 const PCT_CONFIG_105: &str = include_str!("fixtures/pct_config_105.txt");
@@ -305,4 +308,89 @@ async fn lost_connection_fails_the_step() {
     assert!(d.profile.is_none());
     assert_eq!(d.steps.len(), 1);
     assert_eq!(d.steps[0].commands[0].status, -1);
+}
+
+fn setup_request(folder: &str) -> SetupRequest {
+    SetupRequest {
+        ssh: ssh(),
+        nextcloud_user: "alice".into(),
+        folder: folder.into(),
+        ctid: None,
+        install_dir: None,
+        modes: None,
+    }
+}
+
+#[tokio::test]
+async fn the_wizard_builds_a_profile_that_passes_its_own_check() {
+    let nextcloud = Nextcloud::new(Arc::new(FakeConnector::new(Arc::new(authors_setup()))));
+    let setup = nextcloud
+        .set_up(&setup_request("/Backup/2024/"), "some-transport")
+        .await
+        .unwrap();
+    let parts = setup.profile.expect("every step passed");
+    assert_eq!(parts.destination.transport, "some-transport");
+    assert_eq!(
+        parts.destination.root,
+        "/tank/nextcloud-data/alice/files/Backup/2024"
+    );
+    assert!(matches!(
+        &parts.destination.backend,
+        Backend::Sftp { host, port: Some(22), user: Some(u), .. } if host == "pve.lan" && u == "root"
+    ));
+    nextcloud
+        .check_profile(&parts.destination, &parts.settings)
+        .unwrap();
+
+    // Files sent to another host than the one Nextcloud runs on.
+    let mut elsewhere = parts.destination.clone();
+    if let Backend::Sftp { host, .. } = &mut elsewhere.backend {
+        *host = "nas.lan".into();
+    }
+    assert!(
+        nextcloud
+            .check_profile(&elsewhere, &parts.settings)
+            .is_err()
+    );
+    // A root outside the user's files folder.
+    let outside = filebridge_transport_api::Destination {
+        root: "/tank/nextcloud-data/someone-else/files".into(),
+        ..parts.destination.clone()
+    };
+    assert!(nextcloud.check_profile(&outside, &parts.settings).is_err());
+    // Not even Nextcloud settings.
+    assert!(
+        nextcloud
+            .check_profile(&parts.destination, &serde_json::json!({ "mode": "webdav" }))
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn the_wizard_refuses_bad_modes_and_reports_a_failed_connection() {
+    let nextcloud = Nextcloud::new(Arc::new(FakeConnector::new(Arc::new(authors_setup()))));
+    let req = SetupRequest {
+        modes: Some(("999".into(), "640".into())),
+        ..setup_request("")
+    };
+    assert!(matches!(
+        nextcloud.set_up(&req, "t").await,
+        Err(SetupError::Invalid(_))
+    ));
+
+    let offline = Nextcloud::new(Arc::new(FakeConnector::refusing()));
+    assert!(matches!(
+        offline.set_up(&setup_request(""), "t").await,
+        Err(SetupError::Connect(_))
+    ));
+}
+
+#[tokio::test]
+async fn a_failed_detection_has_no_profile() {
+    let shell = FakeShell::new();
+    shell.on("pct list", Output::fail(127, "sh: 1: pct: not found\n"));
+    let nextcloud = Nextcloud::new(Arc::new(FakeConnector::new(Arc::new(shell))));
+    let setup = nextcloud.set_up(&setup_request(""), "t").await.unwrap();
+    assert!(setup.profile.is_none());
+    assert_eq!(setup.detection.steps[0].check.status, CheckStatus::Fail);
 }

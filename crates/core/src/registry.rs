@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use filebridge_integration_api::Integration;
-use filebridge_names::{ActiveFor, NameRule, RuleSet, general_rules};
+use filebridge_names::{ActiveFor, NamePlan, NameRule, RuleSet, general_rules};
 use filebridge_transport_api::Transport;
 
 use crate::{CoreError, Profile, Result};
@@ -14,8 +14,6 @@ use crate::{CoreError, Profile, Result};
 pub struct Registry {
     transports: HashMap<String, Arc<dyn Transport>>,
     integrations: HashMap<String, Arc<dyn Integration>>,
-    /// Integrations that need Windows-compatible names (forbidden characters, trailing dots).
-    windows_compat: Vec<String>,
 }
 
 impl Registry {
@@ -31,12 +29,6 @@ impl Registry {
     pub fn add_integration(&mut self, integration: Arc<dyn Integration>) -> &mut Self {
         self.integrations
             .insert(integration.id().to_owned(), integration);
-        self
-    }
-
-    /// Applies the Windows-compatibility rules to targets of this integration too.
-    pub fn require_windows_names_for(&mut self, integration_id: &str) -> &mut Self {
-        self.windows_compat.push(integration_id.to_owned());
         self
     }
 
@@ -66,8 +58,9 @@ impl Registry {
         ids
     }
 
-    /// Rejects a profile whose transport or integration is unknown, or whose integration needs
-    /// capabilities the transport doesn't have (checked here, not at send time).
+    /// Rejects a profile whose transport or integration is unknown, whose integration needs
+    /// capabilities the transport doesn't have, or whose settings its integration refuses
+    /// (checked here, not at send time).
     pub fn check_profile(&self, profile: &Profile) -> Result<()> {
         let transport = self.transport(&profile.destination.transport)?;
         if let Some(id) = &profile.integration {
@@ -79,17 +72,27 @@ impl Registry {
                     transport.id()
                 )));
             }
+            integration
+                .check_profile(&profile.destination, &profile.integration_settings)
+                .map_err(|e| CoreError::Invalid(format!("{id}: {}", e.message)))?;
         }
         Ok(())
     }
 
-    /// The name rules for jobs to `profile`: the general rules plus the integration's own.
-    pub fn rule_set(&self, profile: &Profile) -> Result<RuleSet> {
-        let compat = ActiveFor::windows().and_integrations(self.windows_compat.iter().cloned());
-        let mut rules: Vec<Box<dyn NameRule>> = general_rules(compat);
+    /// The Name plan for jobs to `profile`: the general rules (Windows ones on Windows targets)
+    /// plus the rules its integration imposes for its settings.
+    pub fn name_plan(&self, profile: &Profile) -> Result<NamePlan> {
+        let mut rules: Vec<Box<dyn NameRule>> = general_rules(ActiveFor::windows());
         if let Some(id) = &profile.integration {
-            rules.extend(self.integration(id)?.name_rules());
+            rules.extend(
+                self.integration(id)?
+                    .name_rules(&profile.integration_settings),
+            );
         }
-        Ok(RuleSet::new(rules, &profile.target_profile()))
+        let target = profile.target_profile();
+        Ok(NamePlan::new(
+            RuleSet::new(rules, &target),
+            target.case_sensitive,
+        ))
     }
 }

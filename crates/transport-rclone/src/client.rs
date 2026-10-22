@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use filebridge_transport_api::{Result, TransportError};
+use filebridge_transport_api::{ErrorKind, Result, TransportError};
+use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 /// Authenticated client for one `rclone rcd` instance.
@@ -27,7 +28,8 @@ impl RcClient {
         }
     }
 
-    /// Calls an rc method. 5xx errors are reported as retryable, 4xx as fatal.
+    /// Calls an rc method. Errors get a kind from the HTTP status and rclone's message (see
+    /// [`kind_of`]): 5xx and network errors are `Transient`.
     pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
         let resp = self
             .http
@@ -48,10 +50,10 @@ impl RcClient {
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("unknown error");
-        Err(TransportError {
-            message: format!("rclone rc {method}: {msg}"),
-            retryable: status.is_server_error(),
-        })
+        Err(TransportError::new(
+            kind_of(Some(status), msg),
+            format!("rclone rc {method}: {msg}"),
+        ))
     }
 
     /// Starts `method` as an rc job (`_async`) and waits for it to finish.
@@ -75,9 +77,70 @@ impl RcClient {
                 .get("error")
                 .and_then(Value::as_str)
                 .unwrap_or("unknown error");
-            return Err(TransportError::retryable(format!(
-                "rclone job {method}: {err}"
-            )));
+            return Err(TransportError::new(
+                kind_of(None, err),
+                format!("rclone job {method}: {err}"),
+            ));
         }
+    }
+}
+
+/// The kind of an rclone error, from the HTTP status of an rc call (`None` for an async job's
+/// result) and rclone's message. This is the only place that reads rclone's wording.
+pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
+    let msg = message.to_ascii_lowercase();
+    let has = |needle: &str| msg.contains(needle);
+    if status == Some(StatusCode::NOT_FOUND)
+        || has("not found")
+        || has("no such file")
+        || has("does not exist")
+    {
+        ErrorKind::NotFound
+    } else if has("hash unsupported") || has("hash type not supported") || has("not supported") {
+        ErrorKind::Unsupported
+    } else if matches!(
+        status,
+        Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+    ) || has("unable to authenticate")
+        || has("authentication failed")
+    {
+        ErrorKind::Auth
+    } else if status.is_none_or(|s| s.is_server_error()) {
+        // An async job's failure without a known cause is most often the network.
+        ErrorKind::Transient
+    } else {
+        ErrorKind::Other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rclone_errors_get_a_kind() {
+        let k = |status: Option<u16>, msg: &str| {
+            kind_of(status.map(|s| StatusCode::from_u16(s).unwrap()), msg)
+        };
+        assert_eq!(k(Some(404), "object not found"), ErrorKind::NotFound);
+        assert_eq!(k(Some(500), "directory not found"), ErrorKind::NotFound);
+        assert_eq!(
+            k(None, "failed to open source object: object not found"),
+            ErrorKind::NotFound
+        );
+        assert_eq!(
+            k(Some(500), "hash unsupported: hash type not supported"),
+            ErrorKind::Unsupported
+        );
+        assert_eq!(
+            k(None, "ssh: handshake failed: ssh: unable to authenticate"),
+            ErrorKind::Auth
+        );
+        assert_eq!(
+            k(Some(500), "connection reset by peer"),
+            ErrorKind::Transient
+        );
+        assert_eq!(k(None, "connection reset by peer"), ErrorKind::Transient);
+        assert_eq!(k(Some(400), "bad parameter"), ErrorKind::Other);
     }
 }

@@ -15,11 +15,13 @@ filebridge/
 │   ├── core/                    # Job, pipeline, states, Registry, progress events
 │   ├── host/                    # wiring for engine hosts: data dir + lock, rclone, built-in plugins
 │   ├── ipc/                     # window/CLI ↔ service messages over a local socket
+│   ├── model/                   # types the UI and the service share + the job state rules
 │   ├── scanner/                 # walk source, names as bytes, manifest
 │   ├── names/                   # NameRule trait + general rules (NFC, mojibake, forbidden)
 │   ├── store/                   # SQLite: jobs, manifests, profiles
 │   ├── secrets/                 # OS keyring
 │   ├── transport-api/           # Transport trait + types
+│   ├── transport-fake/          # local-disk Transport with fault injection (tests, dev mode)
 │   ├── transport-rclone/        # implementation over rclone's rc API
 │   ├── integration-api/         # Integration trait + types
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules
@@ -42,7 +44,11 @@ flowchart TB
     host --> ipc
     host --> trc["transport-rclone"]
     host --> inc["integration-nextcloud"]
-    ipc --> core
+    ipc --> model
+    ipc --> tapi
+    core --> model
+    model --> tapi
+    model --> names
     core --> tapi["transport-api"]
     core --> iapi["integration-api"]
     core --> names
@@ -58,8 +64,10 @@ flowchart TB
     scanner --> names
 ```
 
-- `core` depends only on `*-api` crates (plus `names`, `scanner`, `store`, `secrets`), **never on
-  implementations**.
+- `core` depends only on `*-api` crates (plus `model`, `names`, `scanner`, `store`, `secrets`),
+  **never on implementations**.
+- `ipc` depends on `model` and `transport-api`, **never on `core`**: a client (the desktop app)
+  never compiles the engine, the store or SQLite.
 - Every `transport-*` and `integration-*` crate is independent: **a new plugin is a new crate plus
   one line in the `Registry`**. Plugins never depend on `core`, `store` or `secrets`.
 - Only the binaries that host the engine (`apps/service`, `apps/cli`) depend on concrete plugins,
