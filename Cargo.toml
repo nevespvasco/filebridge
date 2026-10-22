@@ -16,6 +16,7 @@ members = [
     "crates/store",
     "crates/transport-api",
     "crates/transport-fake",
+    "crates/transport-nextcloud",
     "crates/transport-rclone",
 ]
 
@@ -39,6 +40,7 @@ filebridge-scanner = { path = "crates/scanner" }
 filebridge-store = { path = "crates/store" }
 filebridge-transport-api = { path = "crates/transport-api" }
 filebridge-transport-fake = { path = "crates/transport-fake" }
+filebridge-transport-nextcloud = { path = "crates/transport-nextcloud" }
 filebridge-transport-rclone = { path = "crates/transport-rclone" }
 
 # External

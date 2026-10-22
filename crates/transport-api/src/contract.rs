@@ -6,8 +6,8 @@ use std::path::Path;
 use sha2::{Digest as _, Sha256};
 
 use crate::{
-    Destination, ErrorKind, HashAlgo, ItemOutcome, MoveRequest, ProgressEvent, ProgressSink,
-    RemotePath, TransferItem, TransferJob, TransferOptions, Transport, TransportCaps,
+    Backend, Destination, ErrorKind, HashAlgo, ItemOutcome, MoveRequest, ProgressEvent,
+    ProgressSink, RemotePath, TransferItem, TransferJob, TransferOptions, Transport, TransportCaps,
 };
 
 /// Sends a small tree from a source under `scratch` to `dest` and checks what the contract
@@ -157,7 +157,13 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
             ("x.txt", b"brackets", "Fotos/x [1] {a,b} #.txt"),
             ("y.txt", b"stars", "deep/er/y*?\\.txt"),
         ];
-        let extra = if cfg!(windows) {
+        // Windows and Nextcloud refuse `*`, `?` or `\` in a name (the name rules fix them before
+        // a send), so they get only the first.
+        let nextcloud = matches!(
+            &dest.backend,
+            Backend::Webdav { vendor: Some(v), .. } if v == "nextcloud"
+        );
+        let extra = if cfg!(windows) || nextcloud {
             &extra[..1]
         } else {
             &extra[..]

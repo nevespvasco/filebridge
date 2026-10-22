@@ -24,6 +24,7 @@ filebridge/
 │   ├── secrets/                 # OS keyring
 │   ├── transport-api/           # Transport trait + types
 │   ├── transport-fake/          # local-disk Transport with fault injection (tests, dev mode)
+│   ├── transport-nextcloud/     # small files to Nextcloud by bulk upload, in front of rclone
 │   ├── transport-rclone/        # implementation over rclone's rc API
 │   ├── integration-api/         # Integration trait + types
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules
@@ -46,6 +47,7 @@ flowchart TB
     host --> core
     host --> ipc
     host --> trc["transport-rclone"]
+    host --> tnc["transport-nextcloud"]
     host --> inc["integration-nextcloud"]
     ipc --> model
     ipc --> tapi

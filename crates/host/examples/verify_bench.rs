@@ -4,7 +4,8 @@
 //! keyring.
 //!
 //! Env: BENCH_URL (`…/remote.php/dav/files/<user>/`), BENCH_USER, BENCH_PASS, BENCH_ROOT (a
-//! folder under the user's files), BENCH_FILES. BENCH_PASS should be an app password, as the app
+//! folder under the user's files), BENCH_FILES, and BENCH_BULK=0 to send through rclone alone
+//! instead of the app's bulk upload for small files (ADR 0016). BENCH_PASS should be an app password, as the app
 //! stores: Nextcloud checks an account password with a slow hash on every request, which makes
 //! each request about 4× slower. Use a throwaway server and account, e.g.
 //! `docker run -p 127.0.0.1:8099:80 -e SQLITE_DATABASE=nc -e NEXTCLOUD_ADMIN_USER=… \
@@ -20,6 +21,7 @@ use filebridge_core::{
 };
 use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, StoreResolver, reference};
 use filebridge_transport_api::{Backend, Destination};
+use filebridge_transport_nextcloud::NextcloudBulk;
 use filebridge_transport_rclone::{Rcd, RcloneTransport};
 
 #[tokio::main]
@@ -50,9 +52,14 @@ async fn main() {
     let rclone = filebridge_host::find_rclone(None).unwrap();
     let rcd = Arc::new(Rcd::start(&rclone).await.unwrap());
     let mut registry = Registry::new();
-    registry.add_transport(Arc::new(
-        RcloneTransport::new(rcd.clone()).with_secrets(Arc::new(StoreResolver(secrets.clone()))),
-    ));
+    let resolver = Arc::new(StoreResolver(secrets.clone()));
+    let rclone = Arc::new(RcloneTransport::new(rcd.clone()).with_secrets(resolver.clone()));
+    // As the app sends (ADR 0016), unless BENCH_BULK=0: rclone alone.
+    if std::env::var("BENCH_BULK").as_deref() == Ok("0") {
+        registry.add_transport(rclone);
+    } else {
+        registry.add_transport(Arc::new(NextcloudBulk::over(rclone, resolver)));
+    }
     registry.set_secrets(secrets.clone());
     let store = Store::open_in_memory().unwrap();
     let engine = Engine::new(

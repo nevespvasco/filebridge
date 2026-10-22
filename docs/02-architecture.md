@@ -37,7 +37,7 @@ flowchart TB
     CMD["Tauri commands & events (typed via specta)"]
     CORE["core — Job, pipeline, Registry, progress events"]
     API["Contracts — Transport · NameRule · Integration"]
-    PLUG["Plugins — transport-rclone · integration-nextcloud · general name rules"]
+    PLUG["Plugins — transport-rclone · transport-nextcloud · integration-nextcloud · general name rules"]
     UI --> CMD --> CORE --> API
     PLUG -. implements .-> API
 ```

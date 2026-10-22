@@ -106,7 +106,8 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
   overwrite, so nothing else calls it.
 - **Every `Transport` adapter runs the shared contract suite** (`filebridge_transport_api::
   contract::check`, and `check_move` for `MOVE`, feature `contract`): rclone against a real
-  `rclone rcd` (local, SFTP and WebDAV), and the local-disk
+  `rclone rcd` (local, SFTP and WebDAV), the Nextcloud bulk upload in front of it (`rclone serve
+  webdav`, and a real Nextcloud when `FILEBRIDGE_TEST_NEXTCLOUD_*` is set), and the local-disk
   fake (`crates/transport-fake`) that `core`, `ipc` and the service tests use. A new adapter
   adds the same one-function test.
 

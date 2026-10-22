@@ -65,7 +65,8 @@ the target's naming family.
 
 **Destination**: where files go: a Transport id, a backend (local, SFTP) and a root.
 
-**Transport**: the contract that moves bytes to a Destination (rclone, the local-disk fake).
+**Transport**: the contract that moves bytes to a Destination (rclone; Nextcloud's bulk upload in
+front of rclone for small files; the local-disk fake).
 Every adapter passes the contract suite (`transport-api`, feature `contract`).
 
 **Integration**: the contract for the tool that owns the destination (Nextcloud): its name rules,

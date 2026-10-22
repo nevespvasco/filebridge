@@ -19,6 +19,7 @@ use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
 use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore, StoreResolver};
 use filebridge_transport_fake::FakeTransport;
+use filebridge_transport_nextcloud::NextcloudBulk;
 use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport};
 
 pub use operations::EngineOperations;
@@ -158,9 +159,9 @@ impl Host {
             TransportChoice::None => None,
         };
         if let Some(rc) = &rclone {
-            registry.add_transport(Arc::new(
-                RcloneTransport::new(rc.clone()).with_secrets(resolver.clone()),
-            ));
+            // Small files to a Nextcloud go by its bulk upload, the rest through rclone (ADR 0016).
+            let rclone = Arc::new(RcloneTransport::new(rc.clone()).with_secrets(resolver.clone()));
+            registry.add_transport(Arc::new(NextcloudBulk::over(rclone, resolver.clone())));
             transport = Some(RcloneTransport::ID);
         }
         // SSH sign-ins read a profile's own key (ADR 0012) from the same keyring.

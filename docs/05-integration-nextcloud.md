@@ -47,6 +47,10 @@ network (like the 500 GB initial migration).
   with a slow hash on every request (~175 ms against ~43 ms for an app password on Nextcloud 31),
   and rclone makes three to four requests per file: 1,200 small files took 371 s with the account
   password and 40 s with an app password (crates/transport-rclone/README.md).
+- Small files (up to 4 MiB) go by Nextcloud's **bulk upload**, 100 per request, when the server
+  offers it (`transport-nextcloud`, [ADR 0016](adr/0016-nextcloud-bulk-upload.md)): the same
+  1,200 files in 7.6 s, and 14 s even with the account password. Bigger files, and anything the
+  bulk upload doesn't take, go through rclone.
 - Mode auto-selection below is not built: the user picks the mode in the wizard.
 
 ### Mode auto-selection
