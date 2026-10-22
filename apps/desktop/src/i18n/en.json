@@ -10,7 +10,9 @@
       "jobs": "See the transfers in progress and the ones already finished",
       "destinations": "The places you send files to: a disk, a server or Nextcloud",
       "settings": "Language and notifications"
-    }
+    },
+    "attention": "{n} transfer needs you | {n} transfers need you",
+    "active": "{n} running | {n} running"
   },
   "tray": {
     "show": "Open filebridge",
@@ -384,7 +386,12 @@
     "pauseTip": "Stops for now; “Resume” continues from the same point",
     "resumeTip": "Continues from where it stopped",
     "cancelTip": "Stops for good. Files already copied stay at the destination.",
-    "unsentHint": "This send hasn't started. Click “Continue in the wizard” to finish choosing and send it."
+    "unsentHint": "This send hasn't started. Click “Continue in the wizard” to finish choosing and send it.",
+    "tabs": "Transfer sections",
+    "tab": {
+      "overview": "Overview",
+      "log": "Log"
+    }
   },
   "destinations": {
     "title": "Destinations",
@@ -540,7 +547,14 @@
     "endpoint": "Socket",
     "serviceHint": "filebridge-service does the sends; the window only shows them. It starts by itself when needed.",
     "bandwidthHelp": "The most filebridge may use of your connection, so the internet stays fast for everything else.",
-    "scheduleHelp": "The hours when sends may run, for example only at night."
+    "scheduleHelp": "The hours when sends may run, for example only at night.",
+    "appearance": "Appearance",
+    "themes": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "themeHint": "System follows your computer's light or dark mode."
   },
   "help": {
     "about": "Help: {what}",

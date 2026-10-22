@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
@@ -17,6 +18,7 @@ const jobs = useJobs();
 const profiles = useProfiles();
 const wizard = useWizard();
 const router = useRouter();
+const route = useRoute();
 const fmt = useFmt();
 const { t } = useI18n();
 
@@ -27,6 +29,24 @@ const busy = ref(false);
 const error = ref<string | null>(null);
 const confirmCancel = ref(false);
 const notFound = ref(false);
+
+/** Tabs of Transfer detail (docs/design/02, "Transfer detail: tabs"); kept in `?tab=`. */
+const TABS = ["overview", "log"] as const;
+type Tab = (typeof TABS)[number];
+const tab = computed<Tab>(() => (TABS as readonly string[]).includes(route.query.tab as string) ? (route.query.tab as Tab) : "overview");
+function selectTab(next: Tab) {
+  // Replace, not push: Back from a tab goes back to Transfers.
+  void router.replace({ query: { ...route.query, tab: next === "overview" ? undefined : next } });
+}
+function onTabKey(e: KeyboardEvent) {
+  const i = TABS.indexOf(tab.value);
+  const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+  if (!step) return;
+  e.preventDefault();
+  const next = TABS[(i + step + TABS.length) % TABS.length];
+  selectTab(next);
+  document.getElementById(`tab-${next}`)?.focus();
+}
 
 async function load() {
   const j = await jobs.refresh(props.id);
@@ -87,13 +107,13 @@ const details = computed(() => [
   <div>
     <header class="page-head">
       <div>
-        <button class="link small" @click="router.push({ name: 'jobs' })">← {{ $t("jobs.title") }}</button>
+        <button class="link small" @click="router.push({ name: 'jobs' })"><AppIcon name="back" /> {{ $t("jobs.title") }}</button>
         <h1>{{ $t("jobDetail.title") }}</h1>
       </div>
       <div class="actions">
         <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t("jobDetail.continue") }}</button>
-        <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))">⏸ {{ $t("jobDetail.pause") }}</button>
-        <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))">▶ {{ $t("jobDetail.resume") }}</button>
+        <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))"><AppIcon name="pause" /> {{ $t("jobDetail.pause") }}</button>
+        <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
         <button v-if="canCancel" class="btn btn-danger" :title="$t('jobDetail.cancelTip')" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
       </div>
     </header>
@@ -101,53 +121,75 @@ const details = computed(() => [
     <p v-if="notFound" class="card error">{{ $t("jobDetail.notFound") }}</p>
     <template v-else-if="job">
       <p v-if="error" class="error">{{ error }}</p>
-      <p v-if="unsent" class="guide"><span class="guide-icon" aria-hidden="true">👉</span><span>{{ $t("jobDetail.unsentHint") }}</span></p>
-      <div class="card"><JobProgress :job-id="id" /></div>
-
-      <div class="grid">
-        <section class="card">
-          <h2>{{ $t("jobDetail.what") }}</h2>
-          <dl class="kv">
-            <dt>{{ $t("review.sources") }}</dt>
-            <dd><span v-for="s in job.sources" :key="s" class="mono small block ellipsis" :title="s">{{ s }}</span></dd>
-            <dt>{{ $t("review.destination") }}</dt>
-            <dd>{{ profile?.name ?? job.profile_id }} <span v-if="profile" class="mono small block">{{ profileWhere(profile) }}</span></dd>
-            <dt>{{ $t("jobDetail.created") }}</dt>
-            <dd>{{ fmt.date(job.created_at) }}</dd>
-            <dt>{{ $t("jobDetail.finished") }}</dt>
-            <dd>{{ fmt.date(job.finished_at) }}</dd>
-            <dt>{{ $t("review.verify") }}</dt>
-            <dd>{{ job.options.verify ? $t("common.yes") : $t("common.no") }}</dd>
-            <dt>{{ $t("jobs.col.retries") }}</dt>
-            <dd>{{ job.attempt }}<template v-if="job.next_retry_at"> · {{ $t("jobDetail.nextRetry", { at: fmt.date(job.next_retry_at) }) }}</template></dd>
-          </dl>
-        </section>
-        <section class="card">
-          <h2>{{ $t("jobDetail.counts") }}</h2>
-          <dl class="kv">
-            <dt>{{ $t("analysis.files") }}</dt><dd>{{ fmt.count(job.counts.files) }}</dd>
-            <dt>{{ $t("analysis.dirs") }}</dt><dd>{{ fmt.count(job.counts.dirs) }}</dd>
-            <dt>{{ $t("analysis.size") }}</dt><dd>{{ fmt.bytes(job.counts.bytes) }}</dd>
-            <dt>{{ $t("counts.pending") }}</dt><dd>{{ fmt.count(job.counts.pending) }}</dd>
-            <dt>{{ $t("counts.done") }}</dt><dd>{{ fmt.count(job.counts.done) }}</dd>
-            <dt>{{ $t("counts.failed") }}</dt><dd>{{ fmt.count(job.counts.failed) }}</dd>
-            <dt>{{ $t("counts.skipped") }}</dt><dd>{{ fmt.count(job.counts.skipped) }}</dd>
-            <dt>{{ $t("counts.verified") }}</dt><dd>{{ fmt.count(job.counts.verified_ok) }}</dd>
-            <dt>{{ $t("counts.mismatch") }}</dt><dd>{{ fmt.count(job.counts.mismatch) }}</dd>
-          </dl>
-        </section>
+      <p v-if="unsent" class="guide"><AppIcon class="guide-icon" name="pointing" :size="20" /><span>{{ $t("jobDetail.unsentHint") }}</span></p>
+      <div class="tabs" role="tablist" :aria-label="$t('jobDetail.tabs')" @keydown="onTabKey">
+        <button
+          v-for="t in TABS"
+          :id="`tab-${t}`"
+          :key="t"
+          class="tab"
+          role="tab"
+          :aria-selected="tab === t"
+          :aria-controls="`panel-${t}`"
+          :tabindex="tab === t ? 0 : -1"
+          @click="selectTab(t)"
+        >
+          {{ $t(`jobDetail.tab.${t}`) }}
+        </button>
       </div>
 
-      <section class="card">
-        <h2>{{ $t("jobDetail.log") }}</h2>
-        <p class="small muted">{{ $t("jobDetail.logNote") }}</p>
-        <ol v-if="live?.log.length" class="log small">
-          <li v-for="(l, i) in [...live.log].reverse()" :key="i" :class="`log-${l.kind}`">
-            <time class="muted mono">{{ new Date(l.at).toLocaleTimeString() }}</time> {{ l.text }}
-          </li>
-        </ol>
-        <p v-else class="small muted">{{ $t("jobDetail.logEmpty") }}</p>
-      </section>
+      <div v-if="tab === 'overview'" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
+        <div class="card"><JobProgress :job-id="id" /></div>
+
+        <div class="grid">
+          <section class="card">
+            <h2>{{ $t("jobDetail.what") }}</h2>
+            <dl class="kv">
+              <dt>{{ $t("review.sources") }}</dt>
+              <dd><span v-for="s in job.sources" :key="s" class="mono small block ellipsis" :title="s">{{ s }}</span></dd>
+              <dt>{{ $t("review.destination") }}</dt>
+              <dd>{{ profile?.name ?? job.profile_id }} <span v-if="profile" class="mono small block">{{ profileWhere(profile) }}</span></dd>
+              <dt>{{ $t("jobDetail.created") }}</dt>
+              <dd>{{ fmt.date(job.created_at) }}</dd>
+              <dt>{{ $t("jobDetail.finished") }}</dt>
+              <dd>{{ fmt.date(job.finished_at) }}</dd>
+              <dt>{{ $t("review.verify") }}</dt>
+              <dd>{{ job.options.verify ? $t("common.yes") : $t("common.no") }}</dd>
+              <dt>{{ $t("jobs.col.retries") }}</dt>
+              <dd>{{ job.attempt }}<template v-if="job.next_retry_at"> · {{ $t("jobDetail.nextRetry", { at: fmt.date(job.next_retry_at) }) }}</template></dd>
+            </dl>
+          </section>
+          <section class="card">
+            <h2>{{ $t("jobDetail.counts") }}</h2>
+            <dl class="kv num">
+              <dt>{{ $t("analysis.files") }}</dt><dd>{{ fmt.count(job.counts.files) }}</dd>
+              <dt>{{ $t("analysis.dirs") }}</dt><dd>{{ fmt.count(job.counts.dirs) }}</dd>
+              <dt>{{ $t("analysis.size") }}</dt><dd>{{ fmt.bytes(job.counts.bytes) }}</dd>
+              <dt>{{ $t("counts.pending") }}</dt><dd>{{ fmt.count(job.counts.pending) }}</dd>
+              <dt>{{ $t("counts.done") }}</dt><dd>{{ fmt.count(job.counts.done) }}</dd>
+              <dt>{{ $t("counts.failed") }}</dt><dd>{{ fmt.count(job.counts.failed) }}</dd>
+              <dt>{{ $t("counts.skipped") }}</dt><dd>{{ fmt.count(job.counts.skipped) }}</dd>
+              <dt>{{ $t("counts.verified") }}</dt><dd>{{ fmt.count(job.counts.verified_ok) }}</dd>
+              <dt>{{ $t("counts.mismatch") }}</dt><dd>{{ fmt.count(job.counts.mismatch) }}</dd>
+            </dl>
+          </section>
+        </div>
+
+      </div>
+
+      <div v-else id="panel-log" role="tabpanel" aria-labelledby="tab-log">
+        <section class="card">
+          <h2>{{ $t("jobDetail.log") }}</h2>
+          <p class="small muted">{{ $t("jobDetail.logNote") }}</p>
+          <ol v-if="live?.log.length" class="log small">
+            <li v-for="(l, i) in [...live.log].reverse()" :key="i" :class="`log-${l.kind}`">
+              <time class="muted mono">{{ new Date(l.at).toLocaleTimeString() }}</time> {{ l.text }}
+            </li>
+          </ol>
+          <p v-else class="small muted">{{ $t("jobDetail.logEmpty") }}</p>
+        </section>
+
+      </div>
 
       <DetailsPanel :lines="details" />
     </template>
@@ -179,5 +221,11 @@ dd { margin: 0; min-width: 0; }
 .log li { padding: 0.2rem 0; border-bottom: 1px solid var(--border); }
 .log-failure, .log-problem { color: var(--danger); }
 .log-retry { color: var(--warn-strong); }
-.link { all: unset; cursor: pointer; color: var(--accent); }
+.link { all: unset; cursor: pointer; color: var(--accent); display: inline-flex; gap: 0.3rem; align-items: center; }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin: 0 0 1rem; }
+.tab { font: inherit; background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; margin-bottom: -1px; color: var(--text-2); cursor: pointer; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 </style>

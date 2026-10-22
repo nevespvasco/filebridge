@@ -5,6 +5,7 @@
   --surface-2: #f0f2f5;
   --border: #dfe3e8;
   --border-strong: #b9c0ca;
+  --rule: #e8ebef;
   --text: #1b1f24;
   --text-2: #5b6470;
   --muted: #9aa3ae;
@@ -12,6 +13,8 @@
   --accent: #2459d6;
   --accent-soft: #e6edfc;
   --on-accent: #ffffff;
+  --focus: var(--accent);
+  --info: #2f6fb3;
   --ok: #1f8f4e;
   --ok-soft: #dcf3e5;
   --warn: #e0a100;
@@ -19,6 +22,34 @@
   --warn-soft: #fdf3d6;
   --danger: #c93636;
   --danger-soft: #fbe3e3;
+  --overlay: rgb(15 18 22 / 0.45);
+  /* File Categories: graphics only, never text (docs/design/01-design-system.md#file-categories). */
+  --cat-image: #0e9f8e;
+  --cat-video: #7656d6;
+  --cat-audio: #c2459a;
+  --cat-document: #1d8ad0;
+  --cat-archive: #c2620a;
+  --cat-code: #5f7f1f;
+  --cat-other: #8a939e;
+
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", monospace;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.85rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.2rem;
+  --fs-xl: 1.5rem;
+  --fs-stat: 1.9rem;
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.18);
+
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
   font-size: 15px;
   line-height: 1.45;
@@ -26,13 +57,16 @@
   background: var(--bg);
 }
 
+/* Dark tokens: from the system unless the user picked Light, or forced by picking Dark
+   (`data-theme` on <html>, set by the theme setting and by public/theme-boot.js before paint). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #14171b;
     --surface: #1c2026;
     --surface-2: #242930;
     --border: #2f353d;
     --border-strong: #4a525d;
+    --rule: #262b32;
     --text: #e6e9ed;
     --text-2: #a2abb6;
     --muted: #6b7480;
@@ -40,6 +74,7 @@
     --accent: #6f9bff;
     --accent-soft: #1f2a44;
     --on-accent: #0e1420;
+    --info: #7fb2ee;
     --ok: #3cc27a;
     --ok-soft: #173225;
     --warn: #f0b429;
@@ -47,14 +82,60 @@
     --warn-soft: #3a2f12;
     --danger: #ff6b6b;
     --danger-soft: #3d1f22;
+    --overlay: rgb(0 0 0 / 0.6);
+    --cat-image: #35c9b5;
+    --cat-video: #a48cff;
+    --cat-audio: #f27ac6;
+    --cat-document: #5cb6f2;
+    --cat-archive: #f08a3c;
+    --cat-code: #a3c75a;
+    --cat-other: #6f7883;
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #14171b;
+  --surface: #1c2026;
+  --surface-2: #242930;
+  --border: #2f353d;
+  --border-strong: #4a525d;
+  --rule: #262b32;
+  --text: #e6e9ed;
+  --text-2: #a2abb6;
+  --muted: #6b7480;
+  --track: #2c323a;
+  --accent: #6f9bff;
+  --accent-soft: #1f2a44;
+  --on-accent: #0e1420;
+  --info: #7fb2ee;
+  --ok: #3cc27a;
+  --ok-soft: #173225;
+  --warn: #f0b429;
+  --warn-strong: #f0b429;
+  --warn-soft: #3a2f12;
+  --danger: #ff6b6b;
+  --danger-soft: #3d1f22;
+  --overlay: rgb(0 0 0 / 0.6);
+  --cat-image: #35c9b5;
+  --cat-video: #a48cff;
+  --cat-audio: #f27ac6;
+  --cat-document: #5cb6f2;
+  --cat-archive: #f08a3c;
+  --cat-code: #a3c75a;
+  --cat-other: #6f7883;
+}
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
 h1 { font-size: 1.5rem; margin: 0; }
 h2 { font-size: 1.2rem; }
-code, .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", monospace; }
+code, .mono { font-family: var(--font-mono); }
+/* Numbers line up: every size, count, percentage, speed and date. */
+.num, .table td { font-variant-numeric: tabular-nums; }
+.table td.n, .table th.n { text-align: right; }
+.hash { font-family: var(--font-mono); font-size: var(--fs-sm); letter-spacing: 0.02em; word-break: break-all; }
+.path { font-family: var(--font-mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
@@ -70,6 +151,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu San
 .nowrap { white-space: nowrap; }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font: inherit;
   border: 1px solid var(--border-strong);
   background: var(--surface);
@@ -80,7 +164,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu San
   white-space: nowrap;
 }
 .btn:hover:not(:disabled) { background: var(--surface-2); }
-.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
@@ -109,7 +193,7 @@ input:not([type="checkbox"]):not([type="radio"]), select {
   min-width: 0;
   width: 100%;
 }
-input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
 input:disabled { background: var(--surface-2); }
 
 .table-wrap { padding: 0; overflow-x: auto; }
@@ -134,7 +218,9 @@ input:disabled { background: var(--surface-2); }
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   margin: 0 0 1rem;
 }
-.guide > .guide-icon { font-size: 1.1rem; line-height: 1.3; flex: none; }
+.guide > .guide-icon { flex: none; margin-top: 0.1rem; color: var(--accent); }
+.guide.warn > .guide-icon { color: var(--warn-strong); }
+.guide.ok > .guide-icon { color: var(--ok); }
 .guide p { margin: 0; }
 .guide ol, .guide ul { margin: 0.35rem 0 0; padding-left: 1.2rem; }
 .guide li { margin: 0.15rem 0; }
@@ -146,3 +232,7 @@ input:disabled { background: var(--surface-2); }
 .field > .hint { font-size: 0.78rem; color: var(--text-2); }
 .req { color: var(--danger); margin-left: 0.15rem; }
 .why-disabled { font-size: 0.85rem; color: var(--text-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}

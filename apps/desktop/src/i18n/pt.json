@@ -10,7 +10,9 @@
       "jobs": "Ver os envios em curso e os que já terminaram",
       "destinations": "Os sítios para onde envia ficheiros: um disco, um servidor ou o Nextcloud",
       "settings": "Língua e notificações"
-    }
+    },
+    "attention": "{n} transferência precisa de si | {n} transferências precisam de si",
+    "active": "{n} em curso | {n} em curso"
   },
   "tray": {
     "show": "Abrir filebridge",
@@ -384,7 +386,12 @@
     "pauseTip": "Para por agora; “Retomar” continua do mesmo ponto",
     "resumeTip": "Continua de onde parou",
     "cancelTip": "Para de vez. Os ficheiros já copiados ficam no destino.",
-    "unsentHint": "Este envio ainda não começou. Carregue em “Continuar no assistente” para acabar de escolher e enviá-lo."
+    "unsentHint": "Este envio ainda não começou. Carregue em “Continuar no assistente” para acabar de escolher e enviá-lo.",
+    "tabs": "Secções da transferência",
+    "tab": {
+      "overview": "Resumo",
+      "log": "Registo"
+    }
   },
   "destinations": {
     "title": "Destinos",
@@ -540,7 +547,14 @@
     "endpoint": "Socket",
     "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso.",
     "bandwidthHelp": "O máximo da sua ligação que o filebridge pode usar, para a internet continuar rápida para o resto.",
-    "scheduleHelp": "As horas em que os envios podem correr, por exemplo só à noite."
+    "scheduleHelp": "As horas em que os envios podem correr, por exemplo só à noite.",
+    "appearance": "Aspeto",
+    "themes": {
+      "system": "Sistema",
+      "light": "Claro",
+      "dark": "Escuro"
+    },
+    "themeHint": "Sistema segue o modo claro ou escuro do computador."
   },
   "help": {
     "about": "Ajuda: {what}",

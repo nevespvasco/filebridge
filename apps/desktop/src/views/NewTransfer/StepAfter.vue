@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import JobProgress from "@/components/JobProgress.vue";
@@ -27,7 +28,7 @@ function newTransfer() {
   <div class="step">
     <h2>{{ done ? $t("after.reportTitle") : $t("after.title") }}</h2>
     <div v-if="!done" class="guide">
-      <span class="guide-icon" aria-hidden="true">☕</span>
+      <AppIcon class="guide-icon" name="coffee" :size="20" />
       <p>{{ $t("after.closeOk") }}</p>
     </div>
 

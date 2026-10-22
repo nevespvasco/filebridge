@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useWizard, type Step } from "@/stores/wizard";
@@ -48,7 +49,7 @@ function go(n: Step) {
     <ol class="stepper">
       <li v-for="s in steps" :key="s.n" :class="{ current: wizard.step === s.n, done: s.n < wizard.step }">
         <button :disabled="!reachable(s.n)" :title="s.tip" :aria-current="wizard.step === s.n ? 'step' : undefined" @click="go(s.n)">
-          <span class="num">{{ s.n < wizard.step ? "✓" : s.n }}</span>
+          <span class="num"><AppIcon v-if="s.n < wizard.step" name="check" weight="bold" /><template v-else>{{ s.n }}</template></span>
           <span class="label">{{ s.label }}</span>
         </button>
       </li>

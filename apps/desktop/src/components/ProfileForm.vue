@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // New destination: a local folder, an SFTP server, or Nextcloud in direct mode.
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref } from "vue";
 import type { Backend_Deserialize, Family, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
@@ -98,7 +99,7 @@ async function save() {
         :aria-checked="kind === k"
         @click="kind = k"
       >
-        <strong><span aria-hidden="true">{{ { local: "💽", sftp: "🖥️", nextcloud: "☁️" }[k] }}</span> {{ $t(`profile.kinds.${k}`) }}</strong>
+        <strong><AppIcon :name="k" :size="20" /> {{ $t(`profile.kinds.${k}`) }}</strong>
         <span class="small muted">{{ $t(`profile.kindsHint.${k}`) }}</span>
       </button>
     </div>
@@ -147,7 +148,7 @@ async function save() {
           </span>
           <span class="with-button">
             <input v-model="form.root" required spellcheck="false" :placeholder="kind === 'local' ? '/media/disco/Backup' : '/srv/backup'" />
-            <button v-if="kind === 'local'" type="button" class="btn btn-small" :title="$t('profile.hint.browse')" @click="pick('root')">📁 {{ $t("common.browse") }}</button>
+            <button v-if="kind === 'local'" type="button" class="btn btn-small" :title="$t('profile.hint.browse')" @click="pick('root')"><AppIcon name="folder" /> {{ $t("common.browse") }}</button>
           </span>
           <span v-if="rootNotAbsolute" class="hint error">{{ $t("profile.slashRule") }}</span>
           <span v-else class="hint">{{ kind === "local" ? $t("profile.hint.folder") : $t("profile.hint.remoteFolder") }}</span>
@@ -170,7 +171,7 @@ async function save() {
             <input v-model="form.known_hosts_file" spellcheck="false" placeholder="~/.ssh/known_hosts" />
             <span class="hint">{{ $t("profile.hint.knownHosts") }}</span>
           </label>
-          <p class="guide warn small wide"><span class="guide-icon" aria-hidden="true">🔑</span><span>{{ $t("profile.noPassword") }}</span></p>
+          <p class="guide warn small wide"><AppIcon class="guide-icon" name="key" :size="20" /><span>{{ $t("profile.noPassword") }}</span></p>
         </template>
       </div>
 

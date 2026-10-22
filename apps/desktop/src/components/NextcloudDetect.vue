@@ -2,6 +2,7 @@
 // Nextcloud direct mode (docs/05): SSH to the Proxmox host (and find the Nextcloud container) or
 // to the machine Nextcloud runs on, then find its data directory, `occ` and the file owner. Each
 // step shows ✓ / ! / ✗, and the Details panel the commands it ran.
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
@@ -150,7 +151,7 @@ function chooseContainer(c: string) {
     </div>
 
     <button type="button" class="link small" :aria-expanded="advanced" @click="advanced = !advanced">
-      {{ advanced ? "▾" : "▸" }} {{ $t("common.advanced") }}
+      <AppIcon :name="advanced ? 'caretDown' : 'caretRight'" /> {{ $t("common.advanced") }}
     </button>
     <span v-if="!advanced" class="small muted adv-hint">{{ $t("nextcloud.advancedHint") }}</span>
     <div v-if="advanced" class="grid">

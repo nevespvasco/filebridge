@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { onMounted } from "vue";
 import type { JobState } from "@/bindings";
 import { useRouter } from "vue-router";
@@ -40,10 +41,10 @@ function sourcesLabel(sources: string[]) {
     </header>
     <p v-if="jobs.loadError" class="error">{{ jobs.loadError }}</p>
     <div v-else-if="!jobs.page.length" class="card empty">
-      <span class="empty-icon" aria-hidden="true">📭</span>
+      <AppIcon class="empty-icon" name="tray" :size="40" />
       <strong>{{ $t("jobs.empty") }}</strong>
       <p class="small muted">{{ $t("jobs.emptyHint") }}</p>
-      <button class="btn btn-primary" @click="router.push({ name: 'new' })">＋ {{ $t("jobs.emptyCta") }}</button>
+      <button class="btn btn-primary" @click="router.push({ name: 'new' })"><AppIcon name="plus" /> {{ $t("jobs.emptyCta") }}</button>
     </div>
 
     <div v-else class="table-wrap card">
@@ -92,8 +93,8 @@ function sourcesLabel(sources: string[]) {
     </div>
 
     <div v-if="jobs.offset > 0 || jobs.hasMore" class="pager">
-      <button class="btn btn-small" :disabled="jobs.offset === 0" @click="jobs.loadPage(Math.max(0, jobs.offset - PAGE_SIZE))">← {{ $t("common.previous") }}</button>
-      <button class="btn btn-small" :disabled="!jobs.hasMore" @click="jobs.loadPage(jobs.offset + PAGE_SIZE)">{{ $t("common.next") }} →</button>
+      <button class="btn btn-small" :disabled="jobs.offset === 0" @click="jobs.loadPage(Math.max(0, jobs.offset - PAGE_SIZE))"><AppIcon name="back" /> {{ $t("common.previous") }}</button>
+      <button class="btn btn-small" :disabled="!jobs.hasMore" @click="jobs.loadPage(jobs.offset + PAGE_SIZE)">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
   </div>
 </template>
@@ -111,7 +112,7 @@ function sourcesLabel(sources: string[]) {
 .page-head .lead-text { margin-bottom: 0; }
 .empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
 .empty p { margin: 0 0 0.5rem; }
-.empty-icon { font-size: 2rem; }
+.empty-icon { color: var(--muted); }
 .th-help { display: inline-flex; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
 </style>

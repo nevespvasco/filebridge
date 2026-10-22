@@ -1,16 +1,19 @@
 <script setup lang="ts">
-// ✓ / ! / ✗ for `ok` / `warn` / `fail` steps and checks.
+// A check / exclamation / cross in a coloured disc for `ok` / `warn` / `fail` steps and checks.
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import type { IconName } from "@/lib/icons";
+import AppIcon from "./AppIcon.vue";
 
 const props = defineProps<{ status: string }>();
 const { t } = useI18n();
-const glyph = computed(() => ({ ok: "✓", warn: "!", fail: "✗" })[props.status] ?? "•");
+const ICON: Record<string, IconName> = { ok: "check", warn: "exclaim", fail: "close" };
+const icon = computed<IconName>(() => ICON[props.status] ?? "pending");
 const label = computed(() => (["ok", "warn", "fail"].includes(props.status) ? t(`status.${props.status}`) : props.status));
 </script>
 
 <template>
-  <span class="status-icon" :class="`status-${status}`" :title="label" :aria-label="label" role="img">{{ glyph }}</span>
+  <span class="status-icon" :class="`status-${status}`" :title="label" :aria-label="label" role="img"><AppIcon :name="icon" :size="12" weight="bold" /></span>
 </template>
 
 <style scoped>

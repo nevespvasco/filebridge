@@ -70,12 +70,12 @@ const waitingLabel = computed(() => {
   <div v-if="job" class="job-progress">
     <div class="line">
       <JobStateBadge :state="job.state" />
-      <span class="small muted">
+      <span class="small muted num">
         {{ $t("progress.bytes", { done: fmt.bytes(bytesDone), total: fmt.bytes(bytesTotal) }) }} ·
         {{ $t("progress.files", { done: fmt.count(filesDone), total: fmt.count(filesTotal) }) }}
       </span>
       <span class="grow" />
-      <span v-if="running && tr" class="small">
+      <span v-if="running && tr" class="small num">
         {{ fmt.rate(tr.bytes_per_sec) }} · {{ $t("progress.eta", { eta: fmt.duration(tr.eta_secs) }) }}
       </span>
     </div>

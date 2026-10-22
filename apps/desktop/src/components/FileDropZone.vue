@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // Drop files and folders on the window, or pick them in the file explorer.
+import AppIcon from "@/components/AppIcon.vue";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { onFileDrop, pickPaths } from "@/lib/platform";
@@ -32,11 +33,11 @@ async function pick(directory: boolean) {
 
 <template>
   <div class="drop" :class="{ over }">
-    <div class="icon" aria-hidden="true">⇪</div>
+    <AppIcon class="icon" name="drop" :size="40" />
     <p class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
     <div class="buttons">
-      <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)">📁 {{ $t("source.pickFolders") }}</button>
-      <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)">📄 {{ $t("source.pickFiles") }}</button>
+      <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.pickFolders") }}</button>
+      <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
     </div>
     <p v-if="error" class="error small">{{ error }}</p>
   </div>
@@ -52,7 +53,7 @@ async function pick(directory: boolean) {
   transition: border-color 0.15s, background 0.15s;
 }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-.icon { font-size: 2rem; color: var(--accent); }
+.icon { color: var(--accent); }
 .lead { margin: 0.5rem 0 1rem; color: var(--text-2); display: grid; gap: 0.35rem; }
 .or { font-size: 0.85rem; }
 .buttons { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }

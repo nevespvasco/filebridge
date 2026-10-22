@@ -35,6 +35,19 @@ export const PAGE_SIZE = 50;
 export const RUNNING: JobState[] = ["transferring", "retrying", "waiting", "verifying", "integrating"];
 export const TERMINAL: JobState[] = ["completed", "completed_with_warnings", "cancelled", "failed"];
 
+/** Retries after which a retrying job needs the user: the backoff (30 s … 15 min) adds up to
+ *  about an hour by the 8th attempt. */
+const LONG_RETRY_ATTEMPTS = 8;
+
+/** Whether a job is waiting for the user: decisions to make, a failure, or retrying for long. */
+export function needsYou(job: Pick<JobSummary_Serialize, "state" | "attempt">): boolean {
+  return (
+    job.state === "awaiting_approval" ||
+    job.state === "failed" ||
+    (job.state === "retrying" && job.attempt >= LONG_RETRY_ATTEMPTS)
+  );
+}
+
 export const useJobs = defineStore("jobs", () => {
   const byId = ref<Record<string, JobSummary_Serialize>>({});
   const live = ref<Record<string, Live>>({});

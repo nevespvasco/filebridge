@@ -1,17 +1,20 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AppSettings_Deserialize } from "@/bindings";
 import HelpTip from "@/components/HelpTip.vue";
+import SegmentedControl from "@/components/SegmentedControl.vue";
 import { LOCALES } from "@/i18n";
 import { errorMessage } from "@/lib/api";
 import { minutesToTime, timeToMinutes } from "@/lib/format";
 import { useConnection } from "@/stores/connection";
-import { useSettings } from "@/stores/settings";
+import { THEMES, useSettings } from "@/stores/settings";
 
 const settings = useSettings();
 const conn = useConnection();
 const { t } = useI18n();
+const themeOptions = computed(() => THEMES.map((value) => ({ value, label: t(`settings.themes.${value}`), icon: value })));
 
 /** Bytes per second in one of each unit (decimal, like the rest of the app). */
 const UNIT_BYTES = { mbit: 125_000, mbyte: 1_000_000 } as const;
@@ -97,6 +100,14 @@ async function save() {
       </section>
 
       <section class="card">
+        <div class="field">
+          <span>{{ $t("settings.appearance") }}</span>
+          <SegmentedControl v-model="settings.theme" :options="themeOptions" :label="$t('settings.appearance')" />
+          <span class="hint">{{ $t("settings.themeHint") }}</span>
+        </div>
+      </section>
+
+      <section class="card">
         <label class="check">
           <input v-model="settings.notifications" type="checkbox" />
           <span>
@@ -144,7 +155,7 @@ async function save() {
           </button>
           <span v-if="draft.error && dirty" class="error small">{{ draft.error }}</span>
           <span v-else-if="saveError" class="error small">{{ saveError }}</span>
-          <span v-else-if="saved && !dirty" class="ok-text small">✓ {{ $t("settings.saved") }}</span>
+          <span v-else-if="saved && !dirty" class="ok-text small"><AppIcon name="check" /> {{ $t("settings.saved") }}</span>
         </div>
       </section>
 

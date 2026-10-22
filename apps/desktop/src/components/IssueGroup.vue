@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // One name rule's issues ("312 names with decomposed accents"). Rows are paged from SQLite with
 // `after_id`, so a rule with hundreds of thousands of issues never loads at once (docs/06).
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DecisionInput, IssueDecision, IssueView_Serialize, RuleCount } from "@/bindings";
@@ -139,7 +140,7 @@ function decisionLabel(row: IssueView_Serialize) {
 <template>
   <section class="issue-group card" :class="{ pending: rule.pending > 0 }">
     <button class="group-head" :aria-expanded="open" @click="toggle">
-      <span class="chev" aria-hidden="true">{{ open ? "▾" : "▸" }}</span>
+      <AppIcon class="chev" :name="open ? 'caretDown' : 'caretRight'" />
       <span class="grow">
         <strong>{{ title }}</strong>
         <span class="muted small block">{{ explain }}</span>
@@ -155,7 +156,7 @@ function decisionLabel(row: IssueView_Serialize) {
         <template v-else>
           <span class="small muted">{{ $t("issues.bulkLabel", { n: fmt.count(rule.pending) }) }}</span>
           <template v-if="hasProposal">
-            <button class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })">✓ {{ $t("issues.acceptAll") }}</button>
+            <button class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })"><AppIcon name="check" /> {{ $t("issues.acceptAll") }}</button>
             <button class="btn btn-small" :title="$t('issues.keepAllTip')" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
           </template>
           <button class="btn btn-small" :title="$t('issues.skipAllTip')" @click="decideAllPending({ kind: 'skip' })">{{ $t("issues.skipAll") }}</button>
@@ -202,9 +203,9 @@ function decisionLabel(row: IssueView_Serialize) {
       </ol>
 
       <div v-if="cursors.length > 1 || hasNext" class="pager">
-        <button class="btn btn-small" :disabled="cursors.length <= 1 || loading" @click="prev">← {{ $t("common.previous") }}</button>
+        <button class="btn btn-small" :disabled="cursors.length <= 1 || loading" @click="prev"><AppIcon name="back" /> {{ $t("common.previous") }}</button>
         <span class="small muted">{{ $t("issues.page", { n: pageNo }) }}</span>
-        <button class="btn btn-small" :disabled="!hasNext || loading" @click="next">{{ $t("common.next") }} →</button>
+        <button class="btn btn-small" :disabled="!hasNext || loading" @click="next">{{ $t("common.next") }} <AppIcon name="next" /></button>
       </div>
     </div>
 

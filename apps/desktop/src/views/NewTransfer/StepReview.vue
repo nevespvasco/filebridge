@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted } from "vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
@@ -39,7 +40,7 @@ const details = computed(() =>
   <div class="step">
     <h2>{{ $t("review.title") }}</h2>
     <div class="guide">
-      <span class="guide-icon" aria-hidden="true">👀</span>
+      <AppIcon class="guide-icon" name="review" :size="20" />
       <p>{{ $t("review.guide") }}</p>
     </div>
     <dl class="card summary">
@@ -68,17 +69,17 @@ const details = computed(() =>
       </span>
     </label>
 
-    <p v-if="sendWindow" class="guide small"><span class="guide-icon" aria-hidden="true">🌙</span><span>{{ $t("review.window", sendWindow) }}</span></p>
+    <p v-if="sendWindow" class="guide small"><AppIcon class="guide-icon" name="night" :size="20" /><span>{{ $t("review.window", sendWindow) }}</span></p>
     <p v-if="settings.app.bandwidth_limit" class="guide small">
-      <span class="guide-icon" aria-hidden="true">🐢</span><span>{{ $t("review.limit", { rate: fmt.rate(settings.app.bandwidth_limit) }) }}</span>
+      <AppIcon class="guide-icon" name="slow" :size="20" /><span>{{ $t("review.limit", { rate: fmt.rate(settings.app.bandwidth_limit) }) }}</span>
     </p>
-    <p class="guide ok small"><span class="guide-icon" aria-hidden="true">🔒</span><span>{{ $t("review.safety") }}</span></p>
+    <p class="guide ok small"><AppIcon class="guide-icon" name="lock" :size="20" /><span>{{ $t("review.safety") }}</span></p>
     <p v-if="wizard.sendError" class="error">{{ wizard.sendError }}</p>
 
     <DetailsPanel :lines="details" />
 
     <div class="footer">
-      <button class="btn" @click="wizard.step = 3">← {{ $t("common.back") }}</button>
+      <button class="btn" @click="wizard.step = 3"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <button class="btn btn-primary btn-big" :title="$t('review.sendTip')" :disabled="wizard.sending || !wizard.canReview" @click="wizard.send()">
         {{ wizard.sending ? $t("review.starting") : $t("review.send") }}

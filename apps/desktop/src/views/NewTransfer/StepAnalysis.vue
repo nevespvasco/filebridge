@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed } from "vue";
 import IssueGroup from "@/components/IssueGroup.vue";
 import PreflightList from "@/components/PreflightList.vue";
@@ -56,18 +57,18 @@ const details = computed(() => {
 
     <template v-else-if="wizard.jobId">
       <div v-if="wizard.pending > 0" class="guide warn" role="status">
-        <span class="guide-icon" aria-hidden="true">✋</span>
+        <AppIcon class="guide-icon" name="hand" :size="20" />
         <div>
           <p><strong>{{ $t("analysis.guidePendingTitle", { n: fmt.count(wizard.pending) }, wizard.pending) }}</strong></p>
           <p class="small">{{ $t("analysis.guidePending") }}</p>
         </div>
       </div>
       <div v-else-if="tooBig" class="guide warn" role="status">
-        <span class="guide-icon" aria-hidden="true">⚠️</span>
+        <AppIcon class="guide-icon" name="warning" :size="20" />
         <p>{{ $t("analysis.tooBigHint") }}</p>
       </div>
       <div v-else class="guide ok" role="status">
-        <span class="guide-icon" aria-hidden="true">✅</span>
+        <AppIcon class="guide-icon" name="checkCircle" :size="20" />
         <p>{{ wizard.ruleCounts.length ? $t("analysis.guideFixed") : $t("analysis.guideOk") }}</p>
       </div>
 
@@ -106,7 +107,7 @@ const details = computed(() => {
           <dt>{{ $t("issues.edit") }}</dt><dd>{{ $t("issues.editTip") }}</dd>
         </dl>
       </details>
-      <p v-if="!wizard.ruleCounts.length" class="card ok-text">✓ {{ $t("analysis.noIssues") }}</p>
+      <p v-if="!wizard.ruleCounts.length" class="card ok-text"><AppIcon name="check" /> {{ $t("analysis.noIssues") }}</p>
       <div class="groups">
         <IssueGroup v-for="r in wizard.ruleCounts" :key="`${wizard.jobId}-${r.rule}`" :job-id="wizard.jobId" :rule="r" />
       </div>
@@ -115,11 +116,11 @@ const details = computed(() => {
     <DetailsPanel :lines="details" />
 
     <div class="footer">
-      <button class="btn" :disabled="wizard.analysing" @click="wizard.step = 2">← {{ $t("common.back") }}</button>
+      <button class="btn" :disabled="wizard.analysing" @click="wizard.step = 2"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <span v-if="wizard.analysing" class="why-disabled">{{ $t("analysis.waitHint") }}</span>
       <span v-else-if="wizard.pending > 0" class="small warn-text">{{ $t("analysis.pendingHint", { n: fmt.count(wizard.pending) }, wizard.pending) }}</span>
-      <button class="btn btn-primary" :disabled="!wizard.canReview" @click="wizard.step = 4">{{ $t("common.next") }} →</button>
+      <button class="btn btn-primary" :disabled="!wizard.canReview" @click="wizard.step = 4">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
   </div>
 </template>

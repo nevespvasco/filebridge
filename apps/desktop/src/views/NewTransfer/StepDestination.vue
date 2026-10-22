@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref } from "vue";
 import type { Profile_Serialize } from "@/bindings";
 import ProfileForm from "@/components/ProfileForm.vue";
@@ -51,7 +52,7 @@ const details = computed(() => [
   <div class="step">
     <h2>{{ $t("dest.title") }}</h2>
     <div class="guide">
-      <span class="guide-icon" aria-hidden="true">👉</span>
+      <AppIcon class="guide-icon" name="pointing" :size="20" />
       <p>{{ profiles.loaded && !profiles.list.length ? $t("dest.guideFirst") : $t("dest.guide") }}</p>
     </div>
     <p v-if="profiles.loadError" class="error">{{ profiles.loadError }}</p>
@@ -68,7 +69,7 @@ const details = computed(() => [
       >
         <span class="top">
           <span class="kind badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
-          <span v-if="wizard.profileId === p.id" class="badge badge-accent">✓ {{ $t("dest.selected") }}</span>
+          <span v-if="wizard.profileId === p.id" class="badge badge-accent"><AppIcon name="check" /> {{ $t("dest.selected") }}</span>
         </span>
         <strong>{{ p.name }}</strong>
         <span class="small muted ellipsis mono" :title="profileWhere(p)">{{ profileWhere(p) }}</span>
@@ -81,7 +82,7 @@ const details = computed(() => [
         </span>
       </button>
       <button v-if="!creating" type="button" class="profile card add" @click="creating = true">
-        <strong>＋ {{ $t("dest.new") }}</strong>
+        <strong><AppIcon name="plus" /> {{ $t("dest.new") }}</strong>
         <span class="small muted">{{ $t("dest.newHint") }}</span>
       </button>
     </div>
@@ -102,12 +103,12 @@ const details = computed(() => [
     <DetailsPanel :lines="details" />
 
     <div class="footer">
-      <button class="btn" @click="wizard.step = 1">← {{ $t("common.back") }}</button>
+      <button class="btn" @click="wizard.step = 1"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <span v-if="creating" class="why-disabled">{{ $t("dest.finishForm") }}</span>
       <span v-else-if="!wizard.profileId" class="why-disabled">{{ $t("dest.needOne") }}</span>
       <span v-else-if="failing" class="small warn-text">{{ $t("dest.failingHint") }}</span>
-      <button class="btn btn-primary" :title="$t('dest.analyseTip')" :disabled="!wizard.canAnalyse || creating" @click="next">{{ $t("dest.analyse") }} →</button>
+      <button class="btn btn-primary" :title="$t('dest.analyseTip')" :disabled="!wizard.canAnalyse || creating" @click="next">{{ $t("dest.analyse") }} <AppIcon name="next" /></button>
     </div>
   </div>
 </template>

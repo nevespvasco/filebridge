@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Profile_Serialize } from "@/bindings";
@@ -61,7 +62,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
         <h1>{{ $t("destinations.title") }}</h1>
         <p class="lead-text">{{ $t("destinations.intro") }}</p>
       </div>
-      <button v-if="!creating && profiles.list.length" class="btn btn-primary" @click="creating = true">＋ {{ $t("dest.new") }}</button>
+      <button v-if="!creating && profiles.list.length" class="btn btn-primary" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
     </header>
     <p v-if="profiles.loadError" class="error">{{ profiles.loadError }}</p>
     <p v-if="error" class="error">{{ error }}</p>
@@ -69,10 +70,10 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
     <ProfileForm v-if="creating" class="form" @saved="onSaved" @cancel="creating = false" />
 
     <div v-if="profiles.loaded && !profiles.list.length && !creating" class="card empty">
-      <span class="empty-icon" aria-hidden="true">🗂️</span>
+      <AppIcon class="empty-icon" name="destinations" :size="40" />
       <strong>{{ $t("destinations.empty") }}</strong>
       <p class="small muted">{{ $t("destinations.emptyHint") }}</p>
-      <button class="btn btn-primary" @click="creating = true">＋ {{ $t("dest.new") }}</button>
+      <button class="btn btn-primary" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
     </div>
 
     <div class="list">
@@ -124,7 +125,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 .page-head .lead-text { margin-bottom: 0; }
 .empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
 .empty p { margin: 0 0 0.5rem; }
-.empty-icon { font-size: 2rem; }
+.empty-icon { color: var(--muted); }
 .list { display: grid; gap: 0.75rem; }
 .head { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .who { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }

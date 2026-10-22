@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppIcon from "@/components/AppIcon.vue";
 import { computed } from "vue";
 import FileDropZone from "@/components/FileDropZone.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
@@ -17,7 +18,7 @@ const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : unde
     <h2>{{ $t("source.title") }}</h2>
 
     <div v-if="!wizard.sources.length" class="guide how">
-      <span class="guide-icon" aria-hidden="true">💡</span>
+      <AppIcon class="guide-icon" name="lightbulb" :size="20" />
       <div>
         <p><strong>{{ $t("source.howTitle") }}</strong></p>
         <ol>
@@ -39,19 +40,19 @@ const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : unde
       <ul>
         <li v-for="p in wizard.sources" :key="p">
           <span class="ellipsis mono small" :title="p">{{ p }}</span>
-          <button class="btn btn-small" :title="$t('source.removeTip')" :aria-label="$t('source.remove', { path: p })" @click="wizard.removeSource(p)">✕</button>
+          <button class="btn btn-small" :title="$t('source.removeTip')" :aria-label="$t('source.remove', { path: p })" @click="wizard.removeSource(p)"><AppIcon name="close" /></button>
         </li>
       </ul>
       <p class="small muted">{{ $t("source.addMore") }} {{ $t("source.countLater") }}</p>
     </div>
 
-    <p class="guide ok small safe"><span class="guide-icon" aria-hidden="true">🔒</span><span>{{ $t("source.readOnly") }}</span></p>
+    <p class="guide ok small safe"><AppIcon class="guide-icon" name="lock" :size="20" /><span>{{ $t("source.readOnly") }}</span></p>
     <DetailsPanel :lines="[]" :note="$t('details.sourceNote')" />
 
     <div class="footer">
       <span class="grow" />
       <span v-if="!wizard.sources.length" class="why-disabled">{{ $t("source.needOne") }}</span>
-      <button class="btn btn-primary" :disabled="!wizard.sources.length" @click="wizard.step = 2">{{ $t("common.next") }} →</button>
+      <button class="btn btn-primary" :disabled="!wizard.sources.length" @click="wizard.step = 2">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
   </div>
 </template>
