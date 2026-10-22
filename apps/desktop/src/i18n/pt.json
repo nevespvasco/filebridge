@@ -330,10 +330,6 @@
     "cancelled": "Cancelado",
     "failed": "Falhou"
   },
-  "log": {
-    "state": "{from} → {to}",
-    "retry": "Tentativa {attempt} daqui a {secs} s: {error}"
-  },
   "notify": {
     "doneTitle": "Envio concluído",
     "doneBody": "Tudo foi enviado para {where}.",
@@ -373,7 +369,6 @@
     "finished": "Terminado",
     "nextRetry": "próxima tentativa {at}",
     "log": "Registo",
-    "logNote": "Eventos recebidos enquanto esta janela esteve aberta.",
     "logEmpty": "Ainda sem eventos.",
     "cancelTitle": "Cancelar este envio?",
     "cancelStops": "O envio para de vez e não pode ser retomado.",
@@ -577,5 +572,37 @@
     "starting": "A começar…",
     "between": "A preparar os próximos ficheiros…",
     "paused": "Em pausa. Os ficheiros a meio continuam de onde o filebridge os puder retomar."
+  },
+  "joblog": {
+    "note": "Registado pelo serviço, mesmo com esta janela fechada.",
+    "onlyProblems": "Só avisos e erros",
+    "noProblems": "Sem avisos nem erros.",
+    "copy": "Copiar registo",
+    "copied": "Copiado",
+    "older": "Mostrar mais antigos",
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "created": "Transferência criada: {sources} → {destination}",
+    "options": "Opções: {concurrency} ficheiros de cada vez, verificar {verify}",
+    "analysis": "Análise: {files} ficheiros, {size}",
+    "scanErrors": "{n} item não pôde ser lido | {n} itens não puderam ser lidos",
+    "decisions": "{count} nome decidido: {decision} | {count} nomes decididos: {decision}",
+    "state": "Agora: {to}",
+    "retry": "Erro de rede. Nova tentativa dentro de {in} (tentativa {attempt})",
+    "window": "À espera da janela de envio: abre às {time}",
+    "round": "Enviado {sent} ficheiro ({size}) | Enviados {sent} ficheiros ({size})",
+    "roundFailed": "{n} falhou | {n} falharam",
+    "verify": "Verificados {checked} ficheiros: {mismatch} diferentes, {missing} em falta, {unverifiable} por verificar",
+    "verifyClean": "Verificado {checked} ficheiro: idêntico | Verificados {checked} ficheiros: todos idênticos",
+    "integration": "Ferramenta do destino atualizada ({items} itens)",
+    "problems": "{n} problema | {n} problemas",
+    "finished": {
+      "completed": "Concluída sem diferenças",
+      "completed_with_warnings": "Concluída com {n} aviso | Concluída com {n} avisos",
+      "failed": "Parada por um erro",
+      "cancelled": "Cancelada",
+      "other": "Terminada"
+    },
+    "unknown": "Evento: {kind}"
   }
 }

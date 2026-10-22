@@ -20,8 +20,8 @@ pub use engine::{Engine, EngineOptions};
 pub use filebridge_model::{
     AnalysisSummary, AppSettings, CheckView, Counts, DecisionInput, DoneView, Event, Family,
     FileCategory, InFlightView, IssueDecision, IssueSeverity, IssueView, JobKind, JobState,
-    JobSummary, PreflightView, Profile, ProfileTest, RuleCount, SendOptions, SendWindow,
-    TargetSpec, UnknownValue, job_operations,
+    JobSummary, LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RuleCount, SendOptions,
+    SendWindow, TargetSpec, UnknownValue, job_operations,
 };
 pub use registry::Registry;
 pub use settings::LocalClock;

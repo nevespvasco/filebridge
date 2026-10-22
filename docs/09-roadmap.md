@@ -52,6 +52,10 @@ flowchart TB
 - [x] Engine as a background service (`filebridge-service`, `systemd --user` unit) and sleep
       inhibit.
 - [x] Decide and record the window ↔ service IPC ([ADR 0008](adr/0008-service-ipc.md)).
+- [x] Design foundation and navigation ([design 01](design/01-design-system.md),
+      [02](design/02-information-architecture.md)), the transfer queue
+      ([D04](design/specs/D04-transfer-queue.md)) and the persisted job log
+      ([D07](design/specs/D07-job-log-and-activity.md)).
 - [x] App-wide bandwidth limit and daily send window in Settings and the CLI
       ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
 
@@ -80,5 +84,4 @@ above (as a checkbox) only once accepted.
 
 | Would fit | Spec |
 |---|---|
-| Phase 1 | [Design system](design/01-design-system.md) and [navigation](design/02-information-architecture.md); [D04 Transfer queue](design/specs/D04-transfer-queue.md); the Log tab of [D07](design/specs/D07-job-log-and-activity.md) |
 | Phase 2 | [D05 Files and Entry detail](design/specs/D05-files-and-entry-detail.md) (shows the "Manifest with hash" item); [D09 Report export](design/specs/D09-report-export.md); [D10 Reclaimable source](design/specs/D10-reclaimable-source.md) ([ADR 0011](adr/0011-reclaimable-source-is-shown-never-freed.md)); [D11 Destination browser](design/specs/D11-destination-browser.md) (its `Transport::list` is what Repair destination needs); [D01 Home](design/specs/D01-home.md); [D02](design/specs/D02-source-and-composition.md), [D03](design/specs/D03-destination-storage.md), [D06](design/specs/D06-transfers-list.md), [D08](design/specs/D08-issue-selection.md); Activity in [D07](design/specs/D07-job-log-and-activity.md) |

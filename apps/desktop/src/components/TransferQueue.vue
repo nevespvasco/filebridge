@@ -39,6 +39,12 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
     <template v-if="rows.length">
       <table class="table rows">
         <caption class="sr-only">{{ $t("queue.caption") }}</caption>
+        <colgroup>
+          <col class="c-name" />
+          <col class="c-size" />
+          <col class="c-bar" />
+          <col class="c-speed" />
+        </colgroup>
         <thead class="sr-only">
           <tr>
             <th scope="col">{{ $t("queue.col.name") }}</th>
@@ -94,16 +100,18 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
 h2 { font-size: 1rem; margin: 0; }
 .rows td { padding: 0.45rem 0.6rem; border-bottom-color: var(--rule); }
 .rows { table-layout: fixed; }
-.name { width: 42%; padding-left: 0.75rem !important; }
+.name { padding-left: 0.75rem !important; }
+.c-name { width: 42%; }
+.c-size { width: 12%; }
+.c-bar { width: 28%; }
+.c-speed { width: 18%; }
 .name-in { display: flex; align-items: center; gap: 0.55rem; min-width: 0; }
 .cat { flex: none; }
 .text { display: grid; min-width: 0; flex: 1; }
 .renamed { color: var(--text-2); }
-.bar { width: 28%; }
 .bar :deep(.progress) { display: inline-block; width: calc(100% - 3.5rem); vertical-align: middle; }
 .pct { display: inline-block; width: 3.2rem; text-align: right; }
-td.n { width: 12%; white-space: nowrap; }
-td.n:last-child { width: 18%; }
+td.n { white-space: nowrap; }
 .held .rows { opacity: 0.6; }
 .arrived summary { cursor: pointer; color: var(--text-2); }
 .done-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }

@@ -45,6 +45,9 @@ macro_rules! for_each_operation {
             /// Newest first.
             ListJobs list_jobs(limit: u32, offset: u32) -> Vec<$crate::JobSummary>;
             Job job(job_id: String) -> $crate::JobSummary;
+            /// A job's log: oldest first after `after_id`, otherwise newest first before
+            /// `before_id` (the newest page when both are absent).
+            JobLog job_log(job_id: String, after_id: Option<i64>, before_id: Option<i64>, limit: u32) -> Vec<$crate::LogEntry>;
             /// The app-wide bandwidth limit and send window.
             GetSettings get_settings() -> $crate::AppSettings;
             /// Validates, saves and applies them at once, to running sends too.

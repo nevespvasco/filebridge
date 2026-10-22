@@ -7,6 +7,7 @@
 
 mod category;
 mod event;
+mod log;
 mod profile;
 mod rules;
 mod settings;
@@ -15,6 +16,7 @@ mod views;
 
 pub use category::FileCategory;
 pub use event::Event;
+pub use log::{LogEntry, LogLevel, log_level};
 pub use profile::{Family, Profile, TargetSpec};
 pub use rules::{Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};

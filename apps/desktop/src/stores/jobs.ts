@@ -13,8 +13,6 @@ import { useSettings } from "./settings";
 
 type Of<T extends Event_Serialize["type"]> = Extract<Event_Serialize, { type: T }>;
 
-export type LogLine = { at: number; kind: "state" | "failure" | "retry" | "problem" | "info"; text: string };
-
 export type Live = {
   scan?: Of<"scan_progress">;
   transfer?: Of<"transfer_progress">;
@@ -29,7 +27,6 @@ export type Live = {
   arrivals: { at: number; n: number }[];
   failures: Of<"entry_failed">[];
   problems: Of<"integration_problem">[];
-  log: LogLine[];
 };
 
 const MAX_LINES = 500;
@@ -67,7 +64,7 @@ export const useJobs = defineStore("jobs", () => {
   const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   function liveOf(id: string): Live {
-    return (live.value[id] ??= { arrived: [], arrivals: [], failures: [], problems: [], log: [] });
+    return (live.value[id] ??= { arrived: [], arrivals: [], failures: [], problems: [] });
   }
 
   function push<T>(list: T[], item: T) {
@@ -115,7 +112,6 @@ export const useJobs = defineStore("jobs", () => {
   function onEvent(ev: Event_Serialize) {
     const id = ev.job_id;
     const l = liveOf(id);
-    const t = i18n.global.t;
     const now = Date.now();
     switch (ev.type) {
       case "scan_progress":
@@ -136,7 +132,6 @@ export const useJobs = defineStore("jobs", () => {
         break;
       case "retry_scheduled":
         l.retry = { ...ev, at: now };
-        push(l.log, { at: now, kind: "retry", text: t("log.retry", { attempt: ev.attempt, secs: ev.in_secs, error: ev.error }) });
         refreshSoon(id);
         break;
       case "send_window_wait":
@@ -145,20 +140,13 @@ export const useJobs = defineStore("jobs", () => {
         break;
       case "entry_failed":
         push(l.failures, ev);
-        push(l.log, { at: now, kind: "failure", text: `${ev.path}: ${ev.error}` });
         break;
       case "integration_problem":
         push(l.problems, ev);
-        push(l.log, { at: now, kind: "problem", text: ev.path ? `${ev.path}: ${ev.message}` : ev.message });
         break;
       case "job_state_changed": {
         const j = byId.value[id];
         if (j) j.state = ev.to;
-        push(l.log, {
-          at: now,
-          kind: "state",
-          text: t("log.state", { from: t(`state.${ev.from}`), to: t(`state.${ev.to}`) }) + (ev.error ? ` — ${ev.error}` : ""),
-        });
         if (ev.to !== "retrying") l.retry = undefined;
         if (ev.to !== "waiting") l.window = undefined;
         refreshSoon(id);

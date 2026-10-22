@@ -195,6 +195,12 @@ impl Engine {
             .await?
             .go(JobState::Retrying, Some(error.clone()))
             .await?;
+        self.log(
+            Some(&ctx.job_id),
+            "retry",
+            serde_json::json!({ "attempt": attempt, "in_secs": delay.as_secs(), "error": error }),
+        )
+        .await?;
         self.emit(Event::RetryScheduled {
             job_id: ctx.job_id.clone(),
             attempt,
@@ -225,6 +231,7 @@ impl Engine {
         let mut base_bytes = counts.bytes_done;
         let mut base_files = counts.done;
         let mut retry: Option<String> = None;
+        let mut round = Round::default();
 
         loop {
             let batch = self
@@ -391,6 +398,8 @@ impl Engine {
                             any_done = true;
                             base_bytes += e.entry.size;
                             base_files += 1;
+                            round.sent += 1;
+                            round.bytes += e.entry.size;
                             updates.push((e.entry.idx, EntryState::Done, None));
                         }
                         ItemOutcome::Failed(err) => {
@@ -401,6 +410,8 @@ impl Engine {
                                 error: err.message.clone(),
                                 retryable: err.is_retryable(),
                             });
+                            round.failed += 1;
+                            round.first_error.get_or_insert_with(|| err.message.clone());
                             if err.is_retryable() {
                                 retry.get_or_insert_with(|| err.message.clone());
                                 updates.push((e.entry.idx, EntryState::Partial, Some(err.message)));
@@ -416,10 +427,28 @@ impl Engine {
                 }
             }
             if let Some(e) = retry.take() {
+                self.log_round(&ctx.job_id, &round).await?;
                 return Ok(StageEnd::Retry(e));
             }
         }
+        self.log_round(&ctx.job_id, &round).await?;
         Ok(StageEnd::Done(()))
+    }
+
+    /// One transfer stage run, for the job log: what moved and what didn't.
+    async fn log_round(&self, job_id: &str, round: &Round) -> Result<()> {
+        if round.sent == 0 && round.failed == 0 {
+            return Ok(());
+        }
+        self.log(
+            Some(job_id),
+            "transfer_round",
+            serde_json::json!({
+                "sent": round.sent, "failed": round.failed, "bytes": round.bytes,
+                "first_error": round.first_error,
+            }),
+        )
+        .await
     }
 
     // ---- stage 5 -----------------------------------------------------------------------
@@ -441,6 +470,7 @@ impl Engine {
         let total = counts.done;
         let (mut checked, mut mismatched) = (counts.verified_ok, Vec::new());
         let (mut unverifiable, mut first_error) = (0u64, None::<String>);
+        let (first_checked, mut different) = (checked, 0u64);
         let mut after = None;
         loop {
             let page = self.store.entries_page(&ctx.job_id, after, PAGE).await?;
@@ -482,6 +512,7 @@ impl Engine {
                     Ok(r) if r.bytes == local => EntryState::Done,
                     Ok(_) => {
                         mismatched.push(e.entry.idx);
+                        different += 1;
                         EntryState::Mismatch
                     }
                     Err(err) if err.is_retryable() => {
@@ -511,6 +542,17 @@ impl Engine {
             }
             self.store.set_verify_states(&ctx.job_id, updates).await?;
         }
+        self.log(
+            Some(&ctx.job_id),
+            "verify",
+            serde_json::json!({
+                "checked": checked - first_checked,
+                "mismatch": different,
+                "missing": mismatched.len() as u64 - different,
+                "unverifiable": unverifiable,
+            }),
+        )
+        .await?;
         if unverifiable > 0 {
             ctx.warnings.push(format!(
                 "{unverifiable} files could not be verified ({})",
@@ -647,6 +689,15 @@ fn sha256_file(path: &std::path::Path) -> Result<Vec<u8>> {
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finalize().to_vec())
+}
+
+/// What one transfer stage run moved, for the job log.
+#[derive(Default)]
+struct Round {
+    sent: u64,
+    failed: u64,
+    bytes: u64,
+    first_error: Option<String>,
 }
 
 /// Most files listed in one `EntriesDone`; the rest are counted.

@@ -9,8 +9,8 @@ use async_trait::async_trait;
 use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_ipc::{
     AnalysisSummary, AppSettings, DecisionInput, DetectNextcloudRequest, DetectNextcloudResponse,
-    ErrorBody, Handler, IssueView, JobSummary, Operations, PROTOCOL_VERSION, Pong, Profile,
-    ProfileTest, RuleCount, SendOptions,
+    ErrorBody, Handler, IssueView, JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong,
+    Profile, ProfileTest, RuleCount, SendOptions,
 };
 use tokio::sync::broadcast;
 
@@ -173,6 +173,19 @@ impl Operations for EngineOperations {
 
     async fn job(&self, job_id: String) -> Res<JobSummary> {
         self.engine.job(&job_id).await.map_err(to_error)
+    }
+
+    async fn job_log(
+        &self,
+        job_id: String,
+        after_id: Option<i64>,
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Res<Vec<LogEntry>> {
+        self.engine
+            .job_log(&job_id, after_id, before_id, limit.min(500))
+            .await
+            .map_err(to_error)
     }
 
     async fn get_settings(&self) -> Res<AppSettings> {

@@ -330,10 +330,6 @@
     "cancelled": "Cancelled",
     "failed": "Failed"
   },
-  "log": {
-    "state": "{from} → {to}",
-    "retry": "Attempt {attempt} in {secs} s: {error}"
-  },
   "notify": {
     "doneTitle": "Send finished",
     "doneBody": "Everything was sent to {where}.",
@@ -373,7 +369,6 @@
     "finished": "Finished",
     "nextRetry": "next attempt {at}",
     "log": "Log",
-    "logNote": "Events received while this window was open.",
     "logEmpty": "No events yet.",
     "cancelTitle": "Cancel this send?",
     "cancelStops": "The send stops for good and can't be resumed.",
@@ -577,5 +572,37 @@
     "starting": "Starting…",
     "between": "Preparing the next files…",
     "paused": "Paused. Files that were half-sent will start again from where filebridge can resume them."
+  },
+  "joblog": {
+    "note": "Recorded by the service, including while this window was closed.",
+    "onlyProblems": "Only warnings and errors",
+    "noProblems": "No warnings or errors.",
+    "copy": "Copy log",
+    "copied": "Copied",
+    "older": "Show older",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "created": "Transfer created: {sources} → {destination}",
+    "options": "Options: {concurrency} files at a time, verify {verify}",
+    "analysis": "Analysis: {files} files, {size}",
+    "scanErrors": "{n} item could not be read | {n} items could not be read",
+    "decisions": "{count} name decided: {decision} | {count} names decided: {decision}",
+    "state": "Now: {to}",
+    "retry": "Network error. Trying again in {in} (attempt {attempt})",
+    "window": "Waiting for the send window: opens at {time}",
+    "round": "Sent {sent} file ({size}) | Sent {sent} files ({size})",
+    "roundFailed": "{n} failed | {n} failed",
+    "verify": "Verified {checked} files: {mismatch} different, {missing} missing, {unverifiable} couldn't be checked",
+    "verifyClean": "Verified {checked} file: identical | Verified {checked} files: all identical",
+    "integration": "Destination tool updated ({items} items)",
+    "problems": "{n} problem | {n} problems",
+    "finished": {
+      "completed": "Finished with no differences",
+      "completed_with_warnings": "Finished with {n} warning | Finished with {n} warnings",
+      "failed": "Stopped by an error",
+      "cancelled": "Cancelled",
+      "other": "Finished"
+    },
+    "unknown": "Event: {kind}"
   }
 }

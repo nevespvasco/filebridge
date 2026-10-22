@@ -69,6 +69,43 @@ impl Store {
     }
 }
 
+impl Store {
+    /// A job's events newest first, before `before_id` (the newest when `None`).
+    pub async fn events_page_before(
+        &self,
+        job_id: &str,
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<EventRow>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT id, job_id, at, kind, data FROM events
+                 WHERE job_id = ?1 AND (?2 IS NULL OR id < ?2) ORDER BY id DESC LIMIT ?3",
+            )?;
+            let rows = stmt.query_map(params![job_id, before_id, limit], |r| {
+                Ok((
+                    EventRow {
+                        id: r.get(0)?,
+                        job_id: r.get(1)?,
+                        at: r.get(2)?,
+                        kind: r.get(3)?,
+                        data: serde_json::Value::Null,
+                    },
+                    r.get::<_, String>(4)?,
+                ))
+            })?;
+            rows.map(|r| {
+                let (mut e, data) = r?;
+                e.data = serde_json::from_str(&data)?;
+                Ok(e)
+            })
+            .collect()
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test_util::store_with_job;
@@ -97,5 +134,16 @@ mod tests {
         assert_eq!(all[1].data["to"], "ready");
         let after = store.events_page(&job, Some(first), 10).await.unwrap();
         assert_eq!(after.len(), 1);
+        let newest = store.events_page_before(&job, None, 10).await.unwrap();
+        assert_eq!(
+            newest.iter().map(|e| e.id).collect::<Vec<_>>(),
+            [all[1].id, all[0].id]
+        );
+        let older = store
+            .events_page_before(&job, Some(all[1].id), 10)
+            .await
+            .unwrap();
+        assert_eq!(older.len(), 1);
+        assert_eq!(older[0].id, first);
     }
 }

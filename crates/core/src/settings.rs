@@ -121,6 +121,14 @@ impl Engine {
             // A new window, or the clock moving more than a minute against the estimate.
             if told.is_none_or(|t| (t - opens_at).abs() > RECHECK.as_millis() as i64) {
                 told = Some(opens_at);
+                // Best effort: the log line is informative, waiting must go on regardless.
+                let _ = self
+                    .log(
+                        Some(job_id),
+                        "send_window_wait",
+                        serde_json::json!({ "opens_at": opens_at }),
+                    )
+                    .await;
                 self.emit(Event::SendWindowWait {
                     job_id: job_id.to_owned(),
                     opens_at,

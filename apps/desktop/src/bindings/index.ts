@@ -47,6 +47,11 @@ export const commands = {
 	/**  Newest first. */
 	listJobs: (limit: number, offset: number) => typedError<JobSummary_Serialize[], ErrorBody>(__TAURI_INVOKE("list_jobs", { limit, offset })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
+	/**
+	 *  A job's log: oldest first after `after_id`, otherwise newest first before
+	 *  `before_id` (the newest page when both are absent).
+	 */
+	jobLog: (jobId: string, afterId: number | null, beforeId: number | null, limit: number) => typedError<LogEntry[], ErrorBody>(__TAURI_INVOKE("job_log", { jobId, afterId, beforeId, limit })),
 	/**  The app-wide bandwidth limit and send window. */
 	getSettings: () => typedError<AppSettings_Serialize, ErrorBody>(__TAURI_INVOKE("get_settings")),
 	/**  Validates, saves and applies them at once, to running sends too. */
@@ -438,6 +443,23 @@ export type JobSummary_Serialize = {
 
 /**  Reference to a secret stored in the OS keyring. Never the secret itself. */
 export type KeyringRef = string;
+
+/**  One line of a job's log. */
+export type LogEntry = {
+	id: number,
+	/**  Unix ms. */
+	at: number,
+	/**
+	 *  What happened (`created`, `state`, `retry`, `transfer_round`, `verify`, `finished`, …);
+	 *  the UI turns it into a sentence. A kind it doesn't know is shown neutrally.
+	 */
+	kind: string,
+	level: LogLevel,
+	/**  The sentence's parameters. Never secrets. */
+	data: Value,
+};
+
+export type LogLevel = "info" | "warn" | "error";
 
 export type Pong = {
 	protocol: number,

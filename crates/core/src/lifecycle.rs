@@ -179,6 +179,17 @@ impl JobLock<'_> {
             error: error.clone(),
         });
         if to.is_terminal() {
+            engine
+                .log(
+                    Some(&self.id),
+                    "finished",
+                    serde_json::json!({
+                        "state": to.as_str(),
+                        "warnings": self.warnings.len(),
+                        "error": error,
+                    }),
+                )
+                .await?;
             engine.emit(Event::JobFinished {
                 job_id: self.id.clone(),
                 state: to,

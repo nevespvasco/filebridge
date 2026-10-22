@@ -1,6 +1,6 @@
 # D07 — Job log and Activity
 
-- ID: D07 · Status: Proposed · Phase: **1** for the job log (the Log tab; docs/06 promised it, and
+- ID: D07 · Status: **job log Built**, Activity Proposed · Phase: **1** for the job log (the Log tab; docs/06 promised it, and
   a 31-hour send that ran while the window was closed needs it), **2** for Activity (Home feed)
 - Inspired by: G6 (slothUI Recent Activity), D3 (UpLink Recent), E5 (relative times)
 - Layers touched: `crates/core` (what gets appended), `crates/store` (two queries),
@@ -183,8 +183,11 @@ Activity activity(before_id: Option<i64>, limit: u32) -> Vec<ActivityItem>;
 
 ### Core
 
-Append at the points in the table above, inside the same transaction as the state change where
-one exists (the rule "every stage is persisted before moving on" covers the log too). `profile`
+Append at the points in the table above. **As built:** each milestone is appended right after
+the change it describes (`Engine::log`), not inside the state change's transaction: the `state`
+row is still written in that transaction, as before, and a crash between the two loses at most
+one informative line, never state. `send_window_wait` is best effort (a failed append never
+stops the wait). `finished` carries `{ state, warnings, error }` (the counts are on the job). `profile`
 events are appended by `save_profile`/`delete_profile` in the engine adapter.
 
 ## i18n

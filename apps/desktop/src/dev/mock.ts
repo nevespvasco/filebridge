@@ -25,6 +25,7 @@ import {
   type IssueView_Serialize,
   type JobState,
   type JobSummary_Serialize,
+  type LogEntry,
   type Profile_Serialize,
   type RuleCount,
 } from "@/bindings";
@@ -81,6 +82,32 @@ const jobs: JobSummary_Serialize[] = [
 if (import.meta.env.VITE_MOCK_EMPTY === "1") {
   profiles.length = 0;
   jobs.length = 0;
+}
+
+// The job log, as the engine records it (docs/design/specs/D07): parameters only.
+const logs = new Map<string, LogEntry[]>();
+let nextLogId = 1;
+function log(jobId: string, kind: string, data: Record<string, unknown>, at = Date.now()) {
+  const n = (k: string) => Number(data[k] ?? 0);
+  const level: LogEntry["level"] =
+    (kind === "state" && data.to === "failed") || (kind === "finished" && data.state === "failed")
+      ? "error"
+      : kind === "retry" || (kind === "transfer_round" && n("failed") > 0) || (kind === "finished" && data.state === "completed_with_warnings") || (kind === "analysis" && n("scan_errors") > 0)
+        ? "warn"
+        : "info";
+  const list = logs.get(jobId) ?? [];
+  list.push({ id: nextLogId++, at, kind, level, data: data as LogEntry["data"] });
+  logs.set(jobId, list);
+}
+if (jobs.some((j) => j.id === "j-old")) {
+  const t = now - 86_400_000;
+  log("j-old", "created", { sources: ["/home/demo/Documentos"], profile_id: "p-disk", options: { verify: true, concurrency: 8 } }, t);
+  log("j-old", "analysis", { files: 1234, bytes: 4_500_000_000, scan_errors: 0, skipped_symlinks: 0 }, t + 20_000);
+  log("j-old", "state", { from: "ready", to: "transferring", error: null }, t + 30_000);
+  log("j-old", "retry", { attempt: 1, in_secs: 30, error: "connection reset by peer" }, t + 1_800_000);
+  log("j-old", "transfer_round", { sent: 1234, failed: 0, bytes: 4_500_000_000, first_error: null }, t + 5_200_000);
+  log("j-old", "verify", { checked: 1234, mismatch: 0, missing: 0, unverifiable: 0 }, t + 5_900_000);
+  log("j-old", "finished", { state: "completed", warnings: 0, error: null }, now - 80_000_000);
 }
 
 // Issues are generated on demand, so a rule can have hundreds of thousands of them.
@@ -159,8 +186,10 @@ function setState(job: JobSummary_Serialize, to: JobState, error: string | null 
   job.state = to;
   job.updated_at = Date.now();
   send({ type: "job_state_changed", job_id: job.id, from, to, error });
+  log(job.id, "state", { from, to, error });
   if (["completed", "completed_with_warnings", "cancelled", "failed"].includes(to)) {
     job.finished_at = Date.now();
+    log(job.id, "finished", { state: to, warnings: 0, error });
     send({ type: "job_finished", job_id: job.id, state: to, error });
   }
 }
@@ -185,6 +214,7 @@ function sendOrWait(job: JobSummary_Serialize) {
   if (wait > 0) {
     setState(job, "waiting");
     send({ type: "send_window_wait", job_id: job.id, opens_at: Date.now() + wait });
+    log(job.id, "send_window_wait", { opens_at: Date.now() + wait });
   } else {
     runTransfer(job);
   }
@@ -233,6 +263,7 @@ function runTransfer(job: JobSummary_Serialize) {
     if (job.counts.bytes_done >= total) {
       clearInterval(t);
       timers.delete(job.id);
+      log(job.id, "transfer_round", { sent: job.counts.files, failed: 0, bytes: total, first_error: null });
       if (job.options.verify) {
         setState(job, "verifying");
         for (let c = 0; c <= 4; c++) {
@@ -240,6 +271,7 @@ function runTransfer(job: JobSummary_Serialize) {
           send({ type: "verify_progress", job_id: job.id, checked: Math.floor((job.counts.files * c) / 4), total: job.counts.files, mismatches: 0 });
         }
         job.counts.verified_ok = job.counts.files;
+        log(job.id, "verify", { checked: job.counts.files, mismatch: 0, missing: 0, unverifiable: 0 });
       }
       if (profiles.find((p) => p.id === job.profile_id)?.integration === "nextcloud") {
         setState(job, "integrating");
@@ -389,6 +421,7 @@ const handlers: Handlers = {
       options: a.options as JobSummary_Serialize["options"],
       counts: counts(0, 0, 0),
     });
+    log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
   },
   setOptions: (a) => {
@@ -411,6 +444,7 @@ const handlers: Handlers = {
     const rules = ruleCounts(job.id);
     const pending = rules.reduce((n, r) => n + r.pending, 0);
     setState(job, pending ? "awaiting_approval" : "ready");
+    log(job.id, "analysis", { files, bytes, scan_errors: 1, skipped_symlinks: 2 });
     const summary: AnalysisSummary_Serialize = {
       job_id: job.id,
       state: job.state,
@@ -458,6 +492,7 @@ const handlers: Handlers = {
         n++;
       }
     }
+    if (n) log(job.id, "decisions", { rule: (a.rule as string | null) ?? null, decision: DECIDED[d.kind], count: n });
     readyIfDecided(job);
     return n;
   },
@@ -485,6 +520,13 @@ const handlers: Handlers = {
   },
   listJobs: (a) => jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number)),
   job: (a) => find(a.jobId),
+  jobLog: (a) => {
+    find(a.jobId);
+    const list = logs.get(a.jobId as string) ?? [];
+    const limit = a.limit as number;
+    if (a.afterId != null) return list.filter((e) => e.id > (a.afterId as number)).slice(0, limit);
+    return list.filter((e) => a.beforeId == null || e.id < (a.beforeId as number)).reverse().slice(0, limit);
+  },
   getSettings: () => settings,
   saveSettings: (a) => {
     const s = a.settings as AppSettings_Serialize;

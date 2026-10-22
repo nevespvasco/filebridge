@@ -24,7 +24,7 @@ use crate::{
     AnalysisSummary, CoreError, Counts, DecisionInput, Event, IssueView, JobKind, JobState,
     JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
 };
-use filebridge_model::Op;
+use filebridge_model::{LogEntry, Op, log_level};
 
 const INSERT_BATCH: usize = 10_000;
 const PAGE: u32 = 5_000;
@@ -114,18 +114,65 @@ impl Engine {
         let _ = self.events.send(event);
     }
 
+    /// Appends a milestone to the job log (`job_id = None`: app-level, e.g. a profile change).
+    /// `data` holds parameters only, never sentences or secrets (docs/design/specs/D07).
+    pub(crate) async fn log(
+        &self,
+        job_id: Option<&str>,
+        kind: &str,
+        data: serde_json::Value,
+    ) -> Result<()> {
+        self.store.append_event(job_id, kind, data).await?;
+        Ok(())
+    }
+
+    /// A job's log: oldest first after `after_id`, otherwise newest first before `before_id`
+    /// (the newest page when both are `None`).
+    pub async fn job_log(
+        &self,
+        job_id: &str,
+        after_id: Option<i64>,
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<LogEntry>> {
+        self.store.get_job(job_id).await?;
+        let rows = match after_id {
+            Some(after) => self.store.events_page(job_id, Some(after), limit).await?,
+            None => {
+                self.store
+                    .events_page_before(job_id, before_id, limit)
+                    .await?
+            }
+        };
+        Ok(rows
+            .into_iter()
+            .map(|r| LogEntry {
+                level: log_level(&r.kind, &r.data),
+                id: r.id,
+                at: r.at,
+                kind: r.kind,
+                data: r.data,
+            })
+            .collect())
+    }
+
     // ---- profiles ----------------------------------------------------------------------
 
     /// Saves a profile, giving it an id if it has none. Rejects unknown plugins and
     /// transport/integration combinations that can't work.
     pub async fn save_profile(&self, mut profile: Profile) -> Result<Profile> {
-        if profile.id.is_empty() {
+        let new = profile.id.is_empty();
+        if new {
             profile.id = uuid::Uuid::new_v4().to_string();
         }
         self.registry.check_profile(&profile)?;
         self.store
             .upsert_profile(crate::profile::to_row(&profile)?)
             .await?;
+        if new {
+            self.log(None, "profile", profile_event("added", &profile))
+                .await?;
+        }
         Ok(profile)
     }
 
@@ -143,7 +190,13 @@ impl Engine {
     }
 
     pub async fn delete_profile(&self, id: &str) -> Result<()> {
-        Ok(self.store.delete_profile(id).await?)
+        let profile = self.get_profile(id).await.ok();
+        self.store.delete_profile(id).await?;
+        if let Some(p) = profile {
+            self.log(None, "profile", profile_event("removed", &p))
+                .await?;
+        }
+        Ok(())
     }
 
     /// Connection test: the transport's and the integration's preflight.
@@ -226,6 +279,13 @@ impl Engine {
                 sources: roots,
             })
             .await?;
+        let sources: Vec<String> = sources.iter().map(|s| s.display().to_string()).collect();
+        self.log(
+            Some(&id),
+            "created",
+            serde_json::json!({ "sources": sources, "profile_id": profile_id, "options": options }),
+        )
+        .await?;
         Ok(id)
     }
 
@@ -487,8 +547,16 @@ impl Engine {
         let (decision, _) = decisions::stored(choice);
         let n = self
             .store
-            .decide_pending_issues(job_id, rule, decision)
+            .decide_pending_issues(job_id, rule.clone(), decision)
             .await?;
+        if n > 0 {
+            self.log(
+                Some(job_id),
+                "decisions",
+                serde_json::json!({ "rule": rule, "decision": decision.as_str(), "count": n }),
+            )
+            .await?;
+        }
         self.ready_if_decided(&mut job).await?;
         Ok(n)
     }
@@ -686,4 +754,9 @@ impl Engine {
             let _ = r.handle.await;
         }
     }
+}
+
+/// A profile change for the log: its id and name only (never the destination's host or keys).
+fn profile_event(action: &str, profile: &Profile) -> serde_json::Value {
+    serde_json::json!({ "action": action, "profile_id": profile.id, "name": profile.name })
 }

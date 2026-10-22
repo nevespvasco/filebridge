@@ -51,7 +51,9 @@ up in logs and crash reports.
 - **Active item**: `--accent-soft` background, `--accent` text, `fill`-weight icon (as today, plus
   the icon).
 - **Transfers badge**: the number of running jobs (exists). New: a 6px `--warn` **dot** when any
-  job needs the user: `AwaitingApproval`, `Failed`, or `Retrying` for more than 1 hour. The dot
+  job needs the user: `AwaitingApproval`, `Failed`, or `Retrying` for more than 1 hour. *As
+  built:* "more than 1 hour" is read as attempt ≥ 8, where the backoff (30 s … 15 min) has added
+  up to about an hour (`needsYou` in `stores/jobs.ts`). The dot
   has `aria-label="Needs your attention"` and a tooltip listing how many.
 - **Notice slot** (from A10 and G7, without the upsell): a single `Notice` above the service status,
   highest priority first:
@@ -105,7 +107,7 @@ The badge next to **Files** shows problems (`failed + mismatch + missing`) when 
 | Keys | Action | Where |
 |---|---|---|
 | `Ctrl/⌘ + N` | New transfer | everywhere |
-| `Ctrl/⌘ + 1…5` | Home, New transfer, Transfers, Destinations, Settings | everywhere |
+| `Ctrl/⌘ + 1…5` | Home, New transfer, Transfers, Destinations, Settings (`1` opens `/`, which is New transfer until Home ships) | everywhere |
 | `/` | Focus the page's search | lists |
 | `Esc` | Close the drawer, menu or dialog; clear an empty search | everywhere |
 | `J` / `K` | Next / previous row | `DataTable` |

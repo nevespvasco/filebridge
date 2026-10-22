@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
+import JobLog from "@/components/JobLog.vue";
 import JobProgress from "@/components/JobProgress.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
 import { useFmt } from "@/composables/useFmt";
@@ -24,7 +25,6 @@ const fmt = useFmt();
 const { t } = useI18n();
 
 const job = computed(() => jobs.byId[props.id]);
-const live = computed(() => jobs.live[props.id]);
 const profile = computed(() => (job.value ? profiles.byId[job.value.profile_id] : undefined));
 const busy = ref(false);
 const error = ref<string | null>(null);
@@ -180,17 +180,7 @@ const details = computed(() => [
       </div>
 
       <div v-else id="panel-log" role="tabpanel" aria-labelledby="tab-log">
-        <section class="card">
-          <h2>{{ $t("jobDetail.log") }}</h2>
-          <p class="small muted">{{ $t("jobDetail.logNote") }}</p>
-          <ol v-if="live?.log.length" class="log small">
-            <li v-for="(l, i) in [...live.log].reverse()" :key="i" :class="`log-${l.kind}`">
-              <time class="muted mono">{{ new Date(l.at).toLocaleTimeString() }}</time> {{ l.text }}
-            </li>
-          </ol>
-          <p v-else class="small muted">{{ $t("jobDetail.logEmpty") }}</p>
-        </section>
-
+        <JobLog :job-id="id" />
       </div>
 
       <DetailsPanel :lines="details" />
@@ -220,10 +210,6 @@ h2 { font-size: 1rem; margin-top: 0; }
 dt { color: var(--text-2); }
 dd { margin: 0; min-width: 0; }
 .block { display: block; }
-.log { list-style: none; padding: 0; margin: 0; max-height: 18rem; overflow: auto; }
-.log li { padding: 0.2rem 0; border-bottom: 1px solid var(--border); }
-.log-failure, .log-problem { color: var(--danger); }
-.log-retry { color: var(--warn-strong); }
 .link { all: unset; cursor: pointer; color: var(--accent); display: inline-flex; gap: 0.3rem; align-items: center; }
 .link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin: 0 0 1rem; }

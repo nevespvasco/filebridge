@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, CoreError, DecisionInput, Engine, EngineOptions, Event, FileCategory,
-    IssueDecision, JobState, LocalClock, Profile, Registry, SendOptions, SendWindow, Store,
-    StoreError, TargetSpec,
+    IssueDecision, JobState, LocalClock, LogLevel, Profile, Registry, SendOptions, SendWindow,
+    Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -348,6 +348,61 @@ async fn collisions_wait_for_a_decision() {
     let files = dest_files(&s.dest);
     assert!(files.contains(&"Acme/Fotos/Verão.jpg".to_owned()));
     assert!(files.contains(&"Acme/Fotos/Verão (2).jpg".to_owned()));
+}
+
+#[tokio::test]
+async fn the_job_log_tells_what_happened_while_no_one_watched() {
+    let s = setup().await;
+    s.transport.fail_calls.store(1, Ordering::SeqCst);
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+
+    let oldest_first = s.engine.job_log(&job, Some(0), None, 500).await.unwrap();
+    let kinds: Vec<_> = oldest_first.iter().map(|e| e.kind.as_str()).collect();
+    let pos = |k: &str| {
+        kinds
+            .iter()
+            .position(|x| *x == k)
+            .unwrap_or_else(|| panic!("no {k} in {kinds:?}"))
+    };
+    assert_eq!(kinds[0], "created");
+    assert!(pos("analysis") < pos("retry"));
+    assert!(pos("retry") < pos("transfer_round"));
+    assert!(pos("transfer_round") < pos("verify"));
+    assert_eq!(*kinds.last().unwrap(), "finished");
+
+    let retry = &oldest_first[pos("retry")];
+    assert_eq!(retry.level, LogLevel::Warn);
+    assert_eq!(retry.data["attempt"], 1);
+    let round = &oldest_first[pos("transfer_round")];
+    assert_eq!(
+        (round.data["sent"].as_u64(), round.data["failed"].as_u64()),
+        (Some(3), Some(0))
+    );
+    let verify = &oldest_first[pos("verify")];
+    assert_eq!(verify.data["checked"], 3);
+    assert_eq!(verify.level, LogLevel::Info);
+    assert_eq!(oldest_first.last().unwrap().data["state"], "completed");
+
+    // Newest first, a page at a time, gives the same log backwards.
+    let newest = s.engine.job_log(&job, None, None, 2).await.unwrap();
+    assert_eq!(newest[0].id, oldest_first.last().unwrap().id);
+    let older = s
+        .engine
+        .job_log(&job, None, Some(newest[1].id), 500)
+        .await
+        .unwrap();
+    assert_eq!(newest.len() + older.len(), oldest_first.len());
+
+    // A profile change is app-level: it is in no job's log.
+    assert!(kinds.iter().all(|k| *k != "profile"));
 }
 
 #[tokio::test]

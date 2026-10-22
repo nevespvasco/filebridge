@@ -1,6 +1,6 @@
 # D04 — Transfer queue (files in flight)
 
-- ID: D04 · Status: Proposed · Phase: **1** (it answers "is it stuck?" during the first real
+- ID: D04 · Status: **Built** · Phase: **1** (it answers "is it stuck?" during the first real
   multi-hour sends, which the Phase 1 gate exercises)
 - Inspired by: B3, B4 (upload modal rows with % and a check), F16 (Vault & Vine Transfers queue)
 - Layers touched: `crates/transport-api` (an **additive** field on `StatsSnapshot`),
@@ -76,9 +76,9 @@ JUST FINISHED                                                        ▸ show
 - **Just finished**: core already gets `ProgressEvent::ItemDone` and saves those entries in
   batches every 500 ms. On the same tick it emits one `EntriesDone` with up to 20 of them, plus a
   count of the rest. The window keeps the last 20.
-- **Plan B** (`Strategy::TempThenRename`) reports a single `copy` batch. Its in-flight list comes
-  from rclone the same way, but with the **original** names, because renaming happens afterwards.
-  The rows show those names, plus a note: "Names are fixed at the end of this transfer".
+- **Plan B** (`Strategy::TempThenRename`) reports a single `copy` batch, and rclone names each
+  file by its **source** path, as in plan A. The adapter maps that path to the destination name,
+  so the rows show the final names in both strategies and no extra note is needed.
 
 ## States
 
@@ -113,7 +113,10 @@ pub struct StatsSnapshot {
 
 - Additive: `StatsSnapshot` derives `Default`, so adapters that don't fill it stay valid.
 - `transport-rclone/src/stats.rs`: read `transferring[]` → `name` → `dest`, `size`, `bytes`,
-  `speed`, `eta` (null → `None`).
+  `speed`, `eta` (null → `None`). **As built:** for `operations/copyfile` rclone names the
+  **source** path, not the destination one (checked with rclone v1.75.2), so the adapter maps
+  both an item's source path and its destination name to the destination name
+  (`InFlightNames`), and leaves out names that aren't items of the job.
 - `transport-fake`: report the files of its current parallel batch with simulated bytes, so the
   UI and the core forwarder are testable without rclone.
 - Contract suite addition: while a multi-file transfer runs, at least one snapshot has a
