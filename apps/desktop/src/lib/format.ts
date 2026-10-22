@@ -50,16 +50,30 @@ export function hexBytes(bytes: number[]): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ");
 }
 
+/** `s` without any of `chars` at its end. A loop, not `/[…]+$/`: that regex backtracks. */
+export function trimEnd(s: string, chars: string): string {
+  let end = s.length;
+  while (end > 0 && chars.includes(s[end - 1])) end--;
+  return s.slice(0, end);
+}
+
+/** `s` without any of `chars` at either end. */
+export function trimBoth(s: string, chars: string): string {
+  let start = 0;
+  while (start < s.length && chars.includes(s[start])) start++;
+  return trimEnd(s.slice(start), chars);
+}
+
 /** The last path component, for compact lists. */
 export function baseName(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, "");
+  const trimmed = trimEnd(path, "/\\");
   const i = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return i >= 0 ? trimmed.slice(i + 1) : trimmed;
 }
 
 /** The folder a path is in ("/home/demo" for "/home/demo/Fotos"); "" for a bare name. */
 export function parentPath(path: string): string {
-  const trimmed = path.replace(/[/\\]+$/, "");
+  const trimmed = trimEnd(path, "/\\");
   const i = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return i > 0 ? trimmed.slice(0, i) : i === 0 ? trimmed.slice(0, 1) : "";
 }

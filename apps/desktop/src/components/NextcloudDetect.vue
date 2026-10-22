@@ -2,6 +2,7 @@
 // Nextcloud direct mode (docs/05): SSH to the Proxmox host (and find the Nextcloud container) or
 // to the machine Nextcloud runs on, then find its data directory, `occ` and the file owner. Each
 // step shows ✓ / ! / ✗, and the Details panel the commands it ran.
+import { trimBoth } from "@/lib/format";
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
@@ -76,7 +77,7 @@ async function detect() {
       key_file: form.key_file.trim() || null,
       known_hosts_file: form.known_hosts_file.trim() || null,
       nextcloud_user: form.nextcloud_user.trim(),
-      folder: form.folder.trim().replace(/^\/+|\/+$/g, ""),
+      folder: trimBoth(form.folder.trim(), "/"),
       ctid: ctid != null && Number.isInteger(ctid) ? ctid : null,
       install_dir: form.install_dir.trim() || null,
     });

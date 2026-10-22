@@ -2,6 +2,7 @@
 // A job's log as the service recorded it, readable after the window was closed
 // (docs/design/specs/D07-job-log-and-activity.md). Newest first, grouped by day; live events only
 // trigger a re-read, so the persisted log stays the one source.
+import { baseName } from "@/lib/format";
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { LogEntry } from "@/bindings";
@@ -114,7 +115,7 @@ const str = (e: LogEntry, k: string) => {
   const v = (e.data as Record<string, unknown>)?.[k];
   return typeof v === "string" ? v : "";
 };
-const base = (p: string) => p.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? p;
+const base = (p: string) => baseName(p) || p;
 
 /** The sentence for a recorded event, in the current language. */
 function describe(e: LogEntry): Line {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Pick a folder at a destination with breadcrumbs (docs/design/specs/D11-destination-browser.md).
 // Listing only reads: a "new folder" is a pending part of the path, created by the send itself.
+import { trimBoth } from "@/lib/format";
 import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { BrowseResult, BrowseTarget_Deserialize } from "@/bindings";
@@ -59,7 +60,7 @@ watch(
   (t) => {
     cache.clear();
     result.value = null;
-    if (t) void open(props.start?.replace(/^\/+|\/+$/g, "") ?? "");
+    if (t) void open(trimBoth(props.start ?? "", "/"));
   },
   { immediate: true },
 );

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { trimEnd } from "@/lib/format";
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref } from "vue";
 import type { Profile_Serialize } from "@/bindings";
@@ -101,7 +102,7 @@ const details = computed(() => [
 
     <div v-if="selectedProfile && !creating" class="card into">
       <span class="small muted">{{ $t("step.dest.sendInto") }}</span>
-      <span class="path">{{ selectedProfile.destination.root.replace(/\/+$/, "") }}/{{ wizard.options.target_dir ?? "" }}</span>
+      <span class="path">{{ trimEnd(selectedProfile.destination.root, "/") }}/{{ wizard.options.target_dir ?? "" }}</span>
       <button class="btn btn-small" @click="browsing = true"><AppIcon name="reveal" /> {{ $t("step.dest.change") }}</button>
       <button v-if="wizard.options.target_dir" class="btn btn-small" @click="chooseFolder('')">{{ $t("step.dest.root") }}</button>
     </div>

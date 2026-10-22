@@ -7,6 +7,7 @@
 // with the command's own answer type (`Handlers`), and which operation is allowed in which job
 // state comes from the engine's table (`JOB_OPERATIONS`), not from a copy.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { trimBoth, trimEnd } from "@/lib/format";
 import { setMockPicker, setMockSave, type PickOptions } from "@/lib/platform";
 import { emit } from "@tauri-apps/api/event";
 import {
@@ -826,7 +827,7 @@ const handlers: Handlers = {
   },
   browse: async (a) => {
     await sleep(250);
-    const dir = ((a.dir as string | null) ?? "").replace(/^\/+|\/+$/g, "");
+    const dir = trimBoth((a.dir as string | null) ?? "", "/");
     if (!(dir in FOLDERS)) throw fail("not_found", `${dir} not found`);
     const prefix = ((a.prefix as string | null) ?? "").toLowerCase();
     const folders = FOLDERS[dir]
@@ -836,7 +837,7 @@ const handlers: Handlers = {
   },
   checkFolderName: (a) => {
     const name = a.name as string;
-    const fixed = name.normalize("NFC").replace(/[<>:"\\|?*]/g, "_").replace(/[ .]+$/, "");
+    const fixed = trimEnd(name.normalize("NFC").replace(/[<>:"\\|?*]/g, "_"), " .");
     return fixed === name && name ? { ok: true, proposed: null, message_key: null } : { ok: false, proposed: fixed || null, message_key: "names.forbidden-chars" };
   },
   profileStorage: async (a) => {
