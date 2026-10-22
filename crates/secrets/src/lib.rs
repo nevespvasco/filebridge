@@ -4,14 +4,21 @@
 //! [`KeyringStore`] is the real one: Keychain on macOS, Credential Manager on Windows, Secret
 //! Service on Linux (GNOME Keyring, KWallet). There is no file fallback: without a keyring the
 //! call fails with an error that says how to get one. [`MemoryStore`] is for tests and the
-//! service's fake-transport mode. Calls block (a D-Bus or system round trip): async callers wrap
-//! them in `spawn_blocking`.
+//! service's fake-transport mode. Calls block (a D-Bus or system round trip, maybe an unlock
+//! prompt): async callers go through [`blocking`], which runs them off the async threads and
+//! gives up after [`TIMEOUT`].
+//!
+//! Plugins never get a [`SecretStore`]: the host hands them a [`StoreResolver`], which only reads,
+//! through the `transport-api` contract ([`SecretResolver`]).
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use async_trait::async_trait;
 pub use filebridge_transport_api::KeyringRef;
+use filebridge_transport_api::{ErrorKind, SecretResolver, SecretValue, TransportError};
 pub use zeroize::Zeroizing;
 
 /// The keyring service every filebridge secret is stored under.
@@ -42,12 +49,13 @@ pub fn reference(profile_id: &str, kind: SecretKind) -> KeyringRef {
     KeyringRef(format!("{SERVICE}/{profile_id}/{}", kind.as_str()))
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum SecretError {
     /// Nothing stored under this reference (never the value; the reference is not secret).
     #[error("no secret stored for {0}")]
     NotFound(String),
-    /// No keyring to use: no Secret Service running, a locked keychain the user refused, …
+    /// No keyring to use: no Secret Service running, a locked keychain the user refused, a
+    /// keyring that doesn't answer, … Trying again later (once it is unlocked) may work.
     #[error(
         "the system keyring is not available ({0}). On Linux, filebridge needs a Secret Service \
          such as GNOME Keyring or KWallet, unlocked in your session"
@@ -58,6 +66,63 @@ pub enum SecretError {
 }
 
 pub type Result<T> = std::result::Result<T, SecretError>;
+
+impl From<SecretError> for TransportError {
+    /// Missing is `Auth` (set it again); an unreachable keyring is `Transient` (unlock it and
+    /// the send goes on), never `Auth`: the password may be fine.
+    fn from(e: SecretError) -> Self {
+        let kind = match e {
+            SecretError::NotFound(_) => ErrorKind::Auth,
+            SecretError::Unavailable(_) => ErrorKind::Transient,
+            SecretError::Other(_) => ErrorKind::Other,
+        };
+        TransportError::new(kind, e.to_string())
+    }
+}
+
+/// How long a keyring call may take before [`blocking`] gives up. Long enough to type a password
+/// into an unlock prompt; a keyring that never answers (a hung D-Bus service) doesn't hang the
+/// caller.
+pub const TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Runs `f` on `store` off the async threads, giving up after [`TIMEOUT`] with
+/// [`SecretError::Unavailable`]. The call itself can't be interrupted: it finishes, unseen, on
+/// its blocking thread.
+pub async fn blocking<T: Send + 'static>(
+    store: &Arc<dyn SecretStore>,
+    f: impl FnOnce(&dyn SecretStore) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    blocking_within(TIMEOUT, store, f).await
+}
+
+async fn blocking_within<T: Send + 'static>(
+    limit: Duration,
+    store: &Arc<dyn SecretStore>,
+    f: impl FnOnce(&dyn SecretStore) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let store = store.clone();
+    let task = tokio::task::spawn_blocking(move || f(store.as_ref()));
+    match tokio::time::timeout(limit, task).await {
+        Ok(Ok(res)) => res,
+        Ok(Err(e)) => Err(SecretError::Other(format!("keyring task failed: {e}"))),
+        Err(_) => Err(SecretError::Unavailable(format!(
+            "it did not answer within {} s; is it locked?",
+            limit.as_secs()
+        ))),
+    }
+}
+
+/// The read-only side of a [`SecretStore`] that plugins get (ADR 0004, docs/03).
+pub struct StoreResolver(pub Arc<dyn SecretStore>);
+
+#[async_trait]
+impl SecretResolver for StoreResolver {
+    async fn resolve(&self, r: &KeyringRef) -> filebridge_transport_api::Result<SecretValue> {
+        let r = r.clone();
+        let secret = blocking(&self.0, move |s| s.get(&r)).await?;
+        Ok(SecretValue::new(secret.0.as_str().to_owned()))
+    }
+}
 
 /// A value whose `Debug` and `Display` never show it, for secrets that pass through structs
 /// that get logged.
@@ -91,39 +156,40 @@ pub trait SecretStore: Send + Sync {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct KeyringStore;
 
-impl KeyringStore {
-    fn entry(r: &KeyringRef) -> Result<keyring::Entry> {
-        keyring::Entry::new(SERVICE, &r.0).map_err(convert)
-    }
-}
-
-/// keyring's errors, without anything that could carry the secret.
-fn convert(e: keyring::Error) -> SecretError {
+/// keyring's errors about `r`, without anything that could carry the secret.
+fn convert(r: &KeyringRef, e: keyring::Error) -> SecretError {
     use keyring::Error as E;
     match e {
         E::PlatformFailure(e) | E::NoStorageAccess(e) => SecretError::Unavailable(e.to_string()),
-        E::NoEntry => SecretError::NotFound(String::new()),
+        E::NoEntry => SecretError::NotFound(r.0.clone()),
         other => SecretError::Other(other.to_string()),
+    }
+}
+
+impl KeyringStore {
+    fn entry(r: &KeyringRef) -> Result<keyring::Entry> {
+        keyring::Entry::new(SERVICE, &r.0).map_err(|e| convert(r, e))
     }
 }
 
 impl SecretStore for KeyringStore {
     fn get(&self, r: &KeyringRef) -> Result<Secret> {
-        match Self::entry(r)?.get_password() {
-            Ok(v) => Ok(Redacted(Zeroizing::new(v))),
-            Err(keyring::Error::NoEntry) => Err(SecretError::NotFound(r.0.clone())),
-            Err(e) => Err(convert(e)),
-        }
+        Self::entry(r)?
+            .get_password()
+            .map(|v| Redacted(Zeroizing::new(v)))
+            .map_err(|e| convert(r, e))
     }
 
     fn set(&self, r: &KeyringRef, value: &str) -> Result<()> {
-        Self::entry(r)?.set_password(value).map_err(convert)
+        Self::entry(r)?
+            .set_password(value)
+            .map_err(|e| convert(r, e))
     }
 
     fn delete(&self, r: &KeyringRef) -> Result<()> {
         match Self::entry(r)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(convert(e)),
+            Err(e) => Err(convert(r, e)),
         }
     }
 }
@@ -198,6 +264,64 @@ mod tests {
         let r = reference("p-1", SecretKind::SshKey);
         let msg = store.get(&r).unwrap_err().to_string();
         assert_eq!(msg, "no secret stored for filebridge/p-1/ssh-key");
+    }
+
+    #[test]
+    fn a_missing_entry_names_its_reference() {
+        let r = reference("p-1", SecretKind::AppPassword);
+        let e = convert(&r, keyring::Error::NoEntry);
+        assert_eq!(
+            e.to_string(),
+            "no secret stored for filebridge/p-1/app-password"
+        );
+    }
+
+    #[test]
+    fn an_unreachable_keyring_is_transient_not_auth() {
+        let e: TransportError = SecretError::Unavailable("locked".into()).into();
+        assert_eq!(e.kind, ErrorKind::Transient);
+        assert!(e.message.contains("Secret Service"), "{}", e.message);
+        let e: TransportError = SecretError::NotFound("filebridge/p/ssh-key".into()).into();
+        assert_eq!(e.kind, ErrorKind::Auth);
+    }
+
+    /// A keyring that never answers (a hung Secret Service, a prompt nobody sees).
+    struct Hung;
+    impl SecretStore for Hung {
+        fn get(&self, _: &KeyringRef) -> Result<Secret> {
+            std::thread::sleep(Duration::from_millis(300));
+            Err(SecretError::Other("too late".into()))
+        }
+        fn set(&self, _: &KeyringRef, _: &str) -> Result<()> {
+            Ok(())
+        }
+        fn delete(&self, _: &KeyringRef) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_keyring_that_does_not_answer_times_out_as_unavailable() {
+        let store: Arc<dyn SecretStore> = Arc::new(Hung);
+        let r = reference("p-1", SecretKind::AppPassword);
+        let e = blocking_within(Duration::from_millis(20), &store, move |s| s.get(&r))
+            .await
+            .unwrap_err();
+        assert!(matches!(e, SecretError::Unavailable(_)), "{e}");
+        assert!(e.to_string().contains("did not answer"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn the_resolver_reads_and_maps_errors() {
+        let store = Arc::new(MemoryStore::default());
+        let r = reference("p-1", SecretKind::AppPassword);
+        store.set(&r, "app-pass").unwrap();
+        let resolver = StoreResolver(store.clone());
+        assert_eq!(resolver.resolve(&r).await.unwrap().expose(), "app-pass");
+        store.delete(&r).unwrap();
+        let e = resolver.resolve(&r).await.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Auth);
+        assert!(e.message.contains("filebridge/p-1/app-password"), "{e}");
     }
 
     /// Touches the real keyring of whoever runs it: `cargo test -p filebridge-secrets -- --ignored`.

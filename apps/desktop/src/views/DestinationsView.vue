@@ -74,11 +74,18 @@ async function doDelete() {
   }
 }
 
-const deleteConsequences = computed(() =>
-  deleting.value
-    ? [t("destinations.deleteForgets", { name: deleting.value.name }), t("destinations.deleteNoFiles"), t("destinations.deleteJobs")]
-    : [],
-);
+const deleteConsequences = computed(() => {
+  const p = deleting.value;
+  if (!p) return [];
+  const b = p.destination.backend;
+  const ownKey = b.kind === "sftp" && !!b.key;
+  return [
+    t("destinations.deleteForgets", { name: p.name }),
+    t("destinations.deleteNoFiles"),
+    t("destinations.deleteJobs"),
+    ...(ownKey ? [t("destinations.deleteKey")] : []),
+  ];
+});
 
 function nextcloudMode(p: Profile_Serialize): string | null {
   const s = p.integration_settings;

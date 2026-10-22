@@ -10,7 +10,6 @@ publish.workspace = true
 async-trait.workspace = true
 filebridge-integration-api.workspace = true
 filebridge-names.workspace = true
-filebridge-secrets.workspace = true
 filebridge-transport-api.workspace = true
 getrandom.workspace = true
 russh.workspace = true
@@ -18,6 +17,9 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "sync", "time", "rt"] }
 tracing.workspace = true
+# Parses the server address the user types (WebDAV mode).
+url = "2"
+zeroize.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }

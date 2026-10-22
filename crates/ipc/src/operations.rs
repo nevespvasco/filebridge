@@ -88,7 +88,7 @@ macro_rules! for_each_operation {
             RemoveAccess remove_access(profile_id: String) -> $crate::AccessReport;
             /// Stores the profile's password in the OS keyring (`None` removes it); the profile
             /// keeps only its reference (ADR 0004). Never logged, never in a Details panel.
-            SetProfilePassword set_profile_password(profile_id: String, password: Option<String>) -> $crate::Profile;
+            SetProfilePassword set_profile_password(profile_id: String, password: Option<$crate::Password>) -> $crate::Profile;
             /// A draft "Repair destination" job for a folder of a profile (`None` = its root):
             /// `analyse`, the decisions and `start` then work on it like on a send.
             CreateRepairJob create_repair_job(profile_id: String, dir: Option<String>) -> String;

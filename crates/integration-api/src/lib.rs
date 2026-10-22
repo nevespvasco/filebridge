@@ -2,7 +2,8 @@
 //! No implementation code lives here.
 //!
 //! An integration never touches SQLite or the keyring: `core` hands it a [`JobContext`] with
-//! everything it needs. `specta::Type` derives are added together with `transport-api`'s, when
+//! everything it needs, and the host gives one that signs in with a profile's secret a
+//! `SecretResolver` (`transport-api`), which only reads. `specta::Type` derives are added together with `transport-api`'s, when
 //! these types first cross into the UI.
 
 use std::fmt;

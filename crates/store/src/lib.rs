@@ -40,6 +40,9 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("{0} not found")]
     NotFound(String),
+    /// The row is there but marked deleted: kept for history, never written again.
+    #[error("{0} was deleted")]
+    Deleted(String),
     #[error("invalid value in the database: {0}")]
     Invalid(String),
     #[error("the store thread has stopped")]

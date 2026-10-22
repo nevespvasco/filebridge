@@ -507,7 +507,8 @@
     "deleteTitle": "Delete this destination?",
     "deleteForgets": "filebridge forgets the profile “{name}”.",
     "deleteNoFiles": "No files are deleted, at the destination or anywhere else.",
-    "deleteJobs": "Transfers that used it keep their history, but can't be resumed without it.",
+    "deleteJobs": "Transfers that used it keep their history. Unfinished ones (drafts included) must be cancelled first, or allowed to finish.",
+    "deleteKey": "filebridge's own key stays in the server's authorized_keys: deleting it here doesn't remove it there. Use “Remove access…” first to take it off the server.",
     "intro": "The places you send files to. Save each one once, then pick it in every new transfer.",
     "emptyHint": "Create your first destination: an external disk, a server (SFTP) or Nextcloud.",
     "deleteTip": "Forget this destination. No files are deleted.",
@@ -581,6 +582,7 @@
     },
     "password": "Password",
     "passwordHint": "optional: empty = key or SSH agent",
+    "passwordNotSaved": "The destination was saved, but its password didn't reach the system keyring: {error}. Try again: the same destination is updated, not a second one made.",
     "firstConnect": "Before using a server here for the first time, connect to it once in a terminal (ssh user{'@'}server) and accept it, so this computer knows it."
   },
   "nextcloud": {
@@ -1074,7 +1076,7 @@
       "space": "Space"
     },
     "help": {
-      "server": "The address you open Nextcloud at in the browser, e.g. cloud.example.com. A WebDAV address copied from Nextcloud's Files settings works too.",
+      "server": "The address you open Nextcloud at in the browser, e.g. cloud.example.com. A WebDAV address copied from Nextcloud's Files settings works too, and is needed when you sign in with an email address or a company account.",
       "appPassword": "Create one in Nextcloud: Settings → Security → Devices & sessions → “Create new app password”. It can be revoked there at any time, and it is not your account password. filebridge keeps it in the system keyring.",
       "folder": "Where sends go, inside the user's files, e.g. Backup/Fotos. It is created by the first send if it doesn't exist."
     },

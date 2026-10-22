@@ -9,8 +9,11 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, reference};
-use filebridge_transport_api::{Backend, Destination, ErrorKind, Transport};
+use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, StoreResolver, reference};
+use filebridge_transport_api::{
+    Backend, Destination, ErrorKind, ProgressEvent, ProgressSink, RemotePath, TransferItem,
+    TransferJob, TransferOptions, Transport,
+};
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
 
 const PASSWORD: &str = "app-pass-AbCdE-12345";
@@ -84,7 +87,8 @@ async fn webdav_with_a_password_from_the_keyring() {
     let pass_ref = reference("p-webdav", SecretKind::AppPassword);
     store.set(&pass_ref, PASSWORD).unwrap();
     let rcd = Arc::new(Rcd::start(&binary).await.unwrap());
-    let transport = RcloneTransport::new(rcd, Strategy::PerFile).with_secrets(store.clone());
+    let transport = RcloneTransport::new(rcd, Strategy::PerFile)
+        .with_secrets(Arc::new(StoreResolver(store.clone())));
     let dest = Destination {
         transport: "rclone".into(),
         backend: Backend::Webdav {
@@ -110,4 +114,41 @@ async fn webdav_with_a_password_from_the_keyring() {
     for secret in [PASSWORD, "wrong-app-password"] {
         assert!(!err.message.contains(secret), "{}", err.message);
     }
+
+    // A send with the wrong password stops at the first refusal instead of signing in once per
+    // file (servers count each refusal against the account), and fails with that error.
+    let items = (0..6)
+        .map(|n| {
+            let name = format!("refused-{n}.txt");
+            std::fs::write(scratch.join(&name), "x").unwrap();
+            TransferItem {
+                source: name.clone().into(),
+                dest: RemotePath::new(name).unwrap(),
+                size: 1,
+                expected_hash: None,
+            }
+        })
+        .collect();
+    let job = TransferJob {
+        id: "refused".into(),
+        source_root: scratch.clone(),
+        items,
+        options: TransferOptions { concurrency: 1 },
+    };
+    let (sink, mut events) = ProgressSink::channel();
+    let err = transport.transfer(&dest, &job, sink).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Auth, "{err:?}");
+    assert!(
+        !err.message.contains("wrong-app-password"),
+        "{}",
+        err.message
+    );
+    let mut attempted = 0;
+    while let Ok(event) = events.try_recv() {
+        if let ProgressEvent::ItemDone { ok, .. } = event {
+            assert!(!ok);
+            attempted += 1;
+        }
+    }
+    assert_eq!(attempted, 1, "one refused sign-in, then nothing more");
 }

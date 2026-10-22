@@ -6,7 +6,8 @@ The `Transport` trait and its types. **Lands in:** Phase 0.
 `Transport`, `TransportCaps`, `Destination`, `RemotePath`, `PreflightReport`, `TransferJob`,
 `TransferItem`, `TransferResult`, `HashAlgo`, `Digest`, `ProgressSink`, and `TransportError`
 with an `ErrorKind` (`Transient` is the only retryable kind; `NotFound`, `Unsupported`, `Auth`,
-`Other`).
+`Other`). `KeyringRef`, and `SecretResolver`/`SecretValue`: how plugins read a profile's secret
+without touching the keyring (the host implements it; ADR 0004).
 
 ## Contract suite
 `contract::check(transport, dest, scratch)` (feature `contract`) is the contract as a test: names
@@ -20,6 +21,6 @@ adapter runs it from its own tests.
 
 ## Allowed dependencies
 `async-trait`, `serde`, `specta`, `bitflags`, `thiserror`, `tokio` (sync primitives only; `fs`
-with `contract`), `sha2` (only with `contract`).
+with `contract`), `sha2` (only with `contract`), `zeroize` (`SecretValue`).
 
 See [docs/03-extension-contracts.md](../../docs/03-extension-contracts.md).

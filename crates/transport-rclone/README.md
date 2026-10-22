@@ -24,6 +24,8 @@
 SFTP without root → handled by the integration.
 
 ## Allowed dependencies
-`transport-api`, `reqwest`, `tokio`, `serde_json`, `russh` (known_hosts parsing only).
+`transport-api`, `reqwest`, `tokio`, `serde_json`, `russh` (known_hosts parsing only). Never
+`filebridge-secrets`: passwords and keys come through the `SecretResolver` the host injects
+(`with_secrets`), and are scrubbed from rclone's errors and stderr while in use (`fs::Scrubber`).
 
 See [ADR 0002](../../docs/adr/0002-rclone-behind-transport.md).

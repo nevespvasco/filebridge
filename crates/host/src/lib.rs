@@ -15,7 +15,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
-use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore};
+use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore, StoreResolver};
 use filebridge_transport_fake::FakeTransport;
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
 
@@ -110,6 +110,8 @@ impl Host {
             _ => Arc::new(KeyringStore),
         };
         registry.set_secrets(secrets.clone());
+        // Plugins only read, through the transport-api contract; they never hold the keyring.
+        let resolver = Arc::new(StoreResolver(secrets.clone()));
         let rcd = match opts.transport {
             TransportChoice::Rclone => {
                 let bin = find_rclone(opts.rclone.as_deref())?;
@@ -120,7 +122,7 @@ impl Host {
                 );
                 registry.add_transport(Arc::new(
                     RcloneTransport::new(rcd.clone(), Strategy::PerFile)
-                        .with_secrets(secrets.clone()),
+                        .with_secrets(resolver.clone()),
                 ));
                 transport = Some(RcloneTransport::ID);
                 Some(rcd)
@@ -133,7 +135,7 @@ impl Host {
             TransportChoice::None => None,
         };
         // SSH sign-ins read a profile's own key (ADR 0012) from the same keyring.
-        let ssh: Arc<dyn ShellConnector> = Arc::new(SshConnector::with_secrets(secrets.clone()));
+        let ssh: Arc<dyn ShellConnector> = Arc::new(SshConnector::with_secrets(resolver));
         let nextcloud = Arc::new(Nextcloud::new(ssh.clone()));
         registry.add_integration(nextcloud.clone());
         let mut host = Self::with_registry(opts, access, registry)?;

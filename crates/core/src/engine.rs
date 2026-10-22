@@ -158,7 +158,11 @@ impl Engine {
                     match jobs[id].clone() {
                         Some((label, profile_id)) => {
                             if !profile_names.contains_key(&profile_id) {
-                                let name = self.get_profile(&profile_id).await.ok().map(|p| p.name);
+                                let name = self
+                                    .profile_for_history(&profile_id)
+                                    .await
+                                    .ok()
+                                    .map(|p| p.name);
                                 profile_names.insert(profile_id.clone(), name);
                             }
                             (Some(label), profile_names[&profile_id].clone())
@@ -260,7 +264,14 @@ impl Engine {
     /// transport/integration combinations that can't work.
     pub async fn save_profile(&self, mut profile: Profile) -> Result<Profile> {
         // New: no id yet, or one chosen ahead (a wizard that keeps a secret under it first).
-        let new = profile.id.is_empty() || self.store.get_profile(&profile.id).await.is_err();
+        // Only "not there" makes it new; a deleted id is refused by the store, other errors
+        // stop here.
+        let new = profile.id.is_empty()
+            || match self.store.get_profile(&profile.id).await {
+                Ok(_) => false,
+                Err(filebridge_store::StoreError::NotFound(_)) => true,
+                Err(e) => return Err(e.into()),
+            };
         if profile.id.is_empty() {
             profile.id = uuid::Uuid::new_v4().to_string();
         }
@@ -279,6 +290,12 @@ impl Engine {
         crate::profile::from_row(self.store.get_profile(id).await?)
     }
 
+    /// The profile a job used, even if it was deleted since: for its history (report, a
+    /// file's details, the activity), never for sending.
+    pub(crate) async fn profile_for_history(&self, id: &str) -> Result<Profile> {
+        crate::profile::from_row(self.store.get_profile_for_history(id).await?)
+    }
+
     pub async fn list_profiles(&self) -> Result<Vec<Profile>> {
         self.store
             .list_profiles()
@@ -288,22 +305,34 @@ impl Engine {
             .collect()
     }
 
+    /// Forgets a profile (its row stays for the history of its jobs) and its secrets. Refused
+    /// while a job to it is not finished, drafts included: it could not be sent nor resumed
+    /// without the profile. Cancel those jobs first, or let them finish.
     pub async fn delete_profile(&self, id: &str) -> Result<()> {
         let profile = self.get_profile(id).await.ok();
+        let unfinished = self.store.unfinished_jobs_of_profile(id).await?;
+        if !unfinished.is_empty() {
+            let mut states: Vec<&str> = unfinished.iter().map(|j| j.state.as_str()).collect();
+            states.dedup();
+            return Err(CoreError::Invalid(format!(
+                "{} transfer(s) to this destination are not finished ({}): cancel them, or let \
+                 them finish, before deleting it",
+                unfinished.len(),
+                states.join(", ")
+            )));
+        }
         self.store.delete_profile(id).await?;
         // Its password and key go with it: nothing is left in the keyring under its id.
         if let Ok(secrets) = self.registry.secrets() {
             let id = id.to_owned();
-            let gone = tokio::task::spawn_blocking(move || {
+            let gone = filebridge_secrets::blocking(&secrets, move |s| {
                 filebridge_secrets::SecretKind::ALL
                     .iter()
-                    .try_for_each(|k| secrets.delete(&filebridge_secrets::reference(&id, *k)))
+                    .try_for_each(|k| s.delete(&filebridge_secrets::reference(&id, *k)))
             })
             .await;
-            match gone {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => tracing::warn!("could not remove a deleted profile's secrets: {e}"),
-                Err(e) => tracing::warn!("could not remove a deleted profile's secrets: {e}"),
+            if let Err(e) = gone {
+                tracing::warn!("could not remove a deleted profile's secrets: {e}");
             }
         }
         if let Some(p) = profile {

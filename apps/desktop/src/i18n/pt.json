@@ -507,7 +507,8 @@
     "deleteTitle": "Apagar este destino?",
     "deleteForgets": "O filebridge esquece o perfil “{name}”.",
     "deleteNoFiles": "Nenhum ficheiro é apagado, nem no destino nem em lado nenhum.",
-    "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele.",
+    "deleteJobs": "Os envios que o usaram mantêm o histórico. Os que não terminaram (rascunhos incluídos) têm de ser cancelados antes, ou de terminar.",
+    "deleteKey": "A chave própria do filebridge fica no authorized_keys do servidor: apagar o destino aqui não a tira de lá. Use primeiro “Remover acesso…” para a retirar do servidor.",
     "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada nova transferência.",
     "emptyHint": "Crie o seu primeiro destino: um disco externo, um servidor (SFTP) ou o Nextcloud.",
     "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado.",
@@ -581,6 +582,7 @@
     },
     "password": "Palavra-passe",
     "passwordHint": "opcional: vazio = chave ou agente SSH",
+    "passwordNotSaved": "O destino foi guardado, mas a palavra-passe não chegou ao cofre do sistema: {error}. Tente de novo: o mesmo destino é atualizado, não é criado outro.",
     "firstConnect": "Antes de usar aqui um servidor pela primeira vez, ligue-se a ele uma vez num terminal (ssh utilizador{'@'}servidor) e aceite-o, para este computador o conhecer."
   },
   "nextcloud": {
@@ -1074,7 +1076,7 @@
       "space": "Espaço"
     },
     "help": {
-      "server": "O endereço onde abre o Nextcloud no navegador, por exemplo cloud.example.com. Um endereço WebDAV copiado das definições de Ficheiros do Nextcloud também serve.",
+      "server": "O endereço onde abre o Nextcloud no navegador, por exemplo cloud.example.com. Um endereço WebDAV copiado das definições de Ficheiros do Nextcloud também serve, e é preciso quando entra com um endereço de email ou uma conta da empresa.",
       "appPassword": "Crie uma no Nextcloud: Definições → Segurança → Dispositivos e sessões → “Criar nova palavra-passe de aplicação”. Pode ser revogada lá a qualquer momento e não é a palavra-passe da sua conta. O filebridge guarda-a no cofre do sistema.",
       "folder": "Para onde vão os envios, dentro dos ficheiros do utilizador, por exemplo Backup/Fotos. É criada pelo primeiro envio se não existir."
     },

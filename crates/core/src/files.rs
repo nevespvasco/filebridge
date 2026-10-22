@@ -97,7 +97,7 @@ impl Engine {
     /// Everything about one entry.
     pub async fn entry_detail(&self, job_id: &str, idx: u64) -> Result<EntryDetail> {
         let job = self.store.get_job(job_id).await?;
-        let profile = self.get_profile(&job.profile_id).await?;
+        let profile = self.profile_for_history(&job.profile_id).await?;
         let e = self.store.get_entry(job_id, idx).await?;
         let issues = self.store.issues_for_entry(job_id, idx).await?;
         let renamed = issues

@@ -17,8 +17,8 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | Module | What |
 |---|---|
 | `shell` | `RemoteShell` (`run`, streaming `run_lines`), `Output`, `SshTarget`, `ShellConnector` |
-| `ssh` | `SshShell`/`SshConnector` over russh: host key checked against `known_hosts` (no "accept unknown"), auth with filebridge's own key from the keyring (`SshTarget::key`, ADR 0012), else an unencrypted key file or the SSH agent; `key_accepted` and `generate_key` for the key flows; a command dropped before it ends closes its channel. Also used by the host for plain SFTP profiles. |
-| `webdav` | WebDAV mode: address normalisation (`server_url`, `dav_url`), the profile check, preflight and after-transfer (nothing to do) |
+| `ssh` | `SshShell`/`SshConnector` over russh: host key checked against `known_hosts` (no "accept unknown"), auth with filebridge's own key read through the host's `SecretResolver` (`SshTarget::key`, ADR 0012), else an unencrypted key file or the SSH agent; `key_accepted` and `generate_key` for the key flows; a command dropped before it ends closes its channel. Also used by the host for plain SFTP profiles. |
+| `webdav` | WebDAV mode: address parsing with the `url` crate (`parse_address`, `server_url`: HTTPS except on loopback, no credentials in it, the user id from a pasted WebDAV address), `dav_url`, the profile check, preflight and after-transfer (nothing to do) |
 | `fake` | `FakeShell` (answers keyed by exact command string, records what ran) and `FakeConnector`, public for `core`/CLI tests |
 | `quote` | POSIX `sh` quoting; every command is built with it |
 | `profile` | `NextcloudSettings` (tagged `mode: "direct"`), `NextcloudDirectProfile`, command builders (`host_cmd`, `container_cmd`, `occ_cmd`) |
@@ -115,7 +115,8 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
 
 ## Allowed dependencies
 `integration-api`, `transport-api`, `names`, `russh`, `serde`, `serde_json`, `tokio`, `tracing`,
-`async-trait`, `filebridge-secrets` (the SSH connector reads a profile's own key), `getrandom`
-(new keys).
+`async-trait`, `getrandom` (new keys), `zeroize`, `url` (WebDAV addresses). Never
+`filebridge-secrets`: the SSH connector reads a profile's own key through the `SecretResolver`
+the host injects.
 
 See [docs/05-integration-nextcloud.md](../../docs/05-integration-nextcloud.md).

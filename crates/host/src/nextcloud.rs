@@ -148,9 +148,13 @@ async fn add_webdav(
     transport_id: &str,
     req: NextcloudWebdavRequest,
 ) -> Result<DetectNextcloudResponse, ErrorBody> {
-    let server = webdav::server_url(&req.server).map_err(|m| err("invalid", m))?;
+    let address = webdav::parse_address(&req.server).map_err(|m| err("invalid", m))?;
+    let server = address.server;
     let user = req.user.trim().to_owned();
-    if user.is_empty() || req.app_password.is_empty() || req.name.trim().is_empty() {
+    // A WebDAV address copied from Nextcloud names the user's id, which an email or LDAP
+    // login is not.
+    let user_id = address.user_id.filter(|id| *id != user);
+    if user.is_empty() || req.app_password.expose().is_empty() || req.name.trim().is_empty() {
         return Err(err(
             "invalid",
             "a name, the user and an app password are needed",
@@ -160,7 +164,7 @@ async fn add_webdav(
     if !folder.is_empty() {
         RemotePath::new(folder.clone()).map_err(|e| err("invalid", e.message))?;
     }
-    let url = webdav::dav_url(&server, &user);
+    let url = webdav::dav_url(&server, user_id.as_deref().unwrap_or(&user));
     let mut steps = vec![step("address", "ok", format!("WebDAV address {url}"))];
 
     let registry = engine.registry();
@@ -173,15 +177,14 @@ async fn add_webdav(
     let id = uuid::Uuid::new_v4().to_string();
     let pass_ref = reference(&id, SecretKind::AppPassword);
     {
-        let (store, key, value) = (secrets.clone(), pass_ref.clone(), req.app_password);
-        tokio::task::spawn_blocking(move || store.set(&key, &value))
+        let (key, value) = (pass_ref.clone(), req.app_password);
+        filebridge_secrets::blocking(&secrets, move |s| s.set(&key, value.expose()))
             .await
-            .map_err(|e| err("internal", e.to_string()))?
             .map_err(|e| err("keyring", e.to_string()))?;
     }
     let forget = || async {
-        let (store, key) = (secrets.clone(), pass_ref.clone());
-        let _ = tokio::task::spawn_blocking(move || store.delete(&key)).await;
+        let key = pass_ref.clone();
+        let _ = filebridge_secrets::blocking(&secrets, move |s| s.delete(&key)).await;
     };
     let destination = Destination {
         transport: transport_id.into(),
@@ -205,6 +208,13 @@ async fn add_webdav(
             let message = if e.kind == ErrorKind::Auth {
                 format!(
                     "Nextcloud refused {user} with this app password ({})",
+                    e.message
+                )
+            } else if e.kind == ErrorKind::NotFound && user_id.is_none() {
+                format!(
+                    "Nextcloud has no files for {user} at {url}. If you sign in with an email \
+                     address or a company account, paste the WebDAV address from Files → \
+                     Settings instead of the server's ({})",
                     e.message
                 )
             } else {
@@ -250,6 +260,7 @@ async fn add_webdav(
     let settings = serde_json::to_value(NextcloudSettings::Webdav(NextcloudWebdavProfile {
         server,
         user,
+        user_id,
     }))
     .map_err(|e| err("internal", e.to_string()))?;
     let saved = engine

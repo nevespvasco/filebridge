@@ -38,6 +38,9 @@ const form = reactive({
 });
 /** SFTP only, optional; goes to the OS keyring after the profile is saved, never into it. */
 const password = ref("");
+/** The profile saved by a try whose password didn't reach the keyring: a retry saves it again
+ *  under the same id (no second destination) and stores the password. */
+const savedId = ref<string | null>(null);
 const saving = ref(false);
 const error = ref<string | null>(null);
 
@@ -79,7 +82,7 @@ function build(root: string): Profile_Deserialize {
           }
         : { kind: "local" };
   return {
-    id: "",
+    id: savedId.value ?? "",
     name: form.name.trim(),
     destination: { transport: "rclone", backend, root },
     integration: null,
@@ -102,13 +105,15 @@ async function save() {
   try {
     let saved = await profiles.save(build(form.root.trim()));
     if (kind.value === "sftp" && password.value) {
+      savedId.value = saved.id;
       saved = await api.setProfilePassword(saved.id, password.value);
       password.value = "";
       await profiles.load();
     }
+    savedId.value = null;
     emit("saved", saved);
   } catch (e) {
-    error.value = errorMessage(e);
+    error.value = savedId.value ? t("profile.passwordNotSaved", { error: errorMessage(e) }) : errorMessage(e);
   } finally {
     saving.value = false;
   }

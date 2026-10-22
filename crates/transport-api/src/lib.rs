@@ -92,6 +92,37 @@ bitflags::bitflags! {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct KeyringRef(pub String);
 
+/// A secret's value, read for one use: wiped from memory when dropped, never printed.
+pub struct SecretValue(zeroize::Zeroizing<String>);
+
+impl SecretValue {
+    pub fn new(value: String) -> Self {
+        Self(zeroize::Zeroizing::new(value))
+    }
+
+    /// The value itself, for the one place that needs it (a connection, a key parser).
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("***")
+    }
+}
+
+/// Turns a [`KeyringRef`] into its secret. Plugins never touch the keyring (docs/03): the host
+/// implements this over the OS keyring and hands it to the plugins that sign in with a secret.
+///
+/// Errors: nothing stored is `Auth` (the user sets it again); a keyring that can't be reached
+/// (locked, absent, not answering) is `Transient`, so a send waits and tries again instead of
+/// failing as if the password were wrong.
+#[async_trait]
+pub trait SecretResolver: Send + Sync {
+    async fn resolve(&self, r: &KeyringRef) -> Result<SecretValue>;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Backend {
@@ -426,6 +457,13 @@ mod tests {
         assert_eq!(p.parent(), Some("Fotos/Verão"));
         assert_eq!(p.file_name(), "praia.jpg");
         assert_eq!(RemotePath::new("top").unwrap().parent(), None);
+    }
+
+    #[test]
+    fn a_secret_value_never_prints() {
+        let v = SecretValue::new("hunter2".into());
+        assert_eq!(format!("{v:?}"), "***");
+        assert_eq!(v.expose(), "hunter2");
     }
 
     #[test]
