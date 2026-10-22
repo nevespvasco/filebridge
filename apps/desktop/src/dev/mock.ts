@@ -29,6 +29,8 @@ import {
   type EntryFilter,
   type EntryStatus,
   type EntryView_Serialize as EntryView,
+  type JobFilter,
+  type JobGroup,
   type JobSummary_Serialize,
   type LogEntry,
   type RecentSource,
@@ -82,6 +84,8 @@ const jobs: JobSummary_Serialize[] = [
     sources: ["/home/demo/Documentos"],
     options: { verify: true, concurrency: 8 },
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
+    label: "Documentos do escritório",
+    again_of: null,
   },
 ];
 
@@ -166,6 +170,7 @@ function issue(def: RuleDef, i: number): IssueView_Serialize {
     path: `Fotos/${2010 + (i % 14)}/${before}`,
     rule: def.rule,
     severity: def.auto ? "auto" : "needs_decision",
+    carried_over: false,
     message_key: `names.${def.rule}`,
     before: beforeBytes,
     after: afterBytes,
@@ -286,6 +291,19 @@ function matchingEntries(job: JobSummary_Serialize, filter: EntryFilter) {
   if (filter.sort === "largest_first") out.sort((a, b) => b.size - a.size || a.idx - b.idx);
   if (filter.sort === "problems_first") out.sort((a, b) => rank(a) - rank(b) || a.idx - b.idx);
   return { out, rank };
+}
+
+/** The job groups, as the engine defines them (docs/design/specs/D06). */
+const GROUPS: Record<JobGroup, JobState[]> = {
+  active: ["analysing", "transferring", "retrying", "waiting", "verifying", "integrating", "paused"],
+  needs_you: ["awaiting_approval", "failed"],
+  not_sent: ["draft", "ready"],
+  finished: ["completed", "completed_with_warnings"],
+  cancelled: ["cancelled"],
+};
+/** Reclaimable sources come with D10; until then nothing is. */
+function reclaimable(_job: JobSummary_Serialize): boolean {
+  return false;
 }
 
 /** Each destination's space (bytes), and when it was last checked. */
@@ -484,6 +502,8 @@ const handlers: Handlers = {
       sources: a.sources as string[],
       options: a.options as JobSummary_Serialize["options"],
       counts: counts(0, 0, 0),
+      label: null,
+      again_of: null,
     });
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
@@ -583,7 +603,37 @@ const handlers: Handlers = {
     setState(job, "cancelled");
     return null;
   },
-  listJobs: (a) => jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number)),
+  listJobs: (a) => {
+    const f = a.filter as JobFilter;
+    const groups = new Set(f.groups.flatMap((g) => GROUPS[g]));
+    const q = f.query?.trim().toLowerCase();
+    let list = jobs.filter(
+      (j) =>
+        (!groups.size || groups.has(j.state)) &&
+        (!f.profile_id || j.profile_id === f.profile_id) &&
+        (!q || [j.label ?? "", ...j.sources, profiles.find((p) => p.id === j.profile_id)?.name ?? ""].some((t) => t.toLowerCase().includes(q))),
+    );
+    if (f.reclaimable) list = list.filter((j) => reclaimable(j));
+    if (f.sort === "oldest") list = [...list].reverse();
+    if (f.sort === "largest") list = [...list].sort((x, y) => y.counts.bytes - x.counts.bytes);
+    const off = a.offset as number;
+    return { items: list.slice(off, off + (a.limit as number)), total: list.length };
+  },
+  setLabel: (a) => {
+    const job = find(a.jobId);
+    const l = (a.label as string | null)?.trim() || null;
+    if (l && l.length > 120) throw fail("invalid", "a name has at most 120 characters");
+    job.label = l;
+    return null;
+  },
+  sendAgain: (a) => {
+    const old = find(a.jobId);
+    if (!["completed", "completed_with_warnings", "cancelled", "failed"].includes(old.state)) throw fail("invalid", "only a finished transfer can do that");
+    const id = newId("j");
+    jobs.unshift({ ...structuredClone(old), id, state: "draft", error: null, attempt: 0, next_retry_at: null, created_at: Date.now(), updated_at: Date.now(), finished_at: null, counts: counts(0, 0, 0), profile_id: (a.profileId as string | null) ?? old.profile_id, again_of: old.id });
+    log(id, "created", { sources: old.sources, profile_id: old.profile_id, options: old.options, again_of: old.id });
+    return id;
+  },
   job: (a) => find(a.jobId),
   entries: (a) => {
     const job = find(a.jobId);

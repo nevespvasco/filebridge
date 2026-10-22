@@ -44,8 +44,13 @@ macro_rules! for_each_operation {
             Pause pause(job_id: String) -> ();
             Resume resume(job_id: String) -> ();
             Cancel cancel(job_id: String) -> ();
-            /// Newest first.
-            ListJobs list_jobs(limit: u32, offset: u32) -> Vec<$crate::JobSummary>;
+            /// A page of the jobs matching `filter`, with how many match in all.
+            ListJobs list_jobs(filter: $crate::JobFilter, limit: u32, offset: u32) -> $crate::JobPage;
+            /// Names a job (any state); a blank name clears it.
+            SetLabel set_label(job_id: String, label: Option<String>) -> ();
+            /// A new draft with a finished job's sources and options, to `profile_id` or the same
+            /// profile; its analysis reuses the earlier name decisions.
+            SendAgain send_again(job_id: String, profile_id: Option<String>) -> String;
             Job job(job_id: String) -> $crate::JobSummary;
             /// A job's files per Category, most bytes first.
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;

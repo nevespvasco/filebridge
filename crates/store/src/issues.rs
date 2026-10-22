@@ -61,6 +61,8 @@ pub struct IssueRow {
     pub issue: NewIssue,
     pub custom_name: Option<String>,
     pub decided_at: Option<i64>,
+    /// The decision was copied from the job this one repeats (Send again, D06).
+    pub carried_over: bool,
 }
 
 /// Per-rule counts for the Analysis step ("312 names with decomposed accents").
@@ -71,8 +73,8 @@ pub struct RuleSummary {
     pub pending: u64,
 }
 
-const COLUMNS: &str =
-    "id, entry_idx, rule, severity, message_key, before, after, decision, custom_name, decided_at";
+const COLUMNS: &str = "id, entry_idx, rule, severity, message_key, before, after, decision, \
+                       custom_name, decided_at, carried_over";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<(IssueRow, String)> {
     Ok((
@@ -89,6 +91,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<(IssueRow, String)> {
             },
             custom_name: row.get(8)?,
             decided_at: row.get(9)?,
+            carried_over: row.get(10)?,
         },
         row.get(7)?,
     ))
@@ -207,6 +210,52 @@ impl Store {
             };
             row.issue.decision = Decision::parse(&decision)?;
             Ok(row)
+        })
+        .await
+    }
+
+    /// Copies the decisions of `from` (the job `to` repeats) onto `to`'s issues of the same
+    /// entry (same source and raw path) and rule, where `from` had decided and `to` differs.
+    /// Marks them `carried_over`. Returns how many changed.
+    pub async fn copy_decisions(&self, from: &str, to: &str) -> Result<u64> {
+        let (from, to) = (from.to_owned(), to.to_owned());
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE issues SET decision = o.decision, custom_name = o.custom_name,
+                     decided_at = ?3, carried_over = 1
+                 FROM issues o
+                 JOIN manifest_entries om ON om.job_id = o.job_id AND om.idx = o.entry_idx
+                 JOIN manifest_entries nm ON nm.job_id = ?2
+                 WHERE issues.job_id = ?2 AND o.job_id = ?1
+                   AND nm.idx = issues.entry_idx
+                   AND om.source = nm.source AND om.raw_path = nm.raw_path
+                   AND o.rule = issues.rule
+                   AND o.decision <> 'pending'
+                   AND (issues.decision <> o.decision OR issues.custom_name IS NOT o.custom_name)",
+                params![from, to, now_ms()],
+            )?;
+            Ok(n as u64)
+        })
+        .await
+    }
+
+    /// Puts carried-over decisions back to pending (they don't fit the new destination).
+    pub async fn reset_issues(&self, job_id: &str, ids: Vec<i64>) -> Result<()> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE issues SET decision = 'pending', custom_name = NULL, decided_at = NULL,
+                         carried_over = 0
+                     WHERE job_id = ?1 AND id = ?2",
+                )?;
+                for id in &ids {
+                    stmt.execute(params![job_id, id])?;
+                }
+            }
+            tx.commit()?;
+            Ok(())
         })
         .await
     }

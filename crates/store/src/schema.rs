@@ -117,6 +117,17 @@ ALTER TABLE profiles ADD COLUMN last_test_at INTEGER;
 ALTER TABLE profiles ADD COLUMN last_good_test TEXT;
 ALTER TABLE profiles ADD COLUMN last_good_test_at INTEGER;
 "#,
+    // 6: a job's name, the job it repeats (Send again), decisions carried from it, and what the
+    // reclaimable-source check found (docs/design/specs/D06, D10).
+    r#"
+ALTER TABLE jobs ADD COLUMN label TEXT;
+ALTER TABLE jobs ADD COLUMN again_of TEXT REFERENCES jobs(id) ON DELETE SET NULL;
+ALTER TABLE jobs ADD COLUMN reclaim_dismissed_at INTEGER;
+ALTER TABLE jobs ADD COLUMN reclaim_check TEXT;
+ALTER TABLE issues ADD COLUMN carried_over INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX jobs_state ON jobs(state, created_at);
+CREATE INDEX jobs_profile ON jobs(profile_id, created_at);
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

@@ -1,6 +1,6 @@
 # D06 — Transfers list (search, filters, labels, Send again)
 
-- ID: D06 · Status: Proposed · Phase: 2
+- ID: D06 · Status: **Built** · Phase: 2
 - Inspired by: A7, A8 (count badge, search, filter), C4 (Message → label), D6, D7 (⋮ row menu;
   "Copy to" → send again elsewhere), D9 (filters), D13 ("know when … changed" → send only what
   changed), D15 (shortcuts for things you forget → labels), E5 (recent with relative times)
@@ -226,6 +226,18 @@ CREATE INDEX jobs_profile ON jobs(profile_id, created_at);
 - `copy_decisions(from_job, to_job, rules: &[&str]) -> u64`: an `UPDATE issues … FROM` that
   matches by `(source position, raw_path, rule)` through `manifest_entries`, sets the decision and
   custom name, and sets `carried_over = 1`, in one transaction.
+
+### As built
+
+- `copy_decisions` copies every decided issue of the earlier job onto the new job's issue with
+  the same entry (source position + raw path) and rule. No rule list is passed: an issue only
+  exists in the new job when its rule applies to the new profile. Carried decisions the new
+  profile's Name plan refuses go back to pending (`reset_issues`).
+- The list pages with Previous / Next and a count ("1–50 of 214"), not on scroll.
+- `Export report…` joins the row menu with D09. `reclaimable` in `JobFilter` answers nothing
+  until D10's source re-check exists.
+- The row menu (`JobActions`) is shared by the list and Transfer detail. It renders in a layer
+  over the page, so the table's scroll box doesn't clip it.
 
 ### Core
 

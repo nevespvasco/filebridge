@@ -242,7 +242,9 @@
     "colChoose": "Your choice",
     "bytesLabel": "bytes of the name",
     "bytesTip": "Technical view: the bytes of the name before (red) and after (green). They show the change when the text looks identical.",
-    "editHint": "Only the name changes, not the folder it's in."
+    "editHint": "Only the name changes, not the folder it's in.",
+    "carried": "Decided last time",
+    "carriedTip": "Copied from the transfer this one repeats. You can change it."
   },
   "decision": {
     "pending": "Pending",
@@ -274,7 +276,9 @@
     "modeHelp": "How the files reach the destination.",
     "sendTip": "Starts the copy. Your original files are not changed.",
     "window": "Files are sent only between {start} and {end}. Outside those hours this send waits and continues on its own.",
-    "limit": "Speed limited to {rate} (Settings)."
+    "limit": "Speed limited to {rate} (Settings).",
+    "label": "Name this transfer (optional)",
+    "labelHint": "Shown in Transfers and notifications, e.g. “Photos 2019 → Nextcloud”."
   },
   "after": {
     "title": "Sending",
@@ -354,14 +358,51 @@
       "progress": "Progress",
       "speed": "Speed",
       "eta": "Time left",
-      "retries": "Retries"
+      "retries": "Retries",
+      "transfer": "Transfer",
+      "size": "Size",
+      "when": "When",
+      "actions": "Actions"
     },
     "intro": "All your transfers, running and finished. Click one to see its details, pause it or cancel it.",
     "refreshTip": "Reload the list",
     "emptyHint": "When you copy files with “New transfer”, they show up here so you can follow them.",
     "emptyCta": "Start a new transfer",
     "rowTip": "Open this transfer",
-    "retriesHelp": "How many times filebridge tried again by itself, for example after the network dropped."
+    "retriesHelp": "How many times filebridge tried again by itself, for example after the network dropped.",
+    "search": "Search by name, folder or destination…",
+    "destination": "Destination",
+    "allDestinations": "All",
+    "sort": {
+      "newest": "Newest",
+      "oldest": "Oldest",
+      "largest": "Largest"
+    },
+    "group": {
+      "active": "Active",
+      "needs_you": "Needs you",
+      "not_sent": "Not sent",
+      "finished": "Finished",
+      "cancelled": "Cancelled"
+    },
+    "noMatch": "No transfer matches",
+    "files": "{n} file | {n} files",
+    "again": "Sent again",
+    "range": "{from}–{to} of {total}",
+    "menu": {
+      "label": "Actions for {name}",
+      "open": "Open",
+      "rename": "Rename…",
+      "again": "Send again",
+      "againTo": "Send again to another destination…",
+      "export": "Export report…",
+      "copyId": "Copy transfer id",
+      "whenFinished": "Available when the transfer has finished"
+    },
+    "rename": {
+      "title": "Name this transfer",
+      "hint": "Leave it empty to use the folder's name."
+    }
   },
   "jobDetail": {
     "title": "Transfer",
@@ -736,5 +777,14 @@
     "low": "Only {free} free",
     "lowNotice": "{name} has {free} free",
     "lastError": "Last check failed: {reason}"
+  },
+  "again": {
+    "title": "Send again: {name}",
+    "explain": "Only files that are new or changed since the last time will travel; files already there and identical are skipped.",
+    "decisions": "Name decisions you made last time are reused.",
+    "noDelete": "Nothing is deleted at the destination, even files removed from the source since.",
+    "continue": "Continue",
+    "destination": "Destination",
+    "otherRules": "Another destination may check names differently."
   }
 }

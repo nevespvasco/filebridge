@@ -27,9 +27,10 @@ pub use server::{Handler, bind, serve};
 pub use filebridge_model::{
     AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, EntryCursor,
     EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event,
-    Family, HashView, IssueDecision, IssueSeverity, IssueView, JobKind, JobState, JobSummary,
-    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, RuleCount, SendOptions,
-    SendWindow, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
+    Family, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind,
+    JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile,
+    ProfileTest, RecentSource, RuleCount, SendOptions, SendWindow, SpaceView, StatusCount,
+    StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -43,7 +44,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 6: `job_categories`, `recent_sources`.
 /// 7: `entries`, `entry_facets`, `entry`.
 /// 8: `profile_storage`; preflight views carry total and used space.
-pub const PROTOCOL_VERSION: u32 = 8;
+/// 9: `list_jobs` takes a filter and answers a page; `set_label`, `send_again`; jobs have a label.
+pub const PROTOCOL_VERSION: u32 = 9;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

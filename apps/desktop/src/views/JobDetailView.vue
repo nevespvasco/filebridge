@@ -6,7 +6,9 @@ import { useI18n } from "vue-i18n";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import FilesTab from "@/components/FilesTab.vue";
+import JobActions from "@/components/JobActions.vue";
 import JobLog from "@/components/JobLog.vue";
+import { defaultLabel, jobLabel } from "@/lib/jobs";
 import JobProgress from "@/components/JobProgress.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
 import { useFmt } from "@/composables/useFmt";
@@ -113,13 +115,15 @@ const details = computed(() => [
     <header class="page-head">
       <div>
         <button class="link small" @click="router.push({ name: 'jobs' })"><AppIcon name="back" /> {{ $t("jobs.title") }}</button>
-        <h1>{{ $t("jobDetail.title") }}</h1>
+        <h1>{{ job ? jobLabel(job) : $t("jobDetail.title") }}</h1>
+        <p v-if="job?.label" class="small muted sub">{{ defaultLabel(job.sources) }}</p>
       </div>
       <div class="actions">
         <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t("jobDetail.continue") }}</button>
         <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))"><AppIcon name="pause" /> {{ $t("jobDetail.pause") }}</button>
         <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
         <button v-if="canCancel" class="btn btn-danger" :title="$t('jobDetail.cancelTip')" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
+        <JobActions v-if="job" :job="job" />
       </div>
     </header>
 
@@ -212,7 +216,8 @@ const details = computed(() => [
 
 <style scoped>
 .queue-card { margin-top: 1rem; }
-.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.sub { margin: 0.1rem 0 0; }
+.actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1rem 0; }
 h2 { font-size: 1rem; margin-top: 0; }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; }

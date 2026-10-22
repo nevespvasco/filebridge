@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter, EntryStatus, Event,
-    FileCategory, IssueDecision, JobState, LocalClock, LogLevel, Profile, Registry, SendOptions,
-    SendWindow, Store, StoreError, TargetSpec,
+    FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock, LogLevel, Profile,
+    Registry, SendOptions, SendWindow, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -460,6 +460,112 @@ async fn a_destinations_space_is_kept_from_its_last_check() {
         .await
         .unwrap();
     assert!(after.checked_at.unwrap() >= kept.checked_at.unwrap());
+}
+
+#[tokio::test]
+async fn transfers_are_named_found_and_sent_again_with_their_decisions() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.engine
+        .set_label(&job, Some("  Fotos de Verão  ".into()))
+        .await
+        .unwrap();
+    // Keep one name as it is: the repeat must not send it under the corrected name.
+    let issues = s.engine.issues(&job, None, None, 10).await.unwrap();
+    let summer = issues
+        .iter()
+        .find(|i| i.path.contains("Vera"))
+        .expect("the NFD photo");
+    s.engine
+        .decide_issue(&job, summer.id, DecisionInput::KeepOriginal)
+        .await
+        .unwrap();
+    assert!(
+        s.engine.send_again(&job, None).await.is_err(),
+        "only a finished job"
+    );
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    s.engine
+        .set_label(&job, Some("Fotos de Verão".into()))
+        .await
+        .unwrap();
+    assert!(
+        s.engine
+            .set_label(&job, Some("x".repeat(121)))
+            .await
+            .is_err()
+    );
+
+    let other = s
+        .engine
+        .create_job(
+            vec![s.src.join("Fotos")],
+            &s.profile_id,
+            SendOptions::default(),
+        )
+        .await
+        .unwrap();
+
+    let page = |filter: JobFilter| s.engine.list_jobs_page(filter, 50, 0);
+    let all = page(JobFilter::default()).await.unwrap();
+    assert_eq!(
+        (all.total, all.items[0].id.as_str()),
+        (2, other.as_str()),
+        "newest first"
+    );
+    let finished = page(JobFilter {
+        groups: vec![JobGroup::Finished],
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(finished.items.len(), 1);
+    assert_eq!(finished.items[0].label.as_deref(), Some("Fotos de Verão"));
+    let by_name = page(JobFilter {
+        query: Some("verão".into()),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(by_name.total, 1, "the label matches");
+    let by_destination = page(JobFilter {
+        query: Some("test".into()),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(by_destination.total, 2, "the profile's name matches");
+    let not_sent = page(JobFilter {
+        groups: vec![JobGroup::NotSent],
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(not_sent.items[0].id, other);
+
+    // Send again: same sources and name; the kept name is decided already.
+    let again = s.engine.send_again(&job, None).await.unwrap();
+    let summary = s.engine.analyse(&again).await.unwrap();
+    assert_eq!(summary.state, JobState::Ready, "nothing left to decide");
+    let repeated = s.engine.job(&again).await.unwrap();
+    assert_eq!(repeated.label.as_deref(), Some("Fotos de Verão"));
+    assert_eq!(repeated.again_of.as_deref(), Some(job.as_str()));
+    let carried: Vec<_> = s
+        .engine
+        .issues(&again, None, None, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|i| i.carried_over)
+        .collect();
+    assert_eq!(carried.len(), 1);
+    assert_eq!(carried[0].decision, IssueDecision::Rejected);
+    assert_eq!(run_to_end(&s, &again).await, JobState::Completed);
+    let files = dest_files(&s.dest);
+    assert!(
+        !files.contains(&"Acme/Fotos/Ver\u{e3}o.jpg".to_owned()),
+        "never sent under the corrected name: {files:?}"
+    );
 }
 
 #[tokio::test]

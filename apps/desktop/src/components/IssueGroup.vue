@@ -190,6 +190,7 @@ function decisionLabel(row: IssueView_Serialize) {
           </div>
           <div class="state">
             <span class="chip" :class="`chip-${row.decision}`">{{ decisionLabel(row) }}</span>
+            <span v-if="row.carried_over" class="badge badge-muted" :title="$t('issues.carriedTip')"><AppIcon name="again" :size="12" /> {{ $t("issues.carried") }}</span>
           </div>
           <div v-if="!readonly" class="actions">
             <template v-if="hasProposal">

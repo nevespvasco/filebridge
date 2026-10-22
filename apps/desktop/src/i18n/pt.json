@@ -242,7 +242,9 @@
     "colChoose": "A sua escolha",
     "bytesLabel": "bytes do nome",
     "bytesTip": "Vista técnica: os bytes do nome antes (vermelho) e depois (verde). Mostram a mudança quando o texto parece idêntico.",
-    "editHint": "Só muda o nome, não a pasta onde está."
+    "editHint": "Só muda o nome, não a pasta onde está.",
+    "carried": "Decidido da última vez",
+    "carriedTip": "Copiado da transferência que esta repete. Pode mudar."
   },
   "decision": {
     "pending": "Por decidir",
@@ -274,7 +276,9 @@
     "modeHelp": "Como os ficheiros chegam ao destino.",
     "sendTip": "Começa a cópia. Os ficheiros originais não são alterados.",
     "window": "Os ficheiros só são enviados entre as {start} e as {end}. Fora dessas horas este envio espera e continua sozinho.",
-    "limit": "Velocidade limitada a {rate} (Definições)."
+    "limit": "Velocidade limitada a {rate} (Definições).",
+    "label": "Dar um nome a esta transferência (opcional)",
+    "labelHint": "Aparece nas Transferências e nas notificações, ex.: “Fotos 2019 → Nextcloud”."
   },
   "after": {
     "title": "A enviar",
@@ -354,14 +358,51 @@
       "progress": "Progresso",
       "speed": "Velocidade",
       "eta": "Falta",
-      "retries": "Tentativas"
+      "retries": "Tentativas",
+      "transfer": "Transferência",
+      "size": "Tamanho",
+      "when": "Quando",
+      "actions": "Ações"
     },
     "intro": "Todos os seus envios, em curso e terminados. Clique num para ver os detalhes, pausá-lo ou cancelá-lo.",
     "refreshTip": "Recarregar a lista",
     "emptyHint": "Quando copiar ficheiros em “Nova transferência”, aparecem aqui para os acompanhar.",
     "emptyCta": "Começar uma nova transferência",
     "rowTip": "Abrir este envio",
-    "retriesHelp": "Quantas vezes o filebridge tentou de novo sozinho, por exemplo depois de a rede falhar."
+    "retriesHelp": "Quantas vezes o filebridge tentou de novo sozinho, por exemplo depois de a rede falhar.",
+    "search": "Procurar por nome, pasta ou destino…",
+    "destination": "Destino",
+    "allDestinations": "Todos",
+    "sort": {
+      "newest": "Mais recentes",
+      "oldest": "Mais antigas",
+      "largest": "Maiores"
+    },
+    "group": {
+      "active": "Ativas",
+      "needs_you": "Precisa de si",
+      "not_sent": "Por enviar",
+      "finished": "Concluídas",
+      "cancelled": "Canceladas"
+    },
+    "noMatch": "Nenhuma transferência corresponde",
+    "files": "{n} ficheiro | {n} ficheiros",
+    "again": "Enviada de novo",
+    "range": "{from}–{to} de {total}",
+    "menu": {
+      "label": "Ações para {name}",
+      "open": "Abrir",
+      "rename": "Mudar o nome…",
+      "again": "Enviar de novo",
+      "againTo": "Enviar de novo para outro destino…",
+      "export": "Exportar relatório…",
+      "copyId": "Copiar id da transferência",
+      "whenFinished": "Disponível quando a transferência terminar"
+    },
+    "rename": {
+      "title": "Dar um nome a esta transferência",
+      "hint": "Deixe vazio para usar o nome da pasta."
+    }
   },
   "jobDetail": {
     "title": "Envio",
@@ -736,5 +777,14 @@
     "low": "Apenas {free} livres",
     "lowNotice": "{name} tem {free} livres",
     "lastError": "A última verificação falhou: {reason}"
+  },
+  "again": {
+    "title": "Enviar de novo: {name}",
+    "explain": "Só seguem os ficheiros novos ou alterados desde a última vez; os que já lá estão iguais são ignorados.",
+    "decisions": "As decisões sobre nomes da última vez são reaproveitadas.",
+    "noDelete": "Nada é apagado no destino, nem os ficheiros entretanto removidos da origem.",
+    "continue": "Continuar",
+    "destination": "Destino",
+    "otherRules": "Outro destino pode verificar os nomes de outra forma."
   }
 }

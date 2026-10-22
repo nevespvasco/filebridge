@@ -152,8 +152,13 @@ async fn status(cli: &Cli) -> Result<()> {
         pong.protocol,
         endpoint.display()
     );
-    let jobs = client.list_jobs(50, 0).await?;
+    let filter = filebridge_ipc::JobFilter {
+        groups: vec![filebridge_ipc::JobGroup::Active],
+        ..Default::default()
+    };
+    let jobs = client.list_jobs(filter, 50, 0).await?;
     let active: Vec<_> = jobs
+        .items
         .iter()
         .filter(|j| j.state.is_running() || j.state == JobState::Paused)
         .collect();

@@ -17,6 +17,12 @@ pub enum Op {
     Run,
     /// Startup: picking up a job the app left unfinished.
     Recover,
+    /// Name a job (any state; changes no state).
+    SetLabel,
+    /// A new draft from a finished job's sources (Send again).
+    SendAgain,
+    /// Write a finished job's report.
+    Export,
 }
 
 impl Op {
@@ -29,6 +35,8 @@ impl Op {
             Op::Start => matches!(state, Ready | Paused),
             Op::Pause | Op::Run => state.is_running(),
             Op::Cancel | Op::Recover => !state.is_terminal(),
+            Op::SetLabel => true,
+            Op::SendAgain | Op::Export => state.is_terminal(),
         }
     }
 }
@@ -45,6 +53,9 @@ pub fn job_operations() -> std::collections::BTreeMap<&'static str, Vec<JobState
         ("resume", Op::Start),
         ("pause", Op::Pause),
         ("cancel", Op::Cancel),
+        ("set_label", Op::SetLabel),
+        ("send_again", Op::SendAgain),
+        ("export_report", Op::Export),
     ]
     .into_iter()
     .map(|(name, op)| {
@@ -55,6 +66,49 @@ pub fn job_operations() -> std::collections::BTreeMap<&'static str, Vec<JobState
         (name, states)
     })
     .collect()
+}
+
+/// Which set a job's state falls in, for the user (docs/design/specs/D06, "Job groups").
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, specta::Type,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum JobGroup {
+    Active,
+    NeedsYou,
+    NotSent,
+    Finished,
+    Cancelled,
+}
+
+impl JobGroup {
+    pub const ALL: [JobGroup; 5] = [
+        Self::Active,
+        Self::NeedsYou,
+        Self::NotSent,
+        Self::Finished,
+        Self::Cancelled,
+    ];
+
+    pub fn of(state: JobState) -> Self {
+        use JobState::*;
+        match state {
+            Analysing | Transferring | Retrying | Waiting | Verifying | Integrating | Paused => {
+                Self::Active
+            }
+            AwaitingApproval | Failed => Self::NeedsYou,
+            Draft | Ready => Self::NotSent,
+            Completed | CompletedWithWarnings => Self::Finished,
+            Cancelled => Self::Cancelled,
+        }
+    }
+
+    pub fn states(self) -> Vec<JobState> {
+        JobState::ALL
+            .into_iter()
+            .filter(|s| Self::of(*s) == self)
+            .collect()
+    }
 }
 
 /// Whether a job may go from `from` to `to`.
@@ -94,6 +148,13 @@ mod tests {
         assert!(can_go(Draft, Analysing));
         assert!(!can_go(Draft, Transferring));
         assert!(can_go(Transferring, Retrying));
+        for s in JobState::ALL {
+            let groups = JobGroup::ALL
+                .iter()
+                .filter(|g| g.states().contains(&s))
+                .count();
+            assert_eq!(groups, 1, "{s:?} is in exactly one group");
+        }
         assert!(can_go(Retrying, Transferring));
         assert!(can_go(Verifying, Transferring), "mismatches resend");
         assert!(can_go(Transferring, Waiting), "the send window closed");

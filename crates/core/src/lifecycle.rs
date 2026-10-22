@@ -94,6 +94,11 @@ impl Engine {
             Op::Start => transition(JobState::Transferring),
             Op::Pause => transition(JobState::Paused),
             Op::Cancel => transition(JobState::Cancelled),
+            Op::SetLabel => CoreError::Invalid("a job can always be named".into()),
+            Op::SendAgain | Op::Export => CoreError::Invalid(format!(
+                "only a finished transfer can do that; this one is {}",
+                state.as_str()
+            )),
             Op::Run | Op::Recover => {
                 CoreError::Invalid(format!("a job in state {} can't run", state.as_str()))
             }

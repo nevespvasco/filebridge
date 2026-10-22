@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { defaultLabel } from "@/lib/jobs";
+import { errorMessage } from "@/lib/api";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
@@ -29,6 +31,20 @@ const mode = computed(() => (profile.value ? profileKind(profile.value) : "local
 
 onMounted(() => profiles.ensure(wizard.profileId));
 
+// The transfer's name (docs/design/specs/D06): saved when the field is left.
+const label = ref(job.value?.label ?? "");
+const labelError = ref<string | null>(null);
+watch(() => job.value?.label, (l) => (label.value = l ?? ""));
+async function saveLabel() {
+  if (!wizard.jobId || (label.value.trim() || null) === (job.value?.label ?? null)) return;
+  try {
+    await jobs.setLabel(wizard.jobId, label.value.trim() || null);
+    labelError.value = null;
+  } catch (e) {
+    labelError.value = errorMessage(e);
+  }
+}
+
 const details = computed(() =>
   wizard.jobId
     ? [request("set_options", { job_id: wizard.jobId, options: wizard.options }), request("start", { job_id: wizard.jobId }), request("subscribe")]
@@ -43,6 +59,12 @@ const details = computed(() =>
       <AppIcon class="guide-icon" name="review" :size="20" />
       <p>{{ $t("review.guide") }}</p>
     </div>
+    <label class="field label-field">
+      <span>{{ $t("review.label") }}</span>
+      <input v-model="label" maxlength="120" :placeholder="defaultLabel(wizard.sources)" @blur="saveLabel" @keydown.enter="saveLabel" />
+      <span class="hint">{{ $t("review.labelHint") }}</span>
+      <span v-if="labelError" class="error small">{{ labelError }}</span>
+    </label>
     <dl class="card summary">
       <dt>{{ $t("review.sources") }}</dt>
       <dd>
@@ -89,6 +111,7 @@ const details = computed(() =>
 </template>
 
 <style scoped>
+.label-field { max-width: 32rem; margin-bottom: 1rem; }
 .summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem 1.5rem; margin: 0 0 1rem; }
 dt { color: var(--text-2); display: flex; align-items: center; }
 dd { margin: 0; min-width: 0; }

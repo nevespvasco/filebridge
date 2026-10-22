@@ -10,8 +10,9 @@ use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_ipc::{
     AnalysisSummary, AppSettings, CategoryCount, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    ErrorBody, Handler, IssueView, JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong,
-    Profile, ProfileTest, RecentSource, RuleCount, SendOptions, StorageView,
+    ErrorBody, Handler, IssueView, JobFilter, JobPage, JobSummary, LogEntry, Operations,
+    PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, RuleCount, SendOptions,
+    StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -165,9 +166,23 @@ impl Operations for EngineOperations {
         self.engine.cancel(&job_id).await.map_err(to_error)
     }
 
-    async fn list_jobs(&self, limit: u32, offset: u32) -> Res<Vec<JobSummary>> {
+    async fn list_jobs(&self, filter: JobFilter, limit: u32, offset: u32) -> Res<JobPage> {
         self.engine
-            .list_jobs(limit.min(1000), offset)
+            .list_jobs_page(filter, limit.min(1000), offset)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn set_label(&self, job_id: String, label: Option<String>) -> Res<()> {
+        self.engine
+            .set_label(&job_id, label)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn send_again(&self, job_id: String, profile_id: Option<String>) -> Res<String> {
+        self.engine
+            .send_again(&job_id, profile_id)
             .await
             .map_err(to_error)
     }

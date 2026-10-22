@@ -24,7 +24,7 @@ use tokio::sync::oneshot;
 
 pub use events::EventRow;
 pub use issues::{Decision, IssueRow, NewIssue, RuleSummary};
-pub use jobs::{JobRow, NewJob, RecentSourceRow, StateChange};
+pub use jobs::{JobOrder, JobQuery, JobRow, NewJob, RecentSourceRow, StateChange};
 pub use manifest::{
     EntryKey, EntryOrder, EntryQuery, EntryRow, EntryState, ManifestCounts, ManifestEntry, NewEntry,
 };
@@ -133,6 +133,8 @@ pub(crate) mod test_util {
                 state: "draft".into(),
                 options: serde_json::json!({}),
                 sources: vec![b"/home/u/Backup".to_vec()],
+                label: None,
+                again_of: None,
             })
             .await
             .unwrap();

@@ -3,8 +3,9 @@
 // (speed, ETA, current file, retries, the send window, integration step).
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import type { DoneView, Event_Serialize, JobState, JobSummary_Serialize } from "@/bindings";
+import type { DoneView, Event_Serialize, JobFilter, JobState, JobSummary_Serialize } from "@/bindings";
 import { api, errorMessage, events } from "@/lib/api";
+import { jobLabel } from "@/lib/jobs";
 import { notify } from "@/lib/platform";
 import { i18n } from "@/i18n";
 import { useConnection } from "./connection";
@@ -72,19 +73,33 @@ export const useJobs = defineStore("jobs", () => {
     if (list.length > MAX_LINES) list.splice(0, list.length - MAX_LINES);
   }
 
+  /** The Transfers list's filter (docs/design/specs/D06). */
+  const filter = ref<JobFilter>({ query: null, groups: [], profile_id: null, reclaimable: false, sort: "newest" });
+  const total = ref(0);
+
   async function loadPage(newOffset = offset.value) {
     try {
-      // One extra row tells whether there is a next page.
-      const rows = await api.listJobs(PAGE_SIZE + 1, newOffset);
-      hasMore.value = rows.length > PAGE_SIZE;
-      const shown = rows.slice(0, PAGE_SIZE);
-      for (const j of shown) byId.value[j.id] = j;
-      page.value = shown.map((j) => j.id);
+      const res = await api.listJobs(filter.value, PAGE_SIZE, newOffset);
+      for (const j of res.items) byId.value[j.id] = j;
+      page.value = res.items.map((j) => j.id);
+      total.value = res.total;
+      hasMore.value = newOffset + res.items.length < res.total;
       offset.value = newOffset;
       loadError.value = null;
     } catch (e) {
       loadError.value = errorMessage(e);
     }
+  }
+
+  async function setLabel(id: string, label: string | null) {
+    await api.setLabel(id, label);
+    await refresh(id);
+  }
+
+  /** A new draft from a finished job; returns it. */
+  async function sendAgain(id: string, profileId: string | null): Promise<JobSummary_Serialize | undefined> {
+    const newId = await api.sendAgain(id, profileId);
+    return refresh(newId);
   }
 
   async function refresh(id: string): Promise<JobSummary_Serialize | undefined> {
@@ -164,7 +179,8 @@ export const useJobs = defineStore("jobs", () => {
     if (!useSettings().notifications) return;
     const t = i18n.global.t;
     const profile = job ? useProfiles().byId[job.profile_id] : undefined;
-    const where = profile?.name ?? "";
+    // The transfer's name leads, so two sends to one place tell apart.
+    const where = [job ? jobLabel(job) : "", profile?.name].filter(Boolean).join(" → ");
     const ok = ev.state === "completed" || ev.state === "completed_with_warnings";
     if (ev.state === "cancelled") return;
     await notify(
@@ -204,5 +220,5 @@ export const useJobs = defineStore("jobs", () => {
     return (live.value[id]?.arrivals ?? []).filter((a) => now - a.at < MINUTE).reduce((sum, a) => sum + a.n, 0);
   }
 
-  return { byId, live, page, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
+  return { byId, live, page, filter, total, setLabel, sendAgain, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
 });

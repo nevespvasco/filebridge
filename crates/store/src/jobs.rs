@@ -1,6 +1,29 @@
+use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::{Result, Store, StoreError, now_ms};
+
+/// Which jobs [`Store::list_jobs_filtered`] returns: all of these must hold.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct JobQuery {
+    /// Any of these states (as text); empty = any.
+    pub states: Vec<String>,
+    pub profile_id: Option<String>,
+    /// A substring of the label, a source path or the profile name.
+    pub text: Option<String>,
+    /// Only these jobs (e.g. the reclaimable ones `core` worked out).
+    pub ids: Option<Vec<String>>,
+    pub order: JobOrder,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum JobOrder {
+    #[default]
+    Newest,
+    Oldest,
+    /// Most bytes first.
+    Largest,
+}
 
 /// A new job. `state` and `kind` are `core`'s enums as text.
 #[derive(Debug, Clone)]
@@ -12,6 +35,10 @@ pub struct NewJob {
     pub options: serde_json::Value,
     /// Source roots as raw path bytes, in the order the user picked them.
     pub sources: Vec<Vec<u8>>,
+    /// The user's name for the job.
+    pub label: Option<String>,
+    /// The job this one repeats (Send again).
+    pub again_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +61,12 @@ pub struct JobRow {
     pub warnings: Vec<String>,
     /// Verify rounds that found differences and sent files again.
     pub verify_rounds: u32,
+    pub label: Option<String>,
+    pub again_of: Option<String>,
+    /// When the user hid the job from the reclaimable total (docs/design/specs/D10).
+    pub reclaim_dismissed_at: Option<i64>,
+    /// What the last source re-check found (JSON, D10).
+    pub reclaim_check: Option<serde_json::Value>,
 }
 
 /// A job's move to a new state, written in one transaction with what the stage that just
@@ -54,7 +87,8 @@ pub struct StateChange {
 }
 
 const COLUMNS: &str = "id, kind, profile_id, state, options, error, attempt, next_retry_at, \
-                       created_at, updated_at, finished_at, warnings, verify_rounds";
+                       created_at, updated_at, finished_at, warnings, verify_rounds, label, \
+                       again_of, reclaim_dismissed_at, reclaim_check";
 
 /// A row, plus its options and warnings as JSON text.
 type RawJob = (JobRow, String, String);
@@ -76,6 +110,12 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<RawJob> {
             sources: Vec::new(),
             warnings: Vec::new(),
             verify_rounds: row.get(12)?,
+            label: row.get(13)?,
+            again_of: row.get(14)?,
+            reclaim_dismissed_at: row.get(15)?,
+            reclaim_check: row
+                .get::<_, Option<String>>(16)?
+                .and_then(|s| serde_json::from_str(&s).ok()),
         },
         row.get(4)?,
         row.get(11)?,
@@ -117,9 +157,19 @@ impl Store {
             let now = now_ms();
             let tx = c.transaction()?;
             tx.execute(
-                "INSERT INTO jobs (id, kind, profile_id, state, options, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-                params![job.id, job.kind, job.profile_id, job.state, options, now],
+                "INSERT INTO jobs (id, kind, profile_id, state, options, created_at, updated_at,
+                                   label, again_of)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)",
+                params![
+                    job.id,
+                    job.kind,
+                    job.profile_id,
+                    job.state,
+                    options,
+                    now,
+                    job.label,
+                    job.again_of
+                ],
             )?;
             {
                 let mut stmt = tx.prepare(
@@ -251,6 +301,86 @@ impl Store {
         .await
     }
 
+    /// Names a job; `None` clears the name.
+    pub async fn set_job_label(&self, id: &str, label: Option<String>) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE jobs SET label = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, label, now_ms()],
+            )?;
+            expect_one(n, &id)
+        })
+        .await
+    }
+
+    /// A page of jobs matching `q`, and how many match in all (the Transfers list, D06).
+    pub async fn list_jobs_filtered(
+        &self,
+        q: JobQuery,
+        limit: u32,
+        offset: u32,
+    ) -> Result<(Vec<JobRow>, u64)> {
+        self.call(move |c| {
+            let mut clauses: Vec<String> = Vec::new();
+            let mut args: Vec<Value> = Vec::new();
+            if !q.states.is_empty() {
+                clauses.push(format!(
+                    "state IN ({})",
+                    vec!["?"; q.states.len()].join(", ")
+                ));
+                args.extend(q.states.iter().cloned().map(Value::Text));
+            }
+            if let Some(p) = &q.profile_id {
+                clauses.push("profile_id = ?".into());
+                args.push(Value::Text(p.clone()));
+            }
+            if let Some(text) = q.text.as_deref().filter(|t| !t.is_empty()) {
+                let pattern = format!("%{}%", crate::manifest::like_escape(text));
+                clauses.push(
+                    "(label LIKE ? ESCAPE '\\' \
+                      OR EXISTS (SELECT 1 FROM job_sources s WHERE s.job_id = jobs.id \
+                                 AND CAST(s.path AS TEXT) LIKE ? ESCAPE '\\') \
+                      OR profile_id IN (SELECT id FROM profiles WHERE name LIKE ? ESCAPE '\\'))"
+                        .into(),
+                );
+                args.extend(std::iter::repeat_n(Value::Text(pattern), 3));
+            }
+            if let Some(only) = &q.ids {
+                if only.is_empty() {
+                    return Ok((Vec::new(), 0));
+                }
+                clauses.push(format!("id IN ({})", vec!["?"; only.len()].join(", ")));
+                args.extend(only.iter().cloned().map(Value::Text));
+            }
+            let sql_where = if clauses.is_empty() {
+                String::new()
+            } else {
+                format!("WHERE {}", clauses.join(" AND "))
+            };
+            let total: u64 = c.query_row(
+                &format!("SELECT COUNT(*) FROM jobs {sql_where}"),
+                rusqlite::params_from_iter(args.iter()),
+                |r| r.get(0),
+            )?;
+            let order = match q.order {
+                JobOrder::Newest => "created_at DESC, id",
+                JobOrder::Oldest => "created_at, id",
+                JobOrder::Largest => {
+                    "(SELECT COALESCE(SUM(size), 0) FROM manifest_entries m \
+                      WHERE m.job_id = jobs.id AND m.is_dir = 0) DESC, created_at DESC, id"
+                }
+            };
+            args.push(Value::Integer(i64::from(limit)));
+            args.push(Value::Integer(i64::from(offset)));
+            let sql =
+                format!("SELECT {COLUMNS} FROM jobs {sql_where} ORDER BY {order} LIMIT ? OFFSET ?");
+            let rows = query_jobs(c, &sql, rusqlite::params_from_iter(args.iter()))?;
+            Ok((rows, total))
+        })
+        .await
+    }
+
     pub async fn set_job_options(&self, id: &str, options: serde_json::Value) -> Result<()> {
         let id = id.to_owned();
         let options = serde_json::to_string(&options)?;
@@ -364,6 +494,8 @@ mod tests {
                 state: "draft".into(),
                 options: serde_json::json!({ "verify": true }),
                 sources: vec![b"/a/Patol\xf3gica".to_vec(), b"/b".to_vec()],
+                label: None,
+                again_of: None,
             })
             .await
             .unwrap();

@@ -312,6 +312,8 @@ impl Engine {
                 state: JobState::Draft.as_str().into(),
                 options: serde_json::to_value(&options)?,
                 sources: roots,
+                label: None,
+                again_of: None,
             })
             .await?;
         let sources: Vec<String> = sources.iter().map(|s| s.display().to_string()).collect();
@@ -350,7 +352,7 @@ impl Engine {
         Ok(out)
     }
 
-    async fn summary(&self, row: JobRow) -> Result<JobSummary> {
+    pub(crate) async fn summary(&self, row: JobRow) -> Result<JobSummary> {
         let counts = counts(self.store.manifest_counts(&row.id).await?);
         Ok(JobSummary {
             kind: JobKind::parse(&row.kind)?,
@@ -370,6 +372,8 @@ impl Engine {
             updated_at: row.updated_at,
             finished_at: row.finished_at,
             counts,
+            label: row.label,
+            again_of: row.again_of,
         })
     }
 
@@ -431,6 +435,9 @@ impl Engine {
             .set_dest_paths(&job_id, analysis.dest_paths)
             .await?;
         self.store.insert_issues(&job_id, analysis.issues).await?;
+        if let Some(from) = &row.again_of {
+            self.carry_decisions(&job_id, from).await?;
+        }
 
         let preflight = self.preflight(&profile, &job_id).await?;
         {
@@ -532,6 +539,7 @@ impl Engine {
             after: r.issue.after,
             decision: decisions::view(r.issue.decision),
             custom_name: r.custom_name,
+            carried_over: r.carried_over,
         }
     }
 
@@ -644,14 +652,14 @@ impl Engine {
         Ok(())
     }
 
-    async fn job_name_plan(&self, job_id: &str) -> Result<NamePlan> {
+    pub(crate) async fn job_name_plan(&self, job_id: &str) -> Result<NamePlan> {
         let row = self.store.get_job(job_id).await?;
         let profile = self.get_profile(&row.profile_id).await?;
         self.registry.name_plan(&profile)
     }
 
     /// Every manifest entry of a job, in scanner order, as the name rules see it.
-    async fn entries(&self, job_id: &str) -> Result<Vec<Entry>> {
+    pub(crate) async fn entries(&self, job_id: &str) -> Result<Vec<Entry>> {
         let mut out = Vec::new();
         let mut after = None;
         loop {
@@ -681,7 +689,11 @@ impl Engine {
         }
     }
 
-    async fn all_issues(&self, job_id: &str, rule: Option<String>) -> Result<Vec<IssueRow>> {
+    pub(crate) async fn all_issues(
+        &self,
+        job_id: &str,
+        rule: Option<String>,
+    ) -> Result<Vec<IssueRow>> {
         let mut out = Vec::new();
         let mut after = None;
         loop {

@@ -53,6 +53,10 @@ pub struct JobSummary {
     pub sources: Vec<String>,
     pub options: SendOptions,
     pub counts: Counts,
+    /// The user's name for the job.
+    pub label: Option<String>,
+    /// The job this one repeats (Send again).
+    pub again_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -160,6 +164,8 @@ pub struct IssueView {
     pub after_text: String,
     pub decision: IssueDecision,
     pub custom_name: Option<String>,
+    /// The decision was copied from the job this one repeats (Send again).
+    pub carried_over: bool,
 }
 
 /// Whether an issue's fix is applied unless overridden, or waits for the user.
@@ -302,4 +308,33 @@ impl StorageView {
             _ => false,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum JobSort {
+    #[default]
+    Newest,
+    Oldest,
+    Largest,
+}
+
+/// Which jobs the Transfers list shows (docs/design/specs/D06).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct JobFilter {
+    /// A substring of the label, a source path or the destination's name.
+    pub query: Option<String>,
+    /// Any of these; empty = all.
+    pub groups: Vec<crate::JobGroup>,
+    pub profile_id: Option<String>,
+    /// Only jobs whose sources can be freed safely (docs/design/specs/D10).
+    pub reclaimable: bool,
+    pub sort: JobSort,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct JobPage {
+    pub items: Vec<JobSummary>,
+    /// How many jobs match in all.
+    pub total: u64,
 }

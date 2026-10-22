@@ -46,8 +46,15 @@ export const commands = {
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
 	cancel: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("cancel", { jobId })),
-	/**  Newest first. */
-	listJobs: (limit: number, offset: number) => typedError<JobSummary_Serialize[], ErrorBody>(__TAURI_INVOKE("list_jobs", { limit, offset })),
+	/**  A page of the jobs matching `filter`, with how many match in all. */
+	listJobs: (filter: JobFilter_Deserialize, limit: number, offset: number) => typedError<JobPage_Serialize, ErrorBody>(__TAURI_INVOKE("list_jobs", { filter, limit, offset })),
+	/**  Names a job (any state); a blank name clears it. */
+	setLabel: (jobId: string, label: string | null) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_label", { jobId, label })),
+	/**
+	 *  A new draft with a finished job's sources and options, to `profile_id` or the same
+	 *  profile; its analysis reuses the earlier name decisions.
+	 */
+	sendAgain: (jobId: string, profileId: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("send_again", { jobId, profileId })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
 	/**  A job's files per Category, most bytes first. */
 	jobCategories: (jobId: string) => typedError<CategoryCount[], ErrorBody>(__TAURI_INVOKE("job_categories", { jobId })),
@@ -81,9 +88,9 @@ export const events = {
 };
 
 /* Constants */
-export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
+export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 8 as const;
+export const PROTOCOL_VERSION = 9 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -539,6 +546,8 @@ export type IssueView_Deserialize = {
 	after_text: string,
 	decision: IssueDecision,
 	custom_name?: string | null,
+	/**  The decision was copied from the job this one repeats (Send again). */
+	carried_over: boolean,
 };
 
 export type IssueView_Serialize = {
@@ -555,11 +564,59 @@ export type IssueView_Serialize = {
 	after_text: string,
 	decision: IssueDecision,
 	custom_name: string | null,
+	/**  The decision was copied from the job this one repeats (Send again). */
+	carried_over: boolean,
 };
+
+/**  Which jobs the Transfers list shows (docs/design/specs/D06). */
+export type JobFilter = JobFilter_Serialize | JobFilter_Deserialize;
+
+/**  Which jobs the Transfers list shows (docs/design/specs/D06). */
+export type JobFilter_Deserialize = {
+	/**  A substring of the label, a source path or the destination's name. */
+	query?: string | null,
+	/**  Any of these; empty = all. */
+	groups: JobGroup[],
+	profile_id?: string | null,
+	/**  Only jobs whose sources can be freed safely (docs/design/specs/D10). */
+	reclaimable: boolean,
+	sort: JobSort,
+};
+
+/**  Which jobs the Transfers list shows (docs/design/specs/D06). */
+export type JobFilter_Serialize = {
+	/**  A substring of the label, a source path or the destination's name. */
+	query: string | null,
+	/**  Any of these; empty = all. */
+	groups: JobGroup[],
+	profile_id: string | null,
+	/**  Only jobs whose sources can be freed safely (docs/design/specs/D10). */
+	reclaimable: boolean,
+	sort: JobSort,
+};
+
+/**  Which set a job's state falls in, for the user (docs/design/specs/D06, "Job groups"). */
+export type JobGroup = "active" | "needs_you" | "not_sent" | "finished" | "cancelled";
 
 export type JobKind = "transfer" | 
 /**  "Repair destination" (Phase 2). */
 "repair";
+
+export type JobPage = JobPage_Serialize | JobPage_Deserialize;
+
+export type JobPage_Deserialize = {
+	items: JobSummary_Deserialize[],
+	/**  How many jobs match in all. */
+	total: number,
+};
+
+export type JobPage_Serialize = {
+	items: JobSummary_Serialize[],
+	/**  How many jobs match in all. */
+	total: number,
+};
+
+export type JobSort = "newest" | "oldest" | "largest";
 
 export type JobState = "draft" | "analysing" | "awaiting_approval" | "ready" | "transferring" | "paused" | "retrying" | 
 /**  Transfer held until the send window opens (docs/adr/0010). */
@@ -582,6 +639,10 @@ export type JobSummary_Deserialize = {
 	sources: string[],
 	options: SendOptions,
 	counts: Counts,
+	/**  The user's name for the job. */
+	label?: string | null,
+	/**  The job this one repeats (Send again). */
+	again_of?: string | null,
 };
 
 export type JobSummary_Serialize = {
@@ -599,6 +660,10 @@ export type JobSummary_Serialize = {
 	sources: string[],
 	options: SendOptions,
 	counts: Counts,
+	/**  The user's name for the job. */
+	label: string | null,
+	/**  The job this one repeats (Send again). */
+	again_of: string | null,
 };
 
 /**  Reference to a secret stored in the OS keyring. Never the secret itself. */

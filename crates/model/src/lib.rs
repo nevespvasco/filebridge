@@ -23,14 +23,14 @@ pub use entries::{
 pub use event::Event;
 pub use log::{LogEntry, LogLevel, log_level};
 pub use profile::{Family, Profile, TargetSpec};
-pub use rules::{Op, can_go, job_operations};
+pub use rules::{JobGroup, Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use state::{JobKind, JobState};
 pub use views::{
     AnalysisSummary, CategoryCount, CheckView, Counts, DecisionInput, DoneView, InFlightView,
-    IssueDecision, IssueSeverity, IssueView, JobSummary, LOW_SPACE_BYTES, LOW_SPACE_RATIO,
-    PreflightView, ProfileTest, RecentSource, RuleCount, STORAGE_STALE_AFTER_MS, SendOptions,
-    SpaceView, StorageView,
+    IssueDecision, IssueSeverity, IssueView, JobFilter, JobPage, JobSort, JobSummary,
+    LOW_SPACE_BYTES, LOW_SPACE_RATIO, PreflightView, ProfileTest, RecentSource, RuleCount,
+    STORAGE_STALE_AFTER_MS, SendOptions, SpaceView, StorageView,
 };
 
 /// A stored value (a job state, a job kind) this build doesn't know.

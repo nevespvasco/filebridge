@@ -155,7 +155,7 @@ const RANK: &str = "(CASE WHEN transfer_state = 'failed' OR (transfer_state = 'd
                     AND verify_state IN ('mismatch', 'missing', 'failed')) THEN 0 ELSE 1 END)";
 
 /// `%`, `_` and `\` taken literally in a `LIKE … ESCAPE '\'` pattern.
-fn like_escape(text: &str) -> String {
+pub(crate) fn like_escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         if matches!(ch, '%' | '_' | '\\') {

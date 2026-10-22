@@ -218,7 +218,11 @@ pub async fn decide_all(
 
 pub async fn jobs(g: &Global, limit: u32) -> Result<()> {
     let app = App::open(g, Access::Read, false).await?;
-    for j in app.ops.list_jobs(limit, 0).await? {
+    let page = app
+        .ops
+        .list_jobs(filebridge_ipc::JobFilter::default(), limit, 0)
+        .await?;
+    for j in page.items {
         println!(
             "{}  {:<24} {:>6}/{:<6} files  {:>10}  {}",
             &j.id[..8],
