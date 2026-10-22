@@ -1845,6 +1845,7 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "chrono",
+ "filebridge-names",
  "filebridge-secrets",
  "filebridge-transport-api",
  "getrandom 0.3.4",

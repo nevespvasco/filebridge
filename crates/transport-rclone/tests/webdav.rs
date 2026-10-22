@@ -116,39 +116,48 @@ async fn webdav_with_a_password_from_the_keyring() {
     }
 
     // A send with the wrong password stops at the first refusal instead of signing in once per
-    // file (servers count each refusal against the account), and fails with that error.
-    let items = (0..6)
-        .map(|n| {
-            let name = format!("refused-{n}.txt");
-            std::fs::write(scratch.join(&name), "x").unwrap();
-            TransferItem {
-                source: name.clone().into(),
-                dest: RemotePath::new(name).unwrap(),
-                size: 1,
-                expected_hash: None,
+    // file (servers count each refusal against the account), and fails with that error. Files
+    // in folders of their own are sent one by one: the first copy is refused. Files sharing a
+    // folder have it listed first: the listing is refused, and no copy starts.
+    for (folders, copies) in [(true, 1), (false, 0)] {
+        let items = (0..6)
+            .map(|n| {
+                let name = format!("refused-{n}.txt");
+                std::fs::write(scratch.join(&name), "x").unwrap();
+                let to = if folders {
+                    format!("r{n}/{name}")
+                } else {
+                    name.clone()
+                };
+                TransferItem {
+                    source: name.into(),
+                    dest: RemotePath::new(to).unwrap(),
+                    size: 1,
+                    expected_hash: None,
+                }
+            })
+            .collect();
+        let job = TransferJob {
+            id: "refused".into(),
+            source_root: scratch.clone(),
+            items,
+            options: TransferOptions { concurrency: 1 },
+        };
+        let (sink, mut events) = ProgressSink::channel();
+        let err = transport.transfer(&dest, &job, sink).await.unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Auth, "{err:?}");
+        assert!(
+            !err.message.contains("wrong-app-password"),
+            "{}",
+            err.message
+        );
+        let mut attempted = 0;
+        while let Ok(event) = events.try_recv() {
+            if let ProgressEvent::ItemDone { ok, .. } = event {
+                assert!(!ok);
+                attempted += 1;
             }
-        })
-        .collect();
-    let job = TransferJob {
-        id: "refused".into(),
-        source_root: scratch.clone(),
-        items,
-        options: TransferOptions { concurrency: 1 },
-    };
-    let (sink, mut events) = ProgressSink::channel();
-    let err = transport.transfer(&dest, &job, sink).await.unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Auth, "{err:?}");
-    assert!(
-        !err.message.contains("wrong-app-password"),
-        "{}",
-        err.message
-    );
-    let mut attempted = 0;
-    while let Ok(event) = events.try_recv() {
-        if let ProgressEvent::ItemDone { ok, .. } = event {
-            assert!(!ok);
-            attempted += 1;
         }
+        assert_eq!(attempted, copies, "one refused sign-in, then nothing more");
     }
-    assert_eq!(attempted, 1, "one refused sign-in, then nothing more");
 }

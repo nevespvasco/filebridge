@@ -548,11 +548,8 @@ impl Engine {
                         .collect::<Result<Vec<_>>>()
                 });
                 let remote_paths: Vec<_> = batch.iter().map(|(_, _, _, r)| r.clone()).collect();
-                let remote = transport.hash_many(
-                    &ctx.profile.destination,
-                    &remote_paths,
-                    HashAlgo::Sha256,
-                );
+                let remote =
+                    transport.hash_many(&ctx.profile.destination, &remote_paths, HashAlgo::Sha256);
                 let (local, remote) = tokio::join!(local, remote);
                 let local = local
                     .map_err(|err| CoreError::Invalid(format!("hash task failed: {err}")))??;

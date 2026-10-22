@@ -43,6 +43,10 @@ network (like the 500 GB initial migration).
   `403` (a blocked name) and `413` are `Other`, `507` is `Other` with "no space left at the
   destination", other `5xx`, `423` and `429` are `Transient`.
 - Removing the app password of a WebDAV profile is refused: the profile needs it.
+- Speed depends on the password being an **app password**. Nextcloud checks an account password
+  with a slow hash on every request (~175 ms against ~43 ms for an app password on Nextcloud 31),
+  and rclone makes three to four requests per file: 1,200 small files took 371 s with the account
+  password and 40 s with an app password (crates/transport-rclone/README.md).
 - Mode auto-selection below is not built: the user picks the mode in the wizard.
 
 ### Mode auto-selection

@@ -13,6 +13,7 @@ librclone = ["dep:libloading"]
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
+filebridge-names.workspace = true
 filebridge-transport-api.workspace = true
 getrandom.workspace = true
 libloading = { version = "0.8", optional = true }

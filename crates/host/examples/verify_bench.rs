@@ -1,9 +1,12 @@
 //! Benchmark: sends BENCH_FILES small files (most in one folder, a few in subfolders, names
 //! with glob characters) to a Nextcloud over WebDAV with verify on, through the real engine and
-//! rclone, and times the verify stage. The password stays in memory, never in the keyring.
+//! rclone, and times the transfer and verify stages. The password stays in memory, never in the
+//! keyring.
 //!
 //! Env: BENCH_URL (`…/remote.php/dav/files/<user>/`), BENCH_USER, BENCH_PASS, BENCH_ROOT (a
-//! folder under the user's files), BENCH_FILES. Use a throwaway server and account, e.g.
+//! folder under the user's files), BENCH_FILES. BENCH_PASS should be an app password, as the app
+//! stores: Nextcloud checks an account password with a slow hash on every request, which makes
+//! each request about 4× slower. Use a throwaway server and account, e.g.
 //! `docker run -p 127.0.0.1:8099:80 -e SQLITE_DATABASE=nc -e NEXTCLOUD_ADMIN_USER=… \
 //! -e NEXTCLOUD_ADMIN_PASSWORD=… nextcloud:31-apache`. See crates/transport-rclone/README.md.
 
@@ -105,11 +108,20 @@ async fn main() {
     let mut events = engine.subscribe();
     let watch = tokio::spawn(async move {
         let (mut t0, mut verify_start, mut verify_secs) = (Instant::now(), None, 0.0);
+        let (mut send_start, mut send_secs) = (None, 0.0);
         while let Ok(ev) = events.recv().await {
             if let Event::JobStateChanged { from, to, .. } = ev {
                 eprintln!("{:>8.1}s {from:?} -> {to:?}", t0.elapsed().as_secs_f64());
                 if to == JobState::Transferring && verify_start.is_none() {
                     t0 = Instant::now();
+                }
+                if to == JobState::Transferring {
+                    send_start = Some(Instant::now());
+                }
+                if from == JobState::Transferring
+                    && let Some(s) = send_start.take()
+                {
+                    send_secs += s.elapsed().as_secs_f64();
                 }
                 if to == JobState::Verifying {
                     verify_start = Some(Instant::now());
@@ -124,19 +136,20 @@ async fn main() {
                 }
             }
         }
-        verify_secs
+        (send_secs, verify_secs)
     });
     engine.start(&job).await.unwrap();
     let state = engine.wait(&job).await.unwrap();
-    let verify_secs = watch.await.unwrap();
+    let (send_secs, verify_secs) = watch.await.unwrap();
     let s = engine.job(&job).await.unwrap();
     println!(
-        "state={state:?} files={} done={} verified_ok={} mismatch={} verify_secs={verify_secs:.1} \
-         files_per_sec={:.1} error={:?}",
+        "state={state:?} files={} done={} verified_ok={} mismatch={} send_secs={send_secs:.1} \
+         sent_per_sec={:.1} verify_secs={verify_secs:.1} verified_per_sec={:.1} error={:?}",
         s.counts.files,
         s.counts.done,
         s.counts.verified_ok,
         s.counts.mismatch,
+        s.counts.done as f64 / send_secs,
         s.counts.verified_ok as f64 / verify_secs,
         s.error,
     );

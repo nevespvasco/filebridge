@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use filebridge_names::loose_key;
 use filebridge_transport_api::{
     Backend, Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome, KeyringRef,
     PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, SecretResolver,
@@ -169,10 +170,61 @@ impl RcloneTransport {
         }
     }
 
-    /// One `operations/copyfile` per item, `concurrency` at a time. The first `Auth` error ends
-    /// the round: nothing more is started (each start would be one more refused sign-in, which
-    /// servers count against the account), the files already on their way finish, and the call
-    /// fails with that error. Files that arrived were already reported by `ItemDone`.
+    /// What is already in each destination folder that two or more of `job`'s items go to, as
+    /// [`loose_key`]s: one `operations/list` per folder, `concurrency` at a time. A folder that
+    /// isn't there is empty; one that can't be listed is left out, so its files keep rclone's
+    /// own check. An `Auth` error fails the call before anything is sent.
+    async fn listed_folders(
+        &self,
+        dst_fs: &str,
+        job: &TransferJob,
+    ) -> Result<HashMap<String, HashSet<String>>> {
+        let mut count: HashMap<&str, usize> = HashMap::new();
+        for item in &job.items {
+            *count.entry(item.dest.parent().unwrap_or("")).or_default() += 1;
+        }
+        let sem = Arc::new(Semaphore::new(job.options.concurrency.max(1)));
+        let mut set = JoinSet::new();
+        for (folder, n) in count {
+            if n < 2 {
+                continue;
+            }
+            let permit = sem
+                .clone()
+                .acquire_owned()
+                .await
+                .expect("semaphore is never closed");
+            let rc = self.rc().clone();
+            let (folder, params) = (folder.to_owned(), json!({ "fs": dst_fs, "remote": folder }));
+            set.spawn(async move {
+                let _permit = permit;
+                (folder, rc.call("operations/list", params).await)
+            });
+        }
+        let mut listed = HashMap::new();
+        while let Some(done) = set.join_next().await {
+            let Ok((folder, answer)) = done else { continue };
+            let names = match answer {
+                Ok(v) => remote_entries(&v).map(|e| loose_key(&e.name)).collect(),
+                Err(e) if e.kind == ErrorKind::NotFound => HashSet::new(),
+                Err(e) if e.kind == ErrorKind::Auth => return Err(e),
+                Err(_) => continue,
+            };
+            listed.insert(folder, names);
+        }
+        Ok(listed)
+    }
+
+    /// One `operations/copyfile` per item, `concurrency` at a time. A file whose folder was
+    /// listed ([`Self::listed_folders`]) and holds nothing that answers to its name (exactly, in
+    /// another normalisation or in another case) is sent without rclone's existence check: one
+    /// request fewer per file, a quarter of them for small files on Nextcloud. Every other file
+    /// keeps the check, so one already there and identical is skipped (resume).
+    ///
+    /// The first `Auth` error ends the round: nothing more is started (each start would be one
+    /// more refused sign-in, which servers count against the account), the files already on
+    /// their way finish, and the call fails with that error. Files that arrived were already
+    /// reported by `ItemDone`.
     async fn per_file(
         &self,
         src_fs: &str,
@@ -181,6 +233,7 @@ impl RcloneTransport {
         job: &TransferJob,
         progress: &ProgressSink,
     ) -> Result<Vec<ItemOutcome>> {
+        let listed = self.listed_folders(dst_fs, job).await?;
         let mut outcomes = vec![ItemOutcome::Done; job.items.len()];
         let mut refused: Option<TransportError> = None;
         let sem = Arc::new(Semaphore::new(job.options.concurrency.max(1)));
@@ -205,11 +258,14 @@ impl RcloneTransport {
                 break;
             }
             let rc = self.rc().clone();
-            let params = json!({
+            let mut params = json!({
                 "srcFs": src_fs, "srcRemote": src,
                 "dstFs": dst_fs, "dstRemote": item.dest.as_str(),
                 "_group": group,
             });
+            if is_absent(&listed, &item.dest) {
+                params["_config"] = json!({ "NoCheckDest": true });
+            }
             set.spawn(async move {
                 let _permit = permit;
                 (i, rc.call("operations/copyfile", params).await)
@@ -527,26 +583,7 @@ impl Transport for RcloneTransport {
                 }),
             )
             .await?;
-        let mut out: Vec<RemoteEntry> = v
-            .get("list")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|e| {
-                Some(RemoteEntry {
-                    name: e.get("Name")?.as_str()?.to_owned(),
-                    is_dir: e.get("IsDir").and_then(Value::as_bool).unwrap_or(false),
-                    size: e
-                        .get("Size")
-                        .and_then(Value::as_i64)
-                        .and_then(|s| u64::try_from(s).ok()),
-                    mtime: e
-                        .get("ModTime")
-                        .and_then(Value::as_str)
-                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-                        .map(|t| t.timestamp_millis()),
-                })
-            })
+        let mut out: Vec<RemoteEntry> = remote_entries(&v)
             .filter(|e| !dirs_only || e.is_dir)
             .collect();
         out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -652,7 +689,10 @@ impl Transport for RcloneTransport {
         let mut out: Vec<Option<Result<Digest>>> = vec![None; paths.len()];
         if hash_type(algo).is_ok() && !paths.is_empty() {
             match self.creds(dest).await {
-                Ok(creds) => self.hash_by_folder(dest, &creds, paths, algo, &mut out).await,
+                Ok(creds) => {
+                    self.hash_by_folder(dest, &creds, paths, algo, &mut out)
+                        .await
+                }
                 Err(e) => out.fill(Some(Err(e))),
             }
         }
@@ -676,6 +716,36 @@ impl Transport for RcloneTransport {
             .await?;
         Ok(())
     }
+}
+
+/// The entries of an `operations/list` answer.
+fn remote_entries(v: &Value) -> impl Iterator<Item = RemoteEntry> + '_ {
+    v.get("list")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            Some(RemoteEntry {
+                name: e.get("Name")?.as_str()?.to_owned(),
+                is_dir: e.get("IsDir").and_then(Value::as_bool).unwrap_or(false),
+                size: e
+                    .get("Size")
+                    .and_then(Value::as_i64)
+                    .and_then(|s| u64::try_from(s).ok()),
+                mtime: e
+                    .get("ModTime")
+                    .and_then(Value::as_str)
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|t| t.timestamp_millis()),
+            })
+        })
+}
+
+/// Whether `dest`'s folder was listed and holds nothing that answers to its name.
+fn is_absent(listed: &HashMap<String, HashSet<String>>, dest: &RemotePath) -> bool {
+    listed
+        .get(dest.parent().unwrap_or(""))
+        .is_some_and(|names| !names.contains(&loose_key(dest.file_name())))
 }
 
 /// Files `Transport::hash_many` downloads at once from a server that can't hash them itself.
@@ -741,8 +811,11 @@ fn bwlimit_rate(bytes_per_sec: Option<u64>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bwlimit_rate, glob_escape, parse_hashsum_line};
-    use filebridge_transport_api::HashAlgo;
+    use std::collections::{HashMap, HashSet};
+
+    use super::{bwlimit_rate, glob_escape, is_absent, parse_hashsum_line};
+    use filebridge_names::loose_key;
+    use filebridge_transport_api::{HashAlgo, RemotePath};
 
     #[test]
     fn rate_strings() {
@@ -765,5 +838,25 @@ mod tests {
             glob_escape("Ver\u{e3}o [1]{a,b}*?\\.txt"),
             "Ver\u{e3}o \\[1\\]\\{a,b\\}\\*\\?\\\\.txt"
         );
+    }
+
+    #[test]
+    fn only_a_listed_folder_without_the_name_skips_the_check() {
+        let listed = HashMap::from([
+            (String::new(), HashSet::from([loose_key("top.txt")])),
+            (
+                "Fotos".to_owned(),
+                HashSet::from([loose_key("Ver\u{e3}o.JPG")]),
+            ),
+        ]);
+        let absent = |p: &str| is_absent(&listed, &RemotePath::new(p).unwrap());
+        assert!(absent("new.txt"));
+        assert!(absent("Fotos/praia.jpg"));
+        assert!(!absent("top.txt"), "there exactly");
+        assert!(
+            !absent("Fotos/Vera\u{303}o.jpg"),
+            "there in NFD and another case"
+        );
+        assert!(!absent("other/new.txt"), "folder not listed");
     }
 }

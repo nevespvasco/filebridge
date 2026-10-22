@@ -19,8 +19,8 @@ async fn main() {
     secrets.set(&pass_ref, &env("BENCH_PASS")).unwrap();
     let rclone = filebridge_host::find_rclone(None).unwrap();
     let rcd = Arc::new(Rcd::start(&rclone).await.unwrap());
-    let t = RcloneTransport::new(rcd, Strategy::PerFile)
-        .with_secrets(Arc::new(StoreResolver(secrets)));
+    let t =
+        RcloneTransport::new(rcd, Strategy::PerFile).with_secrets(Arc::new(StoreResolver(secrets)));
     let dest = Destination {
         transport: "rclone".into(),
         backend: Backend::Webdav {

@@ -154,7 +154,11 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
             ("x.txt", b"brackets", "Fotos/x [1] {a,b} #.txt"),
             ("y.txt", b"stars", "deep/er/y*?\\.txt"),
         ];
-        let extra = if cfg!(windows) { &extra[..1] } else { &extra[..] };
+        let extra = if cfg!(windows) {
+            &extra[..1]
+        } else {
+            &extra[..]
+        };
         let job = TransferJob {
             id: "contract-hash-many".into(),
             source_root: src.clone(),
@@ -185,7 +189,10 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
                 want.push(("deep/er/missing.bin", None));
             }
         }
-        let paths: Vec<_> = want.iter().map(|(p, _)| RemotePath::new(*p).unwrap()).collect();
+        let paths: Vec<_> = want
+            .iter()
+            .map(|(p, _)| RemotePath::new(*p).unwrap())
+            .collect();
         let many = transport.hash_many(dest, &paths, HashAlgo::Sha256).await;
         assert_eq!(many.len(), paths.len(), "one answer per path");
         for ((path, data), got) in want.iter().zip(&many) {
@@ -203,6 +210,45 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
                 .await
                 .is_empty()
         );
+
+        // Sent again into folders that already hold files: a changed file is replaced, an
+        // unchanged one stays, new ones arrive next to them.
+        let again: [(&str, &[u8], &str); 4] = [
+            ("a.txt", b"alpha, changed", "a.txt"),
+            ("a2.txt", b"new at the root", "a2.txt"),
+            ("sub/b.bin", &[0, 1, 2, 255], "deep/er/b.bin"),
+            ("c.txt", b"new next to b", "deep/er/c.txt"),
+        ];
+        for (name, data, _) in again {
+            tokio::fs::write(src.join(name), data).await.unwrap();
+        }
+        let job = TransferJob {
+            id: "contract-again".into(),
+            source_root: src.clone(),
+            items: again
+                .iter()
+                .map(|(name, data, to)| TransferItem {
+                    source: name.into(),
+                    dest: RemotePath::new(*to).unwrap(),
+                    size: data.len() as u64,
+                    expected_hash: None,
+                })
+                .collect(),
+            options: TransferOptions::default(),
+        };
+        let sent = transport
+            .transfer(dest, &job, ProgressSink::noop())
+            .await
+            .unwrap();
+        assert_eq!(sent.failed(), 0, "{:?}", sent.items);
+        let paths: Vec<_> = again
+            .iter()
+            .map(|(_, _, to)| RemotePath::new(*to).unwrap())
+            .collect();
+        let hashes = transport.hash_many(dest, &paths, HashAlgo::Sha256).await;
+        for ((_, data, to), got) in again.iter().zip(hashes) {
+            assert_eq!(got.unwrap().bytes, Sha256::digest(data).to_vec(), "{to}");
+        }
     }
     if !caps.contains(TransportCaps::HASH_XXH) {
         let path = RemotePath::new("a.txt").unwrap();
