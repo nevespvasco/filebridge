@@ -17,7 +17,8 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | Module | What |
 |---|---|
 | `shell` | `RemoteShell` (`run`, streaming `run_lines`), `Output`, `SshTarget`, `ShellConnector` |
-| `ssh` | `SshShell`/`SshConnector` over russh: host key checked against `known_hosts` (no "accept unknown"), auth with an unencrypted key file or the SSH agent; a command dropped before it ends closes its channel |
+| `ssh` | `SshShell`/`SshConnector` over russh: host key checked against `known_hosts` (no "accept unknown"), auth with filebridge's own key from the keyring (`SshTarget::key`, ADR 0012), else an unencrypted key file or the SSH agent; `key_accepted` and `generate_key` for the key flows; a command dropped before it ends closes its channel. Also used by the host for plain SFTP profiles. |
+| `webdav` | WebDAV mode: address normalisation (`server_url`, `dav_url`), the profile check, preflight and after-transfer (nothing to do) |
 | `fake` | `FakeShell` (answers keyed by exact command string, records what ran) and `FakeConnector`, public for `core`/CLI tests |
 | `quote` | POSIX `sh` quoting; every command is built with it |
 | `profile` | `NextcloudSettings` (tagged `mode: "direct"`), `NextcloudDirectProfile`, command builders (`host_cmd`, `container_cmd`, `occ_cmd`) |
@@ -106,16 +107,15 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
    exits → `nextcloud.scan-error` / `nextcloud.scan-failed` problems with `Retry`.
 
 ## Not yet
-- Encrypted key files and keys from the keyring (docs/07: app-generated key) — needs `core` to
-  pass key material; for now use the agent or an unencrypted key file.
+- Encrypted key files (load them into the SSH agent instead).
 - SSH straight into the container (no `pct`), with the scoped `sudoers` rule from docs/07: a
   second `Runtime` variant. A rule limited to `php occ files:scan` does not allow the
   `sh -c '<script>'` above; there the watcher has to run outside `sudo` (which relays SIGTERM to
   `occ`).
-- WebDAV mode (Phase 2).
 
 ## Allowed dependencies
 `integration-api`, `transport-api`, `names`, `russh`, `serde`, `serde_json`, `tokio`, `tracing`,
-`async-trait`; `reqwest` when WebDAV lands.
+`async-trait`, `filebridge-secrets` (the SSH connector reads a profile's own key), `getrandom`
+(new keys).
 
 See [docs/05-integration-nextcloud.md](../../docs/05-integration-nextcloud.md).

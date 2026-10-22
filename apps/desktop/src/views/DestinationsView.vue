@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { Profile_Serialize } from "@/bindings";
+import AccessDialog from "@/components/AccessDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
 import FolderBrowser from "@/components/FolderBrowser.vue";
@@ -21,6 +22,15 @@ const creating = ref(false);
 /** The destination being browsed (look only). */
 const browsing = ref<Profile_Serialize | null>(null);
 const deleting = ref<Profile_Serialize | null>(null);
+/** filebridge's own SSH key (ADR 0012): the destination it is installed on, or removed from. */
+const access = ref<{ profile: Profile_Serialize; action: "install" | "remove" } | null>(null);
+/** SSH destinations can get filebridge's own key; those that have it can have it removed. */
+function sshKey(p: Profile_Serialize): "install" | "remove" | null {
+  const b = p.destination.backend;
+  if (b.kind !== "sftp") return null;
+  return b.key ? "remove" : "install";
+}
+
 /** The destination whose folder to repair is being picked (docs/04, "Repair destination"). */
 const repairing = ref<Profile_Serialize | null>(null);
 const router = useRouter();
@@ -113,10 +123,19 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
             <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running" @click="profiles.test(p.id)">{{ $t("dest.test") }}</button>
             <button class="btn btn-small" :title="$t('destinations.browseTip')" @click="browsing = p"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
             <button class="btn btn-small" :title="$t('repair.buttonTip')" @click="repairing = p"><AppIcon name="renamed" /> {{ $t("repair.button") }}</button>
+            <button
+              v-if="sshKey(p)"
+              class="btn btn-small"
+              :title="$t(`access.${sshKey(p)}.tip`)"
+              @click="access = { profile: p, action: sshKey(p)! }"
+            >
+              <AppIcon :name="sshKey(p) === 'install' ? 'key' : 'lock'" /> {{ $t(`access.${sshKey(p)}.button`) }}
+            </button>
             <button class="btn btn-small btn-danger" :title="$t('destinations.deleteTip')" @click="deleting = p">{{ $t("common.delete") }}</button>
           </div>
         </div>
         <p class="mono small muted ellipsis" :title="profileWhere(p)">{{ profileWhere(p) }}</p>
+        <p v-if="sshKey(p) === 'remove'" class="small ok-text"><AppIcon name="key" :size="16" /> {{ $t("access.uses") }}</p>
         <DestinationSpace :profile-id="p.id" class="space" />
         <p class="small muted">
           {{ $t(`profile.family.${p.target.family}`) }} · {{ p.target.case_sensitive ? $t("profile.caseSensitive") : $t("profile.caseInsensitive") }}
@@ -147,6 +166,8 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       @choose="startRepair"
       @close="repairing = null"
     />
+
+    <AccessDialog :profile="access?.profile ?? null" :action="access?.action ?? 'install'" @close="access = null" />
 
     <ConfirmDialog
       :open="!!deleting"

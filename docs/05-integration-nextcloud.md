@@ -123,6 +123,7 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
 
 ## Security in direct mode
 
-See [07 — Security](07-security-reliability.md#security): app-generated key, dedicated user,
-`authorized_keys` with `command=` + `rrsync` + `restrict`, `sudoers` rule limited to `occ`, and the
-"Remove access" wizard.
+See [07 — Security](07-security-reliability.md#security) and
+[ADR 0012](adr/0012-own-ssh-key-with-restrict.md): filebridge's own key (in the keyring, installed
+with `restrict` for both the SFTP and the SSH user), and "Remove access". A dedicated user with a
+`sudoers` rule limited to `occ` is not built.

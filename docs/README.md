@@ -34,6 +34,7 @@ detail to build each crate on its own.
 | [0009](adr/0009-nextcloud-on-the-ssh-host.md) | Nextcloud direct mode also on the SSH host itself (no `pct`), not only through the Proxmox node |
 | [0010](adr/0010-bandwidth-limit-and-send-window.md) | One app-wide bandwidth limit and a daily send window (transfer waits outside it) |
 | [0011](adr/0011-reclaimable-source-is-shown-never-freed.md) | *Proposed:* a reclaimable source is shown and opened in the file manager, never freed by the app |
+| [0012](adr/0012-own-ssh-key-with-restrict.md) | filebridge's own SSH key in the keyring, installed with `restrict`; "Remove access" deletes it and proves it no longer signs in |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

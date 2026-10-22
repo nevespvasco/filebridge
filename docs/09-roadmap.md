@@ -40,10 +40,10 @@ flowchart TB
 
 ## Phase 1 — Personal MVP (replaces the terminal)
 
-- [ ] Tauri + Vue app with the 5-step wizard and the job list.
+- [x] Tauri + Vue app with the 5-step wizard and the job list.
 - [x] `crates/store` (SQLite + migrations), `crates/core` (Job, pipeline, state machine, Registry,
       events), `crates/ipc` with `specta` types. The CLI drives the engine end to end.
-- [ ] TypeScript bindings generated for the desktop app (Wave 3).
+- [x] TypeScript bindings generated for the desktop app (`specta`, Wave 3).
 - [x] NFC and forbidden-character rules (`nfc`, `forbidden-chars`, `trailing`, `reserved`).
 - [x] SFTP profile, automatic resume with backoff (crash-tested: `kill -9` mid-send, then resume).
 - [ ] Nextcloud direct mode: LXC detection (through the Proxmox node, or SSH straight into the
@@ -65,8 +65,13 @@ flowchart TB
 
 - [x] Manifest with hash and verification independent of names (verify keeps each source
       SHA-256; shown per file in [D05](design/specs/D05-files-and-entry-detail.md)).
-- [ ] Repair destination; mojibake and collision detection.
-- [ ] Nextcloud over WebDAV; credentials in the keyring; restricted SSH key and "Remove access".
+- [x] Repair destination; mojibake and collision detection (also `encoding` decoding and
+      `length`; [04](04-name-correction.md)).
+- [x] Nextcloud over WebDAV; credentials in the keyring; restricted SSH key and "Remove access"
+      ([05](05-integration-nextcloud.md), [ADR 0004](adr/0004-os-keyring-secrets.md),
+      [ADR 0012](adr/0012-own-ssh-key-with-restrict.md)). *Tested against local WebDAV and SFTP
+      servers (rclone serve) and the system keyring; not yet run against the real Nextcloud and
+      SSH servers.*
 
 **Gate:** verification with no differences and a scan with no encoding warnings.
 
@@ -78,12 +83,12 @@ flowchart TB
 
 **Gate (test):** a new plugin enters without changing `core`.
 
-## Design work (built on `design/implementation`)
+## Design work (built, on `main`)
 
 Everything in [design/](design/README.md) is built: the design system, the navigation, and
 D01–D11. Each spec says, under "As built", where the code differs and what is left for later.
 Two Phase 2 items now have their foundation:
 
 - [x] [D05](design/specs/D05-files-and-entry-detail.md): the manifest keeps each file's SHA-256.
-- [ ] Repair destination: `Transport::list` ([D11](design/specs/D11-destination-browser.md))
-      lists a remote folder; the repair job itself isn't built.
+- [x] Repair destination: `Transport::list` ([D11](design/specs/D11-destination-browser.md))
+      lists a remote folder, and `Transport::move_path` renames there (Phase 2).

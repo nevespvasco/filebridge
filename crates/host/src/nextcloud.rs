@@ -41,6 +41,7 @@ async fn detect_nextcloud(
                     user: req.user,
                     key_file: req.key_file.map(PathBuf::from),
                     known_hosts_file: req.known_hosts_file.map(PathBuf::from),
+                    key: None,
                 },
                 nextcloud_user: req.nextcloud_user,
                 folder: req.folder,

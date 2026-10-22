@@ -134,6 +134,7 @@ pub async fn run(args: Args) -> Result<()> {
             key_file: args.key_file.clone(),
             known_hosts_file: args.known_hosts.clone(),
             password: None,
+            key: None,
         },
         None => Backend::Local,
     };

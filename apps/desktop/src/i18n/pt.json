@@ -1082,5 +1082,45 @@
       "webdav": "WebDAV",
       "direct": "direto (SSH)"
     }
+  },
+  "access": {
+    "uses": "Entra com a chave própria do filebridge",
+    "working": "A trabalhar…",
+    "install": {
+      "button": "Usar a chave própria do filebridge…",
+      "tip": "Dar a este destino uma chave própria, guardada no cofre do sistema, para a sua chave SSH pessoal deixar de ser usada",
+      "title": "Usar a chave própria do filebridge em “{name}”?",
+      "what1": "O filebridge cria uma chave nova neste computador e guarda-a no cofre do sistema, nunca num ficheiro.",
+      "what2": "Acrescenta uma linha ao ~/.ssh/authorized_keys de {who}, marcada “restrict”: sem terminal interativo, sem túneis, sem reencaminhamento. Mais nada muda no servidor.",
+      "what3": "A partir daí este destino entra com essa chave em vez da sua; a sua chave fica onde está.",
+      "what4": "Entra com a chave nova antes de mudar. Se algum passo falhar, tudo é desfeito.",
+      "confirm": "Instalar a chave",
+      "ok": "Feito: este destino usa agora a chave própria do filebridge.",
+      "failed": "Não instalada: nada foi alterado."
+    },
+    "remove": {
+      "button": "Remover acesso…",
+      "tip": "Apagar a chave do filebridge do servidor e do cofre, e confirmar que já não entra",
+      "title": "Remover o acesso do filebridge a “{name}”?",
+      "what1": "O filebridge apaga a sua própria linha do ~/.ssh/authorized_keys de {who}, e mais nada.",
+      "what2": "Apaga a chave do cofre do sistema.",
+      "what3": "Este destino volta a entrar com o seu ficheiro de chave ou agente SSH, se tiver.",
+      "what4": "Por fim, tenta a chave antiga mais uma vez e confirma que o servidor a recusa.",
+      "confirm": "Remover acesso",
+      "ok": "Feito: a chave do filebridge foi apagada e já não entra.",
+      "failed": "Não terminou: veja o passo que falhou."
+    },
+    "steps": {
+      "generate": "Chave",
+      "install": "Servidor",
+      "keyring": "Cofre",
+      "sign-in": "Entrada",
+      "transfer": "Envio",
+      "saved": "Destino",
+      "undone": "Desfeito",
+      "remove": "Servidor",
+      "proof": "Confirmação"
+    },
+    "offer": "Terminou os envios para “{name}”? Quando não for enviar mais para lá, remova a chave do filebridge do servidor."
   }
 }

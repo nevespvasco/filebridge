@@ -40,6 +40,7 @@ impl SshArgs {
             key_file: self.key_file.clone(),
             known_hosts_file: self.known_hosts.clone(),
             password: None,
+            key: None,
         }
     }
 }
@@ -68,9 +69,6 @@ pub enum ProfileCmd {
         #[arg(long)]
         windows: bool,
     },
-    /// Nextcloud direct mode, over SSH to the Proxmox node (Nextcloud in an LXC) or to the
-    /// machine Nextcloud runs on: detects the container, data folder, `occ` and owner, then
-    /// saves the profile. Runs read-only commands on the host.
     /// Nextcloud over its own WebDAV API with an app password (the default mode; nothing to set
     /// up on the server). The app password is asked without echo, or read from stdin.
     AddNextcloudWebdav {
@@ -86,6 +84,9 @@ pub enum ProfileCmd {
         #[arg(long, default_value = "")]
         folder: String,
     },
+    /// Nextcloud direct mode, over SSH to the Proxmox node (Nextcloud in an LXC) or to the
+    /// machine Nextcloud runs on: detects the container, data folder, `occ` and owner, then
+    /// saves the profile. Runs read-only commands on the host.
     AddNextcloud {
         #[arg(long)]
         name: String,
@@ -118,6 +119,21 @@ pub enum ProfileCmd {
     },
     Remove {
         profile: String,
+    },
+    /// Give an SSH profile filebridge's own key (ADR 0012): generated here, added with `restrict`
+    /// to the server's authorized_keys, kept in the system keyring. Undone if a step fails.
+    InstallKey {
+        profile: String,
+        /// Don't ask first.
+        #[arg(long, short)]
+        yes: bool,
+    },
+    /// Delete filebridge's key from the server and the keyring, then check it no longer signs in.
+    RemoveAccess {
+        profile: String,
+        /// Don't ask first.
+        #[arg(long, short)]
+        yes: bool,
     },
     /// Store an SFTP profile's password in the system keyring (asked without echo, or read
     /// from stdin when piped; never an argument, which shells keep in their history).
@@ -337,6 +353,42 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             }
             Ok(())
         }
+        ProfileCmd::InstallKey { profile, yes } => {
+            let app = App::open(g, Access::Exclusive, true).await?;
+            let p = app.profile(&profile).await?;
+            if !yes
+                && !crate::send_cmd::confirm(&format!(
+                    "Add a filebridge key (restricted) to the server's authorized_keys for {} and use it from now on?",
+                    p.name
+                ))?
+            {
+                return Ok(());
+            }
+            let report = app
+                .ops
+                .install_app_key(p.id.clone())
+                .await
+                .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+            print_access(&report)
+        }
+        ProfileCmd::RemoveAccess { profile, yes } => {
+            let app = App::open(g, Access::Exclusive, true).await?;
+            let p = app.profile(&profile).await?;
+            if !yes
+                && !crate::send_cmd::confirm(&format!(
+                    "Delete filebridge's key for {} from the server and the keyring?",
+                    p.name
+                ))?
+            {
+                return Ok(());
+            }
+            let report = app
+                .ops
+                .remove_access(p.id.clone())
+                .await
+                .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+            print_access(&report)
+        }
         ProfileCmd::SetPassword { profile, remove } => {
             let app = App::open(g, Access::Exclusive, false).await?;
             let p = app.profile(&profile).await?;
@@ -361,6 +413,21 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn print_access(report: &filebridge_ipc::AccessReport) -> Result<()> {
+    for step in &report.steps {
+        let mark = match step.status.as_str() {
+            "ok" => "✓",
+            "warn" => "!",
+            _ => "✗",
+        };
+        println!("  {mark} {:<9} {}", step.id, step.message);
+    }
+    if report.profile.is_none() || report.steps.iter().any(|s| s.status == "fail") {
+        bail!("not finished; see the step that failed");
+    }
+    Ok(())
 }
 
 /// A password without echo on a terminal; the first line of stdin when piped.

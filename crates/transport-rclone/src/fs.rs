@@ -13,6 +13,9 @@ use filebridge_transport_api::{Backend, Destination, Result, TransportError};
 pub struct Creds {
     /// The password, obscured by rclone (`core/obscure`): its `pass=` parameter.
     pub pass: Option<Redacted<String>>,
+    /// filebridge's own SSH key (ADR 0012), PEM on one line with `\n` escapes: rclone's
+    /// `key_pem` parameter. Never written to a file.
+    pub key_pem: Option<Redacted<String>>,
 }
 
 /// The connection-string parameters that carry secrets; their values never leave this crate.
@@ -30,10 +33,20 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
             key_file,
             known_hosts_file,
             password,
+            key,
         } => {
             let mut params = vec![("host", host.clone())];
             if password.is_some() {
                 params.push(("pass", needed(&creds.pass, "SFTP")?));
+            }
+            if key.is_some() {
+                let pem = creds.key_pem.as_ref().ok_or_else(|| {
+                    TransportError::new(
+                        filebridge_transport_api::ErrorKind::Auth,
+                        "filebridge's SSH key is not in the keyring; use its key again or Remove access",
+                    )
+                })?;
+                params.push(("key_pem", pem.0.clone()));
             }
             if let Some(port) = port {
                 params.push(("port", port.to_string()));
@@ -41,8 +54,8 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
             if let Some(user) = user {
                 params.push(("user", user.clone()));
             }
-            if let Some(key) = key_file {
-                params.push(("key_file", utf8(key)?.to_owned()));
+            if let (None, Some(file)) = (key, key_file) {
+                params.push(("key_file", utf8(file)?.to_owned()));
             }
             // Always verify host keys; rclone skips verification when this is unset.
             let known_hosts = match known_hosts_file {
@@ -220,6 +233,7 @@ mod tests {
                 key_file: Some(PathBuf::from("/k/id,ed25519")),
                 known_hosts_file: Some(PathBuf::from("/k/known_hosts")),
                 password: None,
+                key: None,
             },
             root: "/srv/files/".into(),
         };
@@ -266,6 +280,7 @@ mod tests {
                 password: Some(filebridge_transport_api::KeyringRef(
                     "filebridge/p/app-password".into(),
                 )),
+                key: None,
             },
             root: "/srv".into(),
         };
@@ -273,6 +288,7 @@ mod tests {
         assert_eq!(err.kind, filebridge_transport_api::ErrorKind::Auth);
         let creds = Creds {
             pass: Some(Redacted("obscured".into())),
+            key_pem: None,
         };
         let fs = dest_fs(&dest, &creds, "").unwrap();
         assert!(fs.contains("pass=\"obscured\""), "{fs}");

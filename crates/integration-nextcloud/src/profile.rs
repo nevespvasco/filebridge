@@ -306,6 +306,7 @@ pub(crate) mod tests {
                 user: "root".into(),
                 key_file: None,
                 known_hosts_file: None,
+                key: None,
             },
             host_sudo: false,
             runtime: Runtime::ProxmoxLxc { ctid: 105 },

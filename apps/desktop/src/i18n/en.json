@@ -1082,5 +1082,45 @@
       "webdav": "WebDAV",
       "direct": "direct (SSH)"
     }
+  },
+  "access": {
+    "uses": "Signs in with filebridge's own key",
+    "working": "Working…",
+    "install": {
+      "button": "Use filebridge's own key…",
+      "tip": "Give this destination a key of its own, kept in the system keyring, so your personal SSH key is no longer used",
+      "title": "Use filebridge's own key for “{name}”?",
+      "what1": "filebridge makes a new key on this computer and keeps it in the system keyring, never in a file.",
+      "what2": "It adds one line to {who}'s ~/.ssh/authorized_keys, marked “restrict”: no interactive terminal, no tunnels, no forwarding. Nothing else on the server changes.",
+      "what3": "From then on this destination signs in with that key instead of yours; your key stays where it is.",
+      "what4": "It signs in with the new key before switching. If any step fails, everything is undone.",
+      "confirm": "Install the key",
+      "ok": "Done: this destination now uses filebridge's own key.",
+      "failed": "Not installed: nothing was changed."
+    },
+    "remove": {
+      "button": "Remove access…",
+      "tip": "Delete filebridge's key from the server and the keyring, and check that it no longer signs in",
+      "title": "Remove filebridge's access to “{name}”?",
+      "what1": "filebridge deletes its own line from {who}'s ~/.ssh/authorized_keys, and nothing else.",
+      "what2": "It deletes the key from the system keyring.",
+      "what3": "This destination then signs in with your key file or SSH agent again, if it has one.",
+      "what4": "Last, it tries the old key once more and checks that the server refuses it.",
+      "confirm": "Remove access",
+      "ok": "Done: filebridge's key is gone and no longer signs in.",
+      "failed": "Not finished: see the step that failed."
+    },
+    "steps": {
+      "generate": "Key",
+      "install": "Server",
+      "keyring": "Keyring",
+      "sign-in": "Sign-in",
+      "transfer": "Sending",
+      "saved": "Destination",
+      "undone": "Undone",
+      "remove": "Server",
+      "proof": "Check"
+    },
+    "offer": "Finished sending to “{name}”? When you won't send there again, remove filebridge's key from the server."
   }
 }

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use filebridge_transport_api::{
-    Backend, Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome,
+    Backend, Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome, KeyringRef,
     PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, TransferJob,
     TransferResult, Transport, TransportCaps, TransportError,
 };
@@ -49,33 +49,41 @@ impl RcloneTransport {
     /// The destination's secrets for one call: read from the keyring (off the async threads)
     /// and obscured by rclone, which only takes passwords that way.
     async fn creds(&self, dest: &Destination) -> Result<Creds> {
-        let password = match &dest.backend {
-            Backend::Sftp {
-                password: Some(r), ..
-            }
-            | Backend::Webdav {
-                password: Some(r), ..
-            } => r.clone(),
-            _ => return Ok(Creds::default()),
+        let (password, key) = match &dest.backend {
+            Backend::Sftp { password, key, .. } => (password.clone(), key.clone()),
+            Backend::Webdav { password, .. } => (password.clone(), None),
+            Backend::Local => (None, None),
         };
+        let mut creds = Creds::default();
+        if let Some(r) = password {
+            let clear = self.secret(r).await?;
+            let obscured = self
+                .rc()
+                .call("core/obscure", json!({ "clear": clear.0.as_str() }))
+                .await?;
+            let obscured = obscured
+                .get("obscured")
+                .and_then(Value::as_str)
+                .ok_or_else(|| TransportError::fatal("rclone rc core/obscure: no answer"))?;
+            creds.pass = Some(Redacted(obscured.to_owned()));
+        }
+        if let Some(r) = key {
+            // rclone wants the PEM on one line, its line breaks written as `\n`.
+            let pem = self.secret(r).await?;
+            creds.key_pem = Some(Redacted(pem.0.trim_end().replace('\n', "\\n")));
+        }
+        Ok(creds)
+    }
+
+    /// One secret from the keyring, off the async threads.
+    async fn secret(&self, r: KeyringRef) -> Result<filebridge_secrets::Secret> {
         let store = self.secrets.clone().ok_or_else(|| {
-            TransportError::fatal("no keyring available to read the destination's password")
+            TransportError::fatal("no keyring available to read the destination's credentials")
         })?;
-        let clear = tokio::task::spawn_blocking(move || store.get(&password))
+        tokio::task::spawn_blocking(move || store.get(&r))
             .await
             .map_err(|e| TransportError::fatal(format!("keyring task failed: {e}")))?
-            .map_err(|e| TransportError::new(ErrorKind::Auth, e.to_string()))?;
-        let obscured = self
-            .rc()
-            .call("core/obscure", json!({ "clear": clear.0.as_str() }))
-            .await?;
-        let obscured = obscured
-            .get("obscured")
-            .and_then(Value::as_str)
-            .ok_or_else(|| TransportError::fatal("rclone rc core/obscure: no answer"))?;
-        Ok(Creds {
-            pass: Some(Redacted(obscured.to_owned())),
-        })
+            .map_err(|e| TransportError::new(ErrorKind::Auth, e.to_string()))
     }
 
     fn rc(&self) -> &RcClient {

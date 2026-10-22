@@ -90,6 +90,17 @@ export const commands = {
 	/**  Folders and files sent before, newest first, for "Recently sent from". */
 	recentSources: (limit: number) => typedError<RecentSource[], ErrorBody>(__TAURI_INVOKE("recent_sources", { limit })),
 	/**
+	 *  Gives an SSH profile filebridge's own key (ADR 0012): generated here, added with
+	 *  `restrict` to the server's authorized_keys, kept in the OS keyring, used from then
+	 *  on. Undone if any step fails.
+	 */
+	installAppKey: (profileId: string) => typedError<AccessReport_Serialize, ErrorBody>(__TAURI_INVOKE("install_app_key", { profileId })),
+	/**
+	 *  Deletes filebridge's key from the server and the keyring, puts the profile back on
+	 *  its key file or agent, and proves the old key no longer signs in.
+	 */
+	removeAccess: (profileId: string) => typedError<AccessReport_Serialize, ErrorBody>(__TAURI_INVOKE("remove_access", { profileId })),
+	/**
 	 *  Stores the profile's password in the OS keyring (`None` removes it); the profile
 	 *  keeps only its reference (ADR 0004). Never logged, never in a Details panel.
 	 */
@@ -131,11 +142,35 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 18 as const;
+export const PROTOCOL_VERSION = 19 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
 /* Types */
+/**
+ *  What installing filebridge's own SSH key, or removing access, did (ADR 0012): each step
+ *  ✓/!/✗, and the profile as saved when it went through.
+ */
+export type AccessReport = AccessReport_Serialize | AccessReport_Deserialize;
+
+/**
+ *  What installing filebridge's own SSH key, or removing access, did (ADR 0012): each step
+ *  ✓/!/✗, and the profile as saved when it went through.
+ */
+export type AccessReport_Deserialize = {
+	steps: DetectStepView[],
+	profile?: Profile_Deserialize | null,
+};
+
+/**
+ *  What installing filebridge's own SSH key, or removing access, did (ADR 0012): each step
+ *  ✓/!/✗, and the profile as saved when it went through.
+ */
+export type AccessReport_Serialize = {
+	steps: DetectStepView[],
+	profile: Profile_Serialize | null,
+};
+
 /**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
 export type ActivityItem = ActivityItem_Serialize | ActivityItem_Deserialize;
 
@@ -217,7 +252,12 @@ export type Backend_Deserialize = { kind: "local" } | { kind: "sftp"; host: stri
 /**  Private key file; when absent the SSH agent is used. */
 key_file?: string | null; 
 /**  Host keys are always verified; defaults to `~/.ssh/known_hosts`. */
-known_hosts_file?: string | null; password?: KeyringRef | null } | 
+known_hosts_file?: string | null; password?: KeyringRef | null; 
+/**
+ *  The key filebridge generated for the profile, in the OS keyring (ADR 0012); used
+ *  instead of `key_file` and the agent when set.
+ */
+key?: KeyringRef | null } | 
 /**
  *  A WebDAV server (Nextcloud's own API in WebDAV mode, docs/05). `root` is relative to
  *  `url`.
@@ -234,7 +274,12 @@ export type Backend_Serialize = { kind: "local" } | { kind: "sftp"; host: string
 /**  Private key file; when absent the SSH agent is used. */
 key_file: string | null; 
 /**  Host keys are always verified; defaults to `~/.ssh/known_hosts`. */
-known_hosts_file: string | null; password: KeyringRef | null } | 
+known_hosts_file: string | null; password: KeyringRef | null; 
+/**
+ *  The key filebridge generated for the profile, in the OS keyring (ADR 0012); used
+ *  instead of `key_file` and the agent when set.
+ */
+key: KeyringRef | null } | 
 /**
  *  A WebDAV server (Nextcloud's own API in WebDAV mode, docs/05). `root` is relative to
  *  `url`.

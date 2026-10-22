@@ -32,6 +32,7 @@ fn ssh() -> SshTarget {
         user: "root".into(),
         key_file: None,
         known_hosts_file: None,
+        key: None,
     }
 }
 

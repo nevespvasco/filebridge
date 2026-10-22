@@ -79,6 +79,13 @@ macro_rules! for_each_operation {
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
             /// Folders and files sent before, newest first, for "Recently sent from".
             RecentSources recent_sources(limit: u32) -> Vec<$crate::RecentSource>;
+            /// Gives an SSH profile filebridge's own key (ADR 0012): generated here, added with
+            /// `restrict` to the server's authorized_keys, kept in the OS keyring, used from then
+            /// on. Undone if any step fails.
+            InstallAppKey install_app_key(profile_id: String) -> $crate::AccessReport;
+            /// Deletes filebridge's key from the server and the keyring, puts the profile back on
+            /// its key file or agent, and proves the old key no longer signs in.
+            RemoveAccess remove_access(profile_id: String) -> $crate::AccessReport;
             /// Stores the profile's password in the OS keyring (`None` removes it); the profile
             /// keeps only its reference (ADR 0004). Never logged, never in a Details panel.
             SetProfilePassword set_profile_password(profile_id: String, password: Option<String>) -> $crate::Profile;

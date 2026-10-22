@@ -54,7 +54,7 @@ const profiles: Profile_Serialize[] = [
   {
     id: "p-nc",
     name: "Nextcloud casa — demo/Backup",
-    destination: { transport: "rclone", backend: { kind: "sftp", host: "pve.example.lan", port: null, user: "root", key_file: null, known_hosts_file: null, password: null }, root: "/srv/nextcloud/data/demo/files/Backup" },
+    destination: { transport: "rclone", backend: { kind: "sftp", host: "pve.example.lan", port: null, user: "root", key_file: null, known_hosts_file: null, password: null, key: null }, root: "/srv/nextcloud/data/demo/files/Backup" },
     integration: "nextcloud",
     integration_settings: { mode: "direct" },
     target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
@@ -621,7 +621,7 @@ const handlers: Handlers = {
       name: req.name,
       destination: {
         transport: "rclone",
-        backend: { kind: "sftp", host: req.host, port: req.port, user: req.user, key_file: req.key_file, known_hosts_file: null, password: null },
+        backend: { kind: "sftp", host: req.host, port: req.port, user: req.user, key_file: req.key_file, known_hosts_file: null, password: null, key: null },
         root: folder ? `${files}/${folder}` : files,
       },
       integration: "nextcloud",
@@ -656,7 +656,8 @@ const handlers: Handlers = {
   addNextcloudWebdav: async (a) => {
     const req = a.req as { name: string; server: string; user: string; app_password: string; folder: string };
     await sleep(600);
-    const host = req.server.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+    const bare = req.server.replace(/^https?:\/\//, "");
+    const host = bare.includes("/") ? bare.slice(0, bare.indexOf("/")) : bare;
     if (/^http:\/\//.test(req.server)) throw fail("invalid", "the address must start with https://: an app password must not travel unencrypted");
     const url = `https://${host}/remote.php/dav/files/${encodeURIComponent(req.user)}/`;
     const steps = [{ id: "address", status: "ok", message: `WebDAV address ${url}`, commands: [] as string[] }];
@@ -679,6 +680,47 @@ const handlers: Handlers = {
     };
     profiles.push(profile);
     return { detector: "webdav", steps, containers: [], profile };
+  },
+  installAppKey: async (a) => {
+    const p = profiles.find((x) => x.id === a.profileId);
+    if (!p) throw fail("not_found", `no profile ${a.profileId as string}`);
+    const b = p.destination.backend;
+    if (b.kind !== "sftp") throw fail("invalid", "only destinations reached over SSH (SFTP, Nextcloud direct mode) have an SSH key");
+    if (b.key) throw fail("invalid", "this destination already uses filebridge's own key");
+    await sleep(900);
+    const who = `${b.user ?? "root"}@${b.host}`;
+    b.key = `filebridge/${p.id}/ssh-key`;
+    const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
+    return {
+      steps: [
+        step("generate", "a new Ed25519 key, made on this computer"),
+        step("install", `added to ${who}'s authorized_keys, restricted`),
+        step("keyring", "the private key is in the system keyring"),
+        step("sign-in", `${who} signs in with the new key`),
+        step("transfer", "files can be sent with the new key"),
+        step("saved", "the destination now uses filebridge's own key; your own key is no longer used"),
+      ],
+      profile: p,
+    };
+  },
+  removeAccess: async (a) => {
+    const p = profiles.find((x) => x.id === a.profileId);
+    if (!p) throw fail("not_found", `no profile ${a.profileId as string}`);
+    const b = p.destination.backend;
+    if (b.kind !== "sftp" || !b.key) throw fail("invalid", "this destination doesn't use filebridge's own key");
+    await sleep(900);
+    const who = `${b.user ?? "root"}@${b.host}`;
+    b.key = null;
+    const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
+    return {
+      steps: [
+        step("remove", `removed from ${who}'s authorized_keys`),
+        step("keyring", "deleted from the system keyring"),
+        step("saved", "the destination signs in with your key file or SSH agent again"),
+        step("proof", `${who} refuses the old key: access is gone`),
+      ],
+      profile: p,
+    };
   },
   setProfilePassword: (a) => {
     const p = profiles.find((x) => x.id === a.profileId);

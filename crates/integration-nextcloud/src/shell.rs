@@ -84,6 +84,10 @@ pub struct SshTarget {
     /// Defaults to `~/.ssh/known_hosts`.
     #[serde(default)]
     pub known_hosts_file: Option<PathBuf>,
+    /// The key filebridge generated for the profile, in the OS keyring (ADR 0012). Used
+    /// instead of `key_file` and the agent when set.
+    #[serde(default)]
+    pub key: Option<filebridge_transport_api::KeyringRef>,
 }
 
 fn default_port() -> u16 {
@@ -94,6 +98,29 @@ fn default_port() -> u16 {
 #[async_trait]
 pub trait ShellConnector: Send + Sync {
     async fn connect(&self, target: &SshTarget) -> Result<Arc<dyn RemoteShell>>;
+
+    /// Signs in to `target` with `key` instead of its own credentials.
+    async fn connect_with_key(
+        &self,
+        target: &SshTarget,
+        _key: Arc<russh::keys::PrivateKey>,
+    ) -> Result<Arc<dyn RemoteShell>> {
+        Err(IntegrationError::fatal(format!(
+            "signing in to {} with a given key is not supported here",
+            target.host
+        )))
+    }
+
+    /// Whether `target` accepts `key` (`Ok(false)`: the server refused it). `Err` when the
+    /// server couldn't be reached or its host key is wrong: that says nothing about the key.
+    async fn key_accepted(
+        &self,
+        target: &SshTarget,
+        key: Arc<russh::keys::PrivateKey>,
+    ) -> Result<bool> {
+        let _ = (target, key);
+        Err(IntegrationError::fatal("key checks are not supported here"))
+    }
 }
 
 /// Runs `cmd` and turns a non-zero exit into a fatal error mentioning `what`.

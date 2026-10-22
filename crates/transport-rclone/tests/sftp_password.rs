@@ -1,4 +1,4 @@
-//! SFTP with a password kept in the keyring (ADR 0004), against a real `rclone serve sftp` on
+//! SFTP with a password, or filebridge's own key, kept in the keyring (ADR 0004, ADR 0012), against a real `rclone serve sftp` on
 //! 127.0.0.1 with a password and a host key in a `known_hosts` file: the shared contract holds,
 //! a wrong password is an `Auth` error, and no error repeats the password. Skipped when rclone
 //! or `ssh-keygen` isn't installed.
@@ -41,7 +41,7 @@ impl Drop for Server {
 
 /// `rclone serve sftp` on a free port, with a fresh host key; returns the port and the
 /// `known_hosts` line for it.
-fn serve(rclone: &Path, dir: &Path) -> Option<(Server, u16, PathBuf)> {
+fn serve(rclone: &Path, dir: &Path, auth: &[&str]) -> Option<(Server, u16, PathBuf)> {
     let key = dir.join("host_key");
     let made = Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-f"])
@@ -62,7 +62,8 @@ fn serve(rclone: &Path, dir: &Path) -> Option<(Server, u16, PathBuf)> {
         .args(["serve", "sftp", "--config", ""])
         .arg(&served)
         .args(["--addr", &format!("127.0.0.1:{port}")])
-        .args(["--user", "alice", "--pass", PASSWORD, "--key"])
+        .args(auth)
+        .arg("--key")
         .arg(&key)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -99,7 +100,11 @@ async fn sftp_with_a_password_from_the_keyring() {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
-    let Some((_server, port, known_hosts)) = serve(&binary, dir.path()) else {
+    let Some((_server, port, known_hosts)) = serve(
+        &binary,
+        dir.path(),
+        &["--user", "alice", "--pass", PASSWORD],
+    ) else {
         eprintln!("skipped: ssh-keygen not available");
         return;
     };
@@ -117,6 +122,7 @@ async fn sftp_with_a_password_from_the_keyring() {
             key_file: None,
             known_hosts_file: Some(known_hosts),
             password: Some(pass_ref.clone()),
+            key: None,
         },
         root: "dest".into(),
     };
@@ -137,4 +143,73 @@ async fn sftp_with_a_password_from_the_keyring() {
     store.delete(&pass_ref).unwrap();
     let err = transport.list(&dest, None, false).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Auth, "{err:?}");
+}
+
+#[tokio::test]
+async fn sftp_with_filebridges_own_key_from_the_keyring() {
+    let Some(binary) = rclone() else {
+        eprintln!("skipped: rclone not found");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    // A client key that only the server's authorized_keys knows; its PEM goes to the keyring
+    // and never to a file rclone reads.
+    let client = dir.path().join("client_key");
+    let made = Command::new("ssh-keygen")
+        .args([
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            "filebridge-p-key",
+            "-f",
+        ])
+        .arg(&client)
+        .status();
+    if !made.is_ok_and(|s| s.success()) {
+        eprintln!("skipped: ssh-keygen not available");
+        return;
+    }
+    let authorized = dir.path().join("authorized_keys");
+    std::fs::copy(client.with_extension("pub"), &authorized).unwrap();
+    let pem = std::fs::read_to_string(&client).unwrap();
+    std::fs::remove_file(&client).unwrap();
+    let Some((_server, port, known_hosts)) = serve(
+        &binary,
+        dir.path(),
+        &["--authorized-keys", authorized.to_str().unwrap()],
+    ) else {
+        eprintln!("skipped: could not start rclone serve sftp");
+        return;
+    };
+    let store = Arc::new(MemoryStore::default());
+    let key_ref = reference("p-key", SecretKind::SshKey);
+    store.set(&key_ref, &pem).unwrap();
+    let rcd = Arc::new(Rcd::start(&binary).await.unwrap());
+    let transport = RcloneTransport::new(rcd, Strategy::PerFile).with_secrets(store.clone());
+    let dest = Destination {
+        transport: "rclone".into(),
+        backend: Backend::Sftp {
+            host: "127.0.0.1".into(),
+            port: Some(port),
+            user: Some("alice".into()),
+            // Ignored while the profile has its own key.
+            key_file: Some(PathBuf::from("/nonexistent/id_ed25519")),
+            known_hosts_file: Some(known_hosts),
+            password: None,
+            key: Some(key_ref.clone()),
+        },
+        root: "dest".into(),
+    };
+    let scratch = dir.path().join("scratch");
+    std::fs::create_dir_all(&scratch).unwrap();
+    filebridge_transport_api::contract::check(&transport, &dest, &scratch).await;
+
+    // The key gone from the keyring: a clear Auth error naming what to do, no key material.
+    store.delete(&key_ref).unwrap();
+    let err = transport.list(&dest, None, false).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Auth, "{err:?}");
+    assert!(!err.message.contains("PRIVATE KEY"), "{}", err.message);
 }

@@ -97,6 +97,7 @@ fn profile(runtime: Runtime, run_as: RunAs, host_sudo: bool) -> NextcloudDirectP
             user: "root".into(),
             key_file: None,
             known_hosts_file: None,
+            key: None,
         },
         host_sudo,
         runtime,

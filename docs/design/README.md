@@ -120,6 +120,9 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `browse(target, dir, prefix) -> BrowseResult` | new | D11 |
 | `check_folder_name(target, name) -> FolderNameCheck` | new | D11 |
 | `create_repair_job(profile_id, dir) -> String` | new (protocol 16), Phase 2 | [04](../04-name-correction.md#repair-destination-mode) |
+| `set_profile_password(profile_id, password) -> Profile` | new (protocol 17), Phase 2 | [ADR 0004](../adr/0004-os-keyring-secrets.md) |
+| `add_nextcloud_webdav(req) -> DetectNextcloudResponse` | new (protocol 18), Phase 2 | [05](../05-integration-nextcloud.md) |
+| `install_app_key(profile_id)`, `remove_access(profile_id) -> AccessReport` | new (protocol 19), Phase 2 | [ADR 0012](../adr/0012-own-ssh-key-with-restrict.md) |
 
 ### Lifecycle rules (`crates/model/src/rules.rs`)
 

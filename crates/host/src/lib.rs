@@ -4,6 +4,7 @@
 //! This is the one place, besides those binaries, that may name concrete plugins (CLAUDE.md:
 //! only the hosts wire implementations into the `Registry`).
 
+mod access;
 mod nextcloud;
 mod operations;
 
@@ -13,7 +14,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use filebridge_core::{Engine, EngineOptions, Registry, Store};
-use filebridge_integration_nextcloud::Nextcloud;
+use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
 use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore};
 use filebridge_transport_fake::FakeTransport;
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
@@ -91,6 +92,8 @@ pub struct Host {
     nextcloud: Option<Arc<Nextcloud>>,
     /// Id of the transport registered in the engine, for profiles the wizards save.
     transport: Option<&'static str>,
+    /// SSH sign-ins (with profiles' own keys from the keyring), for the key operations.
+    ssh: Option<Arc<dyn ShellConnector>>,
     _rcd: Option<Arc<Rcd>>,
     _lock: Option<DataLock>,
 }
@@ -116,7 +119,8 @@ impl Host {
                         .with_context(|| format!("start {}", bin.display()))?,
                 );
                 registry.add_transport(Arc::new(
-                    RcloneTransport::new(rcd.clone(), Strategy::PerFile).with_secrets(secrets),
+                    RcloneTransport::new(rcd.clone(), Strategy::PerFile)
+                        .with_secrets(secrets.clone()),
                 ));
                 transport = Some(RcloneTransport::ID);
                 Some(rcd)
@@ -128,7 +132,9 @@ impl Host {
             }
             TransportChoice::None => None,
         };
-        let nextcloud = Arc::new(Nextcloud::with_ssh());
+        // SSH sign-ins read a profile's own key (ADR 0012) from the same keyring.
+        let ssh: Arc<dyn ShellConnector> = Arc::new(SshConnector::with_secrets(secrets.clone()));
+        let nextcloud = Arc::new(Nextcloud::new(ssh.clone()));
         registry.add_integration(nextcloud.clone());
         let mut host = Self::with_registry(opts, access, registry)?;
         // The rcd starts unlimited: give it the saved bandwidth limit before anything is sent.
@@ -138,6 +144,7 @@ impl Host {
             .context("read the settings")?;
         host._rcd = rcd;
         host.nextcloud = Some(nextcloud);
+        host.ssh = Some(ssh);
         host.transport = transport;
         Ok(host)
     }
@@ -160,7 +167,11 @@ impl Host {
 
     /// Every ipc operation against this host's engine and plugins, for `filebridge-service`.
     pub fn operations(&self) -> EngineOperations {
-        EngineOperations::with_nextcloud(self.engine.clone(), self.nextcloud_wizard())
+        EngineOperations::with_plugins(
+            self.engine.clone(),
+            self.nextcloud_wizard(),
+            self.ssh.clone(),
+        )
     }
 
     fn nextcloud_wizard(&self) -> Option<NextcloudWizard> {
@@ -189,6 +200,7 @@ impl Host {
             data_dir: dir,
             nextcloud: None,
             transport: None,
+            ssh: None,
             _rcd: None,
             _lock: lock,
         })
@@ -251,6 +263,15 @@ mod tests {
         let err = lock_data_dir(dir.path()).err().expect("second lock fails");
         assert!(err.to_string().contains("another filebridge engine"));
         drop(first);
-        lock_data_dir(dir.path()).expect("free again after drop");
+        // Other tests in this binary spawn processes; a child shares the lock's open file until
+        // it execs, for a moment. Free again means within a second, not at once.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while let Err(e) = lock_data_dir(dir.path()) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "free again after drop: {e}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 }

@@ -7,13 +7,14 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use filebridge_core::{CoreError, Engine, Event, StoreError};
+use filebridge_integration_nextcloud::ShellConnector;
 use filebridge_ipc::{
-    ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget, CategoryCount,
-    DecideManyResult, DecisionInput, DetectNextcloudRequest, DetectNextcloudResponse, EntryCursor,
-    EntryDetail, EntryFacets, EntryFilter, EntryPage, ErrorBody, ExportResult, FolderNameCheck,
-    Handler, IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest,
-    Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, ReclaimStatus,
-    ReportRequest, RuleCount, SendOptions, SourceInfo, StorageView,
+    AccessReport, ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget,
+    CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
+    DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
+    ErrorBody, ExportResult, FolderNameCheck, Handler, IssueView, JobFilter, JobPage, JobSummary,
+    LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest,
+    RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -23,6 +24,8 @@ use crate::nextcloud::NextcloudWizard;
 pub struct EngineOperations {
     engine: Arc<Engine>,
     nextcloud: Option<NextcloudWizard>,
+    /// For the SSH-key operations (ADR 0012).
+    ssh: Option<Arc<dyn ShellConnector>>,
 }
 
 impl EngineOperations {
@@ -31,11 +34,27 @@ impl EngineOperations {
         Self {
             engine,
             nextcloud: None,
+            ssh: None,
         }
     }
 
-    pub(crate) fn with_nextcloud(engine: Arc<Engine>, nextcloud: Option<NextcloudWizard>) -> Self {
-        Self { engine, nextcloud }
+    pub(crate) fn with_plugins(
+        engine: Arc<Engine>,
+        nextcloud: Option<NextcloudWizard>,
+        ssh: Option<Arc<dyn ShellConnector>>,
+    ) -> Self {
+        Self {
+            engine,
+            nextcloud,
+            ssh,
+        }
+    }
+
+    fn ssh(&self) -> Res<&dyn ShellConnector> {
+        self.ssh.as_deref().ok_or_else(|| ErrorBody {
+            code: "unsupported".into(),
+            message: "this service can't open SSH connections".into(),
+        })
     }
 }
 
@@ -313,6 +332,14 @@ impl Operations for EngineOperations {
             .recent_sources(limit.min(50))
             .await
             .map_err(to_error)
+    }
+
+    async fn install_app_key(&self, profile_id: String) -> Res<AccessReport> {
+        crate::access::install(&self.engine, self.ssh()?, &profile_id).await
+    }
+
+    async fn remove_access(&self, profile_id: String) -> Res<AccessReport> {
+        crate::access::remove(&self.engine, self.ssh()?, &profile_id).await
     }
 
     async fn set_profile_password(

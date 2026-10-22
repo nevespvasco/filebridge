@@ -469,7 +469,7 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
     }
 }
 
-fn confirm(question: &str) -> Result<bool> {
+pub(crate) fn confirm(question: &str) -> Result<bool> {
     if !std::io::stdin().is_terminal() {
         bail!("not a terminal; pass --yes to send without asking");
     }

@@ -57,7 +57,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 16: `create_repair_job` (`JobKind::Repair`); `TargetSpec` limits; rules `mojibake`, `length`.
 /// 17: `set_profile_password` (SFTP password in the OS keyring).
 /// 18: `add_nextcloud_webdav`; `Backend::Webdav`; Nextcloud settings `mode: "webdav"`.
-pub const PROTOCOL_VERSION: u32 = 18;
+/// 19: `install_app_key`, `remove_access`; `Backend::Sftp.key`, `SshTarget.key` (ADR 0012).
+pub const PROTOCOL_VERSION: u32 = 19;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {
@@ -96,6 +97,14 @@ pub struct ErrorBody {
 pub struct Pong {
     pub protocol: u32,
     pub version: String,
+}
+
+/// What installing filebridge's own SSH key, or removing access, did (ADR 0012): each step
+/// ✓/!/✗, and the profile as saved when it went through.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct AccessReport {
+    pub steps: Vec<DetectStepView>,
+    pub profile: Option<Profile>,
 }
 
 /// Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app

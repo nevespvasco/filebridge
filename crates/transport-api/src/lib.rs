@@ -105,6 +105,10 @@ pub enum Backend {
         /// Host keys are always verified; defaults to `~/.ssh/known_hosts`.
         known_hosts_file: Option<PathBuf>,
         password: Option<KeyringRef>,
+        /// The key filebridge generated for the profile, in the OS keyring (ADR 0012); used
+        /// instead of `key_file` and the agent when set.
+        #[serde(default)]
+        key: Option<KeyringRef>,
     },
     /// A WebDAV server (Nextcloud's own API in WebDAV mode, docs/05). `root` is relative to
     /// `url`.

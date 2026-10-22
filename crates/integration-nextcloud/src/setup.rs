@@ -110,6 +110,7 @@ impl Nextcloud {
                 key_file: nc.ssh.key_file.clone(),
                 known_hosts_file: nc.ssh.known_hosts_file.clone(),
                 password: None,
+                key: None,
             },
             root,
         };

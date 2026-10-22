@@ -1745,6 +1745,7 @@ async fn a_profile_password_lives_in_the_keyring_only() {
                     key_file: None,
                     known_hosts_file: None,
                     password: None,
+                    key: None,
                 },
                 root: "/srv/backup".into(),
             },

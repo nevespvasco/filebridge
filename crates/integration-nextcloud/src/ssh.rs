@@ -8,32 +8,127 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use filebridge_integration_api::{IntegrationError, Result};
+use filebridge_secrets::{KeyringRef, SecretStore, Zeroizing};
 use russh::ChannelMsg;
 use russh::ChannelWriteHalf;
 use russh::client;
 use russh::keys::agent::AgentIdentity;
-use russh::keys::{HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
+use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use tokio::sync::mpsc;
 
 use crate::shell::{Output, RemoteShell, ShellConnector, SshTarget};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Opens [`SshShell`]s.
-#[derive(Debug, Clone, Default)]
-pub struct SshConnector;
+/// Opens [`SshShell`]s; reads a profile's own key ([`SshTarget::key`]) from `secrets`.
+#[derive(Clone, Default)]
+pub struct SshConnector {
+    secrets: Option<Arc<dyn SecretStore>>,
+}
 
 impl SshConnector {
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Profiles' own keys come from `store`.
+    pub fn with_secrets(store: Arc<dyn SecretStore>) -> Self {
+        Self {
+            secrets: Some(store),
+        }
+    }
+
+    /// The private key a profile keeps in the keyring.
+    async fn stored_key(&self, r: &KeyringRef) -> Result<Arc<PrivateKey>> {
+        let store = self.secrets.clone().ok_or_else(|| {
+            IntegrationError::fatal("no keyring available to read filebridge's SSH key")
+        })?;
+        let r = r.clone();
+        let pem = tokio::task::spawn_blocking(move || store.get(&r))
+            .await
+            .map_err(|e| IntegrationError::fatal(format!("keyring task failed: {e}")))?
+            .map_err(|e| IntegrationError::fatal(format!("filebridge's SSH key: {e}")))?;
+        let key = russh::keys::decode_secret_key(pem.0.as_str(), None).map_err(|e| {
+            IntegrationError::fatal(format!(
+                "filebridge's SSH key in the keyring is unreadable: {e}"
+            ))
+        })?;
+        Ok(Arc::new(key))
     }
 }
 
 #[async_trait]
 impl ShellConnector for SshConnector {
     async fn connect(&self, target: &SshTarget) -> Result<Arc<dyn RemoteShell>> {
-        Ok(Arc::new(SshShell::connect(target).await?))
+        let auth = match &target.key {
+            Some(r) => Auth::Key(self.stored_key(r).await?),
+            None => Auth::Profile,
+        };
+        Ok(Arc::new(SshShell::connect_auth(target, auth).await?))
     }
+
+    async fn connect_with_key(
+        &self,
+        target: &SshTarget,
+        key: Arc<PrivateKey>,
+    ) -> Result<Arc<dyn RemoteShell>> {
+        Ok(Arc::new(
+            SshShell::connect_auth(target, Auth::Key(key)).await?,
+        ))
+    }
+
+    async fn key_accepted(&self, target: &SshTarget, key: Arc<PrivateKey>) -> Result<bool> {
+        let mut handle = SshShell::open(target).await?;
+        let rsa_hash = handle
+            .best_supported_rsa_hash()
+            .await
+            .map_err(|e| IntegrationError::retryable(format!("SSH authentication: {e}")))?
+            .flatten();
+        let res = handle
+            .authenticate_publickey(&target.user, PrivateKeyWithHashAlg::new(key, rsa_hash))
+            .await
+            .map_err(|e| IntegrationError::retryable(format!("SSH authentication: {e}")))?;
+        Ok(res.success())
+    }
+}
+
+/// How [`SshShell`] signs in.
+pub enum Auth {
+    /// The target's own: its key file, else the SSH agent.
+    Profile,
+    /// This key (filebridge's own, or one just generated).
+    Key(Arc<PrivateKey>),
+}
+
+/// A new Ed25519 key for a profile: the private key in OpenSSH format (for the keyring) and the
+/// public line (for `authorized_keys`), both with `comment`.
+pub struct NewKey {
+    pub key: Arc<PrivateKey>,
+    pub pem: Zeroizing<String>,
+    /// `ssh-ed25519 AAAA… <comment>`.
+    pub public: String,
+}
+
+/// Generates filebridge's own key for a profile (ADR 0012), from the OS's random source.
+pub fn generate_key(comment: &str) -> Result<NewKey> {
+    let mut seed = Zeroizing::new([0u8; 32]);
+    getrandom::fill(seed.as_mut())
+        .map_err(|e| IntegrationError::fatal(format!("no random source for a new key: {e}")))?;
+    let pair = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&seed);
+    let mut key = PrivateKey::from(pair);
+    key.set_comment(comment);
+    let pem = key
+        .to_openssh(russh::keys::ssh_key::LineEnding::LF)
+        .map_err(|e| IntegrationError::fatal(format!("encode the new key: {e}")))?;
+    let public = key
+        .public_key()
+        .to_openssh()
+        .map_err(|e| IntegrationError::fatal(format!("encode the new key: {e}")))?;
+    Ok(NewKey {
+        key: Arc::new(key),
+        pem,
+        public,
+    })
 }
 
 /// Why the host key was rejected, kept by the handler so the error can say it.
@@ -87,7 +182,19 @@ pub struct SshShell {
 }
 
 impl SshShell {
+    /// Signs in with the target's key file, else the SSH agent.
     pub async fn connect(target: &SshTarget) -> Result<Self> {
+        Self::connect_auth(target, Auth::Profile).await
+    }
+
+    pub async fn connect_auth(target: &SshTarget, auth: Auth) -> Result<Self> {
+        let mut handle = Self::open(target).await?;
+        authenticate(&mut handle, target, auth).await?;
+        Ok(Self { handle })
+    }
+
+    /// The connection, the server's host key checked against `known_hosts`, not signed in yet.
+    async fn open(target: &SshTarget) -> Result<client::Handle<KnownHostsCheck>> {
         let known_hosts = match &target.known_hosts_file {
             Some(p) => p.clone(),
             None => std::env::home_dir()
@@ -111,7 +218,7 @@ impl SshShell {
         let addr = (target.host.as_str(), target.port);
         let connected =
             tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, addr, handler)).await;
-        let mut handle = match connected {
+        let handle = match connected {
             Err(_) => {
                 return Err(IntegrationError::retryable(format!(
                     "SSH connection to {}:{} timed out",
@@ -130,8 +237,7 @@ impl SshShell {
             }
             Ok(Ok(h)) => h,
         };
-        authenticate(&mut handle, target).await?;
-        Ok(Self { handle })
+        Ok(handle)
     }
 }
 
@@ -161,6 +267,7 @@ fn host_key_error(
 async fn authenticate(
     handle: &mut client::Handle<KnownHostsCheck>,
     target: &SshTarget,
+    auth: Auth,
 ) -> Result<()> {
     let user = target.user.as_str();
     let net = |e: russh::Error| IntegrationError::retryable(format!("SSH authentication: {e}"));
@@ -169,6 +276,21 @@ async fn authenticate(
         .await
         .map_err(net)?
         .flatten();
+
+    if let Auth::Key(key) = auth {
+        let res = handle
+            .authenticate_publickey(user, PrivateKeyWithHashAlg::new(key, rsa_hash))
+            .await
+            .map_err(net)?;
+        return if res.success() {
+            Ok(())
+        } else {
+            Err(IntegrationError::fatal(format!(
+                "server refused filebridge's own key for user {user}; it may have been removed \
+                 there (Remove access, or by hand)"
+            )))
+        };
+    }
 
     if let Some(path) = &target.key_file {
         let key = russh::keys::load_secret_key(path, None).map_err(|e| {

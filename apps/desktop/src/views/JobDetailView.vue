@@ -3,6 +3,7 @@ import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
+import AccessDialog from "@/components/AccessDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import FilesTab from "@/components/FilesTab.vue";
@@ -32,6 +33,13 @@ const { t } = useI18n();
 
 const job = computed(() => jobs.byId[props.id]);
 const profile = computed(() => (job.value ? profiles.byId[job.value.profile_id] : undefined));
+/** docs/07: "Remove access" is offered once a migration to a destination with filebridge's own
+ *  key has finished. */
+const offerRemoveAccess = computed(() => {
+  const b = profile.value?.destination.backend;
+  return !!job.value && ["completed", "completed_with_warnings"].includes(job.value.state) && b?.kind === "sftp" && !!b.key;
+});
+const removingAccess = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
 const confirmCancel = ref(false);
@@ -193,6 +201,12 @@ const details = computed(() => [
         </div>
 
         <ReclaimPanel v-if="TERMINAL.includes(job.state)" :job-id="id" />
+        <section v-if="offerRemoveAccess" class="card access-offer">
+          <AppIcon name="lock" :size="22" class="muted" />
+          <p class="small">{{ $t("access.offer", { name: profile?.name ?? "" }) }}</p>
+          <button class="btn btn-small" @click="removingAccess = true">{{ $t("access.remove.button") }}</button>
+        </section>
+        <AccessDialog :profile="removingAccess ? profile ?? null : null" action="remove" @close="removingAccess = false" />
       </div>
 
       <div v-else-if="tab === 'files'" id="panel-files" role="tabpanel" aria-labelledby="tab-files">
@@ -223,6 +237,8 @@ const details = computed(() => [
 </template>
 
 <style scoped>
+.access-offer { display: flex; gap: 0.75rem; align-items: center; }
+.access-offer p { margin: 0; flex: 1; }
 .queue-card { margin-top: 1rem; }
 .sub { margin: 0.1rem 0 0; }
 .actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
