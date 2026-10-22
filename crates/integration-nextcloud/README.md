@@ -17,7 +17,7 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | Module | What |
 |---|---|
 | `shell` | `RemoteShell` (`run`, streaming `run_lines`), `Output`, `SshTarget`, `ShellConnector` |
-| `ssh` | `SshShell`/`SshConnector` over russh: host key checked against `known_hosts` (no "accept unknown"), auth with an unencrypted key file or the SSH agent |
+| `ssh` | `SshShell`/`SshConnector` over russh: host key checked against `known_hosts` (no "accept unknown"), auth with an unencrypted key file or the SSH agent; a command dropped before it ends closes its channel |
 | `fake` | `FakeShell` (answers keyed by exact command string, records what ran) and `FakeConnector`, public for `core`/CLI tests |
 | `quote` | POSIX `sh` quoting; every command is built with it |
 | `profile` | `NextcloudSettings` (tagged `mode: "direct"`), `NextcloudDirectProfile`, command builders (`host_cmd`, `container_cmd`, `occ_cmd`) |
@@ -35,6 +35,22 @@ found that `pct` (or, on the Nextcloud machine, a non-root user) needs it. Conta
 themselves. `occ` runs as the web user through `sudo -n -u www-data php occ …`, or
 `su -s /bin/bash www-data -c '<quoted line>'` when there is no sudo where Nextcloud runs (quoted
 twice: once for `su -c`, once for the SSH command line).
+
+**Long `occ` commands die with the connection** (`occ_cmd_stop_on_eof`, used for `files:scan`).
+sshd signals nothing when a client goes away, and PHP ignores SIGPIPE, so a scan whose service
+was killed, restarted or cancelled kept running on the server (and a resumed job's new scan then
+collided with it on Nextcloud's scan lock). The `occ` line is wrapped in a small `sh` script, run
+as the web user right next to `php` (`su … -c '<script>'`, or `sudo -n -u www-data sh -c
+'<script>'`): `php occ …` runs in the background reading `/dev/null`, and a watcher reads the
+script's stdin — the SSH channel, which filebridge never writes to — and sends `php` SIGTERM on
+EOF, i.e. when sshd closes the channel. stdin passes untouched through `sudo`, `pct exec` and
+`su` (no PTY is requested: a PTY would mix stderr into stdout, make `occ` format its output for
+a terminal, and its SIGHUP would have to be relayed by every layer). The watcher starts only when stdin is a pipe or
+socket, so the script with any other stdin just runs `occ` to the end. `occ` traps SIGTERM when
+PHP has `pcntl` and stops at the next file. On the client side, dropping a running command (job
+cancelled) closes its channel even if the connection stays open. Not covered: a connection that
+dies without the server noticing (network gone, no `ClientAliveInterval`) keeps the scan running
+until sshd's TCP keepalive gives up.
 
 **Detection, Proxmox node** (`LxcDetector`; each step a `Check` plus the commands it ran, for the
 Details panel):
@@ -81,7 +97,8 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
    recursive scan. In a folder that also holds other files, the sent files directly in it are
    scanned one by one (above 16, one `--shallow` scan of the folder instead), and the subfolders
    holding sent files are decided the same way.
-3. `occ files:scan -v [--shallow] --path=<user>/files/<folder or file>` per target. Output is streamed: `File` lines
+3. `occ files:scan -v [--shallow] --path=<user>/files/<folder or file>` per target, stopped if the
+   connection closes (above). Output is streamed: `File` lines
    drive `StepProgress.items` (every 100), 15 s of silence sends `Waiting("nextcloud.waiting-for-disk")`,
    the summary table gives the final count.
 4. `Entry "…" will not be accessible due to incompatible encoding` → a
@@ -92,7 +109,9 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
 - Encrypted key files and keys from the keyring (docs/07: app-generated key) — needs `core` to
   pass key material; for now use the agent or an unencrypted key file.
 - SSH straight into the container (no `pct`), with the scoped `sudoers` rule from docs/07: a
-  second `Runtime` variant.
+  second `Runtime` variant. A rule limited to `php occ files:scan` does not allow the
+  `sh -c '<script>'` above; there the watcher has to run outside `sudo` (which relays SIGTERM to
+  `occ`).
 - WebDAV mode (Phase 2).
 
 ## Allowed dependencies

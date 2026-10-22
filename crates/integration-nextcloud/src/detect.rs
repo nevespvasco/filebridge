@@ -657,7 +657,14 @@ async fn find_run_as(
     let out = rec
         .run_in(
             "run-as",
-            exec.occ(run_as, web_user, php, occ, &["status", "--output=json"]),
+            exec.occ(
+                run_as,
+                web_user,
+                php,
+                occ,
+                &["status", "--output=json"],
+                false,
+            ),
         )
         .await?;
     match parse::occ_status(&out.stdout) {

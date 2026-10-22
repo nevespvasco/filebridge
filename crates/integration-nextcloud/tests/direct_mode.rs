@@ -89,7 +89,7 @@ fn drain(rx: &mut UnboundedReceiver<IntegrationEvent>) -> Vec<IntegrationEvent> 
 }
 
 fn scan_cmd(path: &str) -> String {
-    profile().occ_cmd(&["files:scan", "-v", &format!("--path={path}")])
+    profile().occ_cmd_stop_on_eof(&["files:scan", "-v", &format!("--path={path}")])
 }
 
 /// The file count for `(files-relative folder, limit)` pairs.
@@ -228,8 +228,12 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
     let find = format!(
         "find {targets} -maxdepth 0 -type d -exec chmod 750 '{{}}' + -o -type f -exec chmod 640 '{{}}' +"
     );
-    let scan = "pct exec 105 -- su -s /bin/bash www-data -c \
-        'php /var/www/nextcloud/occ files:scan -v --path=alice/files/Fotos'";
+    // `occ` runs in the background; a watcher on the SSH channel (stdin) stops it on EOF.
+    let scan = "pct exec 105 -- su -s /bin/bash www-data -c 'exec 3<&0; \
+        php /var/www/nextcloud/occ files:scan -v --path=alice/files/Fotos </dev/null & p=$!; w=; \
+        if [ -p /dev/stdin ] || [ -S /dev/stdin ]; then \
+        (while read -r l; do :; done <&3; kill -TERM $p) >/dev/null 2>&1 & w=$!; fi; \
+        wait $p; s=$?; [ -z \"$w\" ] || kill $w 2>/dev/null; exit $s'";
     assert_eq!(scan, scan_cmd("alice/files/Fotos"));
     // The files folder holds other files too; `Fotos` only what was sent.
     let count_root = count_cmd(&[("", 6)]);
@@ -388,7 +392,12 @@ async fn many_sent_files_beside_existing_ones_scan_shallow() {
     let (shell, _, nc) = setup();
     let changed: Vec<String> = (0..20).map(|i| format!("Docs/{i}.pdf")).collect();
     let changed: Vec<&str> = changed.iter().map(String::as_str).collect();
-    let shallow = profile().occ_cmd(&["files:scan", "-v", "--shallow", "--path=alice/files/Docs"]);
+    let shallow = profile().occ_cmd_stop_on_eof(&[
+        "files:scan",
+        "-v",
+        "--shallow",
+        "--path=alice/files/Docs",
+    ]);
     shell
         .on(count_cmd(&[("", 21)]), Output::ok("21\n"))
         .on(count_cmd(&[("Docs", 21)]), Output::ok("21\n"))

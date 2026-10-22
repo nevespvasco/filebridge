@@ -96,7 +96,10 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
      sent files are scanned one by one (many of them: `--shallow` on the folder) and its
      subfolders are decided the same way. File counts on the server tell the two apart.
   3. Run `occ files:scan --path="<user>/files/<folder or file>"` for each, **showing progress**
-     parsed from `occ` output ("Indexing in Nextcloud: 3 / 5", files scanned).
+     parsed from `occ` output ("Indexing in Nextcloud: 3 / 5", files scanned). The scan **dies
+     with the SSH connection**: if the job is cancelled or the service is killed or restarted,
+     `occ` gets SIGTERM instead of scanning on as an orphan (which also kept a resumed job's new
+     scan from hitting "Another process is already scanning").
   4. Treat `incompatible encoding` warnings as **visible errors** with a "Repair destination"
      button, instead of leaving them lost in the terminal.
   5. On slow HDDs show "waiting for disk" instead of looking stuck.

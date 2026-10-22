@@ -9,6 +9,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_integration_api::{IntegrationError, Result};
 use russh::ChannelMsg;
+use russh::ChannelWriteHalf;
 use russh::client;
 use russh::keys::agent::AgentIdentity;
 use russh::keys::{HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
@@ -268,6 +269,34 @@ impl LineSplitter {
     }
 }
 
+/// Closes the channel when a command is dropped before it ends (the job was cancelled), so sshd
+/// closes the command's stdin and a [`crate::profile::stop_on_eof`] command stops, even if the
+/// connection itself stays open.
+struct CloseOnDrop(Option<ChannelWriteHalf<client::Msg>>);
+
+impl CloseOnDrop {
+    fn channel(&self) -> &ChannelWriteHalf<client::Msg> {
+        self.0.as_ref().expect("taken only by disarm and drop")
+    }
+
+    /// The command ended and the server closed the channel: nothing left to close.
+    fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for CloseOnDrop {
+    fn drop(&mut self) {
+        if let Some(write) = self.0.take()
+            && let Ok(rt) = tokio::runtime::Handle::try_current()
+        {
+            rt.spawn(async move {
+                let _ = write.close().await;
+            });
+        }
+    }
+}
+
 #[async_trait]
 impl RemoteShell for SshShell {
     async fn run(&self, cmd: &str) -> Result<Output> {
@@ -278,8 +307,14 @@ impl RemoteShell for SshShell {
     async fn run_lines(&self, cmd: &str, lines: mpsc::UnboundedSender<String>) -> Result<Output> {
         let lost = |e: russh::Error| IntegrationError::retryable(format!("SSH: {e}"));
         tracing::debug!(command = cmd, "ssh exec");
-        let mut channel = self.handle.channel_open_session().await.map_err(lost)?;
-        channel.exec(true, cmd).await.map_err(lost)?;
+        let (mut channel, write) = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(lost)?
+            .split();
+        let close = CloseOnDrop(Some(write));
+        close.channel().exec(true, cmd).await.map_err(lost)?;
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -299,6 +334,7 @@ impl RemoteShell for SshShell {
             }
         }
         splitter.finish(&lines);
+        close.disarm();
         Ok(Output {
             status: status.unwrap_or(-1),
             stdout: String::from_utf8_lossy(&stdout).into_owned(),

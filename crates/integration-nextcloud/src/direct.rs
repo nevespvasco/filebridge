@@ -642,7 +642,7 @@ impl Scan<'_> {
             ScanTarget::Shallow(_) => &["files:scan", "-v", "--shallow", &path_arg],
             ScanTarget::Tree(_) | ScanTarget::File(_) => &["files:scan", "-v", &path_arg],
         };
-        let cmd = self.profile.occ_cmd(args);
+        let cmd = self.profile.occ_cmd_stop_on_eof(args);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let run = shell.run_lines(&cmd, tx);
