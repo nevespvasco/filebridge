@@ -56,6 +56,8 @@ macro_rules! for_each_operation {
             /// profile; its analysis reuses the earlier name decisions.
             SendAgain send_again(job_id: String, profile_id: Option<String>) -> String;
             Job job(job_id: String) -> $crate::JobSummary;
+            /// Writes a finished job's report to `req.path` on the service's machine.
+            ExportReport export_report(job_id: String, req: $crate::ReportRequest) -> $crate::ExportResult;
             /// Milestones of every job and profile changes, newest first, before `before_id`.
             Activity activity(before_id: Option<i64>, limit: u32) -> Vec<$crate::ActivityItem>;
             /// A job's files per Category, most bytes first.

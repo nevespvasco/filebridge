@@ -27,10 +27,11 @@ pub use server::{Handler, bind, serve};
 pub use filebridge_model::{
     ActivityItem, AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecideManyResult,
     DecisionInput, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort,
-    EntryStatus, EntryView, Event, Family, HashView, IssueDecision, IssueSeverity, IssueView,
-    JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
-    PreflightView, Profile, ProfileTest, RecentSource, RefusedIssue, RuleCount, SendOptions,
-    SendWindow, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
+    EntryStatus, EntryView, Event, ExportResult, Family, HashView, IssueDecision, IssueSeverity,
+    IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry,
+    LogLevel, PreflightView, Profile, ProfileTest, RecentSource, RefusedIssue, ReportFormat,
+    ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow, SpaceView, StatusCount,
+    StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -47,7 +48,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 9: `list_jobs` takes a filter and answers a page; `set_label`, `send_again`; jobs have a label.
 /// 10: `activity`.
 /// 11: `decide_many`; `issues`, `rule_counts` and `decide_all` take a path `query`.
-pub const PROTOCOL_VERSION: u32 = 11;
+/// 12: `export_report` and the `report_progress` event.
+pub const PROTOCOL_VERSION: u32 = 12;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

@@ -20,6 +20,8 @@ export type Live = {
   verify?: Of<"verify_progress">;
   integration?: Of<"integration_progress">;
   retry?: Of<"retry_scheduled"> & { at: number };
+  /** Rows of a report written so far, while one is being exported. */
+  report?: Of<"report_progress">;
   /** When the send window opens, while the job waits for it. */
   window?: Of<"send_window_wait">;
   /** The last files that arrived, newest first (the queue's "Just finished"). */
@@ -134,6 +136,9 @@ export const useJobs = defineStore("jobs", () => {
         break;
       case "transfer_progress":
         l.transfer = ev;
+        break;
+      case "report_progress":
+        l.report = ev;
         break;
       case "entries_done":
         l.arrived = [...[...ev.entries].reverse(), ...l.arrived].slice(0, MAX_ARRIVED);

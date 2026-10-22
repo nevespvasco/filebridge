@@ -1,6 +1,6 @@
 // Window-side platform features: the file picker, drag & drop, OS notifications. They come from
 // Tauri plugins and `@tauri-apps/api`, not from the service.
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   isPermissionGranted,
   requestPermission,
@@ -29,6 +29,18 @@ export async function pickPaths(opts: PickOptions): Promise<string[]> {
   });
   if (picked == null) return [];
   return Array.isArray(picked) ? picked : [picked];
+}
+
+/** Mock mode only: where "Save as" answers from. */
+let mockSave: ((defaultName: string) => Promise<string | null>) | null = null;
+export function setMockSave(fn: (defaultName: string) => Promise<string | null>) {
+  mockSave = fn;
+}
+
+/** The OS "Save as" dialog; `null` when cancelled. */
+export async function pickSavePath(defaultName: string, extension: string, filterName: string): Promise<string | null> {
+  if (isMock) return mockSave ? mockSave(defaultName) : null;
+  return save({ defaultPath: defaultName, filters: [{ name: filterName, extensions: [extension] }] });
 }
 
 export type DropState = "over" | "drop" | "leave";

@@ -10,9 +10,9 @@ use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_ipc::{
     ActivityItem, AnalysisSummary, AppSettings, CategoryCount, DecideManyResult, DecisionInput,
     DetectNextcloudRequest, DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets,
-    EntryFilter, EntryPage, ErrorBody, Handler, IssueView, JobFilter, JobPage, JobSummary,
-    LogEntry, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, RuleCount,
-    SendOptions, StorageView,
+    EntryFilter, EntryPage, ErrorBody, ExportResult, Handler, IssueView, JobFilter, JobPage,
+    JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource,
+    ReportRequest, RuleCount, SendOptions, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -235,6 +235,13 @@ impl Operations for EngineOperations {
     async fn entry(&self, job_id: String, idx: u64) -> Res<EntryDetail> {
         self.engine
             .entry_detail(&job_id, idx)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn export_report(&self, job_id: String, req: ReportRequest) -> Res<ExportResult> {
+        self.engine
+            .export_report(&job_id, req)
             .await
             .map_err(to_error)
     }

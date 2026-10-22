@@ -11,7 +11,7 @@ import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { CATEGORY_ICON, categoryColor } from "@/lib/categories";
 import { PROBLEM_STATUSES } from "@/lib/entries";
-import { useJobs } from "@/stores/jobs";
+import { TERMINAL, useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import EntryDrawer from "./EntryDrawer.vue";
 import EntryStatusBadge from "./EntryStatusBadge.vue";
@@ -19,6 +19,7 @@ import FilterChips from "./FilterChips.vue";
 import SearchField from "./SearchField.vue";
 
 const props = defineProps<{ jobId: string }>();
+const emit = defineEmits<{ exportReport: [] }>();
 const route = useRoute();
 const router = useRouter();
 const jobs = useJobs();
@@ -193,6 +194,7 @@ function clearFilters() {
     <header class="head">
       <h2>{{ $t("files.title") }} <span v-if="total != null" class="badge badge-muted num">{{ fmt.count(total) }}</span></h2>
       <SearchField v-model="search" :placeholder="$t('files.search')" />
+      <button v-if="job && TERMINAL.includes(job.state)" class="btn btn-small" @click="emit('exportReport')"><AppIcon name="export" /> {{ $t("jobs.menu.export") }}</button>
       <label class="sort small">
         <span class="muted">{{ $t("files.sort") }}</span>
         <select v-model="sort">

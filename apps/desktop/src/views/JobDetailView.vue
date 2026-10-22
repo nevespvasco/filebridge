@@ -7,6 +7,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import FilesTab from "@/components/FilesTab.vue";
 import JobActions from "@/components/JobActions.vue";
+import ReportDialog from "@/components/ReportDialog.vue";
 import JobLog from "@/components/JobLog.vue";
 import { defaultLabel, jobLabel } from "@/lib/jobs";
 import JobProgress from "@/components/JobProgress.vue";
@@ -33,6 +34,7 @@ const busy = ref(false);
 const error = ref<string | null>(null);
 const confirmCancel = ref(false);
 const notFound = ref(false);
+const reportOpen = ref(false);
 
 /** Tabs of Transfer detail (docs/design/02, "Transfer detail: tabs"); kept in `?tab=`. */
 const TABS = ["overview", "files", "log"] as const;
@@ -123,7 +125,7 @@ const details = computed(() => [
         <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))"><AppIcon name="pause" /> {{ $t("jobDetail.pause") }}</button>
         <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
         <button v-if="canCancel" class="btn btn-danger" :title="$t('jobDetail.cancelTip')" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
-        <JobActions v-if="job" :job="job" />
+        <JobActions v-if="job" :job="job" @export-report="reportOpen = true" />
       </div>
     </header>
 
@@ -190,7 +192,7 @@ const details = computed(() => [
 
       <div v-else-if="tab === 'files'" id="panel-files" role="tabpanel" aria-labelledby="tab-files">
         <p v-if="job.state === 'draft' || job.state === 'analysing'" class="card small muted">{{ $t("files.notAnalysed") }}</p>
-        <FilesTab v-else :job-id="id" />
+        <FilesTab v-else :job-id="id" @export-report="reportOpen = true" />
       </div>
       <div v-else id="panel-log" role="tabpanel" aria-labelledby="tab-log">
         <JobLog :job-id="id" />
@@ -200,6 +202,7 @@ const details = computed(() => [
     </template>
     <p v-else class="muted">{{ $t("common.loading") }}</p>
 
+    <ReportDialog :job-id="reportOpen ? id : null" @close="reportOpen = false" />
     <ConfirmDialog
       :open="confirmCancel"
       :title="$t('jobDetail.cancelTitle')"

@@ -7,7 +7,7 @@
 // with the command's own answer type (`Handlers`), and which operation is allowed in which job
 // state comes from the engine's table (`JOB_OPERATIONS`), not from a copy.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
-import { setMockPicker, type PickOptions } from "@/lib/platform";
+import { setMockPicker, setMockSave, type PickOptions } from "@/lib/platform";
 import { emit } from "@tauri-apps/api/event";
 import {
   JOB_OPERATIONS,
@@ -725,6 +725,17 @@ const handlers: Handlers = {
     }
     return storageOf(a.id as string);
   },
+  exportReport: async (a) => {
+    const job = find(a.jobId);
+    if (!["completed", "completed_with_warnings", "cancelled", "failed"].includes(job.state)) throw fail("invalid", "only a finished transfer can do that");
+    const total = job.counts.files;
+    for (let i = 1; i <= 5; i++) {
+      await sleep(250);
+      send({ type: "report_progress", job_id: job.id, rows: Math.round((total * i) / 5), total });
+    }
+    const req = a.req as { path: string };
+    return { path: req.path, rows: total, bytes: total * 142 };
+  },
   activity: (a) => {
     const all: (LogEntry & { jobId: string | null })[] = [...logs.entries()].flatMap(([jobId, list]) => list.map((e) => ({ ...e, jobId })));
     all.push(...appLog);
@@ -862,6 +873,8 @@ function pickInPage(opts: PickOptions): Promise<string[]> {
 
 export function installMock() {
   setMockPicker(pickInPage);
+  // "Save as": a fixed folder in the demo home, under the suggested name.
+  setMockSave(async (name) => `/home/demo/Relatórios/${name}`);
   mockWindows("main");
   // Cloned, like real IPC answers: the UI must never share objects with the fake service.
   mockIPC(async (cmd, payload) => structuredClone(await handle(cmd, (payload ?? {}) as Args)), { shouldMockEvents: true });

@@ -759,7 +759,8 @@
     "copyDestination": "Copy destination path",
     "copyHash": "Copy checksum",
     "copied": "Copied",
-    "reveal": "Show source in file manager"
+    "reveal": "Show source in file manager",
+    "revealFile": "Show in file manager"
   },
   "ruleName": {
     "nfc": "Accents composed (NFC)",
@@ -816,5 +817,23 @@
     "label": "Selection",
     "count": "{n} selected | {n} selected",
     "clear": "Clear"
+  },
+  "report": {
+    "title": "Export report",
+    "format": "Format",
+    "csv": "CSV — opens in any spreadsheet",
+    "json": "JSON — for scripts",
+    "include": "Include",
+    "scope": {
+      "all": "Every file ({n})",
+      "problems": "Only problems ({n})",
+      "renamed": "Only renamed ({n})"
+    },
+    "dirs": "Folders too",
+    "savedAs": "Saved as",
+    "private": "The report names the destination and its folder, never the server's address, user or keys.",
+    "rows": "{n} rows written",
+    "export": "Export",
+    "saved": "Report saved: {rows} rows, {size}."
   }
 }

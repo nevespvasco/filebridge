@@ -62,6 +62,8 @@ export const commands = {
 	 */
 	sendAgain: (jobId: string, profileId: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("send_again", { jobId, profileId })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
+	/**  Writes a finished job's report to `req.path` on the service's machine. */
+	exportReport: (jobId: string, req: ReportRequest) => typedError<ExportResult, ErrorBody>(__TAURI_INVOKE("export_report", { jobId, req })),
 	/**  Milestones of every job and profile changes, newest first, before `before_id`. */
 	activity: (beforeId: number | null, limit: number) => typedError<ActivityItem_Serialize[], ErrorBody>(__TAURI_INVOKE("activity", { beforeId, limit })),
 	/**  A job's files per Category, most bytes first. */
@@ -98,7 +100,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 11 as const;
+export const PROTOCOL_VERSION = 12 as const;
 
 /* Types */
 /**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
@@ -500,7 +502,9 @@ in_flight: InFlightView_Deserialize[] } |
  *  Files that arrived since the last one of these (at most 20 listed; `more` counts the
  *  rest). Advisory like every progress event, and never written to the job log.
  */
-{ type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
+{ type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | 
+/**  Rows of a report written so far (advisory). */
+{ type: "report_progress"; job_id: string; rows: number; total: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
 { type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
@@ -515,13 +519,21 @@ in_flight: InFlightView_Serialize[] } |
  *  Files that arrived since the last one of these (at most 20 listed; `more` counts the
  *  rest). Advisory like every progress event, and never written to the job log.
  */
-{ type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
+{ type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | 
+/**  Rows of a report written so far (advisory). */
+{ type: "report_progress"; job_id: string; rows: number; total: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
 { type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
 waiting: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path: string | null } | { type: "job_finished"; job_id: string; state: JobState; error: string | null };
+
+export type ExportResult = {
+	path: string,
+	rows: number,
+	bytes: number,
+};
 
 /**  What the destination filesystem accepts; decides which general name rules apply. */
 export type Family = "unix" | "windows" | "macos";
@@ -815,6 +827,19 @@ export type RefusedIssue = {
 	id: number,
 	reason: string,
 };
+
+export type ReportFormat = "csv" | "json";
+
+/**  What to write in a job's report, and where (docs/design/specs/D09). */
+export type ReportRequest = {
+	format: ReportFormat,
+	scope: ReportScope,
+	include_dirs: boolean,
+	/**  A file on the service's machine (the window's, for the desktop app). */
+	path: string,
+};
+
+export type ReportScope = "all" | "problems" | "renamed";
 
 export type RuleCount = {
 	rule: string,

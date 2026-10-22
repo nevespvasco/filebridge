@@ -39,6 +39,12 @@ pub enum Event {
         entries: Vec<DoneView>,
         more: u64,
     },
+    /// Rows of a report written so far (advisory).
+    ReportProgress {
+        job_id: String,
+        rows: u64,
+        total: u64,
+    },
     EntryFailed {
         job_id: String,
         path: String,
@@ -90,6 +96,7 @@ impl Event {
             | Self::ScanProgress { job_id, .. }
             | Self::TransferProgress { job_id, .. }
             | Self::EntriesDone { job_id, .. }
+            | Self::ReportProgress { job_id, .. }
             | Self::EntryFailed { job_id, .. }
             | Self::RetryScheduled { job_id, .. }
             | Self::SendWindowWait { job_id, .. }

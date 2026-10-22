@@ -304,6 +304,32 @@ impl Store {
         .await
     }
 
+    /// For each entry in `idxs` that a rule renamed (accepted or edited issue), those rules.
+    pub async fn renaming_rules(
+        &self,
+        job_id: &str,
+        idxs: Vec<u64>,
+    ) -> Result<std::collections::HashMap<u64, Vec<String>>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut out: std::collections::HashMap<u64, Vec<String>> = Default::default();
+            let mut stmt = c.prepare_cached(
+                "SELECT entry_idx, rule FROM issues
+                 WHERE job_id = ?1 AND entry_idx = ?2 AND decision IN ('accepted', 'edited')
+                 ORDER BY id",
+            )?;
+            for idx in idxs {
+                let rows = stmt.query_map(params![job_id, idx], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                for row in rows {
+                    let (i, rule): (u64, String) = row?;
+                    out.entry(i).or_default().push(rule);
+                }
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     /// The issues of one entry, in id order.
     pub async fn issues_for_entry(&self, job_id: &str, entry_idx: u64) -> Result<Vec<IssueRow>> {
         let job_id = job_id.to_owned();

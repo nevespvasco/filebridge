@@ -63,6 +63,21 @@ impl EntryStatus {
         }
     }
 
+    /// The stable word for reports and scripts (English, whatever the UI language).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotSent => "not_sent",
+            Self::Sending => "sending",
+            Self::Sent => "sent",
+            Self::Verified => "verified",
+            Self::Different => "different",
+            Self::Missing => "missing",
+            Self::Unverifiable => "unverifiable",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+
     /// Different, missing, couldn't verify or failed: what needs a look.
     pub fn is_problem(self) -> bool {
         matches!(
@@ -165,6 +180,40 @@ pub struct EntryDetail {
     /// The name rules that looked at this entry, with their decisions.
     pub issues: Vec<IssueView>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportFormat {
+    #[default]
+    Csv,
+    Json,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportScope {
+    #[default]
+    All,
+    Problems,
+    Renamed,
+}
+
+/// What to write in a job's report, and where (docs/design/specs/D09).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ReportRequest {
+    pub format: ReportFormat,
+    pub scope: ReportScope,
+    pub include_dirs: bool,
+    /// A file on the service's machine (the window's, for the desktop app).
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ExportResult {
+    pub path: String,
+    pub rows: u64,
+    pub bytes: u64,
 }
 
 #[cfg(test)]

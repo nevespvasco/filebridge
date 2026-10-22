@@ -1,6 +1,6 @@
 # D09 — Report export
 
-- ID: D09 · Status: Proposed · Phase: 2
+- ID: D09 · Status: **Built** · Phase: 2
 - Inspired by: G8 (slothUI "Export Data"), F12 (checksums as proof)
 - Layers touched: `crates/core` (report writer), `crates/store` (streaming read), `crates/model`,
   `crates/ipc` (`export_report`), `crates/host` (CLI wiring), `apps/cli` (`report` command),
@@ -112,6 +112,16 @@ pages ([06](../../06-interface.md#principles)). The window and the service run a
 same machine ([ADR 0008](../../adr/0008-service-ipc.md)), so a path picked in the window is
 writable by the service. The service writes to `<path>.part`, then renames it into place, so a
 crash never leaves a truncated report under the final name.
+
+### As built
+
+- CSV columns: `source_path, source_path_hex, destination_path, is_dir, size, category, status,
+  renamed_by, sha256, error`, after a `#` header block with the transfer's name, id, destination
+  (profile, backend kind, root), dates, state, totals, version and its warnings.
+- The verify summary in the JSON carries the algorithm and the rounds; the per-status counts
+  are left to the entries (one pass, no extra query).
+- `Engine::write_report` writes to any `Write` (the CLI's stdout); `export_report` wraps it with
+  `<path>.part` and a rename. The desktop gets `dialog:allow-save` for the save dialog.
 
 ## States
 

@@ -12,6 +12,7 @@ import JobActions from "@/components/JobActions.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
+import ReportDialog from "@/components/ReportDialog.vue";
 import SearchField from "@/components/SearchField.vue";
 import { useFmt } from "@/composables/useFmt";
 import { defaultLabel, jobLabel } from "@/lib/jobs";
@@ -58,6 +59,7 @@ watch(
 onMounted(() => void profiles.load());
 
 const groupChips = computed(() => GROUPS.map((g) => ({ value: g, label: t(`jobs.group.${g}`) })));
+const reportFor = ref<string | null>(null);
 const filtered = computed(() => groups.value.length > 0 || !!profileId.value || !!search.value.trim());
 function clearFilters() {
   search.value = "";
@@ -163,7 +165,7 @@ function clearFilters() {
                 <RelativeTime :at="jobs.byId[id].finished_at ?? jobs.byId[id].created_at" />
               </td>
               <td class="c-menu" @click.stop @keydown.stop>
-                <JobActions :job="jobs.byId[id]" show-open />
+                <JobActions :job="jobs.byId[id]" show-open @export-report="reportFor = id" />
               </td>
             </template>
           </tr>
@@ -177,6 +179,7 @@ function clearFilters() {
       <button class="btn btn-small" :disabled="!jobs.hasMore" @click="jobs.loadPage(jobs.offset + PAGE_SIZE)">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
 
+    <ReportDialog :job-id="reportFor" @close="reportFor = null" />
   </div>
 </template>
 

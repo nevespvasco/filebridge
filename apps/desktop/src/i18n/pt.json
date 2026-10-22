@@ -759,7 +759,8 @@
     "copyDestination": "Copiar caminho do destino",
     "copyHash": "Copiar checksum",
     "copied": "Copiado",
-    "reveal": "Mostrar a origem no gestor de ficheiros"
+    "reveal": "Mostrar a origem no gestor de ficheiros",
+    "revealFile": "Mostrar no gestor de ficheiros"
   },
   "ruleName": {
     "nfc": "Acentos compostos (NFC)",
@@ -816,5 +817,23 @@
     "label": "Seleção",
     "count": "{n} selecionado | {n} selecionados",
     "clear": "Limpar"
+  },
+  "report": {
+    "title": "Exportar relatório",
+    "format": "Formato",
+    "csv": "CSV — abre em qualquer folha de cálculo",
+    "json": "JSON — para scripts",
+    "include": "Incluir",
+    "scope": {
+      "all": "Todos os ficheiros ({n})",
+      "problems": "Só os problemas ({n})",
+      "renamed": "Só os renomeados ({n})"
+    },
+    "dirs": "Também as pastas",
+    "savedAs": "Guardar como",
+    "private": "O relatório indica o destino e a pasta, nunca o endereço do servidor, o utilizador ou as chaves.",
+    "rows": "{n} linhas escritas",
+    "export": "Exportar",
+    "saved": "Relatório guardado: {rows} linhas, {size}."
   }
 }

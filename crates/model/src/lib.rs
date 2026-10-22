@@ -18,7 +18,7 @@ mod views;
 pub use category::FileCategory;
 pub use entries::{
     EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
-    EntryView, HashView, StatusCount,
+    EntryView, ExportResult, HashView, ReportFormat, ReportRequest, ReportScope, StatusCount,
 };
 pub use event::Event;
 pub use log::{ActivityItem, LogEntry, LogLevel, default_label, log_level};

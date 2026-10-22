@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core APIs, the file picker, OS notifications, and showing a file in the OS file manager (reveal only).",
+  "description": "Main window: core APIs, the file picker and the save dialog (reports), OS notifications, and showing a file in the OS file manager (reveal only).",
   "windows": [
     "main"
   ],
@@ -11,6 +11,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "dialog:allow-open",
+    "dialog:allow-save",
     "notification:default",
     "opener:allow-reveal-item-in-dir"
   ]

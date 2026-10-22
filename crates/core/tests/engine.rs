@@ -11,7 +11,8 @@ use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter, EntryStatus, Event,
     FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock, LogLevel, Profile,
-    Registry, SendOptions, SendWindow, Store, StoreError, TargetSpec,
+    Registry, ReportFormat, ReportRequest, ReportScope, SendOptions, SendWindow, Store, StoreError,
+    TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -631,6 +632,79 @@ async fn issues_are_decided_by_selection_or_by_path() {
             .is_err(),
         "an edit is for one issue"
     );
+}
+
+#[tokio::test]
+async fn a_finished_transfer_exports_its_proof() {
+    let s = setup().await;
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    let req = |format, scope, path: &std::path::Path| ReportRequest {
+        format,
+        scope,
+        include_dirs: false,
+        path: path.display().to_string(),
+    };
+    let csv_path = s.dest.parent().unwrap().join("report.csv");
+    assert!(
+        s.engine
+            .export_report(&job, req(ReportFormat::Csv, ReportScope::All, &csv_path))
+            .await
+            .is_err(),
+        "only a finished transfer"
+    );
+    s.engine
+        .set_label(&job, Some("Fotos, 2019".into()))
+        .await
+        .unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+
+    let done = s
+        .engine
+        .export_report(&job, req(ReportFormat::Csv, ReportScope::All, &csv_path))
+        .await
+        .unwrap();
+    assert_eq!(done.rows, 3);
+    let csv = std::fs::read_to_string(&csv_path).unwrap();
+    assert!(csv.starts_with('\u{feff}'), "a BOM for spreadsheets");
+    assert!(csv.contains("# transfer: Fotos, 2019"));
+    let rows: Vec<&str> = csv
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with('\u{feff}'))
+        .collect();
+    assert!(rows[0].starts_with("source_path,"));
+    assert_eq!(rows.len(), 4, "header + 3 files");
+    let summer = rows
+        .iter()
+        .find(|l| l.contains("Vera\u{303}o.jpg"))
+        .unwrap();
+    assert!(summer.contains(",verified,nfc,"), "{summer}");
+    assert!(!std::path::Path::new(&format!("{}.part", csv_path.display())).exists());
+
+    let json_path = s.dest.parent().unwrap().join("renamed.json");
+    let r = s
+        .engine
+        .export_report(
+            &job,
+            req(ReportFormat::Json, ReportScope::Renamed, &json_path),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.rows, 2, "the two NFD names");
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json_path).unwrap()).unwrap();
+    assert_eq!(v["format"], "filebridge-report/1");
+    assert_eq!(v["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(v["entries"][0]["status"], "verified");
+    assert_eq!(v["entries"][0]["sha256"].as_str().unwrap().len(), 64);
+    assert_eq!(v["destination"]["backend"], "local");
+    assert_eq!(v["destination"]["profile"], "Test");
 }
 
 #[tokio::test]
