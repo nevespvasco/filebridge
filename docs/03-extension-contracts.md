@@ -19,6 +19,9 @@ pub trait Transport: Send + Sync {
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport>; // space, permissions, connectivity
     async fn transfer(&self, job: &TransferJob, progress: ProgressSink) -> Result<TransferResult>;
     async fn hash(&self, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
+    // One answer per path, in order, each what `hash` would say; verify asks in batches. The
+    // default calls `hash` per path; adapters whose `hash` costs a folder listing share it.
+    async fn hash_many(&self, paths: &[RemotePath], algo: HashAlgo) -> Vec<Result<Digest>>;
     async fn list(&self, dir: Option<&RemotePath>, dirs_only: bool) -> Result<Vec<RemoteEntry>>; // LIST
     // Safe rename at the destination (MOVE, "Repair destination"): the shared `checked_move`
     // over `list` and the adapter's one-hop `move_unchecked` (see below).

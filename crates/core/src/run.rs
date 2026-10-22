@@ -26,6 +26,8 @@ use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOp
 use filebridge_model::{DoneView, FileCategory, InFlightView, Op};
 
 const PAGE: u32 = 2_000;
+/// The most bytes one verify batch reads ([`verify_batches`]).
+const VERIFY_BATCH_BYTES: u64 = 256 << 20;
 
 enum StageEnd<T> {
     Done(T),
@@ -513,7 +515,7 @@ impl Engine {
             let page = self.store.entries_page(&ctx.job_id, after, PAGE).await?;
             let Some(last) = page.last() else { break };
             after = Some(last.entry.idx);
-            let mut updates = Vec::new();
+            let mut todo = Vec::new();
             for e in page {
                 if e.entry.is_dir
                     || e.transfer_state != EntryState::Done
@@ -521,69 +523,87 @@ impl Engine {
                 {
                     continue;
                 }
-                if ctx.cancel.is_cancelled() {
-                    self.store
-                        .set_verify_results(&ctx.job_id, "sha256", updates)
-                        .await?;
-                    return Ok(StageEnd::Cancelled);
-                }
+                let Some(dest) = e.dest_path.clone() else {
+                    continue;
+                };
                 let root = ctx
                     .sources
                     .get(e.entry.source as usize)
                     .map(|s| source_parent(s))
                     .ok_or_else(|| CoreError::Invalid("unknown source".into()))?;
-                let local_path = root.join(bytes_path(&e.entry.raw_path));
-                let local = tokio::task::spawn_blocking(move || sha256_file(&local_path))
-                    .await
-                    .map_err(|err| CoreError::Invalid(format!("hash task failed: {err}")))??;
-                let Some(dest) = e.dest_path.clone() else {
-                    continue;
-                };
-                let remote = transport
-                    .hash(
-                        &ctx.profile.destination,
-                        &RemotePath::new(dest)?,
-                        HashAlgo::Sha256,
-                    )
-                    .await;
-                checked += 1;
-                let state = match remote {
-                    Ok(r) if r.bytes == local => EntryState::Done,
-                    Ok(_) => {
-                        mismatched.push(e.entry.idx);
-                        different += 1;
-                        EntryState::Mismatch
-                    }
-                    Err(err) if err.is_retryable() => {
-                        self.store
-                            .set_verify_results(&ctx.job_id, "sha256", updates)
-                            .await?;
-                        return Ok(StageEnd::Retry(err.message));
-                    }
-                    // Gone from the destination: send it again.
-                    Err(err) if err.kind == ErrorKind::NotFound => {
-                        mismatched.push(e.entry.idx);
-                        EntryState::Missing
-                    }
-                    // The destination couldn't produce a hash. That says nothing about the
-                    // file, so it is reported, not resent.
-                    Err(err) => {
-                        unverifiable += 1;
-                        first_error.get_or_insert(err.message);
-                        EntryState::Failed
-                    }
-                };
-                updates.push((e.entry.idx, state, Some(local)));
-                self.emit(Event::VerifyProgress {
-                    job_id: ctx.job_id.clone(),
-                    checked,
-                    total,
-                    mismatches: mismatched.len() as u64,
-                });
+                let local = root.join(bytes_path(&e.entry.raw_path));
+                todo.push((e.entry.idx, e.entry.size, local, RemotePath::new(dest)?));
             }
-            self.store
-                .set_verify_results(&ctx.job_id, "sha256", updates)
-                .await?;
+            for batch in verify_batches(todo, self.options.batch_size.max(1) as usize) {
+                if ctx.cancel.is_cancelled() {
+                    return Ok(StageEnd::Cancelled);
+                }
+                // The source is read while the destination answers: both take a while for big
+                // files, and they don't wait for each other.
+                let local_paths: Vec<_> = batch.iter().map(|(_, _, l, _)| l.clone()).collect();
+                let local = tokio::task::spawn_blocking(move || {
+                    local_paths
+                        .iter()
+                        .map(|p| sha256_file(p))
+                        .collect::<Result<Vec<_>>>()
+                });
+                let remote_paths: Vec<_> = batch.iter().map(|(_, _, _, r)| r.clone()).collect();
+                let remote = transport.hash_many(
+                    &ctx.profile.destination,
+                    &remote_paths,
+                    HashAlgo::Sha256,
+                );
+                let (local, remote) = tokio::join!(local, remote);
+                let local = local
+                    .map_err(|err| CoreError::Invalid(format!("hash task failed: {err}")))??;
+                if remote.len() != batch.len() {
+                    return Err(CoreError::Invalid(format!(
+                        "the transport answered {} hashes for {} files",
+                        remote.len(),
+                        batch.len()
+                    )));
+                }
+                let mut updates = Vec::new();
+                for (((idx, ..), local), remote) in batch.into_iter().zip(local).zip(remote) {
+                    checked += 1;
+                    let state = match remote {
+                        Ok(r) if r.bytes == local => EntryState::Done,
+                        Ok(_) => {
+                            mismatched.push(idx);
+                            different += 1;
+                            EntryState::Mismatch
+                        }
+                        Err(err) if err.is_retryable() => {
+                            self.store
+                                .set_verify_results(&ctx.job_id, "sha256", updates)
+                                .await?;
+                            return Ok(StageEnd::Retry(err.message));
+                        }
+                        // Gone from the destination: send it again.
+                        Err(err) if err.kind == ErrorKind::NotFound => {
+                            mismatched.push(idx);
+                            EntryState::Missing
+                        }
+                        // The destination couldn't produce a hash. That says nothing about the
+                        // file, so it is reported, not resent.
+                        Err(err) => {
+                            unverifiable += 1;
+                            first_error.get_or_insert(err.message);
+                            EntryState::Failed
+                        }
+                    };
+                    updates.push((idx, state, Some(local)));
+                    self.emit(Event::VerifyProgress {
+                        job_id: ctx.job_id.clone(),
+                        checked,
+                        total,
+                        mismatches: mismatched.len() as u64,
+                    });
+                }
+                self.store
+                    .set_verify_results(&ctx.job_id, "sha256", updates)
+                    .await?;
+            }
         }
         self.log(
             Some(&ctx.job_id),
@@ -732,6 +752,30 @@ impl Engine {
     }
 }
 
+/// Files to verify, `(idx, size, local path, destination path)`, in batches of at most `files`
+/// files and [`VERIFY_BATCH_BYTES`] (but at least one file): one `hash_many` call each, so a
+/// pause is heard and progress shown between them.
+fn verify_batches(
+    todo: Vec<(u64, u64, PathBuf, RemotePath)>,
+    files: usize,
+) -> Vec<Vec<(u64, u64, PathBuf, RemotePath)>> {
+    let mut batches: Vec<Vec<_>> = Vec::new();
+    let mut bytes = 0;
+    for item in todo {
+        match batches.last_mut() {
+            Some(b) if b.len() < files && bytes + item.1 <= VERIFY_BATCH_BYTES => {
+                bytes += item.1;
+                b.push(item);
+            }
+            _ => {
+                bytes = item.1;
+                batches.push(vec![item]);
+            }
+        }
+    }
+    batches
+}
+
 fn sha256_file(path: &std::path::Path) -> Result<Vec<u8>> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
@@ -836,4 +880,33 @@ impl QueueNames {
 
 fn file_name(path: &str) -> &str {
     path.rsplit_once('/').map_or(path, |(_, n)| n)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verify_batches_cap_files_and_bytes() {
+        let item = |idx: u64, size: u64| {
+            let dest = RemotePath::new(format!("f{idx}")).unwrap();
+            (idx, size, PathBuf::from(format!("f{idx}")), dest)
+        };
+        let idxs = |b: &[Vec<(u64, u64, PathBuf, RemotePath)>]| -> Vec<Vec<u64>> {
+            b.iter().map(|b| b.iter().map(|i| i.0).collect()).collect()
+        };
+        let small = (0..5).map(|i| item(i, 10)).collect();
+        assert_eq!(
+            idxs(&verify_batches(small, 2)),
+            [vec![0, 1], vec![2, 3], vec![4]]
+        );
+        let big = VERIFY_BATCH_BYTES;
+        let mixed = vec![item(0, 10), item(1, big), item(2, big - 10), item(3, 10)];
+        assert_eq!(
+            idxs(&verify_batches(mixed, 100)),
+            [vec![0], vec![1], vec![2, 3]],
+            "a file bigger than a batch goes alone"
+        );
+        assert!(verify_batches(Vec::new(), 10).is_empty());
+    }
 }

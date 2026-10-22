@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -94,6 +95,78 @@ impl RcloneTransport {
 
     fn rc(&self) -> &RcClient {
         &self.rc
+    }
+
+    /// [`Transport::hash_many`]'s calls, one folder at a time: first the server's own hashes,
+    /// then downloads for the files it didn't hash. Fills in `out` what they answer; a
+    /// `Transient` error answers for the folder's files, other errors leave them to `hash`.
+    async fn hash_by_folder(
+        &self,
+        dest: &Destination,
+        creds: &Creds,
+        paths: &[RemotePath],
+        algo: HashAlgo,
+        out: &mut [Option<Result<Digest>>],
+    ) {
+        let Ok(hash_type) = hash_type(algo) else {
+            return;
+        };
+        let mut folders: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+        for (i, path) in paths.iter().enumerate() {
+            folders
+                .entry(path.parent().unwrap_or(""))
+                .or_default()
+                .push(i);
+        }
+        // Once the server hashed none of a folder's files, it can't: the other folders go
+        // straight to downloading.
+        let mut server_hashes = true;
+        for (folder, mut left) in folders {
+            let Ok(fs) = dest_fs(dest, creds, folder) else {
+                continue;
+            };
+            for download in [false, true] {
+                if left.is_empty() || (!download && !server_hashes) {
+                    continue;
+                }
+                let rules: Vec<String> = left
+                    .iter()
+                    .map(|&i| format!("/{}", glob_escape(paths[i].file_name())))
+                    .collect();
+                let params = json!({
+                    "fs": fs, "hashType": hash_type, "download": download,
+                    "_filter": { "IncludeRule": rules },
+                    "_config": { "MaxDepth": 1, "Transfers": HASH_DOWNLOADS },
+                });
+                let found: HashMap<String, Vec<u8>> =
+                    match self.rc().call("operations/hashsum", params).await {
+                        Ok(v) => hashsum_lines(&v)
+                            .filter_map(|l| parse_hashsum_line(l, algo))
+                            .map(|(bytes, name)| (name.to_owned(), bytes))
+                            .collect(),
+                        Err(e) if e.is_retryable() => {
+                            for i in left.drain(..) {
+                                out[i] = Some(Err(e.clone()));
+                            }
+                            continue;
+                        }
+                        Err(_) => HashMap::new(),
+                    };
+                if !download && found.is_empty() {
+                    server_hashes = false;
+                }
+                left.retain(|&i| match found.get(paths[i].file_name()) {
+                    Some(bytes) => {
+                        out[i] = Some(Ok(Digest {
+                            algo,
+                            bytes: bytes.clone(),
+                        }));
+                        false
+                    }
+                    None => true,
+                });
+            }
+        }
     }
 
     /// One `operations/copyfile` per item, `concurrency` at a time. The first `Auth` error ends
@@ -536,48 +609,61 @@ impl Transport for RcloneTransport {
 
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest> {
         let creds = self.creds(dest).await?;
-        let hash_type = match algo {
-            HashAlgo::Sha256 => "sha256",
-            HashAlgo::Xxh3_128 => {
-                return Err(TransportError::unsupported(
-                    "xxh3-128 is not supported by rclone",
-                ));
-            }
-        };
+        let hash_type = hash_type(algo)?;
         let fs = dest_fs(dest, &creds, path.as_str())?;
         let params =
             |download: bool| json!({ "fs": fs, "hashType": hash_type, "download": download });
-        let first_line = |v: &Value| {
-            v.get("hashsum")
-                .and_then(Value::as_array)
-                .and_then(|a| a.first())
-                .and_then(Value::as_str)
-                .map(str::to_owned)
+        let first = |v: &Value| {
+            hashsum_lines(v)
+                .next()
+                .and_then(|l| parse_hashsum_line(l, algo))
+                .map(|(bytes, _)| bytes)
         };
         // Servers that can't hash (no `sha256sum`, or `rclone serve sftp`) fall back to rclone
         // downloading the file and hashing it locally: slower, but still a real check. rclone
         // reports "hash unsupported" as an empty list (only logged), or as an error.
-        let line = match self.rc().call("operations/hashsum", params(false)).await {
-            Ok(v) if first_line(&v).is_some() => first_line(&v),
-            Ok(_) => None,
+        let bytes = match self.rc().call("operations/hashsum", params(false)).await {
+            Ok(v) => first(&v),
             Err(e) if e.kind == ErrorKind::Unsupported => None,
             Err(e) => return Err(e),
         };
-        let line = match line {
-            Some(l) => l,
+        let bytes = match bytes {
+            Some(b) => b,
             None => {
                 let v = self.rc().call("operations/hashsum", params(true)).await?;
-                first_line(&v)
+                first(&v)
                     .ok_or_else(|| TransportError::fatal(format!("no hash returned for {path}")))?
             }
         };
-        let hex = line.split_whitespace().next().unwrap_or_default();
-        let bytes = (0..hex.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("zz"), 16))
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|_| TransportError::fatal(format!("bad hash {hex:?} for {path}")))?;
         Ok(Digest { algo, bytes })
+    }
+
+    /// One `operations/hashsum` per folder, limited to the asked names by include rules: one
+    /// listing for the folder instead of one per file (rclone lists a file's whole folder to
+    /// find it), and the downloads of servers that can't hash run `HASH_DOWNLOADS` at a time.
+    /// What the folder's call doesn't answer (a file that isn't there, an error) is asked of
+    /// [`Transport::hash`], one by one, so each answer is the one `hash` gives.
+    async fn hash_many(
+        &self,
+        dest: &Destination,
+        paths: &[RemotePath],
+        algo: HashAlgo,
+    ) -> Vec<Result<Digest>> {
+        let mut out: Vec<Option<Result<Digest>>> = vec![None; paths.len()];
+        if hash_type(algo).is_ok() && !paths.is_empty() {
+            match self.creds(dest).await {
+                Ok(creds) => self.hash_by_folder(dest, &creds, paths, algo, &mut out).await,
+                Err(e) => out.fill(Some(Err(e))),
+            }
+        }
+        let mut answers = Vec::with_capacity(paths.len());
+        for (path, answer) in paths.iter().zip(out) {
+            answers.push(match answer {
+                Some(a) => a,
+                None => self.hash(dest, path, algo).await,
+            });
+        }
+        answers
     }
 
     async fn set_bandwidth_limit(&self, bytes_per_sec: Option<u64>) -> Result<()> {
@@ -592,6 +678,59 @@ impl Transport for RcloneTransport {
     }
 }
 
+/// Files `Transport::hash_many` downloads at once from a server that can't hash them itself.
+const HASH_DOWNLOADS: usize = 8;
+
+/// rclone's name for a hash kind.
+fn hash_type(algo: HashAlgo) -> Result<&'static str> {
+    match algo {
+        HashAlgo::Sha256 => Ok("sha256"),
+        HashAlgo::Xxh3_128 => Err(TransportError::unsupported(
+            "xxh3-128 is not supported by rclone",
+        )),
+    }
+}
+
+/// The lines of an `operations/hashsum` answer.
+fn hashsum_lines(v: &Value) -> impl Iterator<Item = &str> {
+    v.get("hashsum")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+}
+
+/// A `hashsum` line, `<hex>  <path>`, as the hash and the path. `None` for anything else (an
+/// empty line, `UNSUPPORTED`, `ERROR`, a hash of the wrong length).
+fn parse_hashsum_line(line: &str, algo: HashAlgo) -> Option<(Vec<u8>, &str)> {
+    let width = match algo {
+        HashAlgo::Sha256 => 64,
+        HashAlgo::Xxh3_128 => 32,
+    };
+    let (hex, path) = line.split_once("  ")?;
+    if hex.len() != width {
+        return None;
+    }
+    let bytes = (0..width)
+        .step_by(2)
+        .map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok())
+        .collect::<Option<Vec<_>>>()?;
+    Some((bytes, path))
+}
+
+/// `name` as an rclone filter glob that matches only itself.
+fn glob_escape(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        // rclone takes `\` before ASCII only.
+        if matches!(c, '\\' | '*' | '?' | '[' | ']' | '{' | '}') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// rclone's `--bwlimit` form: a plain number is KiB/s, so bytes need the `B` suffix.
 fn bwlimit_rate(bytes_per_sec: Option<u64>) -> String {
     match bytes_per_sec {
@@ -602,11 +741,29 @@ fn bwlimit_rate(bytes_per_sec: Option<u64>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::bwlimit_rate;
+    use super::{bwlimit_rate, glob_escape, parse_hashsum_line};
+    use filebridge_transport_api::HashAlgo;
 
     #[test]
     fn rate_strings() {
         assert_eq!(bwlimit_rate(Some(2_500_000)), "2500000B");
         assert_eq!(bwlimit_rate(None), "off");
+    }
+
+    #[test]
+    fn hashsum_lines_and_globs() {
+        let hex = "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb";
+        let line = format!("{hex}  a  b.txt");
+        let (bytes, name) = parse_hashsum_line(&line, HashAlgo::Sha256).unwrap();
+        assert_eq!((bytes.len(), bytes[0], name), (32, 0xca, "a  b.txt"));
+        for bad in ["", "UNSUPPORTED  a.txt", "ERROR  a.txt", "ca97  a.txt"] {
+            assert!(parse_hashsum_line(bad, HashAlgo::Sha256).is_none(), "{bad}");
+        }
+        let not_hex = format!("{}zz  a.txt", &hex[..62]);
+        assert!(parse_hashsum_line(&not_hex, HashAlgo::Sha256).is_none());
+        assert_eq!(
+            glob_escape("Ver\u{e3}o [1]{a,b}*?\\.txt"),
+            "Ver\u{e3}o \\[1\\]\\{a,b\\}\\*\\?\\\\.txt"
+        );
     }
 }

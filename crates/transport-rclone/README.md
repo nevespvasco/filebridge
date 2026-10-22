@@ -14,7 +14,15 @@
 - `transfer`: copy each item to its **mapped destination name** (`operations/copyfile` per file —
   speed validated in Phase 0 — or plan B: `sync/copy` to temp + batch rename + `operations/movefile`).
 - Poll `core/stats` / `job/status` and forward to `ProgressSink`.
-- `hash`: `operations/hashsum` (or SFTP remote `sha256sum`).
+- `hash`: `operations/hashsum` (or SFTP remote `sha256sum`); when the server can't hash
+  (Nextcloud has no SHA-256), rclone downloads the file and hashes it.
+- `hash_many` (verify): one `operations/hashsum` per folder, limited to the asked names by
+  `_filter` include rules (escaped globs) and `MaxDepth 1`. rclone lists a file's whole folder to
+  find it, so asking per file cost one folder listing (twice: hash, then download) per file —
+  about one file per second against Nextcloud. Server hashes first, then downloads, 8 at a time
+  (`Transfers`); a folder whose server hashed nothing means the next folders skip that try.
+  Whatever the folder call doesn't answer (a missing file, a non-transient error) is asked of
+  `hash`, so each answer is the one `hash` gives.
 - Partial files hidden until complete.
 - `set_bandwidth_limit`: `core/bwlimit` with `"<n>B"` or `"off"`. It is global to the rcd, so it is
   one app-wide limit that applies to running transfers too (ADR 0010).

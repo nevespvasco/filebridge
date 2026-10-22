@@ -405,6 +405,22 @@ pub trait Transport: Send + Sync {
     /// The file's hash at the destination. `NotFound` if it isn't there; `Unsupported` if the
     /// destination can't produce this kind of hash.
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
+    /// [`Transport::hash`] for many files at once: one answer per path, in order, each what
+    /// `hash` would say about that path. Adapters for which each `hash` costs a folder listing
+    /// or a round trip override it to share them (verifying a job asks for every file it sent);
+    /// the default asks `hash` for each path in turn.
+    async fn hash_many(
+        &self,
+        dest: &Destination,
+        paths: &[RemotePath],
+        algo: HashAlgo,
+    ) -> Vec<Result<Digest>> {
+        let mut out = Vec::with_capacity(paths.len());
+        for path in paths {
+            out.push(self.hash(dest, path, algo).await);
+        }
+        out
+    }
     /// The entries directly inside `dir` (the destination root when `None`); only folders with
     /// `dirs_only`. `NotFound` if `dir` isn't there. Adapters that implement it advertise
     /// [`TransportCaps::LIST`]; the default answers `Unsupported`.

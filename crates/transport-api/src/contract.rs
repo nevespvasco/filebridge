@@ -50,7 +50,7 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
     });
     let job = TransferJob {
         id: "contract".into(),
-        source_root: src,
+        source_root: src.clone(),
         items,
         options: TransferOptions::default(),
     };
@@ -147,6 +147,62 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
             .await
             .unwrap_err();
         assert_eq!(err.kind, ErrorKind::NotFound, "{err:?}");
+
+        // Many at once: the same answers, in order, across folders (the root among them), for
+        // names with characters that are special to globs, and for a path that isn't there.
+        let extra: [(&str, &[u8], &str); 2] = [
+            ("x.txt", b"brackets", "Fotos/x [1] {a,b} #.txt"),
+            ("y.txt", b"stars", "deep/er/y*?\\.txt"),
+        ];
+        let extra = if cfg!(windows) { &extra[..1] } else { &extra[..] };
+        let job = TransferJob {
+            id: "contract-hash-many".into(),
+            source_root: src.clone(),
+            items: extra
+                .iter()
+                .map(|(name, data, to)| TransferItem {
+                    source: name.into(),
+                    dest: RemotePath::new(*to).unwrap(),
+                    size: data.len() as u64,
+                    expected_hash: None,
+                })
+                .collect(),
+            options: TransferOptions::default(),
+        };
+        for (name, data, _) in extra {
+            tokio::fs::write(src.join(name), data).await.unwrap();
+        }
+        let sent = transport
+            .transfer(dest, &job, ProgressSink::noop())
+            .await
+            .unwrap();
+        assert_eq!(sent.failed(), 0, "{:?}", sent.items);
+        let mut want: Vec<(&str, Option<&[u8]>)> = Vec::new();
+        for (i, (_, data, to)) in files.iter().chain(extra).enumerate() {
+            want.push((*to, Some(*data)));
+            if i == 1 {
+                want.push(("not/there.txt", None));
+                want.push(("deep/er/missing.bin", None));
+            }
+        }
+        let paths: Vec<_> = want.iter().map(|(p, _)| RemotePath::new(*p).unwrap()).collect();
+        let many = transport.hash_many(dest, &paths, HashAlgo::Sha256).await;
+        assert_eq!(many.len(), paths.len(), "one answer per path");
+        for ((path, data), got) in want.iter().zip(&many) {
+            match (data, got) {
+                (Some(data), Ok(d)) => {
+                    assert_eq!(d.bytes, Sha256::digest(data).to_vec(), "{path}")
+                }
+                (None, Err(e)) => assert_eq!(e.kind, ErrorKind::NotFound, "{path}: {e:?}"),
+                (_, got) => panic!("{path}: {got:?}"),
+            }
+        }
+        assert!(
+            transport
+                .hash_many(dest, &[], HashAlgo::Sha256)
+                .await
+                .is_empty()
+        );
     }
     if !caps.contains(TransportCaps::HASH_XXH) {
         let path = RemotePath::new("a.txt").unwrap();
