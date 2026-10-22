@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { Profile_Serialize } from "@/bindings";
@@ -14,22 +14,18 @@ import PreflightList from "@/components/PreflightList.vue";
 import ProfileForm from "@/components/ProfileForm.vue";
 import { api, errorMessage } from "@/lib/api";
 import { request } from "@/lib/requests";
-import { profileKind, profileWhere, useProfiles } from "@/stores/profiles";
+import { profileKind, profileWhere, sshKeyAction, useProfiles } from "@/stores/profiles";
 
 const profiles = useProfiles();
 const { t } = useI18n();
 const creating = ref(false);
 /** The destination being browsed (look only). */
 const browsing = ref<Profile_Serialize | null>(null);
-const deleting = ref<Profile_Serialize | null>(null);
+const deleting = shallowRef<Profile_Serialize | null>(null);
 /** filebridge's own SSH key (ADR 0012): the destination it is installed on, or removed from. */
-const access = ref<{ profile: Profile_Serialize; action: "install" | "remove" } | null>(null);
+const access = shallowRef<{ profile: Profile_Serialize; action: "install" | "remove" } | null>(null);
 /** SSH destinations can get filebridge's own key; those that have it can have it removed. */
-function sshKey(p: Profile_Serialize): "install" | "remove" | null {
-  const b = p.destination.backend;
-  if (b.kind !== "sftp") return null;
-  return b.key ? "remove" : "install";
-}
+const sshKey = sshKeyAction;
 
 /** The destination whose folder to repair is being picked (docs/04, "Repair destination"). */
 const repairing = ref<Profile_Serialize | null>(null);
@@ -79,6 +75,13 @@ const deleteConsequences = computed(() =>
     ? [t("destinations.deleteForgets", { name: deleting.value.name }), t("destinations.deleteNoFiles"), t("destinations.deleteJobs")]
     : [],
 );
+/** Deleting forgets filebridge's own key here, but its line stays on the server (ADR 0012). */
+const deletingWithKey = computed(() => !!deleting.value && sshKey(deleting.value) === "remove");
+function removeAccessFirst() {
+  const p = deleting.value;
+  deleting.value = null;
+  if (p) access.value = { profile: p, action: "remove" };
+}
 
 function nextcloudMode(p: Profile_Serialize): string | null {
   const s = p.integration_settings;
@@ -178,7 +181,12 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       :busy="busy"
       @confirm="doDelete"
       @cancel="deleting = null"
-    />
+    >
+      <div v-if="deletingWithKey" class="key-warning" role="note">
+        <p class="small error"><AppIcon name="key" :size="16" /> {{ $t("destinations.deleteKey") }}</p>
+        <button class="btn btn-small" :disabled="busy" @click="removeAccessFirst"><AppIcon name="lock" /> {{ $t("destinations.deleteRemoveFirst") }}</button>
+      </div>
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -195,5 +203,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 .who strong { overflow-wrap: anywhere; }
 .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .space { margin: 0.5rem 0; }
+.key-warning { margin: 0.5rem 0; }
+.key-warning p { margin: 0 0 0.4rem; }
 .test { margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
 </style>

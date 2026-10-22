@@ -5,7 +5,8 @@ import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AccessReport, Profile_Serialize } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
-import { useProfiles } from "@/stores/profiles";
+import { bcp47 } from "@/i18n";
+import { sshAccounts, useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
 import StatusIcon from "./StatusIcon.vue";
 
@@ -15,7 +16,7 @@ const props = defineProps<{
   action: "install" | "remove";
 }>();
 const emit = defineEmits<{ close: [] }>();
-const { t, te } = useI18n();
+const { t, te, locale } = useI18n();
 const profiles = useProfiles();
 
 const running = ref(false);
@@ -35,16 +36,32 @@ watch(
   },
 );
 
-/** `alice@nas.example.lan`, the account whose authorized_keys changes. */
+/** Every account whose authorized_keys changes, e.g. `alice@nas.example.lan and root@pve.example.lan`. */
 const who = computed(() => {
+  const accounts = props.profile ? sshAccounts(props.profile) : [];
+  return new Intl.ListFormat(bcp47(locale.value), { type: "conjunction" }).format(accounts);
+});
+/** After Remove access the destination signs in with its password, or its key file / agent. */
+const byPassword = computed(() => {
   const b = props.profile?.destination.backend;
-  return b?.kind === "sftp" ? `${b.user ?? "root"}@${b.host}` : "";
+  return b?.kind === "sftp" && !!b.password;
 });
 const consequences = computed(() =>
-  [1, 2, 3, 4].map((n) => t(`access.${props.action}.what${n}`, { who: who.value })),
+  [1, 2, 3, 4].map((n) => {
+    const key = n === 3 && props.action === "remove" && byPassword.value ? "what3Password" : `what${n}`;
+    return t(`access.${props.action}.${key}`, { who: who.value });
+  }),
 );
 const done = computed(() => !!report.value);
-const ok = computed(() => !!report.value?.profile && report.value.steps.every((s) => s.status !== "fail"));
+/** "ok" only when every step is ✓: a "!" (e.g. the server couldn't be reached for the last
+ *  check) leaves it done but unconfirmed. */
+const outcome = computed<"ok" | "unconfirmed" | "failed" | "failedUndo">(() => {
+  const r = report.value;
+  if (!r) return "failed";
+  if (r.steps.some((s) => s.id === "undone" && s.status === "fail")) return "failedUndo";
+  if (!r.profile || r.steps.some((s) => s.status === "fail")) return "failed";
+  return r.steps.every((s) => s.status === "ok") ? "ok" : "unconfirmed";
+});
 
 function stepLabel(id: string) {
   const key = `access.steps.${id}`;
@@ -87,7 +104,9 @@ async function run() {
               <span><strong>{{ stepLabel(s.id) }}</strong> <span class="muted">{{ s.message }}</span></span>
             </li>
           </ol>
-          <p class="small" :class="ok ? 'ok-text' : 'error'">{{ ok ? $t(`access.${action}.ok`) : $t(`access.${action}.failed`) }}</p>
+          <p class="small" :class="outcome === 'ok' ? 'ok-text' : 'error'">
+            {{ outcome === "failedUndo" ? $t("access.install.failedUndo") : $t(`access.${action}.${outcome}`) }}
+          </p>
         </div>
 
         <div class="actions">
