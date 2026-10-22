@@ -12,9 +12,10 @@ use filebridge_ipc::{
     AccessReport, ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget,
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    ErrorBody, ExportResult, FolderNameCheck, Handler, IssueView, JobFilter, JobPage, JobSummary,
-    LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest,
-    RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo, StorageView,
+    ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, IssueView, JobFilter, JobPage,
+    JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile,
+    ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo,
+    StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -341,6 +342,27 @@ impl Operations for EngineOperations {
 
     async fn remove_access(&self, profile_id: String) -> Res<AccessReport> {
         crate::access::remove(&self.engine, self.ssh()?, &profile_id).await
+    }
+
+    async fn scan_host_key(
+        &self,
+        host: String,
+        port: u16,
+        known_hosts_file: Option<String>,
+    ) -> Res<HostKeyView> {
+        self.ssh()?;
+        crate::host_keys::scan(host, port, known_hosts_file).await
+    }
+
+    async fn trust_host_key(
+        &self,
+        host: String,
+        port: u16,
+        known_hosts_file: Option<String>,
+        fingerprint: String,
+    ) -> Res<HostKeyView> {
+        self.ssh()?;
+        crate::host_keys::trust(host, port, known_hosts_file, fingerprint).await
     }
 
     async fn set_profile_password(

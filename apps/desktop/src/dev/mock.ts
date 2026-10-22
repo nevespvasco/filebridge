@@ -23,6 +23,7 @@ import {
   type ErrorBody,
   type Event_Serialize,
   type FileCategory,
+  type HostKeyView_Serialize,
   type InFlightView_Serialize,
   type IssueDecision,
   type IssueView_Serialize,
@@ -554,6 +555,20 @@ function inspectAll(paths: string[]): SourceInfo_Serialize[] {
   return out;
 }
 
+/** SSH servers the mock's known_hosts holds. A host named like "new" starts unknown, one named
+ *  like "changed" has another key on record; every other host is already known. */
+const trustedHosts = new Set<string>();
+function hostKeyOf(a: Args): HostKeyView_Serialize {
+  const host = a.host as string;
+  const port = a.port as number;
+  const known_hosts_file = (a.knownHostsFile as string | null) ?? "/home/demo/.ssh/known_hosts";
+  const id = `${host}:${port}`;
+  const key = { key_type: "ssh-ed25519", fingerprint: "SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8" };
+  if (/changed/i.test(host)) return { host, port, known_hosts_file, status: "changed", ...key, line: 3 };
+  const known = !/new/i.test(host) || trustedHosts.has(id);
+  return { host, port, known_hosts_file, status: known ? "known" : "unknown", ...key, line: null };
+}
+
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
   setTrayLabels: () => null,
@@ -738,6 +753,18 @@ const handlers: Handlers = {
       ],
       profile: p,
     };
+  },
+  scanHostKey: async (a) => {
+    await sleep(400);
+    return hostKeyOf(a);
+  },
+  trustHostKey: async (a) => {
+    await sleep(400);
+    const found = hostKeyOf(a);
+    if (found.status === "changed") throw fail("host_key_changed", `host key of ${found.host} does not match ${found.known_hosts_file} line 3`);
+    if (found.fingerprint !== a.fingerprint) throw fail("host_key_changed", `${found.host} now presents the key ${found.fingerprint}, not the one you checked`);
+    trustedHosts.add(`${found.host}:${found.port}`);
+    return { ...found, status: "known" };
   },
   setProfilePassword: (a) => {
     const p = profiles.find((x) => x.id === a.profileId);

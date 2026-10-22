@@ -13,7 +13,9 @@ Messages between clients (the Tauri window) and `filebridge-service`.
   concurrently.
 - Error `code`s are stable: `pending_decisions`, `invalid_transition`, `not_found`, `invalid`,
   `unsupported`, `internal`, `keyring`, `busy` (a running transfer uses that profile: e.g.
-  `install_app_key` and `remove_access` wait for it), `disconnected` (client side).
+  `install_app_key` and `remove_access` wait for it), `ssh` (an SSH server couldn't be reached),
+  `host_key_changed` (`trust_host_key` refused: another key is on record for the host, or the
+  server presents another key than the one confirmed), `disconnected` (client side).
 - `PROTOCOL_VERSION` is 3 (2: `set_options` and `decide_all`; 3: requests generated from the
   catalogue, an issue's `decision` and `severity` as enums); `ping` returns it and clients refuse
   a service that speaks another one.

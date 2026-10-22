@@ -9,6 +9,7 @@ import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import { useI18n } from "vue-i18n";
 import HelpTip from "./HelpTip.vue";
+import HostKeyPrompt from "./HostKeyPrompt.vue";
 import NextcloudDetect from "./NextcloudDetect.vue";
 import NextcloudWebdav from "./NextcloudWebdav.vue";
 import SegmentedControl from "./SegmentedControl.vue";
@@ -91,9 +92,28 @@ function build(root: string): Profile_Deserialize {
   };
 }
 
+// An SFTP server's host key must be in known_hosts before anything connects to it: an unknown
+// one is shown to the user to trust (ADR 0015).
+const hostKey = ref<InstanceType<typeof HostKeyPrompt> | null>(null);
+function hostKnown(): Promise<boolean> {
+  return hostKey.value!.ensureKnown(form.host.trim(), form.port, form.known_hosts_file.trim() || null);
+}
+
 // Browse the server for the root, before the profile exists (docs/design/specs/D11).
 const browsing = ref(false);
 const canBrowse = computed(() => kind.value === "sftp" && !!form.host.trim());
+const checkingHost = ref(false);
+async function openBrowser() {
+  checkingHost.value = true;
+  error.value = null;
+  try {
+    if (await hostKnown()) browsing.value = true;
+  } catch (e) {
+    error.value = t("hostKey.unreachable", { error: errorMessage(e) });
+  } finally {
+    checkingHost.value = false;
+  }
+}
 function chooseRoot(path: string) {
   form.root = `/${path}`;
   browsing.value = false;
@@ -103,6 +123,16 @@ async function save() {
   saving.value = true;
   error.value = null;
   try {
+    if (kind.value === "sftp" && !savedId.value) {
+      let known: boolean;
+      try {
+        known = await hostKnown();
+      } catch (e) {
+        error.value = t("hostKey.unreachable", { error: errorMessage(e) });
+        return;
+      }
+      if (!known) return;
+    }
     let saved = await profiles.save(build(form.root.trim()));
     if (kind.value === "sftp" && password.value) {
       savedId.value = saved.id;
@@ -190,7 +220,7 @@ async function save() {
           <span class="with-button">
             <input v-model="form.root" required spellcheck="false" :placeholder="kind === 'local' ? '/media/disco/Backup' : '/srv/backup'" />
             <button v-if="kind === 'local'" type="button" class="btn btn-small" :title="$t('profile.hint.browse')" @click="pick('root')"><AppIcon name="folder" /> {{ $t("common.browse") }}</button>
-            <button v-else-if="kind === 'sftp'" type="button" class="btn btn-small" :disabled="!canBrowse" :title="canBrowse ? $t('profile.hint.browseServer') : $t('profile.hint.browseNeedsHost')" @click="browsing = true"><AppIcon name="folder" /> {{ $t("common.browse") }}</button>
+            <button v-else-if="kind === 'sftp'" type="button" class="btn btn-small" :disabled="!canBrowse || checkingHost" :title="canBrowse ? $t('profile.hint.browseServer') : $t('profile.hint.browseNeedsHost')" @click="openBrowser"><AppIcon name="folder" /> {{ $t("common.browse") }}</button>
           </span>
           <span v-if="rootNotAbsolute" class="hint error">{{ $t("profile.slashRule") }}</span>
           <span v-else class="hint">{{ kind === "local" ? $t("profile.hint.folder") : $t("profile.hint.remoteFolder") }}</span>
@@ -257,6 +287,7 @@ async function save() {
       @choose="chooseRoot"
       @close="browsing = false"
     />
+    <HostKeyPrompt ref="hostKey" />
   </div>
 </template>
 

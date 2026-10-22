@@ -585,7 +585,7 @@
     "password": "Password",
     "passwordHint": "optional: empty = key or SSH agent",
     "passwordNotSaved": "The destination was saved, but its password didn't reach the system keyring: {error}. Try again: the same destination is updated, not a second one made.",
-    "firstConnect": "Before using a server here for the first time, connect to it once in a terminal (ssh user{'@'}server) and accept it, so this computer knows it."
+    "firstConnect": "The first time filebridge connects to a server, it shows the server's key fingerprint and asks you to confirm it."
   },
   "nextcloud": {
     "intro": "filebridge connects over SSH either to the Proxmox host (and finds the Nextcloud container) or straight to the machine Nextcloud runs on, and checks each step. Nothing is changed during detection.",
@@ -1131,5 +1131,22 @@
       "proof": "Check"
     },
     "offer": "Finished sending to “{name}”? When you won't send there again, remove filebridge's key from the server."
+  },
+  "hostKey": {
+    "title": "Trust this server?",
+    "intro": "filebridge has not connected to {host} before. Check that this is really your server before going on: someone on the network could be pretending to be it.",
+    "server": "Server",
+    "type": "Key type",
+    "fingerprint": "Fingerprint",
+    "howToCheck": "Compare it with the fingerprint the server shows: ask whoever runs it, or run this on the server. Trust it only if they are the same.",
+    "savedIn": "It will be added to {file}, and this server will not be asked about again.",
+    "trust": "Trust and continue",
+    "trusting": "Adding…",
+    "changedTitle": "This server's key has changed",
+    "changed": "{host} presented a different key from the one saved in {file} (line {line}). filebridge will not connect.",
+    "presented": "Key presented now",
+    "changedWhat": "Either the server was reinstalled or its keys were replaced, or someone is intercepting the connection. If whoever runs the server confirms the change, remove the old line from that file and try again.",
+    "close": "Close",
+    "unreachable": "Could not check the server's key: {error}"
   }
 }

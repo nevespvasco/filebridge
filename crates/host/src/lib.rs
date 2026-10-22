@@ -5,6 +5,7 @@
 //! only the hosts wire implementations into the `Registry`).
 
 mod access;
+mod host_keys;
 mod nextcloud;
 mod operations;
 
