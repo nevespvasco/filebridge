@@ -175,7 +175,10 @@ mod tests {
             general_rules(ActiveFor::windows()),
             &TargetProfile::default(),
         );
-        assert_eq!(set.rule_ids().collect::<Vec<_>>(), ["nfc"]);
+        assert_eq!(
+            set.rule_ids().collect::<Vec<_>>(),
+            ["encoding", "mojibake", "nfc"]
+        );
         let mapped = set.apply(&[file(b"a:b.")]);
         assert!(
             !mapped[0].renamed(),
@@ -195,7 +198,7 @@ mod tests {
         );
         assert_eq!(
             set.rule_ids().collect::<Vec<_>>(),
-            ["nfc", "forbidden-chars", "trailing"]
+            ["encoding", "mojibake", "nfc", "forbidden-chars", "trailing"]
         );
     }
 

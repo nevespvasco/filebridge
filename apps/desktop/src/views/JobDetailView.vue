@@ -226,11 +226,11 @@ const details = computed(() => [
 .queue-card { margin-top: 1rem; }
 .sub { margin: 0.1rem 0 0; }
 .actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1rem 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 1rem; margin: 1rem 0; }
 h2 { font-size: 1rem; margin-top: 0; }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; }
 dt { color: var(--text-2); }
-dd { margin: 0; min-width: 0; }
+dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .block { display: block; }
 .link { all: unset; cursor: pointer; color: var(--accent); display: inline-flex; gap: 0.3rem; align-items: center; }
 .link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -239,4 +239,11 @@ dd { margin: 0; min-width: 0; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* The label and value side by side need room; in a narrow card the value goes under its label. */
+@media (max-width: 399px) {
+  .kv { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .kv dd + dt { margin-top: 0.45rem; }
+  .kv.num { grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; }
+  .kv.num dd + dt { margin-top: 0; }
+}
 </style>

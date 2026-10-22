@@ -141,7 +141,7 @@ const details = computed(() => [
 
 <style scoped>
 .into { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
-.into .path { flex: 1; min-width: 0; }
+.into .path { flex: 1; min-width: min(12rem, 100%); }
 .profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
 .profile {
   all: unset;

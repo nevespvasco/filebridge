@@ -1,20 +1,26 @@
 //! `NameRule` trait and the general name-correction rules.
 //!
 //! Pure and synchronous: no I/O. Names arrive as raw bytes (the scanner never assumes UTF-8) and
-//! leave as a `source → destination` path map. Rules so far: `nfc`, `forbidden-chars`, `trailing`
-//! and `reserved`; the other general rules (see `docs/04-name-correction.md`) land in Phase 2.
+//! leave as a `source → destination` path map. Per-name rules: `encoding`, `mojibake`, `nfc`,
+//! `forbidden-chars`, `trailing` and `reserved`; the ones that need the whole tree, `length` and
+//! `collision`, are part of the [`NamePlan`] (see `docs/04-name-correction.md`).
 
+mod encoding;
 mod forbidden_chars;
+mod mojibake;
 mod nfc;
 mod plan;
 mod reserved;
 mod rule_set;
 mod trailing;
 
+pub use encoding::Encoding;
 pub use forbidden_chars::ForbiddenChars;
+pub use mojibake::Mojibake;
 pub use nfc::Nfc;
 pub use plan::{
-    Choice, Decided, NameError, NamePlan, Planned, RULE_COLLISION, RULE_ENCODING, with_suffix,
+    Choice, Decided, NameError, NamePlan, Planned, RULE_COLLISION, RULE_ENCODING, RULE_LENGTH,
+    shorten, with_suffix,
 };
 pub use reserved::{Reserved, WINDOWS_DEVICE_NAMES};
 pub use rule_set::{Mapped, RULE_ORDER, RuleSet};
@@ -156,13 +162,15 @@ impl ActiveFor {
     }
 }
 
-/// The general rules that exist today, wired as `docs/04` describes: `nfc` always;
+/// The general per-name rules, wired as `docs/04` describes: `encoding`, `mojibake` and `nfc` always;
 /// `forbidden-chars` and `trailing` on the targets in `windows_compat` (Windows, plus any
 /// integration that requires them); `reserved` with the Windows device names on Windows targets.
 ///
 /// `RuleSet::new` filters them by target and puts them in order.
 pub fn general_rules(windows_compat: ActiveFor) -> Vec<Box<dyn NameRule>> {
     vec![
+        Box::new(Encoding),
+        Box::new(Mojibake),
         Box::new(Nfc),
         Box::new(ForbiddenChars::new(windows_compat.clone())),
         Box::new(Trailing::new(windows_compat)),

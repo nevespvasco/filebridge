@@ -57,7 +57,7 @@ const profiles: Profile_Serialize[] = [
     destination: { transport: "rclone", backend: { kind: "sftp", host: "pve.example.lan", port: null, user: "root", key_file: null, known_hosts_file: null, password: null }, root: "/srv/nextcloud/data/demo/files/Backup" },
     integration: "nextcloud",
     integration_settings: { mode: "direct" },
-    target: { family: "unix", case_sensitive: true },
+    target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
   },
   {
     id: "p-disk",
@@ -65,7 +65,7 @@ const profiles: Profile_Serialize[] = [
     destination: { transport: "rclone", backend: { kind: "local" }, root: "/media/disco/Backup" },
     integration: null,
     integration_settings: null,
-    target: { family: "windows", case_sensitive: false },
+    target: { family: "windows", case_sensitive: false, max_name_bytes: null, max_path_bytes: null },
   },
 ];
 
@@ -142,6 +142,9 @@ function rulesFor(jobId: string): RuleDef[] {
       { rule: "nfc", total: 120_000, auto: true, base: base + 1 },
       { rule: "forbidden-chars", total: 5, auto: true, base: base + 2_000_001 },
       { rule: "collision", total: 3, auto: false, base: base + 3_000_001 },
+      { rule: "mojibake", total: 2, auto: false, base: base + 4_000_001 },
+      { rule: "encoding", total: 2, auto: true, base: base + 5_000_001 },
+      { rule: "length", total: 1, auto: false, base: base + 6_000_001 },
     ];
     rulesByJob.set(jobId, r);
   }
@@ -163,6 +166,23 @@ function issue(def: RuleDef, i: number): IssueView_Serialize {
   } else if (def.rule === "forbidden-chars") {
     before = `Notas: ${i + 1}?.txt`;
     after = before.replace(/[:?]/g, "_");
+    beforeBytes = Array.from(enc.encode(before));
+    afterBytes = Array.from(enc.encode(after));
+  } else if (def.rule === "mojibake") {
+    after = `${word}.pdf`;
+    // The UTF-8 bytes read as Latin-1: "ã" (c3 a3) shows as "Ã£".
+    before = Array.from(enc.encode(after), (b) => String.fromCharCode(b)).join("");
+    beforeBytes = Array.from(enc.encode(before));
+    afterBytes = Array.from(enc.encode(after));
+  } else if (def.rule === "encoding") {
+    after = `${word}.doc`;
+    // Latin-1 bytes: every character below U+0100 is one byte.
+    beforeBytes = Array.from(after, (c) => c.charCodeAt(0));
+    before = after.replace(/[^\x20-\x7e]/g, "\ufffd");
+    afterBytes = Array.from(enc.encode(after));
+  } else if (def.rule === "length") {
+    before = `${word} — relatório completo de todas as atividades do ano, versão final revista e aprovada.pdf`;
+    after = `${before.slice(0, 30)}…${before.slice(-20)}`;
     beforeBytes = Array.from(enc.encode(before));
     afterBytes = Array.from(enc.encode(after));
   } else {
@@ -606,7 +626,7 @@ const handlers: Handlers = {
       },
       integration: "nextcloud",
       integration_settings: { mode: "direct" },
-      target: { family: "unix", case_sensitive: true },
+      target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);
     return { detector, steps, containers: [], profile };

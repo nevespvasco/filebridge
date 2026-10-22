@@ -244,7 +244,7 @@ function clearFilters() {
           </span>
           <span class="cell path muted ellipsis" role="gridcell" :title="rows[it.index].dir">{{ rows[it.index].dir || "/" }}</span>
           <span class="cell n num small" role="gridcell">{{ fmt.bytes(rows[it.index].size) }}</span>
-          <span class="cell" role="gridcell"><EntryStatusBadge :status="rows[it.index].status" /></span>
+          <span class="cell status" role="gridcell"><EntryStatusBadge :status="rows[it.index].status" /></span>
         </div>
       </div>
     </div>
@@ -255,7 +255,7 @@ function clearFilters() {
 </template>
 
 <style scoped>
-.files { display: grid; gap: 0.7rem; }
+.files { display: grid; gap: 0.7rem; container-type: inline-size; }
 .head { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
 .head h2 { font-size: 1rem; margin: 0; display: inline-flex; gap: 0.4rem; align-items: center; }
 .sort { display: inline-flex; gap: 0.4rem; align-items: center; margin-left: auto; }
@@ -270,5 +270,16 @@ function clearFilters() {
 .name { display: flex; gap: 0.5rem; align-items: center; }
 .n { text-align: right; }
 .empty { display: grid; justify-items: center; gap: 0.5rem; padding: 2.5rem 1rem; text-align: center; }
-@media (max-width: 900px) { .table-head, .row { grid-template-columns: minmax(0, 1fr) 6rem 8.5rem; } .table-head span:nth-child(2), .row .path { display: none; } }
+/* Columns that can't fit go first: the folder, then each file takes two lines (name and status,
+   folder and size) in the same row height. */
+@container (max-width: 760px) { .table-head, .row { grid-template-columns: minmax(0, 1fr) 6rem 8.5rem; } .table-head span:nth-child(2), .row .path { display: none; } }
+@container (max-width: 520px) {
+  .table-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .table-head span:nth-child(3) { display: none; }
+  .row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name status" "path size"; gap: 0 0.75rem; align-content: center; }
+  .row .name { grid-area: name; }
+  .row .path { display: block; grid-area: path; font-size: var(--fs-xs); padding-left: 1.6rem; }
+  .row .n { grid-area: size; font-size: var(--fs-xs); color: var(--text-2); }
+  .row .status { grid-area: status; justify-self: end; }
+}
 </style>

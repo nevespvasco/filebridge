@@ -233,6 +233,19 @@ input:disabled { background: var(--surface-2); }
 .req { color: var(--danger); margin-left: 0.15rem; }
 .why-disabled { font-size: 0.85rem; color: var(--text-2); }
 
+/* Narrow windows (docs/design/02, "Window sizes"). A footer's hint goes on its own line above the
+   buttons, so Back stays left and the next step right; a page head's actions go under the title. */
+@media (max-width: 559px) {
+  .footer { gap: 0.6rem; }
+  .footer > :not(.btn):not(.grow) { order: -1; flex-basis: 100%; }
+  .page-head { gap: 0.75rem; margin-bottom: 1rem; }
+  .page-head > :first-child { flex: 1 1 12rem; min-width: 0; }
+  h1 { font-size: 1.35rem; overflow-wrap: anywhere; }
+  .card { padding: 0.85rem; }
+  .guide { padding: 0.65rem 0.8rem; }
+  .btn-big { padding: 0.6rem 1.2rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
 }

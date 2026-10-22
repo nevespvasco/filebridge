@@ -46,9 +46,15 @@ const example = computed(() => {
   const key = `rules.${props.rule.rule}.example`;
   return te(key) ? t(key) : "";
 });
-const showsBytes = computed(() => props.rule.rule.includes("nfc"));
-/** An undecodable name has nothing to accept or keep: it can only be edited or skipped. */
-const hasProposal = computed(() => props.rule.rule !== "encoding");
+/** NFC changes are invisible as text, and a decoded name is a reading of raw bytes: show them. */
+const showsBytes = computed(() => props.rule.rule.includes("nfc") || props.rule.rule === "encoding");
+/** A row whose proposal differs from its name: an undecodable one has none to accept. */
+function rowHasProposal(row: IssueView_Serialize): boolean {
+  return row.after.length !== row.before.length || row.after.some((b, i) => b !== row.before[i]);
+}
+const hasProposal = computed(() => props.rule.rule !== "encoding" || rows.value.some(rowHasProposal));
+/** Bytes that aren't UTF-8 can't be kept: the destination takes UTF-8 names only. */
+const canKeep = computed(() => props.rule.rule !== "encoding");
 const pageNo = computed(() => cursors.value.length);
 
 async function load() {
@@ -206,7 +212,8 @@ function selectMatching() {
 }
 
 const selectionActions = computed(() => [
-  ...(hasProposal.value ? [{ id: "accept", label: t("issues.accept"), primary: true }, { id: "keep_original", label: t("issues.keep") }] : []),
+  ...(hasProposal.value ? [{ id: "accept", label: t("issues.accept"), primary: true }] : []),
+  ...(canKeep.value ? [{ id: "keep_original", label: t("issues.keep") }] : []),
   { id: "skip", label: t("issues.skip") },
 ]);
 async function applySelection(kind: string) {
@@ -255,12 +262,10 @@ function decisionLabel(row: IssueView_Serialize) {
         <span v-if="bulk" class="small">{{ $t("issues.bulkProgress") }}</span>
         <template v-else>
           <span class="small muted">{{ $t("issues.bulkLabel", { n: fmt.count(rule.pending) }) }}</span>
-          <template v-if="hasProposal">
-            <button class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })"><AppIcon name="check" /> {{ $t("issues.acceptAll") }}</button>
-            <button class="btn btn-small" :title="$t('issues.keepAllTip')" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
-          </template>
+          <button v-if="hasProposal" class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })"><AppIcon name="check" /> {{ $t("issues.acceptAll") }}</button>
+          <button v-if="canKeep" class="btn btn-small" :title="$t('issues.keepAllTip')" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
           <button class="btn btn-small" :title="$t('issues.skipAllTip')" @click="decideAllPending({ kind: 'skip' })">{{ $t("issues.skipAll") }}</button>
-          <span v-if="hasProposal" class="small muted">{{ $t("issues.bulkAdvice") }}</span>
+          <span v-if="canKeep" class="small muted">{{ $t("issues.bulkAdvice") }}</span>
           <span v-else class="small muted">{{ $t("issues.encodingAdvice") }}</span>
         </template>
       </div>
@@ -313,10 +318,8 @@ function decisionLabel(row: IssueView_Serialize) {
             <span v-if="row.carried_over" class="badge badge-muted" :title="$t('issues.carriedTip')"><AppIcon name="again" :size="12" /> {{ $t("issues.carried") }}</span>
           </div>
           <div v-if="!readonly" class="actions">
-            <template v-if="hasProposal">
-              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" :title="$t('issues.acceptTip')" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
-              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" :title="$t('issues.keepTip')" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
-            </template>
+            <button v-if="rowHasProposal(row)" class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" :title="$t('issues.acceptTip')" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
+            <button v-if="canKeep" class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" :title="$t('issues.keepTip')" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
             <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'skipped'" :title="$t('issues.skipTip')" @click="decide(row, { kind: 'skip' })">{{ $t("issues.skip") }}</button>
             <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'edited'" :title="$t('issues.editTip')" @click="startEdit(row)">{{ $t("issues.edit") }}</button>
           </div>
@@ -371,10 +374,11 @@ function decisionLabel(row: IssueView_Serialize) {
 .block { display: block; }
 .group-body { border-top: 1px solid var(--border); padding: 0.75rem 1rem 1rem; }
 .bulk { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
-.rows { list-style: none; margin: 0; padding: 0; }
+.rows { list-style: none; margin: 0; padding: 0; container-type: inline-size; }
 .cols { display: flex; justify-content: space-between; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
 .example { color: var(--text-2); margin-top: 0.2rem; }
 .bytes { display: flex; align-items: center; gap: 0.2rem; }
+.bytes > :first-child { min-width: 0; }
 .rows.dim { opacity: 0.6; }
 .row {
   display: grid;
@@ -409,8 +413,16 @@ function decisionLabel(row: IssueView_Serialize) {
 .edit { width: min(480px, 100%); }
 .edit h2 { margin-top: 0; font-size: 1.1rem; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
-@media (max-width: 900px) {
+/* The buttons go under the names when the row can't hold them beside. */
+@container (max-width: 680px) {
   .row, .row.selectable { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .row:not(.selectable) { grid-template-columns: minmax(0, 1fr) auto; }
   .actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
+/* Narrower still: the name at the destination gets its own line. */
+@container (max-width: 480px) {
+  .change { flex-wrap: wrap; row-gap: 0; }
+  .before { max-width: calc(100% - 1.5rem); }
+  .after { flex-basis: 100%; max-width: 100%; }
 }
 </style>

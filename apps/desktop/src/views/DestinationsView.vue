@@ -141,11 +141,12 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 .empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
 .empty p { margin: 0 0 0.5rem; }
 .empty-icon { color: var(--muted); }
-.list { display: grid; gap: 0.75rem; }
+.list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .head { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .kind { align-self: center; color: var(--text-2); }
-.who { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
-.actions { display: flex; gap: 0.4rem; }
+.who { display: flex; gap: 0.3rem 0.6rem; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.who strong { overflow-wrap: anywhere; }
+.actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .space { margin: 0.5rem 0; }
 .test { margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
 </style>

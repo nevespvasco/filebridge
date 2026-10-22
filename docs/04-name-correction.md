@@ -9,7 +9,7 @@ and no risk of a later sync recreating the old name. See [ADR 0005](adr/0005-fix
 | Rule (`id`) | Detects | Correction | Automatic? |
 |---|---|---|---|
 | NFC normalisation (`nfc`) | Decomposed accents (`c` + separate cedilla), typical of macOS, iOS and some backups | Convert to NFC; the visible name doesn't change | Yes |
-| Invalid encoding (`encoding`) | Bytes that are not UTF-8 (Latin-1, CP1252) | Decode with the most likely encoding | Yes, with preview |
+| Invalid encoding (`encoding`) | Bytes that are not UTF-8 (Latin-1, CP1252) | Decode as CP1252; a name with one of the five bytes CP1252 leaves undefined is read as Latin-1 | CP1252: yes, with the bytes shown. Latin-1 guess: no, a decision |
 | Mojibake (`mojibake`) | `Ã³`, `Ã§`, `Ã£` (UTF-8 read as Latin-1) | Reverse the double encoding (the `ftfy` approach) | No: suggestion to approve |
 | Forbidden characters (`forbidden-chars`) | `< > : " / \ \| ? *` and control characters (forbidden on Windows and SMB) | Replace with `_` or a Unicode look-alike | Yes |
 | Trailing spaces and dots (`trailing`) | Name ending in a space or `.` | Remove | Yes |
@@ -18,8 +18,10 @@ and no risk of a later sync recreating the old name. See [ADR 0005](adr/0005-fix
 | Length (`length`) | Path above the destination's limit | Shorten the middle of the name | No: ask for a decision |
 
 Where each rule lives:
-- `crates/names`: general rules — `nfc`, `encoding`, `mojibake`, `forbidden-chars`, `trailing`,
-  `reserved` (Windows set), `collision`, `length`.
+- `crates/names`: general rules. The per-name ones are `NameRule`s — `encoding`, `mojibake`,
+  `nfc`, `forbidden-chars`, `trailing`, `reserved` (Windows set). `length` and `collision` need the
+  whole tree (the parent's path, the other names), so they are part of the Name plan
+  (`NamePlan::propose`) and run last, in that order.
 - `crates/integration-nextcloud`: Nextcloud-specific rules — NFC enforced, Nextcloud reserved
   names (`.htaccess`, `.part`, …), any other server-side blacklist.
 
@@ -74,10 +76,22 @@ All of these are checked **when the user decides**, one by one or in bulk, and o
   double-mojibake, at most 2 rounds.
 - Always a proposal, never automatic — false positives are possible on legitimate names.
 
+## Length
+
+- Limits come from the profile's `TargetSpec` (`max_name_bytes`, `max_path_bytes`, in UTF-8 bytes,
+  measured under the destination root). Defaults: names 255; paths 4096, or 260 on Windows
+  targets (`MAX_PATH`).
+- A name over the limit, or one that makes its path too long, gets a proposal cut in the middle of
+  the stem (`Relatório a…tividades.pdf`): the start, the end and an extension of up to 16 bytes are
+  kept, never splitting a character, and no proposal is shorter than 16 bytes.
+- Always a decision: Accept, keep it (the file will then likely fail at the destination), edit or
+  skip.
+
 ## Collision handling
 
 - Key = NFC + case-folded name within the same destination directory (case folding only when the
-  target is case-insensitive).
+  target is case-insensitive). The NFC part matters even with the `nfc` rule kept out: a
+  normalising server would store an NFD and an NFC spelling as one name.
 - When two or more source entries map to the same key, all but the first get a proposal with
   ` (2)`, ` (3)` before the extension; the user must confirm.
 

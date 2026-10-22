@@ -17,6 +17,13 @@ pub enum Family {
 pub struct TargetSpec {
     pub family: Family,
     pub case_sensitive: bool,
+    /// Longest name the destination takes, in UTF-8 bytes. Default 255.
+    #[serde(default)]
+    pub max_name_bytes: Option<u32>,
+    /// Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+    /// classic limit), 4096 elsewhere.
+    #[serde(default)]
+    pub max_path_bytes: Option<u32>,
 }
 
 impl Default for TargetSpec {
@@ -24,9 +31,14 @@ impl Default for TargetSpec {
         Self {
             family: Family::Unix,
             case_sensitive: true,
+            max_name_bytes: None,
+            max_path_bytes: None,
         }
     }
 }
+
+/// Windows' classic `MAX_PATH`, the limit most of its tools still keep to.
+const WINDOWS_MAX_PATH: usize = 260;
 
 /// A saved destination. Holds keyring references only, never secrets (ADR 0004).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -46,15 +58,25 @@ pub struct Profile {
 impl Profile {
     /// What the name rules need to know about the destination.
     pub fn target_profile(&self) -> TargetProfile {
+        let defaults = TargetProfile::default();
+        let family = match self.target.family {
+            Family::Unix => TargetFamily::Unix,
+            Family::Windows => TargetFamily::Windows,
+            Family::Macos => TargetFamily::MacOs,
+        };
+        let max_path = match family {
+            TargetFamily::Windows => WINDOWS_MAX_PATH,
+            _ => defaults.max_path_bytes,
+        };
         TargetProfile {
-            family: match self.target.family {
-                Family::Unix => TargetFamily::Unix,
-                Family::Windows => TargetFamily::Windows,
-                Family::Macos => TargetFamily::MacOs,
-            },
+            family,
             case_sensitive: self.target.case_sensitive,
             integration: self.integration.clone(),
-            ..TargetProfile::default()
+            max_name_bytes: self
+                .target
+                .max_name_bytes
+                .map_or(defaults.max_name_bytes, |n| n as usize),
+            max_path_bytes: self.target.max_path_bytes.map_or(max_path, |n| n as usize),
         }
     }
 }

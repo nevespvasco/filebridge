@@ -1570,38 +1570,71 @@ async fn keeping_the_original_skips_only_that_rule() {
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
-async fn an_undecodable_name_can_only_be_edited_or_skipped() {
+async fn a_latin1_name_is_decoded_and_sent_readable() {
     use std::os::unix::ffi::OsStrExt;
     let s = setup().await;
-    std::fs::write(
-        s.src
-            .join(std::ffi::OsStr::from_bytes(b"Patol\xf3gica.pdf")),
-        b"latin-1",
-    )
-    .unwrap();
+    // "Patológica.pdf" written as Latin-1 (ó = f3), and a name with a byte CP1252 leaves
+    // undefined (81), which can only be guessed.
+    for raw in [&b"Patol\xf3gica.pdf"[..], b"guess\x81.txt"] {
+        std::fs::write(s.src.join(std::ffi::OsStr::from_bytes(raw)), b"x").unwrap();
+    }
     let job = s
         .engine
         .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
         .await
         .unwrap();
     s.engine.analyse(&job).await.unwrap();
-    for input in [DecisionInput::Accept, DecisionInput::KeepOriginal] {
-        assert!(matches!(
-            s.engine
-                .decide_all(&job, Some("encoding".into()), input)
-                .await,
-            Err(CoreError::Invalid(_))
-        ));
-    }
+    // Keeping the original bytes is impossible: the destination takes UTF-8 only.
+    assert!(matches!(
+        s.engine
+            .decide_all(&job, Some("encoding".into()), DecisionInput::KeepOriginal)
+            .await,
+        Err(CoreError::Invalid(_))
+    ));
+    // The sure reading is applied; the guess waits for the user.
     assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 1);
-    let n = s
-        .engine
-        .decide_all(&job, Some("encoding".into()), DecisionInput::Skip)
+    s.engine
+        .decide_all(&job, Some("encoding".into()), DecisionInput::Accept)
         .await
         .unwrap();
-    assert_eq!(n, 1);
     assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
-    assert_eq!(dest_files(&s.dest).len(), 3);
+    let files = dest_files(&s.dest);
+    assert!(
+        files.contains(&"Acme/Patológica.pdf".to_owned()),
+        "{files:?}"
+    );
+    assert!(
+        files.contains(&"Acme/guess\u{81}.txt".to_owned()),
+        "{files:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_garbled_folder_name_waits_for_a_decision() {
+    let s = setup().await;
+    // "Patológica" once read as Latin-1 and written back as UTF-8.
+    let garbled = s.src.join("PatolÃ³gica");
+    std::fs::create_dir(&garbled).unwrap();
+    std::fs::write(garbled.join("a.txt"), b"x").unwrap();
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    let summary = s.engine.analyse(&job).await.unwrap();
+    assert_eq!(summary.state, JobState::AwaitingApproval);
+    let issues = s
+        .engine
+        .issues(&job, Some("mojibake".into()), None, 10)
+        .await
+        .unwrap();
+    assert_eq!(issues.len(), 1);
+    s.engine
+        .decide_all(&job, Some("mojibake".into()), DecisionInput::Accept)
+        .await
+        .unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert!(dest_files(&s.dest).contains(&"Acme/Patológica/a.txt".to_owned()));
 }
 
 #[tokio::test]

@@ -242,9 +242,19 @@
       "example": "“Foto.jpg” e “foto.jpg” num disco que não distingue maiúsculas → “foto (2).jpg”"
     },
     "encoding": {
-      "title": "{n} nome que não é UTF-8 válido | {n} nomes que não são UTF-8 válido",
-      "explain": "Este nome tem caracteres que não se conseguem ler como texto (muitas vezes ficheiros antigos de outro sistema). Edite-o para lhe dar um nome legível, ou salte-o.",
-      "example": "“Relat�rio.doc” → editar para “Relatório.doc”"
+      "title": "{n} nome escrito numa codificação antiga | {n} nomes escritos numa codificação antiga",
+      "explain": "Estes nomes foram gravados por um sistema mais antigo (muitas vezes Windows), não em UTF-8, e outros sistemas não os conseguem ler. O filebridge lê-os como Windows-1252 e envia o nome legível; os bytes aparecem para poder confirmar. Um nome que só conseguiu adivinhar fica à sua espera.",
+      "example": "“Relat�rio.doc” (byte f3) → “Relatório.doc”"
+    },
+    "mojibake": {
+      "title": "{n} nome com caracteres trocados | {n} nomes com caracteres trocados",
+      "explain": "Estes nomes parecem ter sido lidos um dia com a codificação errada e gravados assim, o que transforma acentos em pares como “Ã³”. “Aceitar” envia o nome original. Confirme primeiro: um nome real pode ter este aspeto, por isso nunca é corrigido sozinho.",
+      "example": "“PatolÃ³gica.pdf” → “Patológica.pdf”"
+    },
+    "length": {
+      "title": "{n} nome demasiado longo para o destino | {n} nomes demasiado longos para o destino",
+      "explain": "O destino não aceita nomes (ou caminhos) tão longos, por isso estes ficheiros falhariam. “Aceitar” encurta o meio do nome e mantém o início, o fim e a extensão; ou edite-o, ou salte-o.",
+      "example": "“Relatório anual de atividades da associação 2023.pdf” → “Relatório anual…ação 2023.pdf”"
     }
   },
   "issues": {
@@ -273,7 +283,7 @@
     "keepAllTip": "Enviar todos com o nome original",
     "skipAllTip": "Não enviar nenhum",
     "bulkAdvice": "Na dúvida, “Aceitar todos” é a opção segura.",
-    "encodingAdvice": "Estes nomes não se corrigem sozinhos: edite cada um, ou salte-os.",
+    "encodingAdvice": "Os bytes originais não podem ser mantidos: o destino só aceita nomes legíveis (UTF-8). Aceite a leitura, edite-a, ou salte.",
     "colBefore": "Nome original",
     "colAfter": "nome no destino",
     "colChoose": "A sua escolha",

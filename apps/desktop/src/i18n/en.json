@@ -242,9 +242,19 @@
       "example": "“Photo.jpg” and “photo.jpg” on a disk that doesn't tell capitals apart → “photo (2).jpg”"
     },
     "encoding": {
-      "title": "{n} name that isn't valid UTF-8 | {n} names that aren't valid UTF-8",
-      "explain": "This name has characters that can't be read as text (often old files from another system). Edit it to give it a readable name, or skip it.",
-      "example": "“Relat�rio.doc” → edit to “Relatório.doc”"
+      "title": "{n} name written in an old encoding | {n} names written in an old encoding",
+      "explain": "These names were saved by an older system (often Windows), not as UTF-8, so other systems can't read them. filebridge reads them as Windows-1252 and sends the readable name; the bytes are shown so you can check. A name it could only guess waits for you.",
+      "example": "“Relat�rio.doc” (byte f3) → “Relatório.doc”"
+    },
+    "mojibake": {
+      "title": "{n} garbled name | {n} garbled names",
+      "explain": "These names look like they were once read with the wrong encoding and saved that way, which turns accents into pairs like “Ã³”. “Accept” sends the original name. Check first: a real name can look like this, so it is never fixed by itself.",
+      "example": "“PatolÃ³gica.pdf” → “Patológica.pdf”"
+    },
+    "length": {
+      "title": "{n} name too long for the destination | {n} names too long for the destination",
+      "explain": "The destination doesn't take names (or paths) this long, so these files would fail. “Accept” shortens the middle of the name and keeps its start, end and extension; or edit it, or skip it.",
+      "example": "“Relatório anual de atividades da associação 2023.pdf” → “Relatório anual…ação 2023.pdf”"
     }
   },
   "issues": {
@@ -273,7 +283,7 @@
     "keepAllTip": "Send all of them with the original name",
     "skipAllTip": "Send none of them",
     "bulkAdvice": "Not sure? “Accept all” is the safe choice.",
-    "encodingAdvice": "These names can't be fixed automatically: edit each one, or skip them.",
+    "encodingAdvice": "The original bytes can't be kept: the destination only takes readable (UTF-8) names. Accept the reading, edit it, or skip.",
     "colBefore": "Original name",
     "colAfter": "name at the destination",
     "colChoose": "Your choice",

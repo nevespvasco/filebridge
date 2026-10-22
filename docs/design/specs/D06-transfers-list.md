@@ -56,8 +56,9 @@ Every send, with what it is doing now. Click one to see its files and log.
 - **Progress**: the bar and % while running, with speed and ETA as a second line (they move out
   of their own columns). When finished: the file count; when failed: "—".
 - **When**: `RelativeTime` of `finished_at`, or "started …" of `created_at` while running.
-- **Size**: total bytes of the analysis (`.num`, right-aligned). Columns that can't fit hide at
-  820px: Size first, then When ([02](../02-information-architecture.md#window-sizes)).
+- **Size**: total bytes of the analysis (`.num`, right-aligned). Columns that can't fit go
+  first: Size hides when the table is under 860px wide, and under 700px each row becomes a card that
+  still shows the size and when ([02](../02-information-architecture.md#window-sizes)).
 - `RowMenu` (⋮):
 
 | Item | Shown when | Does |

@@ -111,24 +111,26 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 <template>
   <div class="shell">
     <nav class="side" :aria-label="$t('nav.label')">
-      <div class="brand"><img src="/icon.png" alt="" width="24" height="24" /> filebridge</div>
+      <div class="brand"><img src="/icon.png" alt="" width="24" height="24" /> <span>filebridge</span></div>
       <RouterLink to="/new" class="new-transfer" :title="$t('nav.tips.new')">
         <AppIcon name="send" :size="20" /><span class="label">{{ $t("nav.new") }}</span>
       </RouterLink>
-      <RouterLink to="/home" :title="$t('nav.tips.home')">
-        <AppIcon name="home" :size="20" /><span class="label">{{ $t("nav.home") }}</span>
-      </RouterLink>
-      <RouterLink to="/jobs" :title="$t('nav.tips.jobs')">
-        <AppIcon name="transfers" :size="20" /><span class="label">{{ $t("nav.jobs") }}</span>
-        <span v-if="attention" class="attention" role="img" :aria-label="$t('nav.attention', { n: attention }, attention)" :title="$t('nav.attention', { n: attention }, attention)" />
-        <span v-if="active" class="badge badge-accent num" :aria-label="$t('nav.active', { n: active }, active)">{{ active }}</span>
-      </RouterLink>
-      <RouterLink to="/destinations" :title="$t('nav.tips.destinations')">
-        <AppIcon name="destinations" :size="20" /><span class="label">{{ $t("nav.destinations") }}</span>
-      </RouterLink>
-      <RouterLink to="/settings" :title="$t('nav.tips.settings')">
-        <AppIcon name="settings" :size="20" /><span class="label">{{ $t("nav.settings") }}</span>
-      </RouterLink>
+      <div class="places">
+        <RouterLink to="/home" :title="$t('nav.tips.home')">
+          <AppIcon name="home" :size="20" /><span class="label">{{ $t("nav.home") }}</span>
+        </RouterLink>
+        <RouterLink to="/jobs" :title="$t('nav.tips.jobs')">
+          <AppIcon name="transfers" :size="20" /><span class="label">{{ $t("nav.jobs") }}</span>
+          <span v-if="attention" class="attention" role="img" :aria-label="$t('nav.attention', { n: attention }, attention)" :title="$t('nav.attention', { n: attention }, attention)" />
+          <span v-if="active" class="badge badge-accent num" :aria-label="$t('nav.active', { n: active }, active)">{{ active }}</span>
+        </RouterLink>
+        <RouterLink to="/destinations" :title="$t('nav.tips.destinations')">
+          <AppIcon name="destinations" :size="20" /><span class="label">{{ $t("nav.destinations") }}</span>
+        </RouterLink>
+        <RouterLink to="/settings" :title="$t('nav.tips.settings')">
+          <AppIcon name="settings" :size="20" /><span class="label">{{ $t("nav.settings") }}</span>
+        </RouterLink>
+      </div>
       <span class="grow" />
       <div v-if="notice" class="notice small" :class="`tone-${notice.tone}`" role="status">
         <AppIcon :name="notice.icon" :class="notice.tone === 'ok' ? 'ok-text' : 'warn-text'" />
@@ -137,7 +139,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
       </div>
       <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
         <span class="dot" aria-hidden="true" />
-        {{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}
+        <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
         <HelpTip :text="$t('conn.tip')" :label="$t('conn.label')" />
       </div>
     </nav>
@@ -207,7 +209,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .on .dot { background: var(--ok); }
 .off .dot { background: var(--danger); }
-.main { padding: 1.5rem 2rem 3rem; max-width: 1100px; width: 100%; box-sizing: border-box; }
+/* The main column: capped and centred, so a wide monitor gets even margins, not one empty side. */
+.main { padding: 1.5rem 2rem 3rem; max-width: 1100px; width: 100%; margin-inline: auto; box-sizing: border-box; min-width: 0; }
 .banner {
   display: flex;
   gap: 0.75rem;
@@ -223,11 +226,52 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .banner-text details { margin-top: 0.2rem; }
 .banner-text summary { cursor: pointer; }
 .banner-text code { display: block; margin-top: 0.25rem; overflow-wrap: anywhere; }
-@media (max-width: 760px) {
-  .shell { grid-template-columns: 1fr; }
-  .side { flex-direction: row; flex-wrap: wrap; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--border); }
-  .brand { padding: 0.5rem; }
+.places { display: contents; }
+@media (min-width: 1600px) {
+  .main { max-width: 1280px; padding-inline: 2.5rem; }
+}
+@media (max-width: 1099px) {
+  .main { padding: 1.25rem 1.5rem 2.5rem; }
+}
+/* Below 760px the sidebar becomes a top bar (docs/design/02, "Window sizes"): brand, status and
+   New transfer on one row, the four places as even tabs under it, and the notice as a strip. */
+@media (max-width: 759px) {
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  .side {
+    display: grid;
+    align-content: start;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "brand conn new" "places places places" "notice notice notice";
+    align-items: center;
+    gap: 0.5rem 0.4rem;
+    height: auto;
+    padding: 0.5rem 0.75rem 0;
+    position: static;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { grid-area: brand; padding: 0.25rem; min-width: 0; }
+  .side a.new-transfer { grid-area: new; margin: 0; padding: 0.4rem 0.75rem; }
+  .places { grid-area: places; display: flex; gap: 0.15rem; margin: 0 -0.25rem; }
+  .places a { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0.5rem 0.4rem; border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; position: relative; }
+  .places a .label { flex: none; white-space: nowrap; }
+  .side .places a.router-link-active { background: transparent; border-bottom-color: var(--accent); }
   .grow { display: none; }
-  .main { padding: 1rem; }
+  .notice { grid-area: notice; margin: 0 0 0.5rem; }
+  .conn { grid-area: conn; padding: 0.25rem; gap: 0.25rem; }
+  .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .main { padding: 1rem 1rem 2rem; }
+}
+/* Too narrow for icon and label side by side: the label goes under the icon. */
+@media (max-width: 559px) {
+  .places a { flex-direction: column; gap: 0.15rem; font-size: 0.72rem; padding: 0.4rem 0.2rem; }
+  .places a .badge { position: absolute; top: 0.15rem; left: calc(50% + 0.5rem); font-size: 0.65rem; padding: 0 0.35rem; }
+  .places a .attention { position: absolute; top: 0.3rem; left: calc(50% - 0.9rem); }
+}
+/* A phone-sized window: New transfer keeps its icon and its accessible name, not its text. */
+@media (max-width: 399px) {
+  .side a.new-transfer .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .side a.new-transfer { padding: 0.45rem 0.6rem; }
+  .main { padding-inline: 0.75rem; }
 }
 </style>

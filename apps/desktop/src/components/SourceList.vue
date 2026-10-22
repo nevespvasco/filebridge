@@ -108,7 +108,7 @@ async function remove(path: string, i: number) {
 </template>
 
 <style scoped>
-.sources { list-style: none; margin: 0; padding: 0; }
+.sources { list-style: none; margin: 0; padding: 0; container-type: inline-size; }
 .sources li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -142,6 +142,12 @@ async function remove(path: string, i: number) {
   background-size: 200% 100%;
   animation: shimmer 1.2s linear infinite;
   vertical-align: middle;
+}
+/* A narrow list: the folder it is in goes under the name, so the name gets the whole line. */
+@container (max-width: 460px) {
+  .name-line { flex-wrap: wrap; row-gap: 0; }
+  .name { flex: 0 1 auto; max-width: 100%; }
+  .parent { flex-basis: 100%; }
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

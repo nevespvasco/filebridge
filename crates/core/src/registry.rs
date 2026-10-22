@@ -94,9 +94,6 @@ impl Registry {
             );
         }
         let target = profile.target_profile();
-        Ok(NamePlan::new(
-            RuleSet::new(rules, &target),
-            target.case_sensitive,
-        ))
+        Ok(NamePlan::for_target(RuleSet::new(rules, &target), &target))
     }
 }

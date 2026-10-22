@@ -12,8 +12,8 @@
   Destinations, Settings, the service status dot) and a main column up to 1100px wide.
 - `router.ts`: `/` redirects to `/new`. Routes are `/new`, `/jobs`, `/jobs/:id`, `/destinations`
   and `/settings`, with hash history.
-- Window: 1100×760 by default, minimum width 820 (`src-tauri/tauri.conf.json`). Below 760px the
-  sidebar becomes a top bar.
+- Window: 1100×760 by default, minimum 360×480 (`src-tauri/tauri.conf.json`). Below 760px the
+  sidebar becomes a top bar (see [Window sizes](#window-sizes)).
 
 ## Navigation map
 
@@ -87,8 +87,9 @@ Every page uses the same frame:
 - At most **one** primary button per page (rule from [01](01-design-system.md#principles)).
 - Detail pages put tabs under the head (`role="tablist"`). Tab changes update `?tab=` without
   adding history entries (`router.replace`).
-- The main column keeps `max-width: 1100px`. Tables can use the full width; text blocks stay
-  ≤ 70ch.
+- The main column keeps `max-width: 1100px` (1280px from a 1600px window) and is centred in the
+  space beside the sidebar, so a wide monitor gets even margins. Tables can use the full width;
+  text blocks stay ≤ 70ch.
 
 ## Transfer detail: tabs
 
@@ -120,11 +121,31 @@ except `Esc`.
 
 ## Window sizes
 
+Every screen works from 360px wide (the window's minimum) up to any monitor, with nothing scrolling
+sideways except code in "Technical details".
+
 | Width | Layout |
 |---|---|
-| ≥ 1100px | Sidebar + main; Home in two columns (D01) |
-| 820–1099px | Sidebar + main; Home in one column; tables hide secondary columns (marked `priority: 2` in `DataTable` columns) |
-| < 820px | Only reachable if the minimum width is lowered later. The sidebar becomes the top bar (exists below 760px); the Drawer becomes full width |
+| ≥ 1600px | Sidebar + main; the main column grows to 1280px, centred |
+| 1100–1599px | Sidebar + main (1100px, centred); Home in two columns (D01) |
+| 760–1099px | Sidebar + main; Home in one column; lists drop columns or become cards by the width they get (below) |
+| 560–759px | The sidebar becomes a **top bar**: brand, service status (dot and `?`) and New transfer on one row; Home, Transfers, Destinations and Settings as even tabs under it (active one underlined); the notice slot as a strip |
+| < 560px | Place tabs put the label under the icon. Footers put their hint on its own line above Back / Next; page heads wrap their actions under the title; the Drawer is full width |
+| < 400px | New transfer in the top bar keeps its icon and accessible name, not its text |
+
+Lists and rows that sit in columns of different widths respond to **their own width**
+(CSS container queries), not the window's, so they behave the same in Home's side column, a
+Drawer or a narrow window:
+
+| Component | Narrow form |
+|---|---|
+| Transfers table (D06) | Hides Size under 860px; under 700px each row is a card: name, state and ⋮ on top, the bar when running, then destination · files · size · when |
+| Home, Recent transfers | Under 520px: name and state on top, destination · size · when under them |
+| Files tab (D05) | Hides Folder under 760px; under 520px each file takes two lines (name and status, folder and size) in the same row height |
+| Sending now (D04) | Under 560px each file takes two lines: name and size, then bar, % and speed |
+| Name decisions (`IssueGroup`) | Buttons go under the names under 680px; the name at the destination gets its own line under 480px. The byte diff wraps between byte groups, "after" under "before" |
+| Wizard stepper | Under 700px every step keeps its number and only the current one its label |
+| Source list | Under 460px the parent folder goes under the name |
 
 A narrow window is the only "mobile" layout. No phone app is planned (D12 in the
 [review](00-reference-review.md#d--uplink-file-transfer-service-case-study)).

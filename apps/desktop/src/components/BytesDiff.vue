@@ -42,8 +42,8 @@ const rows = computed(() => {
   <div class="bytes-diff small mono">
     <span class="row">
       <span v-for="(tok, i) in rows[0]" :key="i" :class="tok.kind">{{ tok.text }}</span>
+      <span class="arrow" aria-hidden="true">→</span>
     </span>
-    <span class="arrow" aria-hidden="true">→</span>
     <span class="row">
       <span v-for="(tok, i) in rows[1]" :key="i" :class="tok.kind">{{ tok.text }}</span>
     </span>
@@ -51,11 +51,14 @@ const rows = computed(() => {
 </template>
 
 <style scoped>
-.bytes-diff { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.row { display: inline-flex; gap: 0.35em; }
+/* Before → after on one line when there is room. When there isn't, "after" moves under "before"
+   as a whole, and a long run of bytes wraps between groups like text, never into ragged columns. */
+.bytes-diff { line-height: 1.7; min-width: 0; }
+.row { display: inline-block; max-width: 100%; vertical-align: top; }
+.row > span + span { margin-left: 0.35em; }
 .ctx { color: var(--text-2); }
-.del, .ins { border-radius: 3px; padding: 0 2px; }
+.del, .ins { border-radius: 3px; padding: 0 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .del { background: var(--danger-soft); }
 .ins { background: var(--ok-soft); }
-.arrow { color: var(--text-2); }
+.row > .arrow { color: var(--text-2); margin: 0 0.5rem; }
 </style>

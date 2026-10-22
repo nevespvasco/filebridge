@@ -174,11 +174,11 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
           </div>
           <ul class="recent card">
             <li v-for="j in home.recent.slice(0, 5)" :key="j.id" @click="router.push({ name: 'job', params: { id: j.id } })">
-              <strong class="ellipsis">{{ jobLabel(j) }}</strong>
-              <span class="muted ellipsis">{{ profiles.byId[j.profile_id]?.name ?? "—" }}</span>
-              <JobStateBadge :state="j.state" />
-              <span class="small num n">{{ j.counts.bytes ? fmt.bytes(j.counts.bytes) : "—" }}</span>
-              <span class="small muted"><RelativeTime :at="j.finished_at ?? j.created_at" /></span>
+              <strong class="ellipsis r-name">{{ jobLabel(j) }}</strong>
+              <span class="muted ellipsis r-dest">{{ profiles.byId[j.profile_id]?.name ?? "—" }}</span>
+              <JobStateBadge :state="j.state" class="r-state" />
+              <span class="small num n r-size">{{ j.counts.bytes ? fmt.bytes(j.counts.bytes) : "—" }}</span>
+              <span class="small muted nowrap r-when"><RelativeTime :at="j.finished_at ?? j.created_at" /></span>
             </li>
           </ul>
         </section>
@@ -235,7 +235,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .sending { display: grid; gap: 0.35rem; cursor: pointer; }
 .sending:hover { border-color: var(--border-strong); }
 .sending .line { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
-.recent { list-style: none; margin: 0; padding: 0; }
+.recent { list-style: none; margin: 0; padding: 0; container-type: inline-size; }
 .recent li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto 5rem 5.5rem; gap: 0.6rem; align-items: center; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--rule); cursor: pointer; }
 .recent li:last-child { border-bottom: 0; }
 .recent li:hover { background: var(--surface-2); }
@@ -255,4 +255,19 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .onboarding li { display: flex; gap: 0.6rem; align-items: center; }
 .onboarding li.done { color: var(--ok); }
 @media (max-width: 1080px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+/* A narrow list: the name and its state on top, where, size and when under them. */
+@container (max-width: 520px) {
+  .recent li { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name name state" "dest size when"; gap: 0.15rem 0.75rem; }
+  .r-name { grid-area: name; }
+  .r-dest { grid-area: dest; font-size: var(--fs-sm); }
+  .r-state { grid-area: state; justify-self: end; }
+  .r-size { grid-area: size; }
+  .r-when { grid-area: when; }
+}
+@media (max-width: 559px) {
+  .need { flex-wrap: wrap; }
+  .need .text { flex-basis: calc(100% - 2.5rem); }
+  .need .btn { margin-left: auto; }
+  .offline { flex-direction: column; align-items: flex-start; padding: 1rem; }
+}
 </style>

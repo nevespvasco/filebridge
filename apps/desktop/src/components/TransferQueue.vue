@@ -54,8 +54,8 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
           </tr>
         </thead>
         <tbody>
-          <tr v-for="f in rows" :key="`${f.dir}/${f.name}`">
-            <td class="name" :style="{ boxShadow: `inset 3px 0 0 ${categoryColor(f.category)}` }">
+          <tr v-for="f in rows" :key="`${f.dir}/${f.name}`" :style="{ '--cat': categoryColor(f.category) }">
+            <td class="name">
               <div class="name-in">
                 <AppIcon class="cat" :name="CATEGORY_ICON[f.category]" :style="{ color: categoryColor(f.category) }" />
                 <span class="text">
@@ -65,12 +65,12 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
                 <AppIcon v-if="f.renamed_from" name="renamed" class="renamed" :label="$t('queue.renamed', { name: f.renamed_from })" />
               </div>
             </td>
-            <td class="n small">{{ fmt.bytes(f.size) }}</td>
+            <td class="n small size">{{ fmt.bytes(f.size) }}</td>
             <td class="bar">
               <ProgressBar :value="fmt.percent(f.bytes, f.size)" :tone="held ? 'warn' : 'accent'" />
               <span class="small num pct">{{ Math.round(fmt.percent(f.bytes, f.size)) }} %</span>
             </td>
-            <td class="n small muted">
+            <td class="n small muted speed">
               {{ fmt.rate(f.bytes_per_sec) }}<template v-if="eta(f)"> · {{ eta(f) }}</template>
             </td>
           </tr>
@@ -95,12 +95,12 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
 </template>
 
 <style scoped>
-.queue { display: grid; gap: 0.6rem; }
-.head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.queue { display: grid; gap: 0.6rem; container-type: inline-size; }
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; flex-wrap: wrap; }
 h2 { font-size: 1rem; margin: 0; }
 .rows td { padding: 0.45rem 0.6rem; border-bottom-color: var(--rule); }
 .rows { table-layout: fixed; }
-.name { padding-left: 0.75rem !important; }
+.name { padding-left: 0.75rem !important; box-shadow: inset 3px 0 0 var(--cat); }
 .c-name { width: 42%; }
 .c-size { width: 12%; }
 .c-bar { width: 28%; }
@@ -115,5 +115,17 @@ td.n { white-space: nowrap; }
 .held .rows { opacity: 0.6; }
 .arrived summary { cursor: pointer; color: var(--text-2); }
 .done-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
-.done-list li { display: inline-flex; gap: 0.3rem; align-items: center; max-width: 16rem; min-width: 0; }
+.done-list li { display: inline-flex; gap: 0.3rem; align-items: center; max-width: min(16rem, 100%); min-width: 0; }
+/* A narrow queue: each file on two lines, its name and size, then its bar and speed. */
+@container (max-width: 560px) {
+  .rows, .rows tbody { display: block; }
+  .rows colgroup { display: none; }
+  .rows tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.75rem; align-items: center; padding: 0.5rem 0.6rem 0.5rem 0.75rem; border-bottom: 1px solid var(--rule); box-shadow: inset 3px 0 0 var(--cat); }
+  .rows tr:last-child { border-bottom: 0; }
+  .rows td { display: block; padding: 0 !important; border: 0; }
+  .rows td.name { box-shadow: none; }
+  .rows td.bar { display: flex; align-items: center; gap: 0.5rem; }
+  .bar :deep(.progress) { flex: 1; width: auto; }
+  .pct { width: auto; min-width: 2.8rem; }
+}
 </style>

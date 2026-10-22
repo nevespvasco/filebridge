@@ -885,7 +885,7 @@ export type Profile_Deserialize = {
 	integration?: string | null,
 	/**  The integration's own settings, as its profile wizard saved them. */
 	integration_settings?: Value,
-	target?: TargetSpec,
+	target?: TargetSpec_Deserialize,
 };
 
 /**  A saved destination. Holds keyring references only, never secrets (ADR 0004). */
@@ -897,7 +897,7 @@ export type Profile_Serialize = {
 	integration: string | null,
 	/**  The integration's own settings, as its profile wizard saved them. */
 	integration_settings: Value,
-	target: TargetSpec,
+	target: TargetSpec_Serialize,
 };
 
 /**  A folder or file sent before, for "Recently sent from". */
@@ -1203,9 +1203,30 @@ export type StorageView_Serialize = {
 	last_error: string | null,
 };
 
-export type TargetSpec = {
+export type TargetSpec = TargetSpec_Serialize | TargetSpec_Deserialize;
+
+export type TargetSpec_Deserialize = {
 	family: Family,
 	case_sensitive: boolean,
+	/**  Longest name the destination takes, in UTF-8 bytes. Default 255. */
+	max_name_bytes?: number | null,
+	/**
+	 *  Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+	 *  classic limit), 4096 elsewhere.
+	 */
+	max_path_bytes?: number | null,
+};
+
+export type TargetSpec_Serialize = {
+	family: Family,
+	case_sensitive: boolean,
+	/**  Longest name the destination takes, in UTF-8 bytes. Default 255. */
+	max_name_bytes: number | null,
+	/**
+	 *  Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+	 *  classic limit), 4096 elsewhere.
+	 */
+	max_path_bytes: number | null,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };

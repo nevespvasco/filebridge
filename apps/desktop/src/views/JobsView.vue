@@ -136,14 +136,14 @@ function clearFilters() {
             @keydown.enter.self="router.push({ name: 'job', params: { id } })"
           >
             <template v-if="jobs.byId[id]">
-              <td>
+              <td class="c-what">
                 <strong class="ellipsis block" :title="jobLabel(jobs.byId[id])">{{ jobLabel(jobs.byId[id]) }}</strong>
                 <span v-if="jobs.byId[id].label" class="small muted ellipsis block" :title="jobs.byId[id].sources.join('\n')">{{ defaultLabel(jobs.byId[id].sources) }}</span>
                 <span v-if="jobs.byId[id].again_of" class="small muted block"><AppIcon name="again" /> {{ $t("jobs.again") }}</span>
               </td>
-              <td class="ellipsis">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
-              <td><JobStateBadge :state="jobs.byId[id].state" /></td>
-              <td>
+              <td class="c-where ellipsis" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
+              <td class="c-state"><JobStateBadge :state="jobs.byId[id].state" /></td>
+              <td class="c-progress" :class="{ 'has-bar': RUNNING.includes(jobs.byId[id].state) || jobs.byId[id].state === 'paused' }">
                 <template v-if="RUNNING.includes(jobs.byId[id].state) || jobs.byId[id].state === 'paused'">
                   <ProgressBar
                     :tone="jobs.byId[id].state === 'paused' || jobs.byId[id].state === 'retrying' ? 'warn' : 'accent'"
@@ -160,8 +160,8 @@ function clearFilters() {
                 <span v-else-if="jobs.byId[id].state === 'failed' || jobs.byId[id].state === 'cancelled'" class="muted">—</span>
                 <span v-else class="small num">{{ $t("jobs.files", { n: fmt.count(jobs.byId[id].counts.files) }, jobs.byId[id].counts.files) }}</span>
               </td>
-              <td class="n small num">{{ jobs.byId[id].counts.bytes ? fmt.bytes(jobs.byId[id].counts.bytes) : "—" }}</td>
-              <td class="small muted nowrap">
+              <td class="c-size n small num">{{ jobs.byId[id].counts.bytes ? fmt.bytes(jobs.byId[id].counts.bytes) : "—" }}</td>
+              <td class="c-when small muted nowrap">
                 <RelativeTime :at="jobs.byId[id].finished_at ?? jobs.byId[id].created_at" />
               </td>
               <td class="c-menu" @click.stop @keydown.stop>
@@ -185,10 +185,10 @@ function clearFilters() {
 
 <style scoped>
 .toolbar { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
-.inline { display: inline-flex; gap: 0.4rem; align-items: center; }
+.inline { display: inline-flex; gap: 0.4rem; align-items: center; min-width: 0; }
 .inline select { width: auto; max-width: 14rem; }
 .chips { margin-bottom: 1rem; }
-.table { min-width: 680px; }
+.table-wrap { container-type: inline-size; }
 .c-what { width: 26%; }
 .c-where { width: 15%; }
 .c-state { width: 15%; }
@@ -197,11 +197,41 @@ function clearFilters() {
 .c-when { width: 10%; }
 .c-menu { width: 5%; text-align: right; overflow: visible; }
 .table td { overflow: visible; }
+/* Only the menu needs to spill out of its cell; a long destination name ends in "…". */
+.table td.c-where { overflow: hidden; }
 .block { display: block; }
 .page-head .lead-text { margin-bottom: 0; }
 .empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
 .empty p { margin: 0 0 0.5rem; }
 .empty-icon { color: var(--muted); }
 .th-help { display: inline-flex; align-items: center; flex-wrap: wrap; }
-.pager { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1rem; }
+.pager { display: flex; justify-content: center; align-items: center; gap: 0.5rem 1rem; margin-top: 1rem; flex-wrap: wrap; }
+@media (max-width: 559px) {
+  .toolbar { gap: 0.5rem; }
+  .toolbar :deep(.search) { flex-basis: 100%; max-width: none; min-width: 0; }
+  .inline { flex: 1 1 auto; }
+  .inline select { flex: 1; max-width: none; }
+}
+/* Columns that can't fit go first: Size, then the table becomes a list of cards (D06). */
+@container (max-width: 860px) {
+  .c-size { display: none; }
+  .c-what { width: 30%; }
+}
+@container (max-width: 700px) {
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table, .table tbody { display: block; }
+  .table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.7rem 0.6rem 0.7rem 0.9rem; border-bottom: 1px solid var(--border); }
+  /* The line break between the name row and the details. */
+  .table tr::after { content: ""; order: 4; flex-basis: 100%; height: 0; }
+  .table tr:last-child { border-bottom: 0; }
+  .table td { display: block; width: auto; padding: 0; border: 0; }
+  .table td.c-what { flex: 1 1 0; min-width: 0; order: 1; }
+  .table td.c-state { order: 2; }
+  .table td.c-menu { order: 3; width: auto; margin: -0.25rem -0.2rem -0.25rem 0; }
+  .table td.c-progress.has-bar { order: 5; flex-basis: 100%; }
+  .table td.c-where { order: 6; flex: 1 1 0; min-width: 0; font-size: var(--fs-sm); color: var(--text-2); }
+  .table td.c-progress:not(.has-bar) { order: 7; color: var(--text-2); }
+  .table td.c-size { order: 8; display: block; }
+  .table td.c-when { order: 9; }
+}
 </style>

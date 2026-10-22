@@ -11,17 +11,21 @@ defineProps<{ items: MenuItem[]; label: string }>();
 const emit = defineEmits<{ select: [id: string] }>();
 const open = ref(false);
 /** Fixed position under the trigger: the menu lives in <body>, so no scroll box clips it. */
-const pos = ref<{ top: string; right?: string; bottom?: string }>({ top: "0px" });
+const pos = ref<{ top: string; right?: string; bottom?: string; maxHeight?: string }>({ top: "0px" });
 const trigger = ref<HTMLButtonElement | null>(null);
 const menu = ref<HTMLElement | null>(null);
 
 function place() {
   const r = trigger.value?.getBoundingClientRect();
   if (!r) return;
-  const below = window.innerHeight - r.bottom > 260;
+  // Toward the side with more room, never taller than that room (it scrolls instead), so a
+  // short or narrow window never cuts it off.
+  const room = { below: window.innerHeight - r.bottom - 12, above: r.top - 12 };
+  const below = room.below > 260 || room.below >= room.above;
+  const right = `${Math.max(8, window.innerWidth - r.right)}px`;
   pos.value = below
-    ? { top: `${r.bottom + 4}px`, right: `${window.innerWidth - r.right}px` }
-    : { top: "auto", bottom: `${window.innerHeight - r.top + 4}px`, right: `${window.innerWidth - r.right}px` };
+    ? { top: `${r.bottom + 4}px`, right, maxHeight: `${room.below}px` }
+    : { top: "auto", bottom: `${window.innerHeight - r.top + 4}px`, right, maxHeight: `${room.above}px` };
 }
 async function show() {
   place();
@@ -97,7 +101,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .row-menu { position: relative; display: inline-block; }
 .trigger { padding: 0.25rem 0.4rem; }
-.menu { position: fixed; z-index: 60; min-width: 15rem; padding: 0.3rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-pop); display: grid; }
+.menu { position: fixed; z-index: 60; min-width: min(15rem, calc(100vw - 16px)); max-width: calc(100vw - 16px); overflow-y: auto; padding: 0.3rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-pop); display: grid; }
 .item { font: inherit; display: flex; gap: 0.55rem; align-items: center; text-align: left; padding: 0.45rem 0.6rem; border: 0; background: none; color: var(--text); border-radius: var(--radius-sm); cursor: pointer; }
 .item:hover, .item:focus-visible { background: var(--surface-2); outline: none; }
 .item.danger { color: var(--danger); }

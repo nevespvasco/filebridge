@@ -7,12 +7,22 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::{Entry, EntryId, Issue, Mapped, RuleSet, Severity};
+use unicode_normalization::UnicodeNormalization;
+
+use crate::{Entry, EntryId, Issue, Mapped, RuleSet, Severity, TargetProfile};
 
 /// Two entries would land on the same destination path.
 pub const RULE_COLLISION: &str = "collision";
-/// A name that is not valid UTF-8 and that no rule could fix.
+/// A name that is not valid UTF-8: decoded by the `encoding` rule, or, when that rule is off, an
+/// issue with no proposal.
 pub const RULE_ENCODING: &str = "encoding";
+/// A name, or the path it ends, longer than the destination takes.
+pub const RULE_LENGTH: &str = "length";
+
+/// The shortest name `length` proposes, whatever the path: below this the name says nothing.
+const MIN_NAME_BYTES: usize = 16;
+/// The marker put where `length` cuts a name.
+const CUT: &str = "…";
 
 /// What the user chose for one issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,17 +115,34 @@ impl fmt::Display for NameError {
 
 impl std::error::Error for NameError {}
 
-/// The active rules of one destination, and whether it tells names apart by case.
+/// The active rules of one destination, whether it tells names apart by case, and the longest
+/// name and path it takes.
 pub struct NamePlan {
     rules: RuleSet,
     case_sensitive: bool,
+    max_name_bytes: usize,
+    max_path_bytes: usize,
 }
 
 impl NamePlan {
+    /// With the default limits (255-byte names, 4096-byte paths).
     pub fn new(rules: RuleSet, case_sensitive: bool) -> Self {
+        let target = TargetProfile::default();
         Self {
             rules,
             case_sensitive,
+            max_name_bytes: target.max_name_bytes,
+            max_path_bytes: target.max_path_bytes,
+        }
+    }
+
+    /// With `target`'s case sensitivity and limits.
+    pub fn for_target(rules: RuleSet, target: &TargetProfile) -> Self {
+        Self {
+            rules,
+            case_sensitive: target.case_sensitive,
+            max_name_bytes: target.max_name_bytes,
+            max_path_bytes: target.max_path_bytes,
         }
     }
 
@@ -125,43 +152,77 @@ impl NamePlan {
     }
 
     /// Every entry's proposed destination path and its issues: the rules' own, an `encoding`
-    /// issue for a name no rule could decode, and a `collision` issue (proposing a ` (2)`
-    /// suffix) for a path an earlier entry already takes. `entries` in scanner order.
+    /// issue for a name no rule could decode, a `length` issue (proposing a name cut in the
+    /// middle) for a name or path longer than the destination takes, and a `collision` issue
+    /// (proposing a ` (2)` suffix) for a path an earlier entry already takes. `entries` in
+    /// scanner order.
     pub fn propose(&self, entries: &[Entry]) -> Vec<Mapped> {
         let mut mapped = self.rules.apply(entries);
         let mut taken = HashSet::new();
         for (entry, m) in entries.iter().zip(&mut mapped) {
-            match (&m.dest_path, &m.dest_name) {
-                (_, None) => m.issues.push(Issue {
-                    rule: RULE_ENCODING,
-                    severity: Severity::NeedsDecision,
-                    message_key: "names.encoding.undecodable",
-                    before: entry.raw_name.clone(),
-                    after: entry.raw_name.clone(),
-                }),
-                (Some(path), Some(name)) => {
-                    if taken.insert(self.key(path)) {
-                        continue;
-                    }
-                    let parent = path.rsplit_once('/').map(|(p, _)| p);
-                    let join = |n: &str| parent.map_or(n.to_owned(), |pp| format!("{pp}/{n}"));
-                    let proposal = (2..)
-                        .map(|n| with_suffix(name, n))
-                        .find(|cand| !taken.contains(&self.key(&join(cand))))
-                        .expect("an unused suffix exists");
-                    taken.insert(self.key(&join(&proposal)));
+            let (Some(path), Some(name)) = (m.dest_path.clone(), m.dest_name.clone()) else {
+                if m.dest_name.is_none() {
                     m.issues.push(Issue {
-                        rule: RULE_COLLISION,
+                        rule: RULE_ENCODING,
                         severity: Severity::NeedsDecision,
-                        message_key: "names.collision",
-                        before: name.as_bytes().to_vec(),
-                        after: proposal.into_bytes(),
+                        message_key: "names.encoding.undecodable",
+                        before: entry.raw_name.clone(),
+                        after: entry.raw_name.clone(),
                     });
                 }
-                (None, Some(_)) => {} // an ancestor is undecodable; its issue covers this entry
+                continue; // an ancestor is undecodable; its issue covers this entry
+            };
+            let parent = path.rsplit_once('/').map(|(p, _)| p.to_owned());
+            let join = |n: &str| {
+                parent
+                    .as_deref()
+                    .map_or(n.to_owned(), |pp| format!("{pp}/{n}"))
+            };
+            let mut name = name;
+            if let Some((short, key)) = self.fit(parent.as_deref(), &name) {
+                m.issues.push(Issue {
+                    rule: RULE_LENGTH,
+                    severity: Severity::NeedsDecision,
+                    message_key: key,
+                    before: name.as_bytes().to_vec(),
+                    after: short.as_bytes().to_vec(),
+                });
+                name = short;
             }
+            if taken.insert(self.key(&join(&name))) {
+                continue;
+            }
+            let proposal = (2..)
+                .map(|n| with_suffix(&name, n))
+                .find(|cand| !taken.contains(&self.key(&join(cand))))
+                .expect("an unused suffix exists");
+            taken.insert(self.key(&join(&proposal)));
+            m.issues.push(Issue {
+                rule: RULE_COLLISION,
+                severity: Severity::NeedsDecision,
+                message_key: "names.collision",
+                before: name.into_bytes(),
+                after: proposal.into_bytes(),
+            });
         }
         mapped
+    }
+
+    /// A shorter `name` (and the message for it) when it, or the path it ends under `parent`,
+    /// is longer than the destination takes.
+    fn fit(&self, parent: Option<&str>, name: &str) -> Option<(String, &'static str)> {
+        let room = parent.map_or(usize::MAX, |p| {
+            self.max_path_bytes.saturating_sub(p.len() + 1)
+        });
+        let (limit, key) = if name.len() > self.max_name_bytes && self.max_name_bytes <= room {
+            (self.max_name_bytes, "names.length.name")
+        } else if name.len() > room {
+            (room.max(MIN_NAME_BYTES), "names.length.path")
+        } else {
+            return None;
+        };
+        let short = shorten(name, limit);
+        (short != name).then_some((short, key))
     }
 
     /// Whether `choice` on the `rule` issue of `entry` can be honoured. Called when the user
@@ -170,12 +231,10 @@ impl NamePlan {
     pub fn check(&self, entry: &Entry, rule: &str, choice: &Choice) -> Result<(), NameError> {
         match choice {
             Choice::Skip => Ok(()),
-            Choice::Accept if rule == RULE_ENCODING => Err(NameError::NoProposal {
-                path: display(entry),
-            }),
+            Choice::Accept if rule == RULE_ENCODING => self.decodable(entry),
             Choice::Accept => Ok(()),
             Choice::Edit(name) => self.check_edit(entry, name),
-            Choice::KeepOriginal if rule == RULE_COLLISION => Ok(()),
+            Choice::KeepOriginal if rule == RULE_COLLISION || rule == RULE_LENGTH => Ok(()),
             Choice::KeepOriginal => self.kept_name(entry, &[rule]).map(drop),
         }
     }
@@ -241,18 +300,18 @@ impl NamePlan {
             return Ok(Some(name.clone()));
         }
         if choices().any(|(d, c)| d.rule == RULE_ENCODING && *c == Choice::Accept) {
-            return Err(NameError::NoProposal {
-                path: display(entry),
-            });
+            self.decodable(entry)?;
         }
+        let whole_tree = |rule: &str| rule == RULE_COLLISION || rule == RULE_LENGTH;
         let kept: Vec<&str> = choices()
-            .filter(|(d, c)| **c == Choice::KeepOriginal && d.rule != RULE_COLLISION)
+            .filter(|(d, c)| **c == Choice::KeepOriginal && !whole_tree(&d.rule))
             .map(|(d, _)| d.rule.as_str())
             .collect();
         let mut name = self.kept_name(entry, &kept)?;
-        if let Some((d, _)) =
-            choices().find(|(d, c)| d.rule == RULE_COLLISION && **c == Choice::Accept)
-        {
+        // A collision's proposal already carries the length cut, so it wins over it.
+        let accepted =
+            |rule: &str| choices().find(|(d, c)| d.rule == rule && **c == Choice::Accept);
+        if let Some((d, _)) = accepted(RULE_COLLISION).or_else(|| accepted(RULE_LENGTH)) {
             name = String::from_utf8_lossy(&d.after).into_owned();
         }
         valid(&name)?;
@@ -306,11 +365,25 @@ impl NamePlan {
         Ok(name)
     }
 
+    /// Accept on `encoding` needs a reading of the name: there is none when the `encoding` rule
+    /// is off and the name is not UTF-8.
+    fn decodable(&self, entry: &Entry) -> Result<(), NameError> {
+        match self.rules.run(entry, &[]) {
+            (Some(_), _) => Ok(()),
+            (None, _) => Err(NameError::NoProposal {
+                path: display(entry),
+            }),
+        }
+    }
+
+    /// What two paths must not share: their NFC form (servers that normalise would make them
+    /// one), and, on a destination that ignores case, their lowercase form.
     fn key(&self, path: &str) -> String {
+        let nfc: String = path.nfc().collect();
         if self.case_sensitive {
-            path.to_owned()
+            nfc
         } else {
-            path.to_lowercase()
+            nfc.to_lowercase()
         }
     }
 }
@@ -326,6 +399,30 @@ fn valid(name: &str) -> Result<(), NameError> {
 
 fn display(entry: &Entry) -> String {
     String::from_utf8_lossy(&entry.raw_path).into_owned()
+}
+
+/// `name` cut to at most `max` bytes in the middle of its stem, keeping the extension and both
+/// ends: `Relatório anual de atividades.pdf` → `Relatório a…tividades.pdf`. Always on character
+/// boundaries; a name that fits is returned as is.
+pub fn shorten(name: &str, max: usize) -> String {
+    if name.len() <= max {
+        return name.to_owned();
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(dot) if dot > 0 && name.len() - dot <= 16 => name.split_at(dot),
+        _ => (name, ""),
+    };
+    let floor = |s: &str, n: usize| (0..=n.min(s.len())).rev().find(|i| s.is_char_boundary(*i));
+    let Some(room) = max.checked_sub(ext.len() + CUT.len()).filter(|r| *r >= 2) else {
+        let end = floor(name, max).unwrap_or(0);
+        return name[..end].to_owned();
+    };
+    let head = floor(stem, room / 2).unwrap_or(0);
+    let tail_len = room - head;
+    let tail = (stem.len().saturating_sub(tail_len)..=stem.len())
+        .find(|i| stem.is_char_boundary(*i))
+        .unwrap_or(stem.len());
+    format!("{}{CUT}{}{ext}", &stem[..head], &stem[tail..])
 }
 
 /// `photo.jpg` → `photo (2).jpg`; `.bashrc` and `README` get the suffix at the end.
@@ -596,5 +693,100 @@ mod tests {
         let plan = nfc_only(true);
         let planned = plan.resolve(&entries, &[]).unwrap();
         assert_eq!(planned, [path("Acme"), path("Acme/b.txt")]);
+    }
+
+    fn limited(max_name: usize, max_path: usize) -> NamePlan {
+        let target = TargetProfile {
+            max_name_bytes: max_name,
+            max_path_bytes: max_path,
+            ..TargetProfile::default()
+        };
+        NamePlan::for_target(RuleSet::new(vec![Box::new(Nfc)], &target), &target)
+    }
+
+    #[test]
+    fn shorten_cuts_the_middle_and_keeps_the_extension() {
+        let long = "Relatório anual de atividades.pdf";
+        let short = shorten(long, 24);
+        assert!(short.len() <= 24, "{short}");
+        assert!(
+            short.starts_with("Rela") && short.ends_with("des.pdf"),
+            "{short}"
+        );
+        assert!(short.contains(CUT));
+        assert_eq!(shorten("ok.txt", 24), "ok.txt");
+        // Multi-byte characters are never split.
+        let s = shorten(&"ção".repeat(40), 31);
+        assert!(s.len() <= 31 && s.is_char_boundary(s.len()));
+    }
+
+    #[test]
+    fn a_name_too_long_for_the_destination_is_a_decision() {
+        let entries = tree(&[(None, "a".repeat(40).as_bytes())]);
+        let plan = limited(20, 4096);
+        let mapped = plan.propose(&entries);
+        let issue = &mapped[0].issues[0];
+        assert_eq!(issue.rule, RULE_LENGTH);
+        assert_eq!(issue.severity, Severity::NeedsDecision);
+        assert_eq!(issue.message_key, "names.length.name");
+        assert!(issue.after.len() <= 20);
+
+        let mut decisions = defaults(&mapped);
+        assert!(plan.resolve(&entries, &decisions).is_err(), "pending");
+        set(&mut decisions, 0, RULE_LENGTH, Choice::Accept);
+        let short = String::from_utf8(issue.after.clone()).unwrap();
+        assert_eq!(plan.resolve(&entries, &decisions).unwrap(), [path(&short)]);
+        set(&mut decisions, 0, RULE_LENGTH, Choice::KeepOriginal);
+        assert_eq!(
+            plan.resolve(&entries, &decisions).unwrap(),
+            [path(&"a".repeat(40))]
+        );
+    }
+
+    #[test]
+    fn a_path_too_long_shortens_its_last_name() {
+        let deep = format!("{}/{}", "d".repeat(30), "f".repeat(30));
+        let entries = tree(&[
+            (None, "d".repeat(30).as_bytes()),
+            (Some(0), deep.as_bytes()),
+        ]);
+        let mapped = limited(255, 50).propose(&entries);
+        assert!(mapped[0].issues.is_empty(), "the folder fits");
+        let issue = &mapped[1].issues[0];
+        assert_eq!(issue.message_key, "names.length.path");
+        assert!(30 + 1 + issue.after.len() <= 50);
+    }
+
+    #[test]
+    fn nfc_and_nfd_spellings_collide() {
+        // "Verão" twice: once NFD (a + cc 83), once NFC (c3 a3). Without the nfc rule both would
+        // reach a normalising server as the same name.
+        let entries = tree(&[(None, b"Vera\xcc\x83o"), (None, b"Ver\xc3\xa3o")]);
+        let plan = NamePlan::new(RuleSet::new(vec![], &TargetProfile::default()), true);
+        let mapped = plan.propose(&entries);
+        assert!(mapped[0].issues.is_empty());
+        assert_eq!(mapped[1].issues[0].rule, RULE_COLLISION);
+    }
+
+    #[test]
+    fn a_latin1_name_is_decoded_and_can_be_accepted() {
+        // "Acção" in Latin-1, under the general rules.
+        let entries = tree(&[(None, b"Ac\xe7\xe3o")]);
+        let plan = NamePlan::new(
+            RuleSet::new(
+                general_rules(ActiveFor::windows()),
+                &TargetProfile::default(),
+            ),
+            true,
+        );
+        let mapped = plan.propose(&entries);
+        assert_eq!(mapped[0].issues[0].rule, RULE_ENCODING);
+        assert_eq!(mapped[0].dest_path.as_deref(), Some("Acção"));
+        assert_eq!(
+            plan.check(&entries[0], RULE_ENCODING, &Choice::Accept),
+            Ok(())
+        );
+        let decisions = defaults(&mapped);
+        assert_eq!(plan.resolve(&entries, &decisions).unwrap(), [path("Acção")]);
     }
 }

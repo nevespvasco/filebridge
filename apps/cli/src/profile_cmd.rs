@@ -111,6 +111,7 @@ fn target(windows: bool) -> TargetSpec {
         TargetSpec {
             family: Family::Windows,
             case_sensitive: false,
+            ..TargetSpec::default()
         }
     } else {
         TargetSpec::default()
