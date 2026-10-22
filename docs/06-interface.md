@@ -5,6 +5,11 @@ App: `apps/desktop` (Tauri 2 + Vue 3 + TypeScript + Vite, Pinia stores).
 A 5-step wizard for new sends and a job list to follow them. **The user never sees a terminal**;
 whoever wants to can see the equivalent commands in a "Details" panel.
 
+> **Design work in progress.** The visual language, the navigation (a Home screen, tabs on
+> Transfer detail) and the next screens (transfer queue, files of a transfer, job log, report
+> export, destination storage and browser) are specified in [design/](design/README.md). Those
+> specs are *Proposed*; this doc stays the reference for what is built.
+
 ## "New transfer" wizard
 
 1. **Source** — drag files and folders, or pick in the file explorer. Shows the running total

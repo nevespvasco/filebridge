@@ -16,6 +16,8 @@ detail to build each crate on its own.
 9. [08 — Repository structure](08-repository-structure.md): monorepo layout and dependency rules.
 10. [09 — Roadmap](09-roadmap.md): phases 0–3 and the gate that closes each one.
 11. [10 — Risks & open decisions](10-risks-and-open-decisions.md).
+12. [Design](design/README.md): review of reference designs, the design system, navigation and
+    feature specs D01–D11 (all *Proposed*).
 
 ## Architecture decision records
 
@@ -31,6 +33,7 @@ detail to build each crate on its own.
 | [0008](adr/0008-service-ipc.md) | Engine in `filebridge-service`; window ↔ service IPC over a local socket |
 | [0009](adr/0009-nextcloud-on-the-ssh-host.md) | Nextcloud direct mode also on the SSH host itself (no `pct`), not only through the Proxmox node |
 | [0010](adr/0010-bandwidth-limit-and-send-window.md) | One app-wide bandwidth limit and a daily send window (transfer waits outside it) |
+| [0011](adr/0011-reclaimable-source-is-shown-never-freed.md) | *Proposed:* a reclaimable source is shown and opened in the file manager, never freed by the app |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

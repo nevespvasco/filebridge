@@ -5,6 +5,20 @@ interface, seam, adapter) are used in their usual sense.
 
 **Job**: one send, from the sources the user picked to a Profile's destination. Goes through the
 Stages and the Job lifecycle's states; everything about it is persisted in SQLite.
+Shown to the user as a **Transfer** (pt: *Transferência*). Never called an "upload": filebridge
+owns no store to upload to.
+
+**Source**: a file or folder the user picked for a Job. filebridge only reads it; nothing at a
+Source is ever moved, renamed or deleted.
+
+**Label**: the name the user gives a Job ("Photos 2019"). Optional; without one the Job is
+shown by its first Source's name.
+
+**Job group**: which of five sets a Job's state falls in, for the user: active, needs you, not
+sent, finished, cancelled. Every state is in exactly one group.
+
+**Send again**: a new Job with the same Sources and options as an earlier one, to the same or
+another Profile, reusing the earlier Job's Decisions. Only files that are new or changed travel.
 
 **Stage**: one of the six steps of a Job (source & destination, analyse, fix names, transfer,
 verify, update tool). Docs/02.
@@ -20,6 +34,13 @@ it was a verify round that sends files again. Saved with the state change that e
 verify state.
 
 **Entry**: one source file or directory, its name as raw bytes.
+
+**Category**: a coarse kind of file, from its name's extension: image, video, audio, document,
+archive, code, or other. Used to show what a Job contains; it never changes how a file is sent.
+
+**Entry status**: one word for where an Entry stands, merging its transfer and verify states:
+not sent, sending, sent, verified, different, missing, couldn't verify, failed, skipped. A
+**problem** is different, missing, couldn't verify or failed.
 
 **Name rule** (`NameRule`): checks one name and proposes a fix (NFC, forbidden characters,
 reserved names…). General rules live in `names`; an Integration adds its own.
@@ -48,3 +69,18 @@ its check of a Profile, preflight, and the update after a send.
 **Operation catalogue**: the one list of everything a client can ask the service
 (`crates/ipc/src/operations.rs`), from which the wire request, the `Operations` trait, the
 server's dispatch and the desktop's Tauri commands are generated.
+
+**Job log**: everything recorded about one Job, in order: creation, options, analysis,
+decisions, state changes, retries, transfer rounds, verify rounds, the Integration's update and
+the end. Kept for good, readable after the window was closed.
+
+**Activity**: the milestones of every Job (created, started, retrying, finished, failed) and
+Profile changes, newest first. A short summary drawn from the Job logs, not a log of its own.
+
+**Report**: the export of one finished Job: its summary and every Entry with source path,
+destination path, size, Entry status, the Name rules that changed it, and its hash. The proof
+of a migration that can leave the app.
+
+**Reclaimable**: said of a Source whose every file a completed Job sent and verified identical,
+with nothing skipped and nothing changed at the Source since. filebridge shows a reclaimable
+Source and opens it in the file manager; it never frees the space itself (ADR 0011).
