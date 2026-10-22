@@ -2,21 +2,29 @@
   "nav": {
     "label": "Main",
     "new": "New transfer",
-    "jobs": "Jobs",
+    "jobs": "Transfers",
     "destinations": "Destinations",
-    "settings": "Settings"
+    "settings": "Settings",
+    "tips": {
+      "new": "Copy files and folders to another place, step by step",
+      "jobs": "See the transfers in progress and the ones already finished",
+      "destinations": "The places you send files to: a disk, a server or Nextcloud",
+      "settings": "Language and notifications"
+    }
   },
   "tray": {
     "show": "Open filebridge",
     "quit": "Close window (sends keep running)"
   },
   "conn": {
-    "connected": "Service connected",
-    "connecting": "Connecting…",
-    "disconnected": "Service unreachable",
+    "connected": "Copy engine running",
+    "connecting": "Starting the copy engine…",
+    "disconnected": "Copy engine not responding",
     "retry": "Try again",
-    "bannerTitle": "No connection to filebridge-service.",
-    "bannerBody": "Sends already running continue in the service; the window reconnects by itself."
+    "bannerTitle": "The copy engine isn't answering.",
+    "bannerBody": "Sends already running are not lost. This window reconnects by itself; you can also click “Try again”.",
+    "label": "copy engine",
+    "tip": "The copy engine is the part of filebridge that copies the files, in the background, even with this window closed. This only says the window can talk to it; it says nothing about your destinations, which are checked when you use them."
   },
   "common": {
     "next": "Next",
@@ -31,7 +39,9 @@
     "browse": "Browse…",
     "advanced": "Advanced",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "recommended": "recommended",
+    "optional": "optional"
   },
   "status": {
     "ok": "OK",
@@ -39,9 +49,10 @@
     "fail": "Failed"
   },
   "details": {
-    "title": "Details",
+    "title": "Technical details",
     "none": "Nothing sent to the service yet.",
-    "sourceNote": "Nothing is read yet: the files are counted once you choose the destination."
+    "sourceNote": "Nothing is read yet: the files are counted once you choose the destination.",
+    "hint": "(for advanced users: what this screen asks the service)"
   },
   "wizard": {
     "title": "New transfer",
@@ -51,11 +62,20 @@
       "3": "Analysis",
       "4": "Review & send",
       "5": "Transfer"
+    },
+    "subtitle": "Copy files to a disk, a server or Nextcloud in 4 steps. Your original files are never changed.",
+    "stepOf": "Step {n} of {total}",
+    "stepTips": {
+      "1": "Choose the files and folders to copy",
+      "2": "Choose where the copy goes",
+      "3": "Check the names before copying",
+      "4": "Confirm and start the copy",
+      "5": "Follow the copy until it ends"
     }
   },
   "source": {
     "title": "What do you want to send?",
-    "intro": "Drag files and folders onto the window, or pick them.",
+    "intro": "Drag files and folders onto this window, or use the buttons below. You can add several; they all go to the same place.",
     "drop": "Drop files or folders here",
     "pickFolders": "Choose folders",
     "pickFiles": "Choose files",
@@ -63,7 +83,21 @@
     "remove": "Remove {path}",
     "total": "{files} files · {size}",
     "countLater": "The total (files and GB) is counted in the analysis, once the destination is chosen.",
-    "readOnly": "filebridge only reads the source: nothing there is ever moved, renamed or deleted."
+    "readOnly": "filebridge only reads the source: nothing there is ever moved, renamed or deleted.",
+    "examples": "For example: your Photos folder, a project folder or a whole external disk.",
+    "howTitle": "How it works",
+    "how": {
+      "1": "Choose what to copy (this screen).",
+      "2": "Choose where it goes: an external disk, a server or Nextcloud.",
+      "3": "filebridge checks the names and warns you about any the destination wouldn't accept.",
+      "4": "You confirm, and the copy starts. You can close the window: it keeps going."
+    },
+    "dropOr": "or",
+    "pickFoldersTip": "Copies the folder with everything inside it",
+    "pickFilesTip": "Copies only the files you select",
+    "removeTip": "Remove from this list (nothing is deleted)",
+    "addMore": "You can still add more.",
+    "needOne": "Add at least one file or folder to continue."
   },
   "dest": {
     "title": "Where to?",
@@ -75,8 +109,15 @@
     "test": "Connection test",
     "retest": "Test again",
     "etaLater": "The estimated time appears once the files are counted.",
-    "failingHint": "The connection test has failures.",
-    "analyse": "Analyse"
+    "failingHint": "The connection test found problems (see above). You can continue, but the copy may fail.",
+    "analyse": "Analyse",
+    "guide": "Click a destination to select it. filebridge tests the connection straight away and shows the free space.",
+    "guideFirst": "You don't have a destination yet. Create one below: for an external disk or a USB stick, choose “Local folder”.",
+    "selected": "Selected",
+    "testTip": "Checks that filebridge can reach the destination and write there. Nothing is copied.",
+    "needOne": "Select a destination to continue.",
+    "finishForm": "Save or cancel the new destination first.",
+    "analyseTip": "Counts the files and looks for names the destination wouldn't accept. Nothing is copied yet."
   },
   "preflight": {
     "transport": "Destination",
@@ -100,41 +141,64 @@
     "rerun": "Analyse again",
     "names": "Names",
     "noIssues": "No name problems: everything is sent as it is.",
-    "pendingHint": "{n} decision pending | {n} decisions pending"
+    "pendingHint": "{n} decision pending | {n} decisions pending",
+    "intro": "filebridge counts the files and checks whether any name would cause problems at the destination. Nothing has been copied yet.",
+    "countingHint": "Large folders can take a few minutes. You can wait here or come back later.",
+    "errorHint": "Check that the files and the destination are still reachable, then try again.",
+    "guidePendingTitle": "{n} name needs your decision | {n} names need your decision",
+    "guidePending": "Open each group marked in yellow and choose what to do. If unsure, click “Accept all”: it uses the suggested fix, which is the safe choice.",
+    "guideOk": "All good: no name needs changing. Click “Next” to review and send.",
+    "guideFixed": "All good: the names below are adjusted automatically in the copy so the destination accepts them. Your originals keep their names. Click “Next”.",
+    "tooBigHint": "There isn't enough free space at the destination. Free some space there, or go back and choose fewer files.",
+    "symlinksHelp": "Shortcuts (symbolic links) point to other files. They aren't copied, so the same thing isn't copied twice and nothing outside the chosen folders gets in.",
+    "scanErrorsHelp": "Usually files you don't have permission to read, or that were removed while counting. They won't be copied.",
+    "preflightHelp": "whether the destination is reachable, accepts writing, and how much space is free",
+    "namesHelp": "Some systems refuse certain names (Windows, for example, refuses “:” and “?”). filebridge fixes the name only in the copy; the original file stays as it is.",
+    "namesExample": "“Invoice: March?.pdf” → “Invoice_ March_.pdf”",
+    "legendTitle": "What each option does",
+    "waitHint": "Wait for the analysis to finish."
   },
   "rules": {
     "unknown": "{n} names flagged by “{rule}”",
     "nfc": {
-      "title": "{n} name with decomposed accents | {n} names with decomposed accents",
-      "explain": "Fixed automatically: the accents are rewritten in the composed form (NFC). The text looks the same; the bytes change."
+      "title": "{n} name with accents stored differently | {n} names with accents stored differently",
+      "explain": "Fixed automatically. The text looks the same, but the accents are stored in a way other systems may not recognise (common in files from a Mac). They're converted to the standard form (NFC).",
+      "example": "“café.txt” looks the same before and after; only the hidden bytes change"
     },
     "nextcloud-nfc": {
       "title": "{n} name Nextcloud would not find | {n} names Nextcloud would not find",
-      "explain": "Fixed automatically: Nextcloud only indexes names in the composed form (NFC)."
+      "explain": "Fixed automatically. Nextcloud only finds names whose accents are stored in the standard form (NFC), so they're converted.",
+      "example": "“Relatório.pdf” looks the same, but Nextcloud would not list it without the fix"
     },
     "forbidden-chars": {
       "title": "{n} name with characters the destination refuses | {n} names with characters the destination refuses",
-      "explain": "Fixed automatically: < > : \" \\ {'|'} ? * and control characters become _."
+      "explain": "Fixed automatically. The destination doesn't accept < > : \" \\ {'|'} ? * or control characters in names; each one becomes _.",
+      "example": "“Invoice: March?.pdf” → “Invoice_ March_.pdf”"
     },
     "trailing": {
       "title": "{n} name ending in a space or dot | {n} names ending in a space or dot",
-      "explain": "Fixed automatically: the trailing spaces and dots are removed."
+      "explain": "Fixed automatically. Windows doesn't allow names that end in a space or a dot, so they're removed.",
+      "example": "“Report.” → “Report”"
     },
     "reserved": {
       "title": "{n} reserved Windows name | {n} reserved Windows names",
-      "explain": "Fixed automatically: names like CON or COM1 get a prefix."
+      "explain": "Fixed automatically. Windows keeps some names for itself (CON, PRN, AUX, NUL, COM1…); they get a _ in front.",
+      "example": "“CON.txt” → “_CON.txt”"
     },
     "nextcloud-reserved": {
       "title": "{n} name Nextcloud reserves | {n} names Nextcloud reserves",
-      "explain": "Fixed automatically: names like .htaccess are renamed."
+      "explain": "Fixed automatically. Nextcloud keeps some names for itself, like .htaccess; they get a _ in front.",
+      "example": "“.htaccess” → “_.htaccess”"
     },
     "collision": {
       "title": "{n} name that would clash with another | {n} names that would clash with another",
-      "explain": "Two names become the same at the destination. Decide which one changes."
+      "explain": "After the fixes, two different names would end up the same at the destination, and one would replace the other. “Accept” adds a number to this one; or edit it.",
+      "example": "“Photo.jpg” and “photo.jpg” on a disk that doesn't tell capitals apart → “photo (2).jpg”"
     },
     "encoding": {
       "title": "{n} name that isn't valid UTF-8 | {n} names that aren't valid UTF-8",
-      "explain": "The original bytes can't be read as text. Decide how to send them."
+      "explain": "This name has characters that can't be read as text (often old files from another system). Edit it to give it a readable name, or skip it.",
+      "example": "“Relat�rio.doc” → edit to “Relatório.doc”"
     }
   },
   "issues": {
@@ -154,7 +218,22 @@
     "editTitle": "Choose the name at the destination",
     "editLabel": "New name",
     "editEmpty": "The name can't be empty.",
-    "editSlash": "A name can't contain /."
+    "editSlash": "A name can't contain /.",
+    "acceptTip": "Use the fixed name shown on the right",
+    "keepTip": "Send with the original name, without this fix (refused if the destination can't take it)",
+    "skipTip": "Don't send this file",
+    "editTip": "Type the name you want at the destination",
+    "acceptAllTip": "Use the suggested fix for all of them (recommended)",
+    "keepAllTip": "Send all of them with the original name",
+    "skipAllTip": "Send none of them",
+    "bulkAdvice": "Not sure? “Accept all” is the safe choice.",
+    "encodingAdvice": "These names can't be fixed automatically: edit each one, or skip them.",
+    "colBefore": "Original name",
+    "colAfter": "name at the destination",
+    "colChoose": "Your choice",
+    "bytesLabel": "bytes of the name",
+    "bytesTip": "Technical view: the bytes of the name before (red) and after (green). They show the change when the text looks identical.",
+    "editHint": "Only the name changes, not the folder it's in."
   },
   "decision": {
     "pending": "Pending",
@@ -176,11 +255,15 @@
       "sftp": "Copy over SFTP",
       "nextcloud": "Nextcloud (direct mode): files are copied, then Nextcloud indexes them"
     },
-    "verify": "Verify by checksum at the end",
-    "verifyHint": "Compares the SHA-256 of every file at the source and the destination. Slower, but proves the copy is identical.",
+    "verify": "Verify every file at the end",
+    "verifyHint": "After copying, filebridge reads every file again at the source and at the destination and confirms they're identical (SHA-256). It takes longer, but you know for sure nothing was lost.",
     "safety": "Copy only: the source is never changed or deleted. Closing the window doesn't stop the send.",
     "send": "Send",
-    "starting": "Starting…"
+    "starting": "Starting…",
+    "guide": "Check that everything is right. When you click “Send”, the copy starts and you can follow it on the next screen.",
+    "renamesHelp": "Names adjusted in the copy so the destination accepts them. The original files keep their names.",
+    "modeHelp": "How the files reach the destination.",
+    "sendTip": "Starts the copy. Your original files are not changed."
   },
   "after": {
     "title": "Sending",
@@ -195,8 +278,10 @@
     "verifiedAll": "Every file was verified: source and destination are identical.",
     "failures": "{n} file with errors | {n} files with errors",
     "problems": "{n} integration problem | {n} integration problems",
-    "openJob": "Open job",
-    "newTransfer": "New transfer"
+    "openJob": "Open transfer",
+    "newTransfer": "New transfer",
+    "failuresHint": "These files weren't copied. Click “Open transfer” to see why; after fixing the cause, start a new transfer with just these files.",
+    "openJobTip": "See every detail of this transfer: counts, errors and log"
   },
   "progress": {
     "bytes": "{done} of {total}",
@@ -250,8 +335,8 @@
     "failedBody": "{where}: {error}"
   },
   "jobs": {
-    "title": "Jobs",
-    "empty": "No sends yet.",
+    "title": "Transfers",
+    "empty": "No transfers yet.",
     "col": {
       "what": "What",
       "where": "Where",
@@ -260,11 +345,17 @@
       "speed": "Speed",
       "eta": "Time left",
       "retries": "Retries"
-    }
+    },
+    "intro": "All your transfers, running and finished. Click one to see its details, pause it or cancel it.",
+    "refreshTip": "Reload the list",
+    "emptyHint": "When you copy files with “New transfer”, they show up here so you can follow them.",
+    "emptyCta": "Start a new transfer",
+    "rowTip": "Open this transfer",
+    "retriesHelp": "How many times filebridge tried again by itself, for example after the network dropped."
   },
   "jobDetail": {
-    "title": "Job",
-    "notFound": "This job doesn't exist (any more).",
+    "title": "Transfer",
+    "notFound": "This transfer doesn't exist (any more).",
     "continue": "Continue in the wizard",
     "pause": "Pause",
     "resume": "Resume",
@@ -283,7 +374,12 @@
     "cancelNoDelete": "Nothing at the source or the destination is deleted.",
     "cancelFinal": "To send the rest later, start a new transfer.",
     "cancelConfirm": "Cancel send",
-    "keepSending": "Keep sending"
+    "keepSending": "Keep sending",
+    "continueTip": "This send hasn't started yet: go back to the wizard to finish it",
+    "pauseTip": "Stops for now; “Resume” continues from the same point",
+    "resumeTip": "Continues from where it stopped",
+    "cancelTip": "Stops for good. Files already copied stay at the destination.",
+    "unsentHint": "This send hasn't started. Click “Continue in the wizard” to finish choosing and send it."
   },
   "destinations": {
     "title": "Destinations",
@@ -292,7 +388,10 @@
     "deleteTitle": "Delete this destination?",
     "deleteForgets": "filebridge forgets the profile “{name}”.",
     "deleteNoFiles": "No files are deleted, at the destination or anywhere else.",
-    "deleteJobs": "Jobs that used it keep their history, but can't be resumed without it."
+    "deleteJobs": "Transfers that used it keep their history, but can't be resumed without it.",
+    "intro": "The places you send files to. Save each one once, then pick it in every new transfer.",
+    "emptyHint": "Create your first destination: an external disk, a server (SFTP) or Nextcloud.",
+    "deleteTip": "Forget this destination. No files are deleted."
   },
   "profile": {
     "kind": "Kind of destination",
@@ -302,9 +401,9 @@
       "nextcloud": "Nextcloud"
     },
     "kindsHint": {
-      "local": "A disk or folder on this computer",
-      "sftp": "A server or NAS over SSH",
-      "nextcloud": "Direct mode: Proxmox LXC over SSH"
+      "local": "An external disk, a USB stick or another folder on this computer",
+      "sftp": "A server or NAS you reach over SSH (Synology, TrueNAS, Raspberry Pi…)",
+      "nextcloud": "Nextcloud in a Proxmox container (advanced)"
     },
     "name": "Name",
     "nameHintLocal": "External disk",
@@ -313,11 +412,11 @@
     "port": "Port",
     "user": "User",
     "folder": "Folder",
-    "remoteFolder": "Folder on the server (absolute path)",
+    "remoteFolder": "Folder on the server",
     "keyFile": "Private key",
-    "keyFileHint": "empty = SSH agent",
+    "keyFileHint": "empty = use the SSH agent",
     "knownHosts": "known_hosts file",
-    "noPassword": "Key or SSH agent only; the server's host key must already be in known_hosts. Password login is not available in the window yet.",
+    "noPassword": "Login is by SSH key only (no password yet). Before using a server here for the first time, connect to it once in a terminal (ssh user{'@'}server) and accept it, so this computer knows it.",
     "target": "Destination file system",
     "family": {
       "unix": "Linux / Unix",
@@ -326,7 +425,35 @@
     },
     "caseSensitive": "case-sensitive",
     "caseInsensitive": "case-insensitive",
-    "save": "Save destination"
+    "save": "Save destination",
+    "kindQuestion": "Where do you want to copy to?",
+    "missing": "To save, fill in: {fields}",
+    "slashRule": "The folder on the server must start with “/”, e.g. /srv/backup.",
+    "help": {
+      "name": "A name for you to recognise this destination in the list. Anything works.",
+      "nameExample": "“Black external disk”, “Home NAS”",
+      "host": "The address of the server: its name on the network or its IP address.",
+      "port": "The server's SSH port. Leave 22 unless whoever set up the server told you otherwise.",
+      "user": "The user you log in with on the server. Empty uses the same user name as on this computer.",
+      "folder": "The folder where the copies go. Click “Browse…” to pick it instead of typing.",
+      "remoteFolder": "The folder on the server where the copies go. It's a full path, starting with “/”.",
+      "keyFile": "The file with your private SSH key, used instead of a password. Leave empty to use the key already loaded on this computer (SSH agent).",
+      "knownHosts": "The file listing the servers this computer already trusts. Leave empty to use the usual one.",
+      "target": "The kind of system the destination uses; it decides which names need fixing. If unsure: a USB stick or disk also used on Windows → Windows; a NAS or Linux server → Linux.",
+      "case": "When on, “Photo.jpg” and “photo.jpg” are two different files. Windows and macOS usually treat them as the same file."
+    },
+    "hint": {
+      "name": "Just for you to recognise it.",
+      "host": "Name or IP address, e.g. nas.local or 192.168.77.20",
+      "port": "Usually 22",
+      "user": "Empty = your user on this computer",
+      "browse": "Pick the folder in the file explorer",
+      "folder": "e.g. a folder on your external disk. Use “Browse…” to pick it.",
+      "remoteFolder": "Full path on the server, e.g. /volume1/backup",
+      "keyFile": "Empty = the SSH agent of this computer (the usual case)",
+      "knownHosts": "Empty = ~/.ssh/known_hosts",
+      "target": "If unsure, keep the suggestion: Windows and macOS turn off “case-sensitive” by themselves."
+    }
   },
   "nextcloud": {
     "intro": "filebridge connects over SSH to the Proxmox host, finds the Nextcloud container and checks each step. Nothing is changed during detection.",
@@ -335,7 +462,7 @@
     "ncUser": "Nextcloud user",
     "ncUserHint": "the account that receives the files",
     "folder": "Folder in that user's files",
-    "folderHint": "empty = root, e.g. Backup",
+    "folderHint": "Empty = the top of that user's files",
     "ctid": "Container (CTID)",
     "installDir": "Nextcloud install folder",
     "auto": "automatic",
@@ -353,7 +480,21 @@
       "run-as": "Web server user",
       "owner": "File owner"
     },
-    "done": "Done"
+    "done": "Done",
+    "advancedHint": "only if the detection asks for it",
+    "detectTip": "Connects and checks everything, step by step. Nothing is changed on the server.",
+    "help": {
+      "ncUser": "The Nextcloud account that receives the files: the login name, not the display name.",
+      "host": "The address of the Proxmox server where Nextcloud runs.",
+      "sshUser": "The user filebridge logs in with over SSH on the Proxmox server. Usually root.",
+      "folder": "A folder inside that user's files. Empty puts the files at the top.",
+      "ctid": "The number of the Proxmox container where Nextcloud runs. Leave empty and filebridge finds it.",
+      "installDir": "Where Nextcloud is installed inside the container. Leave empty and filebridge finds it."
+    },
+    "hint": {
+      "host": "Name or IP address of the Proxmox server",
+      "sshUser": "Usually root"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -369,10 +510,17 @@
     "schedule": "Send schedule",
     "scheduleHint": "e.g. 01:00–07:00",
     "later": "Bandwidth limit and schedule arrive in a later version.",
-    "service": "Service",
+    "service": "Service (technical information)",
     "state": "State",
     "version": "Version",
     "endpoint": "Socket",
-    "serviceHint": "filebridge-service does the sends; the window only shows them. It starts by itself when needed."
+    "serviceHint": "filebridge-service does the sends; the window only shows them. It starts by itself when needed.",
+    "bandwidthHelp": "The most filebridge may use of your connection, so the internet stays fast for everything else.",
+    "scheduleHelp": "The hours when sends may run, for example only at night."
+  },
+  "help": {
+    "about": "Help: {what}",
+    "more": "More information",
+    "example": "Example:"
   }
 }

@@ -4,6 +4,7 @@ import type { Profile_Serialize } from "@/bindings";
 import ProfileForm from "@/components/ProfileForm.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
+import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
 import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
@@ -49,7 +50,10 @@ const details = computed(() => [
 <template>
   <div class="step">
     <h2>{{ $t("dest.title") }}</h2>
-    <p class="muted">{{ $t("dest.intro") }}</p>
+    <div class="guide">
+      <span class="guide-icon" aria-hidden="true">👉</span>
+      <p>{{ profiles.loaded && !profiles.list.length ? $t("dest.guideFirst") : $t("dest.guide") }}</p>
+    </div>
     <p v-if="profiles.loadError" class="error">{{ profiles.loadError }}</p>
 
     <div class="profiles" role="radiogroup" :aria-label="$t('dest.title')">
@@ -62,7 +66,10 @@ const details = computed(() => [
         :aria-checked="wizard.profileId === p.id"
         @click="choose(p)"
       >
-        <span class="kind badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
+        <span class="top">
+          <span class="kind badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
+          <span v-if="wizard.profileId === p.id" class="badge badge-accent">✓ {{ $t("dest.selected") }}</span>
+        </span>
         <strong>{{ p.name }}</strong>
         <span class="small muted ellipsis mono" :title="profileWhere(p)">{{ profileWhere(p) }}</span>
         <span class="small">
@@ -83,8 +90,8 @@ const details = computed(() => [
 
     <div v-if="selectedTest && !creating" class="card test">
       <div class="test-head">
-        <strong>{{ $t("dest.test") }}</strong>
-        <button class="btn btn-small" :disabled="selectedTest.running" @click="profiles.test(wizard.profileId!)">{{ $t("dest.retest") }}</button>
+        <strong>{{ $t("dest.test") }}<HelpTip :text="$t('dest.testTip')" :label="$t('dest.test')" /></strong>
+        <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="selectedTest.running" @click="profiles.test(wizard.profileId!)">{{ $t("dest.retest") }}</button>
       </div>
       <p v-if="selectedTest.running" class="muted small">{{ $t("dest.testing") }}</p>
       <p v-else-if="selectedTest.error" class="error small">{{ selectedTest.error }}</p>
@@ -97,8 +104,10 @@ const details = computed(() => [
     <div class="footer">
       <button class="btn" @click="wizard.step = 1">← {{ $t("common.back") }}</button>
       <span class="grow" />
-      <span v-if="failing" class="small warn-text">{{ $t("dest.failingHint") }}</span>
-      <button class="btn btn-primary" :disabled="!wizard.canAnalyse || creating" @click="next">{{ $t("dest.analyse") }} →</button>
+      <span v-if="creating" class="why-disabled">{{ $t("dest.finishForm") }}</span>
+      <span v-else-if="!wizard.profileId" class="why-disabled">{{ $t("dest.needOne") }}</span>
+      <span v-else-if="failing" class="small warn-text">{{ $t("dest.failingHint") }}</span>
+      <button class="btn btn-primary" :title="$t('dest.analyseTip')" :disabled="!wizard.canAnalyse || creating" @click="next">{{ $t("dest.analyse") }} →</button>
     </div>
   </div>
 </template>
@@ -121,7 +130,8 @@ const details = computed(() => [
 .profile[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .profile:focus-visible { outline: 2px solid var(--accent); }
 .profile.add { border-style: dashed; }
-.kind { justify-self: start; }
+.top { display: flex; gap: 0.4rem; justify-content: space-between; align-items: center; }
+.profile[aria-checked="true"] { background: var(--accent-soft); }
 .form, .test { margin-top: 1rem; }
 .test-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 </style>

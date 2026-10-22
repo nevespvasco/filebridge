@@ -26,7 +26,10 @@ function newTransfer() {
 <template>
   <div class="step">
     <h2>{{ done ? $t("after.reportTitle") : $t("after.title") }}</h2>
-    <p v-if="!done" class="muted">{{ $t("after.closeOk") }}</p>
+    <div v-if="!done" class="guide">
+      <span class="guide-icon" aria-hidden="true">☕</span>
+      <p>{{ $t("after.closeOk") }}</p>
+    </div>
 
     <div class="card"><JobProgress :job-id="id" /></div>
 
@@ -42,6 +45,7 @@ function newTransfer() {
       <p v-if="job.options.verify && job.counts.mismatch === 0 && job.state === 'completed'" class="ok-text small">{{ $t("after.verifiedAll") }}</p>
       <details v-if="live?.failures.length" class="list">
         <summary class="small warn-text">{{ $t("after.failures", { n: live.failures.length }, live.failures.length) }}</summary>
+        <p class="small muted">{{ $t("after.failuresHint") }}</p>
         <ul class="small mono">
           <li v-for="(f, i) in live.failures" :key="i">{{ f.path }} — {{ f.error }}</li>
         </ul>
@@ -57,7 +61,7 @@ function newTransfer() {
     <DetailsPanel :lines="[request('job', { job_id: id })]" />
 
     <div class="footer">
-      <button class="btn" @click="router.push({ name: 'job', params: { id } })">{{ $t("after.openJob") }}</button>
+      <button class="btn" :title="$t('after.openJobTip')" @click="router.push({ name: 'job', params: { id } })">{{ $t("after.openJob") }}</button>
       <span class="grow" />
       <button class="btn btn-primary" @click="newTransfer">{{ $t("after.newTransfer") }}</button>
     </div>

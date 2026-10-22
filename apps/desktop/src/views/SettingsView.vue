@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import HelpTip from "@/components/HelpTip.vue";
 import { LOCALES } from "@/i18n";
 import { useConnection } from "@/stores/connection";
 import { useSettings } from "@/stores/settings";
@@ -32,11 +33,11 @@ const conn = useConnection();
 
       <section class="card placeholder" aria-disabled="true">
         <label class="field">
-          <span>{{ $t("settings.bandwidth") }}</span>
+          <span class="label-line">{{ $t("settings.bandwidth") }}<HelpTip :text="$t('settings.bandwidthHelp')" :label="$t('settings.bandwidth')" /></span>
           <input disabled :placeholder="$t('settings.bandwidthHint')" />
         </label>
         <label class="field">
-          <span>{{ $t("settings.schedule") }}</span>
+          <span class="label-line">{{ $t("settings.schedule") }}<HelpTip :text="$t('settings.scheduleHelp')" :label="$t('settings.schedule')" /></span>
           <input disabled :placeholder="$t('settings.scheduleHint')" />
         </label>
         <p class="small muted">{{ $t("settings.later") }}</p>

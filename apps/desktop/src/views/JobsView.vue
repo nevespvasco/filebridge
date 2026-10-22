@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import { useRouter } from "vue-router";
+import HelpTip from "@/components/HelpTip.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import { useFmt } from "@/composables/useFmt";
@@ -28,11 +29,19 @@ function sourcesLabel(sources: string[]) {
 <template>
   <div>
     <header class="page-head">
-      <h1>{{ $t("jobs.title") }}</h1>
-      <button class="btn" @click="jobs.loadPage()">{{ $t("common.refresh") }}</button>
+      <div>
+        <h1>{{ $t("jobs.title") }}</h1>
+        <p class="lead-text">{{ $t("jobs.intro") }}</p>
+      </div>
+      <button class="btn" :title="$t('jobs.refreshTip')" @click="jobs.loadPage()">{{ $t("common.refresh") }}</button>
     </header>
     <p v-if="jobs.loadError" class="error">{{ jobs.loadError }}</p>
-    <p v-else-if="!jobs.page.length" class="card muted">{{ $t("jobs.empty") }}</p>
+    <div v-else-if="!jobs.page.length" class="card empty">
+      <span class="empty-icon" aria-hidden="true">📭</span>
+      <strong>{{ $t("jobs.empty") }}</strong>
+      <p class="small muted">{{ $t("jobs.emptyHint") }}</p>
+      <button class="btn btn-primary" @click="router.push({ name: 'new' })">＋ {{ $t("jobs.emptyCta") }}</button>
+    </div>
 
     <div v-else class="table-wrap card">
       <table class="table">
@@ -44,7 +53,7 @@ function sourcesLabel(sources: string[]) {
             <th class="c-progress">{{ $t("jobs.col.progress") }}</th>
             <th class="c-num">{{ $t("jobs.col.speed") }}</th>
             <th class="c-num">{{ $t("jobs.col.eta") }}</th>
-            <th class="c-retries">{{ $t("jobs.col.retries") }}</th>
+            <th class="c-retries"><span class="th-help">{{ $t("jobs.col.retries") }}<HelpTip :text="$t('jobs.retriesHelp')" :label="$t('jobs.col.retries')" /></span></th>
           </tr>
         </thead>
         <tbody>
@@ -53,6 +62,7 @@ function sourcesLabel(sources: string[]) {
             :key="id"
             tabindex="0"
             class="clickable"
+            :title="$t('jobs.rowTip')"
             @click="router.push({ name: 'job', params: { id } })"
             @keydown.enter="router.push({ name: 'job', params: { id } })"
           >
@@ -86,12 +96,19 @@ function sourcesLabel(sources: string[]) {
 </template>
 
 <style scoped>
-.c-what { width: 22%; }
-.c-where { width: 18%; }
+/* Below this width the columns would overlap; the card scrolls sideways instead. */
+.table { min-width: 820px; }
+.c-what { width: 19%; }
+.c-where { width: 15%; }
 .c-state { width: 15%; }
-.c-progress { width: 22%; }
-.c-num { width: 9%; }
-.c-retries { width: 5rem; }
+.c-progress { width: 19%; }
+.c-num { width: 10%; }
+.c-retries { width: 12%; }
 .block { display: block; }
+.page-head .lead-text { margin-bottom: 0; }
+.empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
+.empty p { margin: 0 0 0.5rem; }
+.empty-icon { font-size: 2rem; }
+.th-help { display: inline-flex; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
 </style>

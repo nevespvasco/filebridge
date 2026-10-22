@@ -91,16 +91,17 @@ const details = computed(() => [
         <h1>{{ $t("jobDetail.title") }}</h1>
       </div>
       <div class="actions">
-        <button v-if="unsent" class="btn btn-primary" @click="continueInWizard">{{ $t("jobDetail.continue") }}</button>
-        <button v-if="canPause" class="btn" :disabled="busy" @click="act(() => jobs.pause(id))">⏸ {{ $t("jobDetail.pause") }}</button>
-        <button v-if="canResume" class="btn btn-primary" :disabled="busy" @click="act(() => jobs.resume(id))">▶ {{ $t("jobDetail.resume") }}</button>
-        <button v-if="canCancel" class="btn btn-danger" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
+        <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t("jobDetail.continue") }}</button>
+        <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))">⏸ {{ $t("jobDetail.pause") }}</button>
+        <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))">▶ {{ $t("jobDetail.resume") }}</button>
+        <button v-if="canCancel" class="btn btn-danger" :title="$t('jobDetail.cancelTip')" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
       </div>
     </header>
 
     <p v-if="notFound" class="card error">{{ $t("jobDetail.notFound") }}</p>
     <template v-else-if="job">
       <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="unsent" class="guide"><span class="guide-icon" aria-hidden="true">👉</span><span>{{ $t("jobDetail.unsentHint") }}</span></p>
       <div class="card"><JobProgress :job-id="id" /></div>
 
       <div class="grid">

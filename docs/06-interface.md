@@ -30,6 +30,10 @@ whoever wants to can see the equivalent commands in a "Details" panel.
 
 ## Principles
 
+- **Written for someone who isn't technical.** Each wizard step opens with one plain sentence
+  saying what to do now; a disabled button says why it is disabled; jargon (SSH key, NFC,
+  checksum…) gets a `HelpTip` ("?") with an explanation and an example; every form field shows a
+  hint with an example under it; empty screens say what to do next and offer the button for it.
 - **OS notification** on completion or error.
 - **Closing the window doesn't stop the send** — tray icon stays.
 - **Every destructive action asks for confirmation** and shows what will happen.

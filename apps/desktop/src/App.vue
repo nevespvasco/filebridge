@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import HelpTip from "@/components/HelpTip.vue";
 import { commands } from "@/lib/api";
 import { isMock } from "@/lib/platform";
 import { useConnection } from "@/stores/connection";
@@ -37,17 +38,18 @@ const active = computed(() => Object.values(jobs.byId).filter((j) => RUNNING.inc
   <div class="shell">
     <nav class="side" :aria-label="$t('nav.label')">
       <div class="brand"><img src="/icon.png" alt="" width="24" height="24" /> filebridge</div>
-      <RouterLink to="/new">{{ $t("nav.new") }}</RouterLink>
-      <RouterLink to="/jobs">
+      <RouterLink to="/new" :title="$t('nav.tips.new')">{{ $t("nav.new") }}</RouterLink>
+      <RouterLink to="/jobs" :title="$t('nav.tips.jobs')">
         {{ $t("nav.jobs") }}
         <span v-if="active" class="badge badge-accent">{{ active }}</span>
       </RouterLink>
-      <RouterLink to="/destinations">{{ $t("nav.destinations") }}</RouterLink>
-      <RouterLink to="/settings">{{ $t("nav.settings") }}</RouterLink>
+      <RouterLink to="/destinations" :title="$t('nav.tips.destinations')">{{ $t("nav.destinations") }}</RouterLink>
+      <RouterLink to="/settings" :title="$t('nav.tips.settings')">{{ $t("nav.settings") }}</RouterLink>
       <span class="grow" />
-      <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'" :title="conn.endpoint">
+      <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
         <span class="dot" aria-hidden="true" />
         {{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}
+        <HelpTip :text="$t('conn.tip')" :label="$t('conn.label')" />
       </div>
     </nav>
     <main class="main">

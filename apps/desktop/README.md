@@ -22,7 +22,8 @@ src/
 ├── lib/                api.ts (unwraps command results), platform.ts (picker, drop, notifications), format.ts
 ├── stores/             connection, jobs (one event subscription, map by job id), profiles, wizard, settings
 ├── views/              NewTransfer/ (Step*.vue), Jobs, JobDetail, Destinations, Settings
-├── components/         IssueGroup, BytesDiff, FileDropZone, JobProgress, PreflightList, DetailsPanel, …
+├── components/         IssueGroup, BytesDiff, FileDropZone, JobProgress, PreflightList, DetailsPanel,
+│                       HelpTip (the "?" with a plain explanation and an example), …
 ├── i18n/               pt.json, en.json (same keys)
 └── dev/mock.ts         fake service for `VITE_MOCK=1` (never bundled); one typed handler per
                         command in the bindings, state rules from `JOB_OPERATIONS`

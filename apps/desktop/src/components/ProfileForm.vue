@@ -5,10 +5,13 @@ import type { Backend_Deserialize, Family, Profile_Serialize } from "@/bindings"
 import { errorMessage } from "@/lib/api";
 import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
+import { useI18n } from "vue-i18n";
+import HelpTip from "./HelpTip.vue";
 import NextcloudDetect from "./NextcloudDetect.vue";
 
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const profiles = useProfiles();
+const { t } = useI18n();
 
 type Kind = "local" | "sftp" | "nextcloud";
 const kind = ref<Kind>("local");
@@ -26,11 +29,17 @@ const form = reactive({
 const saving = ref(false);
 const error = ref<string | null>(null);
 
-const valid = computed(() => {
-  if (!form.name.trim() || !form.root.trim()) return false;
-  if (kind.value === "sftp") return !!form.host.trim() && form.root.trim().startsWith("/") && form.port > 0;
-  return true;
+/** What still stops the form from being saved, in words the user can act on. */
+const missing = computed(() => {
+  const m: string[] = [];
+  if (!form.name.trim()) m.push(t("profile.name"));
+  if (kind.value === "sftp" && !form.host.trim()) m.push(t("profile.host"));
+  if (kind.value === "sftp" && !(form.port > 0)) m.push(t("profile.port"));
+  if (!form.root.trim()) m.push(kind.value === "local" ? t("profile.folder") : t("profile.remoteFolder"));
+  return m;
 });
+const rootNotAbsolute = computed(() => kind.value === "sftp" && !!form.root.trim() && !form.root.trim().startsWith("/"));
+const valid = computed(() => !missing.value.length && !rootNotAbsolute.value);
 
 function setFamily(f: Family) {
   form.family = f;
@@ -78,6 +87,7 @@ async function save() {
 
 <template>
   <div class="profile-form card">
+    <h3 class="q-title">{{ $t("profile.kindQuestion") }}</h3>
     <div class="kinds" role="radiogroup" :aria-label="$t('profile.kind')">
       <button
         v-for="k in (['local', 'sftp', 'nextcloud'] as const)"
@@ -88,7 +98,7 @@ async function save() {
         :aria-checked="kind === k"
         @click="kind = k"
       >
-        <strong>{{ $t(`profile.kinds.${k}`) }}</strong>
+        <strong><span aria-hidden="true">{{ { local: "💽", sftp: "🖥️", nextcloud: "☁️" }[k] }}</span> {{ $t(`profile.kinds.${k}`) }}</strong>
         <span class="small muted">{{ $t(`profile.kindsHint.${k}`) }}</span>
       </button>
     </div>
@@ -98,48 +108,77 @@ async function save() {
     <form v-else @submit.prevent="save">
       <div class="grid">
         <label class="field">
-          <span>{{ $t("profile.name") }}</span>
+          <span class="label-line">{{ $t("profile.name") }}<span class="req" aria-hidden="true">*</span>
+            <HelpTip :text="$t('profile.help.name')" :example="$t('profile.help.nameExample')" :label="$t('profile.name')" />
+          </span>
           <input v-model="form.name" required :placeholder="kind === 'local' ? $t('profile.nameHintLocal') : $t('profile.nameHintSftp')" />
+          <span class="hint">{{ $t("profile.hint.name") }}</span>
         </label>
         <template v-if="kind === 'sftp'">
           <label class="field">
-            <span>{{ $t("profile.host") }}</span>
-            <input v-model="form.host" required spellcheck="false" placeholder="nas.lan" />
+            <span class="label-line">{{ $t("profile.host") }}<span class="req" aria-hidden="true">*</span>
+              <HelpTip :text="$t('profile.help.host')" example="nas.local · 192.168.77.20" :label="$t('profile.host')" />
+            </span>
+            <input v-model="form.host" required spellcheck="false" placeholder="nas.local" />
+            <span class="hint">{{ $t("profile.hint.host") }}</span>
           </label>
           <label class="field narrow">
-            <span>{{ $t("profile.port") }}</span>
+            <span class="label-line">{{ $t("profile.port") }}
+              <HelpTip :text="$t('profile.help.port')" example="22" :label="$t('profile.port')" />
+            </span>
             <input v-model.number="form.port" type="number" min="1" max="65535" />
+            <span class="hint">{{ $t("profile.hint.port") }}</span>
           </label>
           <label class="field">
-            <span>{{ $t("profile.user") }}</span>
-            <input v-model="form.user" spellcheck="false" />
+            <span class="label-line">{{ $t("profile.user") }}
+              <HelpTip :text="$t('profile.help.user')" example="maria" :label="$t('profile.user')" />
+            </span>
+            <input v-model="form.user" spellcheck="false" :placeholder="$t('common.optional')" />
+            <span class="hint">{{ $t("profile.hint.user") }}</span>
           </label>
         </template>
         <label class="field wide">
-          <span>{{ kind === "local" ? $t("profile.folder") : $t("profile.remoteFolder") }}</span>
+          <span class="label-line">{{ kind === "local" ? $t("profile.folder") : $t("profile.remoteFolder") }}<span class="req" aria-hidden="true">*</span>
+            <HelpTip
+              :text="kind === 'local' ? $t('profile.help.folder') : $t('profile.help.remoteFolder')"
+              :example="kind === 'local' ? '/media/disco/Backup · D:\\Backup' : '/volume1/backup · /srv/backup'"
+              :label="kind === 'local' ? $t('profile.folder') : $t('profile.remoteFolder')"
+            />
+          </span>
           <span class="with-button">
             <input v-model="form.root" required spellcheck="false" :placeholder="kind === 'local' ? '/media/disco/Backup' : '/srv/backup'" />
-            <button v-if="kind === 'local'" type="button" class="btn btn-small" @click="pick('root')">{{ $t("common.browse") }}</button>
+            <button v-if="kind === 'local'" type="button" class="btn btn-small" :title="$t('profile.hint.browse')" @click="pick('root')">📁 {{ $t("common.browse") }}</button>
           </span>
+          <span v-if="rootNotAbsolute" class="hint error">{{ $t("profile.slashRule") }}</span>
+          <span v-else class="hint">{{ kind === "local" ? $t("profile.hint.folder") : $t("profile.hint.remoteFolder") }}</span>
         </label>
         <template v-if="kind === 'sftp'">
           <label class="field wide">
-            <span>{{ $t("profile.keyFile") }}</span>
+            <span class="label-line">{{ $t("profile.keyFile") }}
+              <HelpTip :text="$t('profile.help.keyFile')" example="~/.ssh/id_ed25519" :label="$t('profile.keyFile')" />
+            </span>
             <span class="with-button">
               <input v-model="form.key_file" spellcheck="false" :placeholder="$t('profile.keyFileHint')" />
               <button type="button" class="btn btn-small" @click="pick('key_file')">{{ $t("common.browse") }}</button>
             </span>
+            <span class="hint">{{ $t("profile.hint.keyFile") }}</span>
           </label>
           <label class="field wide">
-            <span>{{ $t("profile.knownHosts") }}</span>
+            <span class="label-line">{{ $t("profile.knownHosts") }}
+              <HelpTip :text="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :label="$t('profile.knownHosts')" />
+            </span>
             <input v-model="form.known_hosts_file" spellcheck="false" placeholder="~/.ssh/known_hosts" />
+            <span class="hint">{{ $t("profile.hint.knownHosts") }}</span>
           </label>
-          <p class="small muted wide">{{ $t("profile.noPassword") }}</p>
+          <p class="guide warn small wide"><span class="guide-icon" aria-hidden="true">🔑</span><span>{{ $t("profile.noPassword") }}</span></p>
         </template>
       </div>
 
       <fieldset class="target">
-        <legend class="small">{{ $t("profile.target") }}</legend>
+        <legend class="small">
+          {{ $t("profile.target") }}
+          <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
+        </legend>
         <label v-for="f in (['unix', 'windows', 'macos'] as const)" :key="f" class="radio">
           <input type="radio" name="family" :checked="form.family === f" @change="setFamily(f)" />
           {{ $t(`profile.family.${f}`) }}
@@ -147,11 +186,15 @@ async function save() {
         <label class="radio">
           <input v-model="form.case_sensitive" type="checkbox" />
           {{ $t("profile.caseSensitive") }}
+          <HelpTip :text="$t('profile.help.case')" example="Foto.jpg ≠ foto.jpg" :label="$t('profile.caseSensitive')" />
         </label>
+        <p class="hint small muted">{{ $t("profile.hint.target") }}</p>
       </fieldset>
 
       <p v-if="error" class="error small">{{ error }}</p>
       <div class="actions">
+        <span v-if="missing.length" class="why-disabled">{{ $t("profile.missing", { fields: missing.join(", ") }) }}</span>
+        <span class="grow" />
         <button type="button" class="btn" @click="emit('cancel')">{{ $t("common.cancel") }}</button>
         <button type="submit" class="btn btn-primary" :disabled="!valid || saving">{{ $t("profile.save") }}</button>
       </div>
@@ -160,6 +203,7 @@ async function save() {
 </template>
 
 <style scoped>
+.q-title { margin: 0 0 0.6rem; font-size: 1rem; }
 .kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
 .kind {
   all: unset;
@@ -177,8 +221,11 @@ async function save() {
 .wide { grid-column: 1 / -1; }
 .with-button { display: flex; gap: 0.5rem; }
 .with-button input { flex: 1; }
-.target { border: 1px solid var(--border); border-radius: 8px; margin: 1rem 0 0; display: flex; gap: 1rem; flex-wrap: wrap; }
+.target { border: 1px solid var(--border); border-radius: 8px; margin: 1rem 0 0; display: flex; gap: 0.5rem 1rem; flex-wrap: wrap; align-items: center; }
+.target legend { display: inline-flex; align-items: center; }
+.target .hint { flex-basis: 100%; margin: 0; }
+.wide.guide { margin: 0; }
 .radio { display: inline-flex; gap: 0.35rem; align-items: center; }
-.actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
 @media (max-width: 700px) { .kinds { grid-template-columns: 1fr; } }
 </style>

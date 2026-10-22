@@ -15,7 +15,18 @@ const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : unde
 <template>
   <div class="step">
     <h2>{{ $t("source.title") }}</h2>
-    <p class="muted">{{ $t("source.intro") }}</p>
+
+    <div v-if="!wizard.sources.length" class="guide how">
+      <span class="guide-icon" aria-hidden="true">💡</span>
+      <div>
+        <p><strong>{{ $t("source.howTitle") }}</strong></p>
+        <ol>
+          <li v-for="n in 4" :key="n">{{ $t(`source.how.${n}`) }}</li>
+        </ol>
+      </div>
+    </div>
+
+    <p class="lead-text">{{ $t("source.intro") }} <span class="examples">{{ $t("source.examples") }}</span></p>
     <FileDropZone @add="wizard.addSources" />
 
     <div v-if="wizard.sources.length" class="card list">
@@ -28,25 +39,29 @@ const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : unde
       <ul>
         <li v-for="p in wizard.sources" :key="p">
           <span class="ellipsis mono small" :title="p">{{ p }}</span>
-          <button class="btn btn-small" :aria-label="$t('source.remove', { path: p })" @click="wizard.removeSource(p)">✕</button>
+          <button class="btn btn-small" :title="$t('source.removeTip')" :aria-label="$t('source.remove', { path: p })" @click="wizard.removeSource(p)">✕</button>
         </li>
       </ul>
-      <p class="small muted">{{ $t("source.countLater") }}</p>
+      <p class="small muted">{{ $t("source.addMore") }} {{ $t("source.countLater") }}</p>
     </div>
 
-    <p class="small muted">{{ $t("source.readOnly") }}</p>
+    <p class="guide ok small safe"><span class="guide-icon" aria-hidden="true">🔒</span><span>{{ $t("source.readOnly") }}</span></p>
     <DetailsPanel :lines="[]" :note="$t('details.sourceNote')" />
 
     <div class="footer">
       <span class="grow" />
+      <span v-if="!wizard.sources.length" class="why-disabled">{{ $t("source.needOne") }}</span>
       <button class="btn btn-primary" :disabled="!wizard.sources.length" @click="wizard.step = 2">{{ $t("common.next") }} →</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.list { margin-top: 1rem; }
+.list { margin: 1rem 0; }
+.how { margin-bottom: 1.25rem; }
+.safe { margin-top: 1rem; }
+.examples { display: block; font-size: 0.85rem; margin-top: 0.2rem; }
 .list-head { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
-ul { list-style: none; padding: 0; margin: 0.5rem 0; }
-li { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+.list ul { list-style: none; padding: 0; margin: 0.5rem 0; }
+.list li { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
 </style>

@@ -4,19 +4,27 @@
     "new": "Nova transferência",
     "jobs": "Envios",
     "destinations": "Destinos",
-    "settings": "Definições"
+    "settings": "Definições",
+    "tips": {
+      "new": "Copiar ficheiros e pastas para outro sítio, passo a passo",
+      "jobs": "Ver os envios em curso e os que já terminaram",
+      "destinations": "Os sítios para onde envia ficheiros: um disco, um servidor ou o Nextcloud",
+      "settings": "Língua e notificações"
+    }
   },
   "tray": {
     "show": "Abrir filebridge",
     "quit": "Fechar janela (os envios continuam)"
   },
   "conn": {
-    "connected": "Serviço ligado",
-    "connecting": "A ligar…",
-    "disconnected": "Serviço inacessível",
+    "connected": "Motor de cópia a funcionar",
+    "connecting": "A iniciar o motor de cópia…",
+    "disconnected": "Motor de cópia sem resposta",
     "retry": "Tentar de novo",
-    "bannerTitle": "Sem ligação ao filebridge-service.",
-    "bannerBody": "Os envios em curso continuam no serviço; a janela volta a ligar-se sozinha."
+    "bannerTitle": "O motor de cópia não está a responder.",
+    "bannerBody": "Os envios em curso não se perdem. Esta janela volta a ligar-se sozinha; também pode carregar em “Tentar de novo”.",
+    "label": "motor de cópia",
+    "tip": "O motor de cópia é a parte do filebridge que copia os ficheiros, em segundo plano, mesmo com esta janela fechada. Isto só diz que a janela consegue falar com ele; não diz nada sobre os seus destinos, que são verificados quando os usa."
   },
   "common": {
     "next": "Seguinte",
@@ -31,7 +39,9 @@
     "browse": "Procurar…",
     "advanced": "Avançado",
     "yes": "Sim",
-    "no": "Não"
+    "no": "Não",
+    "recommended": "recomendado",
+    "optional": "opcional"
   },
   "status": {
     "ok": "OK",
@@ -39,9 +49,10 @@
     "fail": "Falhou"
   },
   "details": {
-    "title": "Detalhes",
+    "title": "Detalhes técnicos",
     "none": "Ainda nada foi pedido ao serviço.",
-    "sourceNote": "Ainda nada é lido: os ficheiros são contados quando escolher o destino."
+    "sourceNote": "Ainda nada é lido: os ficheiros são contados quando escolher o destino.",
+    "hint": "(para utilizadores avançados: o que este ecrã pede ao serviço)"
   },
   "wizard": {
     "title": "Nova transferência",
@@ -51,11 +62,20 @@
       "3": "Análise",
       "4": "Rever e enviar",
       "5": "Envio"
+    },
+    "subtitle": "Copie ficheiros para um disco, um servidor ou o Nextcloud em 4 passos. Os ficheiros originais nunca são alterados.",
+    "stepOf": "Passo {n} de {total}",
+    "stepTips": {
+      "1": "Escolha os ficheiros e pastas a copiar",
+      "2": "Escolha para onde vai a cópia",
+      "3": "Verifique os nomes antes de copiar",
+      "4": "Confirme e comece a cópia",
+      "5": "Acompanhe a cópia até ao fim"
     }
   },
   "source": {
     "title": "O que quer enviar?",
-    "intro": "Arraste ficheiros e pastas para a janela, ou escolha-os.",
+    "intro": "Arraste ficheiros e pastas para esta janela, ou use os botões abaixo. Pode juntar vários; vão todos para o mesmo sítio.",
     "drop": "Largue aqui ficheiros ou pastas",
     "pickFolders": "Escolher pastas",
     "pickFiles": "Escolher ficheiros",
@@ -63,7 +83,21 @@
     "remove": "Retirar {path}",
     "total": "{files} ficheiros · {size}",
     "countLater": "O total (ficheiros e GB) é contado na análise, depois de escolher o destino.",
-    "readOnly": "O filebridge só lê a origem: nada lá é movido, renomeado ou apagado."
+    "readOnly": "O filebridge só lê a origem: nada lá é movido, renomeado ou apagado.",
+    "examples": "Por exemplo: a pasta Fotografias, a pasta de um projeto ou um disco externo inteiro.",
+    "howTitle": "Como funciona",
+    "how": {
+      "1": "Escolha o que copiar (este ecrã).",
+      "2": "Escolha para onde vai: um disco externo, um servidor ou o Nextcloud.",
+      "3": "O filebridge verifica os nomes e avisa se algum não seria aceite no destino.",
+      "4": "Confirma, e a cópia começa. Pode fechar a janela: continua a correr."
+    },
+    "dropOr": "ou",
+    "pickFoldersTip": "Copia a pasta com tudo o que tem lá dentro",
+    "pickFilesTip": "Copia só os ficheiros que selecionar",
+    "removeTip": "Retirar desta lista (nada é apagado)",
+    "addMore": "Ainda pode juntar mais.",
+    "needOne": "Junte pelo menos um ficheiro ou pasta para continuar."
   },
   "dest": {
     "title": "Para onde?",
@@ -75,8 +109,15 @@
     "test": "Testar ligação",
     "retest": "Testar de novo",
     "etaLater": "O tempo estimado aparece quando os ficheiros estiverem contados.",
-    "failingHint": "O teste de ligação tem falhas.",
-    "analyse": "Analisar"
+    "failingHint": "O teste de ligação encontrou problemas (ver acima). Pode continuar, mas a cópia pode falhar.",
+    "analyse": "Analisar",
+    "guide": "Clique num destino para o selecionar. O filebridge testa logo a ligação e mostra o espaço livre.",
+    "guideFirst": "Ainda não tem nenhum destino. Crie um abaixo: para um disco externo ou uma pen USB, escolha “Pasta local”.",
+    "selected": "Selecionado",
+    "testTip": "Confirma que o filebridge chega ao destino e consegue escrever lá. Nada é copiado.",
+    "needOne": "Selecione um destino para continuar.",
+    "finishForm": "Guarde ou cancele o novo destino primeiro.",
+    "analyseTip": "Conta os ficheiros e procura nomes que o destino não aceitaria. Ainda nada é copiado."
   },
   "preflight": {
     "transport": "Destino",
@@ -100,41 +141,64 @@
     "rerun": "Analisar de novo",
     "names": "Nomes",
     "noIssues": "Nenhum problema nos nomes: tudo é enviado tal como está.",
-    "pendingHint": "Falta {n} decisão | Faltam {n} decisões"
+    "pendingHint": "Falta {n} decisão | Faltam {n} decisões",
+    "intro": "O filebridge conta os ficheiros e verifica se algum nome daria problemas no destino. Ainda nada foi copiado.",
+    "countingHint": "Pastas grandes podem demorar alguns minutos. Pode esperar aqui ou voltar mais tarde.",
+    "errorHint": "Confirme que os ficheiros e o destino continuam acessíveis e tente de novo.",
+    "guidePendingTitle": "{n} nome precisa da sua decisão | {n} nomes precisam da sua decisão",
+    "guidePending": "Abra cada grupo marcado a amarelo e escolha o que fazer. Se tiver dúvidas, carregue em “Aceitar todos”: usa a correção sugerida, que é a opção segura.",
+    "guideOk": "Tudo bem: nenhum nome precisa de mudar. Carregue em “Seguinte” para rever e enviar.",
+    "guideFixed": "Tudo bem: os nomes abaixo são ajustados automaticamente na cópia para o destino os aceitar. Os originais mantêm os nomes. Carregue em “Seguinte”.",
+    "tooBigHint": "Não há espaço livre suficiente no destino. Liberte espaço lá, ou volte atrás e escolha menos ficheiros.",
+    "symlinksHelp": "Atalhos (ligações simbólicas) apontam para outros ficheiros. Não são copiados, para não copiar o mesmo duas vezes nem trazer nada de fora das pastas escolhidas.",
+    "scanErrorsHelp": "Normalmente são ficheiros que não tem permissão para ler, ou que foram apagados durante a contagem. Não vão ser copiados.",
+    "preflightHelp": "se o destino está acessível, aceita escrita e quanto espaço tem livre",
+    "namesHelp": "Alguns sistemas recusam certos nomes (o Windows, por exemplo, recusa “:” e “?”). O filebridge corrige o nome só na cópia; o ficheiro original fica como está.",
+    "namesExample": "“Fatura: março?.pdf” → “Fatura_ março_.pdf”",
+    "legendTitle": "O que faz cada opção",
+    "waitHint": "Espere que a análise termine."
   },
   "rules": {
     "unknown": "{n} nomes assinalados por “{rule}”",
     "nfc": {
-      "title": "{n} nome com acentos decompostos | {n} nomes com acentos decompostos",
-      "explain": "Corrigido automaticamente: os acentos são reescritos na forma composta (NFC). O texto parece igual; os bytes mudam."
+      "title": "{n} nome com acentos guardados de outra forma | {n} nomes com acentos guardados de outra forma",
+      "explain": "Corrigido automaticamente. O texto parece igual, mas os acentos estão guardados de uma forma que outros sistemas podem não reconhecer (comum em ficheiros vindos de um Mac). São convertidos para a forma padrão (NFC).",
+      "example": "“café.txt” fica igual à vista; só mudam os bytes escondidos"
     },
     "nextcloud-nfc": {
       "title": "{n} nome que o Nextcloud não encontraria | {n} nomes que o Nextcloud não encontraria",
-      "explain": "Corrigido automaticamente: o Nextcloud só indexa nomes na forma composta (NFC)."
+      "explain": "Corrigido automaticamente. O Nextcloud só encontra nomes com os acentos guardados na forma padrão (NFC), por isso são convertidos.",
+      "example": "“Relatório.pdf” parece igual, mas sem a correção o Nextcloud não o mostraria"
     },
     "forbidden-chars": {
       "title": "{n} nome com caracteres que o destino recusa | {n} nomes com caracteres que o destino recusa",
-      "explain": "Corrigido automaticamente: < > : \" \\ {'|'} ? * e caracteres de controlo passam a _."
+      "explain": "Corrigido automaticamente. O destino não aceita < > : \" \\ {'|'} ? * nem caracteres de controlo nos nomes; cada um passa a _.",
+      "example": "“Fatura: março?.pdf” → “Fatura_ março_.pdf”"
     },
     "trailing": {
       "title": "{n} nome acabado em espaço ou ponto | {n} nomes acabados em espaço ou ponto",
-      "explain": "Corrigido automaticamente: os espaços e pontos finais são retirados."
+      "explain": "Corrigido automaticamente. O Windows não aceita nomes acabados em espaço ou ponto, por isso são retirados.",
+      "example": "“Relatório.” → “Relatório”"
     },
     "reserved": {
       "title": "{n} nome reservado do Windows | {n} nomes reservados do Windows",
-      "explain": "Corrigido automaticamente: nomes como CON ou COM1 recebem um prefixo."
+      "explain": "Corrigido automaticamente. O Windows reserva alguns nomes para si (CON, PRN, AUX, NUL, COM1…); recebem um _ à frente.",
+      "example": "“CON.txt” → “_CON.txt”"
     },
     "nextcloud-reserved": {
       "title": "{n} nome reservado pelo Nextcloud | {n} nomes reservados pelo Nextcloud",
-      "explain": "Corrigido automaticamente: nomes como .htaccess são renomeados."
+      "explain": "Corrigido automaticamente. O Nextcloud reserva alguns nomes, como .htaccess; recebem um _ à frente.",
+      "example": "“.htaccess” → “_.htaccess”"
     },
     "collision": {
       "title": "{n} nome que chocaria com outro | {n} nomes que chocariam com outros",
-      "explain": "Dois nomes ficam iguais no destino. Decida qual muda."
+      "explain": "Depois das correções, dois nomes diferentes ficariam iguais no destino e um substituiria o outro. “Aceitar” junta um número a este; ou edite-o.",
+      "example": "“Foto.jpg” e “foto.jpg” num disco que não distingue maiúsculas → “foto (2).jpg”"
     },
     "encoding": {
       "title": "{n} nome que não é UTF-8 válido | {n} nomes que não são UTF-8 válido",
-      "explain": "Os bytes originais não se leem como texto. Decida como enviá-los."
+      "explain": "Este nome tem caracteres que não se conseguem ler como texto (muitas vezes ficheiros antigos de outro sistema). Edite-o para lhe dar um nome legível, ou salte-o.",
+      "example": "“Relat�rio.doc” → editar para “Relatório.doc”"
     }
   },
   "issues": {
@@ -154,7 +218,22 @@
     "editTitle": "Escolha o nome no destino",
     "editLabel": "Novo nome",
     "editEmpty": "O nome não pode ficar vazio.",
-    "editSlash": "Um nome não pode ter /."
+    "editSlash": "Um nome não pode ter /.",
+    "acceptTip": "Usar o nome corrigido, à direita",
+    "keepTip": "Enviar com o nome original, sem esta correção (recusado se o destino não o aceitar)",
+    "skipTip": "Não enviar este ficheiro",
+    "editTip": "Escrever o nome que quer no destino",
+    "acceptAllTip": "Usar a correção sugerida em todos (recomendado)",
+    "keepAllTip": "Enviar todos com o nome original",
+    "skipAllTip": "Não enviar nenhum",
+    "bulkAdvice": "Na dúvida, “Aceitar todos” é a opção segura.",
+    "encodingAdvice": "Estes nomes não se corrigem sozinhos: edite cada um, ou salte-os.",
+    "colBefore": "Nome original",
+    "colAfter": "nome no destino",
+    "colChoose": "A sua escolha",
+    "bytesLabel": "bytes do nome",
+    "bytesTip": "Vista técnica: os bytes do nome antes (vermelho) e depois (verde). Mostram a mudança quando o texto parece idêntico.",
+    "editHint": "Só muda o nome, não a pasta onde está."
   },
   "decision": {
     "pending": "Por decidir",
@@ -176,11 +255,15 @@
       "sftp": "Cópia por SFTP",
       "nextcloud": "Nextcloud (modo direto): os ficheiros são copiados e depois indexados pelo Nextcloud"
     },
-    "verify": "Verificar por checksum no fim",
-    "verifyHint": "Compara o SHA-256 de cada ficheiro na origem e no destino. Mais lento, mas prova que a cópia é idêntica.",
+    "verify": "Verificar cada ficheiro no fim",
+    "verifyHint": "Depois de copiar, o filebridge lê de novo cada ficheiro na origem e no destino e confirma que são idênticos (SHA-256). Demora mais, mas fica com a certeza de que nada se perdeu.",
     "safety": "Só cópia: a origem nunca é alterada nem apagada. Fechar a janela não para o envio.",
     "send": "Enviar",
-    "starting": "A iniciar…"
+    "starting": "A iniciar…",
+    "guide": "Confirme que está tudo certo. Ao carregar em “Enviar”, a cópia começa e pode acompanhá-la no ecrã seguinte.",
+    "renamesHelp": "Nomes ajustados na cópia para o destino os aceitar. Os ficheiros originais mantêm os nomes.",
+    "modeHelp": "Como os ficheiros chegam ao destino.",
+    "sendTip": "Começa a cópia. Os ficheiros originais não são alterados."
   },
   "after": {
     "title": "A enviar",
@@ -196,7 +279,9 @@
     "failures": "{n} ficheiro com erros | {n} ficheiros com erros",
     "problems": "{n} problema na integração | {n} problemas na integração",
     "openJob": "Abrir envio",
-    "newTransfer": "Nova transferência"
+    "newTransfer": "Nova transferência",
+    "failuresHint": "Estes ficheiros não foram copiados. Carregue em “Abrir envio” para ver porquê; depois de resolver a causa, comece uma nova transferência só com eles.",
+    "openJobTip": "Ver todos os detalhes deste envio: totais, erros e registo"
   },
   "progress": {
     "bytes": "{done} de {total}",
@@ -260,7 +345,13 @@
       "speed": "Velocidade",
       "eta": "Falta",
       "retries": "Tentativas"
-    }
+    },
+    "intro": "Todos os seus envios, em curso e terminados. Clique num para ver os detalhes, pausá-lo ou cancelá-lo.",
+    "refreshTip": "Recarregar a lista",
+    "emptyHint": "Quando copiar ficheiros em “Nova transferência”, aparecem aqui para os acompanhar.",
+    "emptyCta": "Começar uma nova transferência",
+    "rowTip": "Abrir este envio",
+    "retriesHelp": "Quantas vezes o filebridge tentou de novo sozinho, por exemplo depois de a rede falhar."
   },
   "jobDetail": {
     "title": "Envio",
@@ -283,7 +374,12 @@
     "cancelNoDelete": "Nada é apagado, nem na origem nem no destino.",
     "cancelFinal": "Para enviar o resto mais tarde, comece uma nova transferência.",
     "cancelConfirm": "Cancelar envio",
-    "keepSending": "Continuar a enviar"
+    "keepSending": "Continuar a enviar",
+    "continueTip": "Este envio ainda não começou: volte ao assistente para o terminar",
+    "pauseTip": "Para por agora; “Retomar” continua do mesmo ponto",
+    "resumeTip": "Continua de onde parou",
+    "cancelTip": "Para de vez. Os ficheiros já copiados ficam no destino.",
+    "unsentHint": "Este envio ainda não começou. Carregue em “Continuar no assistente” para acabar de escolher e enviá-lo."
   },
   "destinations": {
     "title": "Destinos",
@@ -292,7 +388,10 @@
     "deleteTitle": "Apagar este destino?",
     "deleteForgets": "O filebridge esquece o perfil “{name}”.",
     "deleteNoFiles": "Nenhum ficheiro é apagado, nem no destino nem em lado nenhum.",
-    "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele."
+    "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele.",
+    "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada nova transferência.",
+    "emptyHint": "Crie o seu primeiro destino: um disco externo, um servidor (SFTP) ou o Nextcloud.",
+    "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado."
   },
   "profile": {
     "kind": "Tipo de destino",
@@ -302,9 +401,9 @@
       "nextcloud": "Nextcloud"
     },
     "kindsHint": {
-      "local": "Um disco ou pasta neste computador",
-      "sftp": "Um servidor ou NAS por SSH",
-      "nextcloud": "Modo direto: LXC no Proxmox por SSH"
+      "local": "Um disco externo, uma pen USB ou outra pasta deste computador",
+      "sftp": "Um servidor ou NAS a que acede por SSH (Synology, TrueNAS, Raspberry Pi…)",
+      "nextcloud": "Nextcloud num contentor Proxmox (avançado)"
     },
     "name": "Nome",
     "nameHintLocal": "Disco externo",
@@ -313,11 +412,11 @@
     "port": "Porta",
     "user": "Utilizador",
     "folder": "Pasta",
-    "remoteFolder": "Pasta no servidor (caminho absoluto)",
+    "remoteFolder": "Pasta no servidor",
     "keyFile": "Chave privada",
-    "keyFileHint": "vazio = agente SSH",
+    "keyFileHint": "vazio = usar o agente SSH",
     "knownHosts": "Ficheiro known_hosts",
-    "noPassword": "Só chave ou agente SSH; a chave do servidor tem de estar já no known_hosts. O início de sessão com palavra-passe ainda não está disponível na janela.",
+    "noPassword": "O acesso é só por chave SSH (ainda sem palavra-passe). Antes de usar um servidor aqui pela primeira vez, ligue-se a ele uma vez num terminal (ssh utilizador{'@'}servidor) e aceite-o, para este computador o ficar a conhecer.",
     "target": "Sistema de ficheiros do destino",
     "family": {
       "unix": "Linux / Unix",
@@ -326,7 +425,35 @@
     },
     "caseSensitive": "distingue maiúsculas",
     "caseInsensitive": "não distingue maiúsculas",
-    "save": "Guardar destino"
+    "save": "Guardar destino",
+    "kindQuestion": "Para onde quer copiar?",
+    "missing": "Para guardar, preencha: {fields}",
+    "slashRule": "A pasta no servidor tem de começar por “/”, p. ex. /srv/backup.",
+    "help": {
+      "name": "Um nome para reconhecer este destino na lista. Pode ser qualquer coisa.",
+      "nameExample": "“Disco externo preto”, “NAS de casa”",
+      "host": "O endereço do servidor: o nome dele na rede ou o endereço IP.",
+      "port": "A porta SSH do servidor. Deixe 22, a não ser que quem configurou o servidor lhe tenha dito outra.",
+      "user": "O utilizador com que entra no servidor. Vazio usa o mesmo nome de utilizador deste computador.",
+      "folder": "A pasta onde ficam as cópias. Carregue em “Procurar…” para a escolher em vez de escrever.",
+      "remoteFolder": "A pasta no servidor onde ficam as cópias. É um caminho completo, a começar por “/”.",
+      "keyFile": "O ficheiro com a sua chave SSH privada, usada em vez de palavra-passe. Deixe vazio para usar a chave já carregada neste computador (agente SSH).",
+      "knownHosts": "O ficheiro com os servidores em que este computador já confia. Deixe vazio para usar o habitual.",
+      "target": "O tipo de sistema que o destino usa; decide que nomes precisam de correção. Na dúvida: pen USB ou disco também usado no Windows → Windows; NAS ou servidor Linux → Linux.",
+      "case": "Ligado, “Foto.jpg” e “foto.jpg” são dois ficheiros diferentes. O Windows e o macOS costumam tratá-los como o mesmo ficheiro."
+    },
+    "hint": {
+      "name": "Só para o reconhecer.",
+      "host": "Nome ou endereço IP, p. ex. nas.local ou 192.168.77.20",
+      "port": "Normalmente 22",
+      "user": "Vazio = o seu utilizador neste computador",
+      "browse": "Escolher a pasta no explorador de ficheiros",
+      "folder": "P. ex. uma pasta no disco externo. Use “Procurar…” para a escolher.",
+      "remoteFolder": "Caminho completo no servidor, p. ex. /volume1/backup",
+      "keyFile": "Vazio = o agente SSH deste computador (o caso habitual)",
+      "knownHosts": "Vazio = ~/.ssh/known_hosts",
+      "target": "Na dúvida, mantenha a sugestão: Windows e macOS desligam “distingue maiúsculas” sozinhos."
+    }
   },
   "nextcloud": {
     "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox, encontra o contentor do Nextcloud e verifica cada passo. Nada é alterado durante a deteção.",
@@ -335,7 +462,7 @@
     "ncUser": "Utilizador do Nextcloud",
     "ncUserHint": "a conta que recebe os ficheiros",
     "folder": "Pasta nos ficheiros desse utilizador",
-    "folderHint": "vazio = raiz, p. ex. Backup",
+    "folderHint": "Vazio = o topo dos ficheiros desse utilizador",
     "ctid": "Contentor (CTID)",
     "installDir": "Pasta de instalação do Nextcloud",
     "auto": "automático",
@@ -353,7 +480,21 @@
       "run-as": "Utilizador do servidor web",
       "owner": "Dono dos ficheiros"
     },
-    "done": "Concluir"
+    "done": "Concluir",
+    "advancedHint": "só se a deteção o pedir",
+    "detectTip": "Liga-se e verifica tudo, passo a passo. Nada é alterado no servidor.",
+    "help": {
+      "ncUser": "A conta do Nextcloud que recebe os ficheiros: o nome de login, não o nome que aparece.",
+      "host": "O endereço do servidor Proxmox onde corre o Nextcloud.",
+      "sshUser": "O utilizador com que o filebridge entra por SSH no servidor Proxmox. Normalmente root.",
+      "folder": "Uma pasta dentro dos ficheiros desse utilizador. Vazio põe os ficheiros no topo.",
+      "ctid": "O número do contentor Proxmox onde corre o Nextcloud. Deixe vazio e o filebridge encontra-o.",
+      "installDir": "Onde o Nextcloud está instalado dentro do contentor. Deixe vazio e o filebridge encontra-a."
+    },
+    "hint": {
+      "host": "Nome ou endereço IP do servidor Proxmox",
+      "sshUser": "Normalmente root"
+    }
   },
   "settings": {
     "title": "Definições",
@@ -369,10 +510,17 @@
     "schedule": "Horário de envio",
     "scheduleHint": "p. ex. 01:00–07:00",
     "later": "O limite de largura de banda e o horário chegam numa versão futura.",
-    "service": "Serviço",
+    "service": "Serviço (informação técnica)",
     "state": "Estado",
     "version": "Versão",
     "endpoint": "Socket",
-    "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso."
+    "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso.",
+    "bandwidthHelp": "O máximo da sua ligação que o filebridge pode usar, para a internet continuar rápida para o resto.",
+    "scheduleHelp": "As horas em que os envios podem correr, por exemplo só à noite."
+  },
+  "help": {
+    "about": "Ajuda: {what}",
+    "more": "Mais informação",
+    "example": "Exemplo:"
   }
 }

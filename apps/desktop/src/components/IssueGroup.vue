@@ -8,6 +8,7 @@ import { api, errorMessage } from "@/lib/api";
 import { useFmt } from "@/composables/useFmt";
 import { useWizard } from "@/stores/wizard";
 import BytesDiff from "./BytesDiff.vue";
+import HelpTip from "./HelpTip.vue";
 
 const props = defineProps<{ jobId: string; rule: RuleCount; readonly?: boolean }>();
 const { t, te } = useI18n();
@@ -34,6 +35,10 @@ const title = computed(() => {
 });
 const explain = computed(() => {
   const key = `rules.${props.rule.rule}.explain`;
+  return te(key) ? t(key) : "";
+});
+const example = computed(() => {
+  const key = `rules.${props.rule.rule}.example`;
   return te(key) ? t(key) : "";
 });
 const showsBytes = computed(() => props.rule.rule.includes("nfc"));
@@ -138,6 +143,7 @@ function decisionLabel(row: IssueView_Serialize) {
       <span class="grow">
         <strong>{{ title }}</strong>
         <span class="muted small block">{{ explain }}</span>
+        <span v-if="example" class="small block example">{{ $t("help.example") }} {{ example }}</span>
       </span>
       <span v-if="rule.pending > 0" class="badge badge-warn">{{ $t("issues.pending", { n: fmt.count(rule.pending) }) }}</span>
       <span v-else class="badge badge-ok">{{ $t("issues.resolved") }}</span>
@@ -149,16 +155,22 @@ function decisionLabel(row: IssueView_Serialize) {
         <template v-else>
           <span class="small muted">{{ $t("issues.bulkLabel", { n: fmt.count(rule.pending) }) }}</span>
           <template v-if="hasProposal">
-            <button class="btn btn-small" @click="decideAllPending({ kind: 'accept' })">{{ $t("issues.acceptAll") }}</button>
-            <button class="btn btn-small" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
+            <button class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })">✓ {{ $t("issues.acceptAll") }}</button>
+            <button class="btn btn-small" :title="$t('issues.keepAllTip')" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
           </template>
-          <button class="btn btn-small" @click="decideAllPending({ kind: 'skip' })">{{ $t("issues.skipAll") }}</button>
+          <button class="btn btn-small" :title="$t('issues.skipAllTip')" @click="decideAllPending({ kind: 'skip' })">{{ $t("issues.skipAll") }}</button>
+          <span v-if="hasProposal" class="small muted">{{ $t("issues.bulkAdvice") }}</span>
+          <span v-else class="small muted">{{ $t("issues.encodingAdvice") }}</span>
         </template>
       </div>
 
       <p v-if="error" class="error small">{{ error }}</p>
       <p v-if="loading && !rows.length" class="muted small">{{ $t("common.loading") }}</p>
 
+      <div v-if="rows.length" class="cols small muted" aria-hidden="true">
+        <span>{{ $t("issues.colBefore") }} → {{ $t("issues.colAfter") }}</span>
+        <span v-if="!readonly">{{ $t("issues.colChoose") }}</span>
+      </div>
       <ol class="rows" :class="{ dim: loading }">
         <li v-for="row in rows" :key="row.id" class="row" :class="`d-${row.decision}`">
           <div class="names">
@@ -170,18 +182,21 @@ function decisionLabel(row: IssueView_Serialize) {
                 {{ row.decision === "rejected" ? row.before_text : row.decision === "skipped" ? $t("issues.notSent") : (row.custom_name ?? row.after_text) }}
               </span>
             </div>
-            <BytesDiff v-if="showsBytes" :before="row.before" :after="row.after" />
+            <div v-if="showsBytes" class="bytes">
+              <BytesDiff :before="row.before" :after="row.after" />
+              <HelpTip :text="$t('issues.bytesTip')" :label="$t('issues.bytesLabel')" />
+            </div>
           </div>
           <div class="state">
             <span class="chip" :class="`chip-${row.decision}`">{{ decisionLabel(row) }}</span>
           </div>
           <div v-if="!readonly" class="actions">
             <template v-if="hasProposal">
-              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
-              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
+              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" :title="$t('issues.acceptTip')" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
+              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" :title="$t('issues.keepTip')" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
             </template>
-            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'skipped'" @click="decide(row, { kind: 'skip' })">{{ $t("issues.skip") }}</button>
-            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'edited'" @click="startEdit(row)">{{ $t("issues.edit") }}</button>
+            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'skipped'" :title="$t('issues.skipTip')" @click="decide(row, { kind: 'skip' })">{{ $t("issues.skip") }}</button>
+            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'edited'" :title="$t('issues.editTip')" @click="startEdit(row)">{{ $t("issues.edit") }}</button>
           </div>
         </li>
       </ol>
@@ -203,6 +218,7 @@ function decisionLabel(row: IssueView_Serialize) {
             <input v-model="editName" autofocus spellcheck="false" />
           </label>
           <p v-if="editInvalid" class="error small">{{ editInvalid }}</p>
+          <p v-else class="small muted">{{ $t("issues.editHint") }}</p>
           <div class="dialog-actions">
             <button type="button" class="btn" @click="editing = null">{{ $t("common.cancel") }}</button>
             <button type="submit" class="btn btn-primary" :disabled="!!editInvalid">{{ $t("common.save") }}</button>
@@ -232,6 +248,9 @@ function decisionLabel(row: IssueView_Serialize) {
 .group-body { border-top: 1px solid var(--border); padding: 0.75rem 1rem 1rem; }
 .bulk { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .rows { list-style: none; margin: 0; padding: 0; }
+.cols { display: flex; justify-content: space-between; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+.example { color: var(--text-2); margin-top: 0.2rem; }
+.bytes { display: flex; align-items: center; gap: 0.2rem; }
 .rows.dim { opacity: 0.6; }
 .row {
   display: grid;

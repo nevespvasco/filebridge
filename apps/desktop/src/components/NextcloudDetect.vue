@@ -10,6 +10,7 @@ import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import StatusIcon from "./StatusIcon.vue";
 import DetailsPanel from "./DetailsPanel.vue";
+import HelpTip from "./HelpTip.vue";
 
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const { t, te } = useI18n();
@@ -32,7 +33,16 @@ const error = ref<string | null>(null);
 const result = shallowRef<DetectNextcloudResponse_Serialize | null>(null);
 const advanced = ref(false);
 
-const valid = computed(() => form.name.trim() && form.host.trim() && form.user.trim() && form.nextcloud_user.trim() && form.port > 0);
+const missing = computed(() => {
+  const m: string[] = [];
+  if (!form.name.trim()) m.push(t("profile.name"));
+  if (!form.nextcloud_user.trim()) m.push(t("nextcloud.ncUser"));
+  if (!form.host.trim()) m.push(t("nextcloud.host"));
+  if (!(form.port > 0)) m.push(t("profile.port"));
+  if (!form.user.trim()) m.push(t("nextcloud.sshUser"));
+  return m;
+});
+const valid = computed(() => !missing.value.length);
 const commands = computed(() => result.value?.steps.flatMap((s) => [`# ${s.id}`, ...s.commands]) ?? []);
 
 function stepLabel(id: string) {
@@ -81,59 +91,87 @@ function chooseContainer(c: string) {
     <p class="small muted">{{ $t("nextcloud.intro") }}</p>
     <div class="grid">
       <label class="field">
-        <span>{{ $t("profile.name") }}</span>
+        <span class="label-line">{{ $t("profile.name") }}<span class="req" aria-hidden="true">*</span>
+          <HelpTip :text="$t('profile.help.name')" :label="$t('profile.name')" />
+        </span>
         <input v-model="form.name" required />
       </label>
       <label class="field">
-        <span>{{ $t("nextcloud.ncUser") }}</span>
-        <input v-model="form.nextcloud_user" required spellcheck="false" :placeholder="$t('nextcloud.ncUserHint')" />
+        <span class="label-line">{{ $t("nextcloud.ncUser") }}<span class="req" aria-hidden="true">*</span>
+          <HelpTip :text="$t('nextcloud.help.ncUser')" example="maria" :label="$t('nextcloud.ncUser')" />
+        </span>
+        <input v-model="form.nextcloud_user" required spellcheck="false" />
+        <span class="hint">{{ $t("nextcloud.ncUserHint") }}</span>
       </label>
       <label class="field">
-        <span>{{ $t("nextcloud.host") }}</span>
-        <input v-model="form.host" required spellcheck="false" placeholder="pve.example.lan" />
+        <span class="label-line">{{ $t("nextcloud.host") }}<span class="req" aria-hidden="true">*</span>
+          <HelpTip :text="$t('nextcloud.help.host')" example="proxmox.local · 192.168.77.5" :label="$t('nextcloud.host')" />
+        </span>
+        <input v-model="form.host" required spellcheck="false" placeholder="proxmox.local" />
+        <span class="hint">{{ $t("nextcloud.hint.host") }}</span>
       </label>
       <label class="field narrow">
-        <span>{{ $t("profile.port") }}</span>
+        <span class="label-line">{{ $t("profile.port") }}
+          <HelpTip :text="$t('profile.help.port')" example="22" :label="$t('profile.port')" />
+        </span>
         <input v-model.number="form.port" type="number" min="1" max="65535" />
       </label>
       <label class="field">
-        <span>{{ $t("nextcloud.sshUser") }}</span>
+        <span class="label-line">{{ $t("nextcloud.sshUser") }}<span class="req" aria-hidden="true">*</span>
+          <HelpTip :text="$t('nextcloud.help.sshUser')" example="root" :label="$t('nextcloud.sshUser')" />
+        </span>
         <input v-model="form.user" required spellcheck="false" />
+        <span class="hint">{{ $t("nextcloud.hint.sshUser") }}</span>
       </label>
       <label class="field">
-        <span>{{ $t("nextcloud.folder") }}</span>
-        <input v-model="form.folder" spellcheck="false" :placeholder="$t('nextcloud.folderHint')" />
+        <span class="label-line">{{ $t("nextcloud.folder") }}
+          <HelpTip :text="$t('nextcloud.help.folder')" example="Backup/2026" :label="$t('nextcloud.folder')" />
+        </span>
+        <input v-model="form.folder" spellcheck="false" :placeholder="$t('common.optional')" />
+        <span class="hint">{{ $t("nextcloud.folderHint") }}</span>
       </label>
       <label class="field wide">
-        <span>{{ $t("profile.keyFile") }}</span>
+        <span class="label-line">{{ $t("profile.keyFile") }}
+          <HelpTip :text="$t('profile.help.keyFile')" example="~/.ssh/id_ed25519" :label="$t('profile.keyFile')" />
+        </span>
         <span class="with-button">
           <input v-model="form.key_file" spellcheck="false" :placeholder="$t('profile.keyFileHint')" />
           <button type="button" class="btn btn-small" @click="pickKey">{{ $t("common.browse") }}</button>
         </span>
+        <span class="hint">{{ $t("profile.hint.keyFile") }}</span>
       </label>
     </div>
 
     <button type="button" class="link small" :aria-expanded="advanced" @click="advanced = !advanced">
       {{ advanced ? "▾" : "▸" }} {{ $t("common.advanced") }}
     </button>
+    <span v-if="!advanced" class="small muted adv-hint">{{ $t("nextcloud.advancedHint") }}</span>
     <div v-if="advanced" class="grid">
       <label class="field">
-        <span>{{ $t("profile.knownHosts") }}</span>
+        <span class="label-line">{{ $t("profile.knownHosts") }}
+          <HelpTip :text="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :label="$t('profile.knownHosts')" />
+        </span>
         <input v-model="form.known_hosts_file" spellcheck="false" placeholder="~/.ssh/known_hosts" />
       </label>
       <label class="field narrow">
-        <span>{{ $t("nextcloud.ctid") }}</span>
+        <span class="label-line">{{ $t("nextcloud.ctid") }}
+          <HelpTip :text="$t('nextcloud.help.ctid')" example="105" :label="$t('nextcloud.ctid')" />
+        </span>
         <input v-model="form.ctid" inputmode="numeric" :placeholder="$t('nextcloud.auto')" />
       </label>
       <label class="field">
-        <span>{{ $t("nextcloud.installDir") }}</span>
+        <span class="label-line">{{ $t("nextcloud.installDir") }}
+          <HelpTip :text="$t('nextcloud.help.installDir')" example="/var/www/nextcloud" :label="$t('nextcloud.installDir')" />
+        </span>
         <input v-model="form.install_dir" spellcheck="false" :placeholder="$t('nextcloud.auto')" />
       </label>
     </div>
 
     <div class="actions">
+      <span v-if="missing.length" class="why-disabled">{{ $t("profile.missing", { fields: missing.join(", ") }) }}</span>
+      <span class="grow" />
       <button type="button" class="btn" @click="emit('cancel')">{{ $t("common.cancel") }}</button>
-      <button type="submit" class="btn btn-primary" :disabled="!valid || running || !!result?.profile">
+      <button type="submit" class="btn btn-primary" :title="$t('nextcloud.detectTip')" :disabled="!valid || running || !!result?.profile">
         {{ running ? $t("nextcloud.detecting") : $t("nextcloud.detect") }}
       </button>
     </div>
@@ -165,7 +203,8 @@ function chooseContainer(c: string) {
 .wide { grid-column: 1 / -1; }
 .with-button { display: flex; gap: 0.5rem; }
 .with-button input { flex: 1; }
-.actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
+.adv-hint { margin-left: 0.5rem; }
 .steps { list-style: none; padding: 0; margin: 1rem 0 0; }
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; }
 .saved { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }

@@ -6,7 +6,7 @@ defineProps<{ lines: string[]; note?: string }>();
 
 <template>
   <details class="details-panel">
-    <summary>{{ $t("details.title") }}</summary>
+    <summary>{{ $t("details.title") }} <span class="small muted hint">{{ $t("details.hint") }}</span></summary>
     <p v-if="note" class="muted small">{{ note }}</p>
     <pre v-if="lines.length"><code>{{ lines.join("\n") }}</code></pre>
     <p v-else class="muted small">{{ $t("details.none") }}</p>
@@ -26,6 +26,7 @@ summary {
   font-weight: 600;
   color: var(--text-2);
 }
+.hint { font-weight: 400; }
 pre {
   margin: 0.5rem 0 0;
   overflow-x: auto;

@@ -33,10 +33,10 @@ async function pick(directory: boolean) {
 <template>
   <div class="drop" :class="{ over }">
     <div class="icon" aria-hidden="true">⇪</div>
-    <p class="lead">{{ $t("source.drop") }}</p>
+    <p class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
     <div class="buttons">
-      <button class="btn btn-primary" @click="pick(true)">{{ $t("source.pickFolders") }}</button>
-      <button class="btn" @click="pick(false)">{{ $t("source.pickFiles") }}</button>
+      <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)">📁 {{ $t("source.pickFolders") }}</button>
+      <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)">📄 {{ $t("source.pickFiles") }}</button>
     </div>
     <p v-if="error" class="error small">{{ error }}</p>
   </div>
@@ -53,6 +53,7 @@ async function pick(directory: boolean) {
 }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .icon { font-size: 2rem; color: var(--accent); }
-.lead { margin: 0.5rem 0 1rem; color: var(--text-2); }
+.lead { margin: 0.5rem 0 1rem; color: var(--text-2); display: grid; gap: 0.35rem; }
+.or { font-size: 0.85rem; }
 .buttons { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
 </style>
