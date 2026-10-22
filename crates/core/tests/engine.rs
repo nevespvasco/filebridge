@@ -43,6 +43,30 @@ impl Integration for FakeIntegration {
         Vec::new()
     }
 
+    /// `{"needs_password": true}`: like Nextcloud's WebDAV mode, the profile can't be without one.
+    fn check_profile(
+        &self,
+        destination: &Destination,
+        settings: &serde_json::Value,
+    ) -> filebridge_integration_api::Result<()> {
+        let has = matches!(
+            &destination.backend,
+            Backend::Sftp {
+                password: Some(_),
+                ..
+            } | Backend::Webdav {
+                password: Some(_),
+                ..
+            }
+        );
+        if settings["needs_password"] == true && !has {
+            return Err(filebridge_integration_api::IntegrationError::fatal(
+                "this destination needs its password",
+            ));
+        }
+        Ok(())
+    }
+
     async fn preflight(
         &self,
         _ctx: &JobContext,
@@ -1791,6 +1815,132 @@ async fn a_profile_password_lives_in_the_keyring_only() {
         secrets.get(&r).is_err(),
         "deleting the profile deletes its secrets"
     );
+}
+
+#[tokio::test]
+async fn a_password_a_profile_needs_cannot_be_removed() {
+    use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, reference};
+    let store = Store::open_in_memory().unwrap();
+    let secrets = Arc::new(MemoryStore::default());
+    let mut registry = Registry::new();
+    registry.add_transport(Arc::new(FakeTransport::default()));
+    registry.add_integration(Arc::new(FakeIntegration::default()));
+    registry.set_secrets(secrets.clone());
+    let engine = Engine::new(
+        store.clone(),
+        registry,
+        EngineOptions {
+            backoff: Backoff::Fixed(Duration::from_millis(10)),
+            batch_size: 3,
+            inhibit_sleep: false,
+            max_verify_rounds: 3,
+            local_clock: LocalClock::fixed(|| NOON),
+        },
+    );
+    let id = "p-webdav".to_owned();
+    let r = reference(&id, SecretKind::AppPassword);
+    secrets.set(&r, "app-pass").unwrap();
+    engine
+        .save_profile(Profile {
+            id: id.clone(),
+            name: "Cloud".into(),
+            destination: Destination {
+                transport: "fake".into(),
+                backend: Backend::Webdav {
+                    url: "https://cloud.example.com/remote.php/dav/files/alice/".into(),
+                    user: "alice".into(),
+                    password: Some(r.clone()),
+                    vendor: Some("nextcloud".into()),
+                },
+                root: "Backup".into(),
+            },
+            integration: Some("fakeint".into()),
+            integration_settings: serde_json::json!({ "needs_password": true }),
+            target: TargetSpec::default(),
+        })
+        .await
+        .unwrap();
+    let err = engine.set_profile_password(&id, None).await.unwrap_err();
+    assert!(err.to_string().contains("needs its password"), "{err}");
+    assert_eq!(
+        secrets.get(&r).unwrap().0.as_str(),
+        "app-pass",
+        "refused before the keyring is touched"
+    );
+    // A new one is fine.
+    engine
+        .set_profile_password(&id, Some("new-app-pass".into()))
+        .await
+        .unwrap();
+    assert_eq!(secrets.get(&r).unwrap().0.as_str(), "new-app-pass");
+}
+
+#[tokio::test]
+async fn a_deleted_destination_keeps_its_jobs_history() {
+    let s = setup().await;
+    let draft = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    // Not while a job to it could still be sent or resumed.
+    let err = s.engine.delete_profile(&s.profile_id).await.unwrap_err();
+    assert!(err.to_string().contains("not finished (draft)"), "{err}");
+    assert!(s.engine.get_profile(&s.profile_id).await.is_ok());
+    s.engine.cancel(&draft).await.unwrap();
+
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let profile = s.engine.get_profile(&s.profile_id).await.unwrap();
+    s.engine.delete_profile(&s.profile_id).await.unwrap();
+
+    // The report, a file's details and the activity still name it.
+    let path = s.dest.parent().unwrap().join("after-delete.csv");
+    let res = s
+        .engine
+        .export_report(
+            &job,
+            ReportRequest {
+                format: ReportFormat::Csv,
+                scope: ReportScope::All,
+                include_dirs: false,
+                path: path.display().to_string(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(res.rows > 0);
+    let page = s
+        .engine
+        .files_page(&job, EntryFilter::default(), None, 10)
+        .await
+        .unwrap();
+    s.engine
+        .entry_detail(&job, page.items[0].idx)
+        .await
+        .unwrap();
+    let activity = s.engine.activity(None, 50).await.unwrap();
+    assert!(
+        activity
+            .iter()
+            .filter(|a| a.job_id.as_deref() == Some(job.as_str()))
+            .all(|a| a.profile_name.as_deref() == Some("Test")),
+        "{activity:?}"
+    );
+
+    // Nothing can be sent to it, and saving it again doesn't revive it unseen.
+    assert!(
+        s.engine
+            .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+            .await
+            .is_err()
+    );
+    let err = s.engine.save_profile(profile).await.unwrap_err();
+    assert!(
+        matches!(err, CoreError::Store(StoreError::Deleted(_))),
+        "{err}"
+    );
+    assert!(s.engine.list_profiles().await.unwrap().is_empty());
 }
 
 #[tokio::test]

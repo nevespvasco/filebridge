@@ -64,7 +64,8 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 | `Entry` | names | source path as raw bytes (`OsString` / `Vec<u8>`), decoded name if valid UTF-8, size, is_dir, parent id |
 | `Issue` | names | rule id, severity (`Auto` / `NeedsDecision`), human message key, before/after bytes for display |
 | `TargetProfile` | names | target OS/filesystem family, max path/name length, case-sensitive?, integration id |
-| `JobContext` | integration-api | job id, profile, destination, transport caps, logger, keyring access (scoped) |
+| `JobContext` | integration-api | job id, profile, destination, transport caps, logger |
+| `SecretResolver` | transport-api | `resolve(&KeyringRef) -> SecretValue`: read-only access to a profile's secrets, implemented by the host over the OS keyring and injected into the plugins that sign in with one (ADR 0004). Not stored is `Auth`; an unreachable keyring is `Transient` |
 
 ## Design rules
 
@@ -76,7 +77,8 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 - `Integration::required_caps` is checked against the chosen `Transport::capabilities` when a
   profile is created; incompatible combinations are rejected in the UI, not at send time.
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
-  `JobContext`.
+  `JobContext`, and the host gives the ones that sign in a `SecretResolver` (they don't depend
+  on `crates/secrets`).
 - Transport errors carry a **kind** (`Transient`, `NotFound`, `Unsupported`, `Auth`, `Other`).
   Only `Transient` is retried; `core` decides on the kind and never reads the message. Each
   adapter maps its own errors to kinds (rclone: `transport-rclone/src/client.rs`, `kind_of`).

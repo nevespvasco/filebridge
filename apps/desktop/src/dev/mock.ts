@@ -36,6 +36,7 @@ import {
   type JobGroup,
   type JobSummary_Serialize,
   type LogEntry,
+  type NextcloudWebdavRequest,
   type ReclaimStatus_Serialize,
   type RecentSource,
   type StorageView_Serialize as StorageView,
@@ -569,6 +570,11 @@ const handlers: Handlers = {
     return p;
   },
   deleteProfile: (a) => {
+    // Like the service: not while a job to it could still be sent or resumed.
+    const open = jobs.filter((j) => j.profile_id === a.id && !["completed", "completed_with_warnings", "cancelled", "failed"].includes(j.state));
+    if (open.length) {
+      throw fail("invalid", `${open.length} transfer(s) to this destination are not finished (${[...new Set(open.map((j) => j.state))].join(", ")}): cancel them, or let them finish, before deleting it`);
+    }
     const i = profiles.findIndex((x) => x.id === a.id);
     if (i >= 0) profiles.splice(i, 1);
     return null;
@@ -655,12 +661,16 @@ const handlers: Handlers = {
     return id;
   },
   addNextcloudWebdav: async (a) => {
-    const req = a.req as { name: string; server: string; user: string; app_password: string; folder: string };
+    const req = a.req as NextcloudWebdavRequest;
     await sleep(600);
     const bare = req.server.replace(/^https?:\/\//, "");
     const host = bare.includes("/") ? bare.slice(0, bare.indexOf("/")) : bare;
     if (/^http:\/\//.test(req.server)) throw fail("invalid", "the address must start with https://: an app password must not travel unencrypted");
-    const url = `https://${host}/remote.php/dav/files/${encodeURIComponent(req.user)}/`;
+    if (host.includes("@")) throw fail("invalid", "leave the user and password out of the address: enter them in their own fields");
+    // A pasted WebDAV address names the user's id, which an email login is not.
+    const pastedId = /\/remote\.php\/dav\/files\/([^/]+)/.exec(bare)?.[1];
+    const userId = pastedId ? decodeURIComponent(pastedId) : null;
+    const url = `https://${host}/remote.php/dav/files/${encodeURIComponent(userId ?? req.user)}/`;
     const steps = [{ id: "address", status: "ok", message: `WebDAV address ${url}`, commands: [] as string[] }];
     // Demo: any app password shorter than 10 characters is refused, like a mistyped one.
     if (req.app_password.length < 10) {
@@ -676,7 +686,7 @@ const handlers: Handlers = {
       name: req.name,
       destination: { transport: "rclone", backend: { kind: "webdav", url, user: req.user, password: `filebridge/${id}/app-password`, vendor: "nextcloud" }, root: req.folder },
       integration: "nextcloud",
-      integration_settings: { mode: "webdav", server: `https://${host}`, user: req.user },
+      integration_settings: { mode: "webdav", server: `https://${host}`, user: req.user, ...(userId && userId !== req.user ? { user_id: userId } : {}) },
       target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);

@@ -107,31 +107,48 @@ pub struct AccessReport {
     pub profile: Option<Profile>,
 }
 
+/// A password on its way to the OS keyring. On the wire it is a plain string; its `Debug` never
+/// shows it, so neither does any request, envelope or log line that carries one.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(transparent)]
+pub struct Password(String);
+
+impl Password {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// The password itself, for the keyring.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("***")
+    }
+}
+
 /// Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
 /// password, which goes to the OS keyring and nowhere else.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct NextcloudWebdavRequest {
     /// Name for the profile saved when every check passes.
     pub name: String,
-    /// What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud.
+    /// What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud
+    /// (whose `…/dav/files/<id>/` gives the user's id when the login is an email).
     pub server: String,
+    /// The login the app password belongs to.
     pub user: String,
     /// A Nextcloud app password (Settings → Security), never the account password.
-    pub app_password: String,
+    pub app_password: Password,
     /// Folder inside the user's files that receives sends (`""` for the root).
     pub folder: String,
-}
-
-impl std::fmt::Debug for NextcloudWebdavRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NextcloudWebdavRequest")
-            .field("name", &self.name)
-            .field("server", &self.server)
-            .field("user", &self.user)
-            .field("app_password", &"***")
-            .field("folder", &self.folder)
-            .finish()
-    }
 }
 
 /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the
@@ -209,6 +226,45 @@ impl Endpoint {
         match self {
             Self::Path(p) => p.display().to_string(),
             Self::Pipe(n) => format!(r"\\.\pipe\{n}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_request_prints_a_password() {
+        let requests = [
+            Request::SetProfilePassword {
+                profile_id: "p-1".into(),
+                password: Some(Password::new("s3cret-sftp-pass")),
+            },
+            Request::AddNextcloudWebdav {
+                req: NextcloudWebdavRequest {
+                    name: "Cloud".into(),
+                    server: "cloud.example.com".into(),
+                    user: "alice".into(),
+                    app_password: Password::new("app-pass-AbCdE"),
+                    folder: String::new(),
+                },
+            },
+        ];
+        for request in requests {
+            let envelope = Envelope { id: 7, request };
+            let shown = format!("{envelope:?} {envelope:#?}");
+            for secret in ["s3cret-sftp-pass", "app-pass-AbCdE"] {
+                assert!(!shown.contains(secret), "{shown}");
+            }
+            // On the wire it is still the plain string the service needs.
+            let wire = serde_json::to_string(&envelope).unwrap();
+            assert!(
+                wire.contains("s3cret-sftp-pass") || wire.contains("app-pass-AbCdE"),
+                "{wire}"
+            );
+            let back: Envelope = serde_json::from_str(&wire).unwrap();
+            assert_eq!(back.request, envelope.request);
         }
     }
 }

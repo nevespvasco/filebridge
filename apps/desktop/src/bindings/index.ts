@@ -104,7 +104,7 @@ export const commands = {
 	 *  Stores the profile's password in the OS keyring (`None` removes it); the profile
 	 *  keeps only its reference (ADR 0004). Never logged, never in a Details panel.
 	 */
-	setProfilePassword: (profileId: string, password: string | null) => typedError<Profile_Serialize, ErrorBody>(__TAURI_INVOKE("set_profile_password", { profileId, password })),
+	setProfilePassword: (profileId: string, password: Password | null) => typedError<Profile_Serialize, ErrorBody>(__TAURI_INVOKE("set_profile_password", { profileId, password })),
 	/**
 	 *  A draft "Repair destination" job for a folder of a profile (`None` = its root):
 	 *  `analyse`, the decisions and `start` then work on it like on a send.
@@ -924,14 +924,24 @@ export type LogLevel = "info" | "warn" | "error";
 export type NextcloudWebdavRequest = {
 	/**  Name for the profile saved when every check passes. */
 	name: string,
-	/**  What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud. */
+	/**
+	 *  What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud
+	 *  (whose `…/dav/files/<id>/` gives the user's id when the login is an email).
+	 */
 	server: string,
+	/**  The login the app password belongs to. */
 	user: string,
 	/**  A Nextcloud app password (Settings → Security), never the account password. */
-	app_password: string,
+	app_password: Password,
 	/**  Folder inside the user's files that receives sends (`""` for the root). */
 	folder: string,
 };
+
+/**
+ *  A password on its way to the OS keyring. On the wire it is a plain string; its `Debug` never
+ *  shows it, so neither does any request, envelope or log line that carries one.
+ */
+export type Password = string;
 
 export type Pong = {
 	protocol: number,

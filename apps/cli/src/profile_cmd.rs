@@ -224,7 +224,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                     name,
                     server,
                     user,
-                    app_password,
+                    app_password: filebridge_ipc::Password::new(app_password),
                     folder,
                 })
                 .await
@@ -395,7 +395,10 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             let password = if remove {
                 None
             } else {
-                Some(read_password(&format!("Password for {}: ", p.name))?)
+                Some(filebridge_ipc::Password::new(read_password(&format!(
+                    "Password for {}: ",
+                    p.name
+                ))?))
             };
             app.ops.set_profile_password(p.id.clone(), password).await?;
             if remove {

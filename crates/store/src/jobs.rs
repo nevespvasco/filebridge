@@ -229,6 +229,22 @@ impl Store {
         .await
     }
 
+    /// The jobs to `profile_id` not in a terminal state (drafts included), oldest first.
+    pub async fn unfinished_jobs_of_profile(&self, profile_id: &str) -> Result<Vec<JobRow>> {
+        let profile_id = profile_id.to_owned();
+        self.call(move |c| {
+            query_jobs(
+                c,
+                &format!(
+                    "SELECT {COLUMNS} FROM jobs WHERE finished_at IS NULL AND profile_id = ?1
+                     ORDER BY created_at, id"
+                ),
+                [&profile_id],
+            )
+        })
+        .await
+    }
+
     /// Records a state change, the stage outcome and its `state` event, in one transaction.
     /// `Invalid` if the job is no longer in `change.from` (someone else moved it).
     pub async fn change_job_state(&self, id: &str, change: StateChange) -> Result<()> {

@@ -64,6 +64,7 @@ fn to_error(e: CoreError) -> ErrorBody {
         CoreError::PendingDecisions(_) => "pending_decisions",
         CoreError::InvalidTransition { .. } => "invalid_transition",
         CoreError::Store(StoreError::NotFound(_)) => "not_found",
+        CoreError::Store(StoreError::Deleted(_)) => "invalid",
         CoreError::Invalid(_) => "invalid",
         _ => "internal",
     };
@@ -345,10 +346,13 @@ impl Operations for EngineOperations {
     async fn set_profile_password(
         &self,
         profile_id: String,
-        password: Option<String>,
+        password: Option<filebridge_ipc::Password>,
     ) -> Res<Profile> {
         self.engine
-            .set_profile_password(&profile_id, password)
+            .set_profile_password(
+                &profile_id,
+                password.map(filebridge_ipc::Password::into_inner),
+            )
             .await
             .map_err(to_error)
     }

@@ -9,7 +9,6 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
-filebridge-secrets.workspace = true
 filebridge-transport-api.workspace = true
 getrandom.workspace = true
 reqwest.workspace = true
@@ -22,6 +21,7 @@ tracing.workspace = true
 libc = "0.2"
 
 [dev-dependencies]
+filebridge-secrets.workspace = true
 filebridge-transport-api = { workspace = true, features = ["contract"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

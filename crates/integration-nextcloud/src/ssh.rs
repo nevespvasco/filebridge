@@ -8,22 +8,24 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use filebridge_integration_api::{IntegrationError, Result};
-use filebridge_secrets::{KeyringRef, SecretStore, Zeroizing};
+use filebridge_transport_api::{KeyringRef, SecretResolver};
 use russh::ChannelMsg;
 use russh::ChannelWriteHalf;
 use russh::client;
 use russh::keys::agent::AgentIdentity;
 use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use tokio::sync::mpsc;
+use zeroize::Zeroizing;
 
 use crate::shell::{Output, RemoteShell, ShellConnector, SshTarget};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// Opens [`SshShell`]s; reads a profile's own key ([`SshTarget::key`]) from `secrets`.
+/// Opens [`SshShell`]s; reads a profile's own key ([`SshTarget::key`]) through the host's
+/// resolver (the plugin never touches the keyring).
 #[derive(Clone, Default)]
 pub struct SshConnector {
-    secrets: Option<Arc<dyn SecretStore>>,
+    secrets: Option<Arc<dyn SecretResolver>>,
 }
 
 impl SshConnector {
@@ -31,24 +33,24 @@ impl SshConnector {
         Self::default()
     }
 
-    /// Profiles' own keys come from `store`.
-    pub fn with_secrets(store: Arc<dyn SecretStore>) -> Self {
+    /// Profiles' own keys come through `resolver`.
+    pub fn with_secrets(resolver: Arc<dyn SecretResolver>) -> Self {
         Self {
-            secrets: Some(store),
+            secrets: Some(resolver),
         }
     }
 
     /// The private key a profile keeps in the keyring.
     async fn stored_key(&self, r: &KeyringRef) -> Result<Arc<PrivateKey>> {
-        let store = self.secrets.clone().ok_or_else(|| {
+        let resolver = self.secrets.as_ref().ok_or_else(|| {
             IntegrationError::fatal("no keyring available to read filebridge's SSH key")
         })?;
-        let r = r.clone();
-        let pem = tokio::task::spawn_blocking(move || store.get(&r))
-            .await
-            .map_err(|e| IntegrationError::fatal(format!("keyring task failed: {e}")))?
-            .map_err(|e| IntegrationError::fatal(format!("filebridge's SSH key: {e}")))?;
-        let key = russh::keys::decode_secret_key(pem.0.as_str(), None).map_err(|e| {
+        // A locked keyring stays retryable; a missing key doesn't.
+        let pem = resolver.resolve(r).await.map_err(|e| IntegrationError {
+            message: format!("filebridge's SSH key: {}", e.message),
+            retryable: e.is_retryable(),
+        })?;
+        let key = russh::keys::decode_secret_key(pem.expose(), None).map_err(|e| {
             IntegrationError::fatal(format!(
                 "filebridge's SSH key in the keyring is unreadable: {e}"
             ))

@@ -61,17 +61,19 @@ impl Rcd {
                 TransportError::fatal(format!("cannot start {}: {e}", binary.display()))
             })?;
 
+        let client = RcClient::new(port, user, pass);
         if let Some(stderr) = child.stderr.take() {
+            // rclone's log lines may repeat a connection string or a secret: scrubbed first.
+            let scrubber = client.scrubber().clone();
             tokio::spawn(async move {
                 use tokio::io::AsyncBufReadExt;
                 let mut lines = tokio::io::BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::debug!(target: "rclone", "{line}");
+                    tracing::debug!(target: "rclone", "{}", scrubber.scrub(&line));
                 }
             });
         }
 
-        let client = RcClient::new(port, user, pass);
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             if let Ok(Some(status)) = child.try_wait() {

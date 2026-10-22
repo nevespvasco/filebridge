@@ -203,10 +203,8 @@ async fn keyring<T: Send + 'static>(
     store: &Arc<dyn SecretStore>,
     f: impl FnOnce(&dyn SecretStore) -> filebridge_secrets::Result<T> + Send + 'static,
 ) -> Result<T, ErrorBody> {
-    let store = store.clone();
-    tokio::task::spawn_blocking(move || f(store.as_ref()))
+    filebridge_secrets::blocking(store, f)
         .await
-        .map_err(|e| err("internal", e.to_string()))?
         .map_err(|e| err("keyring", e.to_string()))
 }
 
