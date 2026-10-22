@@ -1,6 +1,6 @@
 //! Window/CLI ↔ `filebridge-service` IPC over a local socket (ADR 0008).
 //!
-//! Wire format: newline-delimited JSON. A client sends `{"id": n, "type": "...", ...}`; the
+//! Wire format: newline-delimited JSON. A client sends `{"id": n, "request": {"type": "...", ...}}`; the
 //! server answers `{"kind": "response", "id": n, "ok": …}` or `{"kind": "response", "id": n,
 //! "err": {…}}`. After a `subscribe` request the same connection also carries
 //! `{"kind": "event", "event": …}` lines. Requests on one connection are handled concurrently.
@@ -60,12 +60,14 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 19: `install_app_key`, `remove_access`; `Backend::Sftp.key`, `SshTarget.key` (ADR 0012).
 /// 20: `planned_renames`; `RuleCount.no_proposal`; `set_options` refused for Repair jobs.
 /// 21: `scan_host_key`, `trust_host_key` (ADR 0015).
-pub const PROTOCOL_VERSION: u32 = 21;
+/// 22: the request goes under `request` beside the call's `id`, so an argument named `id`
+///     (`test_profile`, `profile_storage`, `delete_profile`) no longer collides with it.
+pub const PROTOCOL_VERSION: u32 = 22;
 
+/// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {
     pub id: u64,
-    #[serde(flatten)]
     pub request: Request,
 }
 

@@ -7,7 +7,8 @@ Messages between clients (the Tauri window) and `filebridge-service`.
 - Newline-delimited JSON over a local socket (`interprocess`): a Unix socket at
   `$XDG_RUNTIME_DIR/filebridge/service.sock`, inside a directory forced to 0700, or a per-user
   named pipe on Windows (`Endpoint::default_for_user`).
-- Client → service: `{"id": n, "type": "<request>", …}`. Service → client:
+- Client → service: `{"id": n, "request": {"type": "<request>", …arguments}}`. The request is
+  kept apart from the call's `id`, so an argument may itself be called `id`. Service → client:
   `{"kind": "response", "id": n, "ok": …}` or `… "err": {"code", "message"}`, plus
   `{"kind": "event", "event": …}` after a `subscribe`. Requests on one connection are handled
   concurrently.
@@ -16,9 +17,8 @@ Messages between clients (the Tauri window) and `filebridge-service`.
   `install_app_key` and `remove_access` wait for it), `ssh` (an SSH server couldn't be reached),
   `host_key_changed` (`trust_host_key` refused: another key is on record for the host, or the
   server presents another key than the one confirmed), `disconnected` (client side).
-- `PROTOCOL_VERSION` is 3 (2: `set_options` and `decide_all`; 3: requests generated from the
-  catalogue, an issue's `decision` and `severity` as enums); `ping` returns it and clients refuse
-  a service that speaks another one.
+- `PROTOCOL_VERSION` (its history is beside it in `src/lib.rs`); `ping` returns it and clients
+  refuse a service that speaks another one.
 
 ## The operation catalogue
 Every operation is written **once**, in `src/operations.rs` (`for_each_operation!`): its name,

@@ -128,7 +128,7 @@ macro_rules! define_operations {
         $(#[$doc:meta])*
         $variant:ident $name:ident ( $($arg:ident : $ty:ty),* ) -> $ret:ty;
     )*) => {
-        /// One request on the wire (`{"id": n, "type": "<operation>", …arguments}`).
+        /// One request on the wire (`{"type": "<operation>", …arguments}`, under the call's `request`).
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, specta::Type)]
         #[serde(tag = "type", rename_all = "snake_case")]
         pub enum Request {

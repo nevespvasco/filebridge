@@ -132,6 +132,32 @@ async fn client_drives_a_job_over_the_socket() {
     assert_eq!(unsupported.code, "unsupported");
 }
 
+/// Operations whose own argument is called `id` answer over the socket: that argument once
+/// collided with the request's id, the service refused the request under id 0, and the window
+/// waited for its answer forever ("Testing the connection…").
+#[tokio::test]
+async fn operations_with_an_id_argument_answer_over_the_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_endpoint, client, profile) = service(dir.path()).await;
+    let answer = Duration::from_secs(10);
+
+    let test = tokio::time::timeout(answer, client.test_profile(profile.clone()))
+        .await
+        .expect("test_profile answers")
+        .unwrap();
+    assert!(!test.transport.has_failures(), "{test:?}");
+    let space = tokio::time::timeout(answer, client.profile_storage(profile.clone(), true))
+        .await
+        .expect("profile_storage answers")
+        .unwrap();
+    assert_eq!(space.profile_id, profile);
+    tokio::time::timeout(answer, client.delete_profile(profile))
+        .await
+        .expect("delete_profile answers")
+        .unwrap();
+    assert!(client.list_profiles().await.unwrap().is_empty());
+}
+
 /// A service on a fresh socket, with the copy transport and a profile writing to `dest`.
 async fn service(dir: &Path) -> (Endpoint, Client, String) {
     let mut registry = Registry::new();
@@ -269,7 +295,7 @@ async fn event_streams_close_when_the_service_drops_the_connection() {
         let mut lines = BufReader::new(recv).lines();
         let line = lines.next_line().await.unwrap().unwrap();
         let request: serde_json::Value = serde_json::from_str(&line).unwrap();
-        assert_eq!(request["type"], "subscribe");
+        assert_eq!(request["request"]["type"], "subscribe");
         let answer = serde_json::json!({ "kind": "response", "id": request["id"], "ok": null });
         send.write_all(format!("{answer}\n").as_bytes())
             .await
