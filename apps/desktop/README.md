@@ -41,8 +41,15 @@ src-tauri/src/
   binary next to the app's own executable (the bundled sidecar; `target/debug/` in development),
   else `PATH`. It waits up to 5 s for the socket. The child gets its own process group, so it
   outlives the window and a Ctrl+C in the terminal that ran `tauri dev`.
-- `ping` checks `PROTOCOL_VERSION`; a mismatch is the error code `incompatible_service`. A missing
-  binary or a service that never answers is `service_unavailable`.
+- `ping` checks `PROTOCOL_VERSION`. A service with an **older** protocol (left running by an
+  earlier version of the app) is replaced: on Unix the window asks the socket for its peer's pid,
+  checks the process is `filebridge-service`, sends SIGTERM (running jobs are stored as they are
+  and resume in the new service), waits up to 10 s for the socket to go quiet, then starts its
+  own. A **newer** service is never stopped. Any mismatch left is the error code
+  `incompatible_service`. A missing binary or a service that never answers is
+  `service_unavailable`.
+- `tauri dev` runs `cargo build -p filebridge-service` first, so the service started from
+  `target/debug/` is always the current one.
 - Events: `Client::events()` is forwarded as the Tauri event `service-event` (payload: the engine
   `Event`). The stream ends (`Closed`) when the connection drops; the window then emits
   `connection-changed { connected: false }`, reconnects with backoff (starting the service again

@@ -25,10 +25,23 @@
     "connecting": "Starting the copy engine…",
     "disconnected": "Copy engine not responding",
     "retry": "Try again",
-    "bannerTitle": "The copy engine isn't answering.",
-    "bannerBody": "Sends already running are not lost. This window reconnects by itself; you can also click “Try again”.",
     "label": "copy engine",
-    "tip": "The copy engine is the part of filebridge that copies the files, in the background, even with this window closed. This only says the window can talk to it; it says nothing about your destinations, which are checked when you use them."
+    "tip": "The copy engine is the part of filebridge that copies the files, in the background, even with this window closed. This only says the window can talk to it; it says nothing about your destinations, which are checked when you use them.",
+    "problem": {
+      "version": {
+        "title": "The copy engine is from another version of filebridge.",
+        "body": "Close every filebridge window and open it again. Sends already running are not lost: they continue when the engine starts again."
+      },
+      "start": {
+        "title": "filebridge couldn't start its copy engine.",
+        "body": "Try again in a moment. If it keeps failing, the details below say why."
+      },
+      "lost": {
+        "title": "The copy engine isn't answering.",
+        "body": "Sends already running are not lost. This window reconnects by itself; you can also click “Try again”."
+      }
+    },
+    "details": "Technical details"
   },
   "common": {
     "next": "Next",
@@ -925,7 +938,7 @@
   "home": {
     "title": "Home",
     "headline": {
-      "offline": "Not connected to the service",
+      "offline": "Waiting for the copy engine",
       "needsYou": "{n} transfer needs you | {n} transfers need you",
       "sending": "{n} transfer is sending | {n} transfers are sending",
       "allGood": "Everything is up to date",
@@ -957,6 +970,10 @@
       "destination": "Add a destination: a disk, a server or Nextcloud.",
       "folders": "Choose the folders to send.",
       "send": "Send. You can close the window: it keeps going."
+    },
+    "offline": {
+      "title": "Your transfers show here once the copy engine answers.",
+      "body": "Nothing is lost meanwhile: the transfers and destinations are kept by the engine, not by this window."
     }
   },
   "tour": {

@@ -52,7 +52,9 @@ const headline = computed(() => {
   if (!home.totalJobs) return t("home.headline.none");
   return t("home.headline.allGood");
 });
-const firstRun = computed(() => home.loaded && !home.totalJobs);
+/** Only when the service answered that there are none: a failed load is not "new user". */
+const firstRun = computed(() => conn.connected === true && home.loaded && !home.failed && !home.totalJobs);
+const offline = computed(() => conn.connected === false);
 
 /** Why a job needs the user, and the one action for it. */
 function reason(j: JobSummary_Serialize): { text: string; action: string; icon: "hand" | "failCircle" | "retry" | "warning" } {
@@ -98,7 +100,15 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
       <button class="btn btn-primary" @click="router.push({ name: 'new' })"><AppIcon name="send" /> {{ $t("nav.new") }}</button>
     </header>
 
-    <section v-if="firstRun" class="card onboarding" :aria-label="$t('home.start.title')">
+    <section v-if="offline" class="card offline" role="status">
+      <AppIcon name="activity" :size="28" class="muted" />
+      <div>
+        <h2>{{ $t("home.offline.title") }}</h2>
+        <p class="muted">{{ $t("home.offline.body") }}</p>
+      </div>
+    </section>
+
+    <section v-else-if="firstRun" class="card onboarding" :aria-label="$t('home.start.title')">
       <h2>{{ $t("home.start.title") }}</h2>
       <ol>
         <li :class="{ done: profiles.list.length > 0 }">
@@ -111,7 +121,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
       </ol>
     </section>
 
-    <div class="grid">
+    <div v-if="!offline" class="grid">
       <div class="main-col">
         <section v-if="home.needs.length" class="block" aria-labelledby="h-needs">
           <h2 id="h-needs">{{ $t("home.needsYou") }}</h2>
@@ -237,6 +247,9 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .reclaim ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
 .reclaim li { display: flex; justify-content: space-between; gap: 0.5rem; }
 .onboarding { margin-bottom: 1.25rem; }
+.offline { display: flex; gap: 1rem; align-items: center; padding: 1.5rem; }
+.offline h2 { margin: 0 0 0.25rem; font-size: 1rem; }
+.offline p { margin: 0; }
 .onboarding h2 { margin: 0 0 0.6rem; font-size: 1rem; }
 .onboarding ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .onboarding li { display: flex; gap: 0.6rem; align-items: center; }

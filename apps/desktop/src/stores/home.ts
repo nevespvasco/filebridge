@@ -4,6 +4,7 @@ import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
 import type { JobFilter, JobGroup, JobSummary_Serialize } from "@/bindings";
 import { api } from "@/lib/api";
+import { useConnection } from "./connection";
 import { needsYou, useJobs } from "./jobs";
 
 const SEEN_KEY = "filebridge.seen";
@@ -60,6 +61,8 @@ export const useHome = defineStore("home", () => {
       loaded.value = true;
     }
   }
+
+  useConnection().onReconnect(() => void load());
 
   // Coalesce the reloads a burst of state changes would cause (at most once a second).
   let timer: ReturnType<typeof setTimeout> | undefined;

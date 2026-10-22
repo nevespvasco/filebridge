@@ -30,8 +30,15 @@ struct Cli {
     #[arg(long, global = true, env = "FILEBRIDGE_SOCKET")]
     socket: Option<PathBuf>,
     /// Development and tests: send with the local-disk fake transport (id `fake`) instead of
-    /// rclone. Profiles must use `transport: "fake"` and a local root.
-    #[arg(long, global = true, env = "FILEBRIDGE_FAKE_TRANSPORT", hide = true)]
+    /// rclone. Profiles must use `transport: "fake"` and a local root. The variable takes
+    /// `1`/`0`, `true`/`false`, `yes`/`no`.
+    #[arg(
+        long,
+        global = true,
+        env = "FILEBRIDGE_FAKE_TRANSPORT",
+        hide = true,
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
     fake_transport: bool,
     #[command(subcommand)]
     cmd: Option<Cmd>,

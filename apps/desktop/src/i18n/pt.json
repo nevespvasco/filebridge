@@ -25,10 +25,23 @@
     "connecting": "A iniciar o motor de cópia…",
     "disconnected": "Motor de cópia sem resposta",
     "retry": "Tentar de novo",
-    "bannerTitle": "O motor de cópia não está a responder.",
-    "bannerBody": "Os envios em curso não se perdem. Esta janela volta a ligar-se sozinha; também pode carregar em “Tentar de novo”.",
     "label": "motor de cópia",
-    "tip": "O motor de cópia é a parte do filebridge que copia os ficheiros, em segundo plano, mesmo com esta janela fechada. Isto só diz que a janela consegue falar com ele; não diz nada sobre os seus destinos, que são verificados quando os usa."
+    "tip": "O motor de cópia é a parte do filebridge que copia os ficheiros, em segundo plano, mesmo com esta janela fechada. Isto só diz que a janela consegue falar com ele; não diz nada sobre os seus destinos, que são verificados quando os usa.",
+    "problem": {
+      "version": {
+        "title": "O motor de cópia é de outra versão do filebridge.",
+        "body": "Feche todas as janelas do filebridge e abra-o de novo. Os envios em curso não se perdem: continuam quando o motor voltar a arrancar."
+      },
+      "start": {
+        "title": "O filebridge não conseguiu arrancar o motor de cópia.",
+        "body": "Tente de novo daqui a pouco. Se continuar a falhar, os detalhes abaixo dizem porquê."
+      },
+      "lost": {
+        "title": "O motor de cópia não está a responder.",
+        "body": "Os envios em curso não se perdem. Esta janela volta a ligar-se sozinha; também pode clicar em “Tentar de novo”."
+      }
+    },
+    "details": "Detalhes técnicos"
   },
   "common": {
     "next": "Seguinte",
@@ -925,7 +938,7 @@
   "home": {
     "title": "Início",
     "headline": {
-      "offline": "Sem ligação ao serviço",
+      "offline": "À espera do motor de cópia",
       "needsYou": "{n} transferência precisa de si | {n} transferências precisam de si",
       "sending": "{n} transferência em curso | {n} transferências em curso",
       "allGood": "Está tudo em dia",
@@ -957,6 +970,10 @@
       "destination": "Adicione um destino: um disco, um servidor ou o Nextcloud.",
       "folders": "Escolha as pastas a enviar.",
       "send": "Envie. Pode fechar a janela: continua."
+    },
+    "offline": {
+      "title": "As suas transferências aparecem aqui quando o motor de cópia responder.",
+      "body": "Entretanto nada se perde: as transferências e os destinos são guardados pelo motor, não por esta janela."
     }
   },
   "tour": {

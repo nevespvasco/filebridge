@@ -29,7 +29,11 @@ onMounted(async () => {
   void profiles.load().then(() => profiles.loadAllStorage());
   void reclaim.loadEligible();
   void settings.loadApp();
-  conn.onReconnect(() => void settings.loadApp());
+  conn.onReconnect(() => {
+    void settings.loadApp();
+    void profiles.load().then(() => profiles.loadAllStorage());
+    void reclaim.loadEligible();
+  });
   void jobs.loadPage(0);
 });
 
@@ -41,6 +45,13 @@ watch(
   },
   { immediate: true },
 );
+
+/** What the banner says: an old or new engine, one that can't start, or one that stopped. */
+const problem = computed(() => {
+  if (conn.lastCode === "incompatible_service") return "version";
+  if (conn.lastCode === "service_unavailable") return "start";
+  return "lost";
+});
 
 const active = computed(() => Object.values(jobs.byId).filter((j) => RUNNING.includes(j.state)).length);
 // The sidebar's notice slot (docs/design/02, "Sidebar"): one notice at most. A dismissed one stays
@@ -132,9 +143,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
     </nav>
     <main class="main">
       <div v-if="conn.connected === false" class="banner" role="alert">
-        <strong>{{ $t("conn.bannerTitle") }}</strong>
-        <span class="small">{{ conn.lastError ?? $t("conn.bannerBody") }}</span>
-        <button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button>
+        <AppIcon name="warning" :size="20" class="banner-icon" />
+        <div class="banner-text">
+          <strong>{{ $t(`conn.problem.${problem}.title`) }}</strong>
+          <span class="small">{{ $t(`conn.problem.${problem}.body`) }}</span>
+          <details v-if="conn.lastError" class="small muted">
+            <summary>{{ $t("conn.details") }}</summary>
+            <code>{{ conn.lastError }}</code>
+          </details>
+        </div>
+        <button class="btn btn-small" :disabled="conn.checking" @click="conn.check()">
+          <AppIcon name="retry" /> {{ conn.checking ? $t("conn.connecting") : $t("conn.retry") }}
+        </button>
       </div>
       <RouterView v-slot="{ Component }">
         <KeepAlive include="WizardView">
@@ -191,14 +211,18 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .banner {
   display: flex;
   gap: 0.75rem;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: flex-start;
   padding: 0.75rem 1rem;
   border-radius: 8px;
   background: var(--danger-soft);
   border: 1px solid var(--danger);
   margin-bottom: 1rem;
 }
+.banner-icon { color: var(--danger); flex: none; margin-top: 0.1rem; }
+.banner-text { display: grid; gap: 0.2rem; flex: 1; min-width: 0; }
+.banner-text details { margin-top: 0.2rem; }
+.banner-text summary { cursor: pointer; }
+.banner-text code { display: block; margin-top: 0.25rem; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
   .side { flex-direction: row; flex-wrap: wrap; height: auto; position: static; border-right: 0; border-bottom: 1px solid var(--border); }

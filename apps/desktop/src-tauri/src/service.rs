@@ -1,6 +1,7 @@
 //! The connection to `filebridge-service` (ADR 0008): connect to the per-user socket, start the
 //! service when nothing listens there, forward its events to the window and reconnect when the
-//! connection drops.
+//! connection drops. A service from an older version of the app (an older protocol) is stopped
+//! and replaced; its running jobs resume in the new one. A newer one is never touched.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -10,7 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use filebridge_ipc::{Client, Endpoint, ErrorBody, Operations, PROTOCOL_VERSION};
+use filebridge_ipc::{Client, Endpoint, ErrorBody, Operations, PROTOCOL_VERSION, Pong};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_specta::Event as _;
@@ -25,6 +26,8 @@ const SERVICE_BIN: &str = if cfg!(windows) {
 };
 /// How long to wait for a freshly started service to accept connections.
 const START_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long an older service gets to stop (it stores running jobs as they are, then exits).
+const STOP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Every engine event, forwarded as is from `Client::events()`.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
@@ -102,7 +105,21 @@ impl Service {
     async fn connect_or_start(&self) -> Result<Client, ErrorBody> {
         let endpoint = &self.0.endpoint;
         if let Ok(client) = Client::connect(endpoint).await {
-            return check_protocol(client).await;
+            let pong = client.ping().await?;
+            if pong.protocol >= PROTOCOL_VERSION {
+                return check_protocol(client, &pong);
+            }
+            // Left running by an older version of the app: replace it.
+            drop(client);
+            tracing::info!(
+                "replacing filebridge-service {} (protocol {})",
+                pong.version,
+                pong.protocol
+            );
+            stop_older(endpoint).await.map_err(|why| ErrorBody {
+                code: "incompatible_service".into(),
+                message: format!("{}; it could not be stopped: {why}", incompatible(&pong)),
+            })?;
         }
         let bin = find_service_binary().ok_or_else(|| {
             unavailable(format!(
@@ -116,7 +133,10 @@ impl Service {
         loop {
             sleep(Duration::from_millis(100)).await;
             match Client::connect(endpoint).await {
-                Ok(client) => return check_protocol(client).await,
+                Ok(client) => {
+                    let pong = client.ping().await?;
+                    return check_protocol(client, &pong);
+                }
                 Err(e) if Instant::now() >= deadline => {
                     return Err(unavailable(format!(
                         "{} did not answer on {} within {} s: {e}",
@@ -187,18 +207,72 @@ fn endpoint() -> Endpoint {
     }
 }
 
-async fn check_protocol(client: Client) -> Result<Client, ErrorBody> {
-    let pong = client.ping().await?;
+fn incompatible(pong: &Pong) -> String {
+    format!(
+        "filebridge-service {} speaks protocol {}, this app needs {PROTOCOL_VERSION}",
+        pong.version, pong.protocol
+    )
+}
+
+/// Only the same protocol is spoken. A service still older after a fresh start is an old
+/// binary on disk (in development: `cargo build -p filebridge-service`).
+fn check_protocol(client: Client, pong: &Pong) -> Result<Client, ErrorBody> {
     if pong.protocol != PROTOCOL_VERSION {
         return Err(ErrorBody {
             code: "incompatible_service".into(),
-            message: format!(
-                "filebridge-service {} speaks protocol {}, this app needs {PROTOCOL_VERSION}",
-                pong.version, pong.protocol
-            ),
+            message: incompatible(pong),
         });
     }
     Ok(client)
+}
+
+/// Stops the service listening on `endpoint`: SIGTERM to the process at the other end of the
+/// socket (checked to be a `filebridge-service`), then waits until nothing answers there.
+#[cfg(unix)]
+async fn stop_older(endpoint: &Endpoint) -> Result<(), String> {
+    let Endpoint::Path(path) = endpoint else {
+        return Err("not a socket".into());
+    };
+    let stream = tokio::net::UnixStream::connect(path)
+        .await
+        .map_err(|e| e.to_string())?;
+    let pid = stream
+        .peer_cred()
+        .map_err(|e| e.to_string())?
+        .pid()
+        .ok_or("the socket doesn't say which process it belongs to")?;
+    drop(stream);
+    let name = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let name = String::from_utf8_lossy(&name.stdout);
+    let name = name.trim().rsplit('/').next().unwrap_or_default();
+    // `comm` is cut to 15 characters on Linux.
+    if !name.starts_with("filebridge-serv") {
+        return Err(format!("process {pid} ({name}) is not filebridge-service"));
+    }
+    let status = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("kill {pid} failed"));
+    }
+    let deadline = Instant::now() + STOP_TIMEOUT;
+    while Client::connect(endpoint).await.is_ok() {
+        if Instant::now() >= deadline {
+            return Err(format!("process {pid} is still running"));
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
+    Ok(())
+}
+
+/// Windows: the pipe doesn't name its process here; the user quits the old service.
+#[cfg(not(unix))]
+async fn stop_older(_endpoint: &Endpoint) -> Result<(), String> {
+    Err("quit the running filebridge-service and try again".into())
 }
 
 /// `FILEBRIDGE_SERVICE`, then next to this executable (the bundled sidecar, and
@@ -243,4 +317,67 @@ fn spawn_detached(bin: &std::path::Path) -> std::io::Result<()> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// `target/<profile>/filebridge-service`, built by the service's own tests in the same
+    /// `cargo test --workspace`.
+    fn service_binary() -> Option<PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        let bin = exe.parent()?.parent()?.join(SERVICE_BIN);
+        bin.is_file().then_some(bin)
+    }
+
+    async fn wait_for(endpoint: &Endpoint) {
+        let deadline = Instant::now() + START_TIMEOUT;
+        while Client::connect(endpoint).await.is_err() {
+            assert!(Instant::now() < deadline, "the service never answered");
+            sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn an_older_service_is_stopped() {
+        let Some(bin) = service_binary() else {
+            eprintln!("skipped: build filebridge-service first");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("s.sock");
+        let mut child = std::process::Command::new(bin)
+            .arg("--data-dir")
+            .arg(dir.path().join("data"))
+            .arg("--socket")
+            .arg(&socket)
+            .env("FILEBRIDGE_FAKE_TRANSPORT", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let endpoint = Endpoint::Path(socket);
+        wait_for(&endpoint).await;
+
+        stop_older(&endpoint).await.unwrap();
+        assert!(Client::connect(&endpoint).await.is_err());
+        let status = child.wait().unwrap();
+        assert!(status.success(), "a clean stop, not a kill: {status:?}");
+    }
+
+    #[tokio::test]
+    async fn another_program_on_the_socket_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("s.sock");
+        // This test process listens: it is not filebridge-service.
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        tokio::spawn(async move {
+            while let Ok((conn, _)) = listener.accept().await {
+                std::mem::forget(conn);
+            }
+        });
+        let err = stop_older(&Endpoint::Path(socket)).await.unwrap_err();
+        assert!(err.contains("is not filebridge-service"), "{err}");
+    }
 }
