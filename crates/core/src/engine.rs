@@ -439,6 +439,20 @@ impl Engine {
         self.summary(row).await
     }
 
+    /// The jobs of `profile_id` that are being worked on right now (analysing, or in a running
+    /// state): a profile's sign-in must not change under them.
+    pub async fn active_jobs_of(&self, profile_id: &str) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        for row in self.store.list_unfinished_jobs().await? {
+            let state = JobState::parse(&row.state)?;
+            if row.profile_id == profile_id && (state.is_running() || state == JobState::Analysing)
+            {
+                out.push(row.id);
+            }
+        }
+        Ok(out)
+    }
+
     /// Newest first.
     pub async fn list_jobs(&self, limit: u32, offset: u32) -> Result<Vec<JobSummary>> {
         let mut out = Vec::new();

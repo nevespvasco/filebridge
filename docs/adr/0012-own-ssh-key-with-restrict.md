@@ -1,7 +1,8 @@
 # ADR 0012 — filebridge's own SSH key, installed with `restrict`, removable
 
 - Status: Accepted
-- Date: 2026-10-22
+- Date: 2026-10-22 (revised the same day after review: safe rewrite of `authorized_keys`,
+  proof before the profile changes)
 - Refines: [07 — Security](../07-security-reliability.md#security) ("App-generated SSH key",
   "Restricted key in direct mode", "Remove access" wizard); [ADR 0004](0004-os-keyring-secrets.md)
 
@@ -26,12 +27,26 @@ allows only SFTP and the exact commands filebridge runs.
   has today. `restrict` turns off the interactive terminal, port, agent and X11 forwarding and
   `~/.ssh/rc`; SFTP and commands still work.
 - The profile switches to the key only after a sign-in with it, and an rclone listing with it,
-  have worked. Any failed step undoes the others (the line removed, the keyring entry deleted).
-- **Remove access** deletes only the lines ending in `filebridge-<profile-id>` (rewritten in
-  place, so the file keeps its owner and mode), deletes the keyring entry, puts the profile back on
-  its key file or agent, and then tries the old key, held in memory, once more: the step succeeds
-  only when the server refuses it. It is offered on the Destinations screen and on a finished
-  transfer to that destination.
+  have worked. Any failed step (saving the profile included) undoes the others (the line
+  removed, the keyring entry deleted), and the report says what the undo did for each server
+  and the keyring: a failed undo names the line left behind instead of claiming that nothing
+  changed.
+- **Remove access** deletes only the lines whose last word is `filebridge-<profile-id>` (also
+  when they end in `\r` or spaces), then tries the old key, held in memory, once more. Only when
+  no server accepts it is the profile put back on its key file, SSH agent or password, and then
+  the keyring entry deleted; a server that still accepts it leaves the profile on the key and
+  the step failed. It is offered on the Destinations screen, on a finished transfer to that
+  destination, and from the delete-destination dialog when the destination has the key.
+- `authorized_keys` is only ever changed by scripts that leave it as it was unless every step
+  worked: bytes are compared as bytes (`LC_ALL=C grep -a`, so a Latin-1 comment or a NUL byte
+  can't make GNU grep drop lines or answer "binary file matches"), a `grep` error stops it, and
+  the filtered copy (made in `~/.ssh`, mode 600) must hold exactly the old lines minus the
+  matched ones before it is written back in place (`cat >`, so the file keeps its owner and
+  mode).
+- Neither install nor remove runs while a transfer to that destination is running, profile ids
+  are checked to be `[A-Za-z0-9-]` before any script is built, and the install is not offered
+  to an SFTP destination that signs in by password only (the line is installed through the key
+  file or SSH agent).
 
 ## Consequences
 - The user's personal key is no longer used by filebridge and can be removed from the server. A
@@ -41,7 +56,9 @@ allows only SFTP and the exact commands filebridge runs.
 - Nothing is installed or changed on the server beyond one line in `authorized_keys`.
 - A server that reads keys from somewhere else (`AuthorizedKeysFile`, central key management)
   fails the sign-in check, and the install is undone; Remove access reports when the old key still
-  signs in.
+  signs in, and keeps the destination on it.
+- Deleting a destination that has the key forgets it locally but can't reach the server: the
+  delete dialog says so and offers Remove access first.
 - Rejected for now: B (creates users and sudoers rules on the user's Proxmox host or container,
   more ways to break), C (fragile: every change to filebridge's commands needs the gate updated on
   each server).

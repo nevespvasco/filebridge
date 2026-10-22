@@ -508,6 +508,8 @@
     "deleteForgets": "O filebridge esquece o perfil “{name}”.",
     "deleteNoFiles": "Nenhum ficheiro é apagado, nem no destino nem em lado nenhum.",
     "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele.",
+    "deleteKey": "Este destino entra com a chave própria do filebridge. Apagá-lo esquece a chave aqui, mas a linha dela fica no authorized_keys do servidor.",
+    "deleteRemoveFirst": "Remover acesso primeiro…",
     "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada nova transferência.",
     "emptyHint": "Crie o seu primeiro destino: um disco externo, um servidor (SFTP) ou o Nextcloud.",
     "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado.",
@@ -1096,18 +1098,22 @@
       "what4": "Entra com a chave nova antes de mudar. Se algum passo falhar, tudo é desfeito.",
       "confirm": "Instalar a chave",
       "ok": "Feito: este destino usa agora a chave própria do filebridge.",
-      "failed": "Não instalada: nada foi alterado."
+      "unconfirmed": "Instalada, mas nem todas as verificações foram feitas: veja os passos marcados !.",
+      "failed": "Não instalada: cada passo abaixo diz o que foi desfeito.",
+      "failedUndo": "Não instalada, e não foi possível desfazer tudo: veja nos passos marcados ✗ o que ficou."
     },
     "remove": {
       "button": "Remover acesso…",
       "tip": "Apagar a chave do filebridge do servidor e do cofre, e confirmar que já não entra",
       "title": "Remover o acesso do filebridge a “{name}”?",
       "what1": "O filebridge apaga a sua própria linha do ~/.ssh/authorized_keys de {who}, e mais nada.",
-      "what2": "Apaga a chave do cofre do sistema.",
-      "what3": "Este destino volta a entrar com o seu ficheiro de chave ou agente SSH, se tiver.",
-      "what4": "Por fim, tenta a chave antiga mais uma vez e confirma que o servidor a recusa.",
+      "what2": "Tenta a chave antiga mais uma vez e confirma que o servidor a recusa; se o servidor ainda a aceitar, mais nada muda.",
+      "what3": "Só então este destino volta a entrar com o seu ficheiro de chave ou agente SSH, se tiver.",
+      "what3Password": "Só então este destino volta a entrar com a sua palavra-passe.",
+      "what4": "Por fim, apaga a chave do cofre do sistema.",
       "confirm": "Remover acesso",
       "ok": "Feito: a chave do filebridge foi apagada e já não entra.",
+      "unconfirmed": "Removida, mas nem tudo pôde ser confirmado: veja os passos marcados !.",
       "failed": "Não terminou: veja o passo que falhou."
     },
     "steps": {

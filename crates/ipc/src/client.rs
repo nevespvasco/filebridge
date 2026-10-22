@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use interprocess::local_socket::tokio::{Stream, prelude::*};
 use serde::de::DeserializeOwned;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::{Endpoint, Envelope, ErrorBody, Event, Outgoing, Request};
@@ -39,7 +39,16 @@ pub struct Client {
 impl Client {
     pub async fn connect(endpoint: &Endpoint) -> std::io::Result<Self> {
         let conn = Stream::connect(endpoint.name()?).await?;
-        let (recv, mut send) = conn.split();
+        let (recv, send) = conn.split();
+        Ok(Self::over(recv, send))
+    }
+
+    /// A client over a connection opened elsewhere, e.g. a Unix socket whose peer process was
+    /// looked up first (the app replacing an older service checks the process it pinged).
+    pub fn over(
+        recv: impl AsyncRead + Unpin + Send + 'static,
+        mut send: impl AsyncWrite + Unpin + Send + 'static,
+    ) -> Self {
         let (out, mut out_rx) = mpsc::channel::<Vec<u8>>(256);
         tokio::spawn(async move {
             while let Some(line) = out_rx.recv().await {
@@ -78,13 +87,13 @@ impl Client {
             }
         });
 
-        Ok(Self {
+        Self {
             out,
             pending,
             events,
             next_id: Arc::new(AtomicU64::new(1)),
             subscribed: Arc::default(),
-        })
+        }
     }
 
     /// Sends a request and decodes its answer.

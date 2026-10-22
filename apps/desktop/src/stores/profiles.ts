@@ -104,6 +104,36 @@ export function profileKind(p: Profile_Serialize): "local" | "sftp" | "webdav" |
   return p.destination.backend.kind;
 }
 
+/** Every SSH account whose `~/.ssh/authorized_keys` filebridge's own key changes (ADR 0012):
+ *  the SFTP user, and Nextcloud direct mode's SSH user when it differs. Mirrors `targets` in
+ *  crates/host/src/access.rs. */
+export function sshAccounts(p: Profile_Serialize): string[] {
+  const b = p.destination.backend;
+  if (b.kind !== "sftp" || !b.user) return [];
+  const out = [`${b.user}@${b.host}`];
+  const s = p.integration_settings;
+  if (s && typeof s === "object" && !Array.isArray(s) && s.mode === "direct") {
+    const ssh = s.ssh;
+    if (ssh && typeof ssh === "object" && !Array.isArray(ssh) && typeof ssh.user === "string" && typeof ssh.host === "string") {
+      const port = typeof ssh.port === "number" ? ssh.port : 22;
+      const same = ssh.user === b.user && ssh.host === b.host && port === (b.port ?? 22);
+      if (!same) out.push(`${ssh.user}@${ssh.host}`);
+    }
+  }
+  return out;
+}
+
+/** filebridge's own SSH key for this destination: "install" when it can get one, "remove" when
+ *  it has one, `null` otherwise. Not offered to SFTP profiles that sign in by password only
+ *  (the key is installed through the key file or SSH agent), nor without an SSH user. */
+export function sshKeyAction(p: Profile_Serialize): "install" | "remove" | null {
+  const b = p.destination.backend;
+  if (b.kind !== "sftp") return null;
+  if (b.key) return "remove";
+  if (!b.user || (b.password && !b.key_file)) return null;
+  return "install";
+}
+
 /** How a send reaches the destination, for the Review step: Nextcloud's two modes differ. */
 export function sendMode(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" | "nextcloudWebdav" {
   if (p.integration === "nextcloud" && p.destination.backend.kind === "webdav") return "nextcloudWebdav";

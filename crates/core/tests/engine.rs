@@ -1929,6 +1929,36 @@ async fn a_closed_window_holds_the_transfer_until_it_opens() {
 }
 
 #[tokio::test]
+async fn a_profile_is_busy_only_while_a_job_works_on_it() {
+    let s = setup().await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    let job = ready_job(&s, SendOptions::default()).await;
+    // Ready: not being worked on yet.
+    assert!(
+        s.engine
+            .active_jobs_of(&s.profile_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    s.engine.start(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    assert_eq!(
+        s.engine.active_jobs_of(&s.profile_id).await.unwrap(),
+        vec![job.clone()]
+    );
+    assert!(s.engine.active_jobs_of("another").await.unwrap().is_empty());
+    s.engine.cancel(&job).await.unwrap();
+    assert!(
+        s.engine
+            .active_jobs_of(&s.profile_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn a_window_closing_mid_transfer_keeps_what_arrived() {
     let s = setup().await;
     for i in 0..12 {

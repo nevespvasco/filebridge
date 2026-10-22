@@ -8,6 +8,7 @@
 // state comes from the engine's table (`JOB_OPERATIONS`), not from a copy.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { trimBoth, trimEnd } from "@/lib/format";
+import { sshAccounts } from "@/stores/profiles";
 import { setMockPicker, setMockSave, type PickOptions } from "@/lib/platform";
 import { emit } from "@tauri-apps/api/event";
 import {
@@ -687,16 +688,19 @@ const handlers: Handlers = {
     const b = p.destination.backend;
     if (b.kind !== "sftp") throw fail("invalid", "only destinations reached over SSH (SFTP, Nextcloud direct mode) have an SSH key");
     if (b.key) throw fail("invalid", "this destination already uses filebridge's own key");
+    if (b.password && !b.key_file)
+      throw fail("invalid", "this destination signs in with a password: filebridge's own key is installed with a key file or SSH agent");
+    if (!b.user) throw fail("invalid", "the profile names no SSH user");
     await sleep(900);
-    const who = `${b.user ?? "root"}@${b.host}`;
+    const accounts = sshAccounts(p);
     b.key = `filebridge/${p.id}/ssh-key`;
     const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
     return {
       steps: [
         step("generate", "a new Ed25519 key, made on this computer"),
-        step("install", `added to ${who}'s authorized_keys, restricted`),
+        ...accounts.map((who) => step("install", `added to ${who}'s authorized_keys, restricted`)),
         step("keyring", "the private key is in the system keyring"),
-        step("sign-in", `${who} signs in with the new key`),
+        ...accounts.map((who) => step("sign-in", `${who} signs in with the new key`)),
         step("transfer", "files can be sent with the new key"),
         step("saved", "the destination now uses filebridge's own key; your own key is no longer used"),
       ],
@@ -709,15 +713,18 @@ const handlers: Handlers = {
     const b = p.destination.backend;
     if (b.kind !== "sftp" || !b.key) throw fail("invalid", "this destination doesn't use filebridge's own key");
     await sleep(900);
-    const who = `${b.user ?? "root"}@${b.host}`;
+    const accounts = sshAccounts(p);
     b.key = null;
     const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
     return {
       steps: [
-        step("remove", `removed from ${who}'s authorized_keys`),
+        ...accounts.map((who) => step("remove", `removed from ${who}'s authorized_keys`)),
+        ...accounts.map((who) => step("proof", `${who} refuses the old key: access is gone`)),
+        step(
+          "saved",
+          b.password ? "the destination signs in with its password again" : "the destination signs in with your key file or SSH agent again",
+        ),
         step("keyring", "deleted from the system keyring"),
-        step("saved", "the destination signs in with your key file or SSH agent again"),
-        step("proof", `${who} refuses the old key: access is gone`),
       ],
       profile: p,
     };
