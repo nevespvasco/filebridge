@@ -1147,6 +1147,7 @@
     "presented": "Key presented now",
     "changedWhat": "Either the server was reinstalled or its keys were replaced, or someone is intercepting the connection. If whoever runs the server confirms the change, remove the old line from that file and try again.",
     "close": "Close",
-    "unreachable": "Could not check the server's key: {error}"
+    "unreachable": "Could not check the server's key: {error}",
+    "checking": "Checking the server's key…"
   }
 }

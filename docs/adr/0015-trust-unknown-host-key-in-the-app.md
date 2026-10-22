@@ -67,6 +67,11 @@ to, with Cancel focused. Saving an SFTP destination therefore needs the server t
   `ssh` too, and vice versa. That is what users expect from "the usual file".
 - A host whose key legitimately changed still needs a manual edit (or `ssh-keygen -R`); a
   guided "replace the key" flow would need its own decision.
-- Existing profiles whose host is unknown (e.g. `known_hosts` was cleared) still fail with an
-  error until the profile is re-created or the host is trusted in a wizard; a "trust" action
-  on Destinations is a possible follow-up.
+- Saved destinations whose server is unknown (e.g. `known_hosts` was cleared, or the profile
+  was made on another device) are fixed on Destinations, with the same two operations: when
+  "Connection test" or "Check now" fails for an SSH destination, and before Browse or Repair
+  picks a folder, each SSH server the profile signs in to (the SFTP server, and Nextcloud
+  direct mode's SSH server when it differs, as `targets` in `crates/host/src/access.rs`) is
+  scanned against the profile's `known_hosts_file`. An unknown one shows "Trust this server?";
+  once trusted, the test or check runs again. A changed key shows the same error dialog, with
+  nothing to accept; an unreachable server leaves the original error.

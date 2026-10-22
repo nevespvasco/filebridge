@@ -400,6 +400,8 @@ function spaceOf(id: string) {
   const s = SPACE[id] ?? { total: 1_000_000_000_000, used: 400_000_000_000 };
   return { total_bytes: s.total, used_bytes: s.used, free_bytes: s.total - s.used };
 }
+/** Why each destination's last space check failed. */
+const lastError = new Map<string, string>();
 function storageOf(id: string): StorageView {
   const at = checkedAt.get(id) ?? null;
   const disk = spaceOf(id);
@@ -407,7 +409,7 @@ function storageOf(id: string): StorageView {
   const quota = q ? { total_bytes: q.total, used_bytes: q.used, free_bytes: q.total - q.used } : null;
   const eff = quota && quota.free_bytes < disk.free_bytes ? quota : disk;
   const low = eff.free_bytes < 10e9 || eff.free_bytes < eff.total_bytes * 0.1;
-  return { profile_id: id, ...eff, transport: disk, quota, checked_at: at, stale: at == null || Date.now() - at > 3_600_000, low, last_error: null };
+  return { profile_id: id, ...eff, transport: disk, quota, checked_at: at, stale: at == null || Date.now() - at > 3_600_000, low, last_error: lastError.get(id) ?? null };
 }
 
 function runTransfer(job: JobSummary_Serialize) {
@@ -569,6 +571,23 @@ function hostKeyOf(a: Args): HostKeyView_Serialize {
   return { host, port, known_hosts_file, status: known ? "known" : "unknown", ...key, line: null };
 }
 
+/** Why connecting to a destination fails while one of its SSH servers isn't trusted, as rclone
+ *  and russh put it; `null` when every server's key is known. */
+function hostKeyProblem(id: unknown): string | null {
+  const p = profiles.find((x) => x.id === id);
+  const b = p?.destination.backend;
+  if (b?.kind !== "sftp") return null;
+  const s = p!.integration_settings as { ssh?: { host: string; port: number; known_hosts_file: string | null } } | null;
+  const servers = [{ host: b.host, port: b.port ?? 22, knownHostsFile: b.known_hosts_file }];
+  if (s?.ssh) servers.push({ host: s.ssh.host, port: s.ssh.port, knownHostsFile: s.ssh.known_hosts_file });
+  for (const a of servers) {
+    const k = hostKeyOf(a);
+    if (k.status === "unknown") return `host key of ${k.host} is not in ${k.known_hosts_file}`;
+    if (k.status === "changed") return `host key of ${k.host} does not match ${k.known_hosts_file} line ${k.line}`;
+  }
+  return null;
+}
+
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
   setTrayLabels: () => null,
@@ -598,6 +617,13 @@ const handlers: Handlers = {
     await sleep(600);
     const p = profiles.find((x) => x.id === a.id);
     const nc = p?.integration === "nextcloud";
+    const keyProblem = hostKeyProblem(a.id);
+    if (keyProblem) {
+      lastError.set(a.id as string, keyProblem);
+      const failed = (source: string) => ({ source, free_bytes: null, total_bytes: null, used_bytes: null, writable: false, checks: [{ id: "connect", status: "fail", message: keyProblem }] });
+      return { transport: failed("transport"), integration: nc ? failed("integration") : null };
+    }
+    lastError.delete(a.id as string);
     checkedAt.set(a.id as string, Date.now());
     return {
       transport: { source: "transport", ...spaceOf(a.id as string), writable: true, checks: [{ id: "connect", status: "ok", message: "connected" }, { id: "writable", status: "ok", message: "test file written and removed" }] },
@@ -1011,6 +1037,9 @@ const handlers: Handlers = {
   },
   browse: async (a) => {
     await sleep(250);
+    const target = a.target as { kind: string; id?: string };
+    const keyProblem = target.kind === "profile" ? hostKeyProblem(target.id) : null;
+    if (keyProblem) throw fail("connect", keyProblem);
     const dir = trimBoth((a.dir as string | null) ?? "", "/");
     if (!(dir in FOLDERS)) throw fail("not_found", `${dir} not found`);
     const prefix = ((a.prefix as string | null) ?? "").toLowerCase();
@@ -1027,7 +1056,12 @@ const handlers: Handlers = {
   profileStorage: async (a) => {
     if (a.refresh) {
       await sleep(600);
-      checkedAt.set(a.id as string, Date.now());
+      const keyProblem = hostKeyProblem(a.id);
+      if (keyProblem) lastError.set(a.id as string, keyProblem);
+      else {
+        lastError.delete(a.id as string);
+        checkedAt.set(a.id as string, Date.now());
+      }
     }
     return storageOf(a.id as string);
   },

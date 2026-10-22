@@ -3,7 +3,8 @@
 // checked against known_hosts. A server known there goes straight through; an unknown one shows
 // its key type and SHA-256 fingerprint, and is added only when the user confirms; one whose key
 // changed is an error with no way to accept it here.
-// Use: `await prompt.value.ensureKnown(host, port, knownHostsFile)` → true to go on.
+// Use: `await prompt.value.ensureKnown(host, port, knownHostsFile)` → true to go on, or
+// `check(…)` to also learn whether the key was trusted just now (to retry what failed).
 import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
 import type { HostKeyView_Serialize } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
@@ -13,25 +14,33 @@ const check = shallowRef<HostKeyView_Serialize | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
 const cancelBtn = ref<HTMLButtonElement | null>(null);
-let settle: ((known: boolean) => void) | null = null;
+let settle: ((trusted: boolean) => void) | null = null;
 
-/** Resolves `true` once the server's key is in known_hosts (already, or trusted now), `false`
- *  when the user doesn't trust it or its key changed. Throws when the server can't be reached. */
-async function ensureKnown(host: string, port: number, knownHostsFile: string | null): Promise<boolean> {
+/** Where the server's key stands once the user has answered: `known` (it already was in
+ *  known_hosts), `trusted` (added just now) or `refused` (not trusted, or its key changed).
+ *  Throws when the server can't be reached. */
+async function checkKey(host: string, port: number, knownHostsFile: string | null): Promise<"known" | "trusted" | "refused"> {
   finish(false);
   const found = await api.scanHostKey(host, port, knownHostsFile);
-  if (found.status === "known") return true;
+  if (found.status === "known") return "known";
   error.value = null;
   check.value = found;
   await nextTick();
   cancelBtn.value?.focus();
-  return new Promise((resolve) => (settle = resolve));
+  const trusted = await new Promise<boolean>((resolve) => (settle = resolve));
+  return trusted ? "trusted" : "refused";
 }
 
-function finish(known: boolean) {
+/** Resolves `true` once the server's key is in known_hosts (already, or trusted now), `false`
+ *  when the user doesn't trust it or its key changed. Throws when the server can't be reached. */
+async function ensureKnown(host: string, port: number, knownHostsFile: string | null): Promise<boolean> {
+  return (await checkKey(host, port, knownHostsFile)) !== "refused";
+}
+
+function finish(trusted: boolean) {
   check.value = null;
   error.value = null;
-  settle?.(known);
+  settle?.(trusted);
   settle = null;
 }
 
@@ -58,7 +67,7 @@ function keyFileType(type: string | null): string {
 }
 
 onBeforeUnmount(() => finish(false));
-defineExpose({ ensureKnown });
+defineExpose({ ensureKnown, check: checkKey });
 </script>
 
 <template>
