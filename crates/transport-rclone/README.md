@@ -11,8 +11,8 @@
   client otherwise fails with "key mismatch" when the server prefers a type that is not there.
 - Configure backends in memory (`config/create` or connection strings) — local, SFTP, WebDAV
   (vendor `nextcloud`). No `rclone.conf` with secrets on disk.
-- `transfer`: copy each item to its **mapped destination name** (`operations/copyfile` per file —
-  speed validated in Phase 0 — or plan B: `sync/copy` to temp + batch rename + `operations/movefile`).
+- `transfer`: copy each item to its **mapped destination name** (`operations/copyfile` per file,
+  plan A, ADR 0007; plan B was removed).
   Each destination folder that two or more of the batch's files go to is listed once
   (`operations/list`); a file it doesn't hold under any spelling of its name (`names::loose_key`:
   another normalisation or case counts as there) is copied with `NoCheckDest`, skipping rclone's

@@ -14,7 +14,7 @@ use filebridge_transport_api::{
     Backend, Destination, ErrorKind, ProgressEvent, ProgressSink, RemotePath, TransferItem,
     TransferJob, TransferOptions, Transport,
 };
-use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
+use filebridge_transport_rclone::{Rcd, RcloneTransport};
 
 const PASSWORD: &str = "app-pass-AbCdE-12345";
 
@@ -87,8 +87,7 @@ async fn webdav_with_a_password_from_the_keyring() {
     let pass_ref = reference("p-webdav", SecretKind::AppPassword);
     store.set(&pass_ref, PASSWORD).unwrap();
     let rcd = Arc::new(Rcd::start(&binary).await.unwrap());
-    let transport = RcloneTransport::new(rcd, Strategy::PerFile)
-        .with_secrets(Arc::new(StoreResolver(store.clone())));
+    let transport = RcloneTransport::new(rcd).with_secrets(Arc::new(StoreResolver(store.clone())));
     let dest = Destination {
         transport: "rclone".into(),
         backend: Backend::Webdav {

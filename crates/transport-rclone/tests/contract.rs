@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use filebridge_transport_api::{Backend, Destination};
-use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
+use filebridge_transport_rclone::{Rcd, RcloneTransport};
 
 fn rclone() -> Option<PathBuf> {
     let explicit = std::env::var_os("RCLONE").map(PathBuf::from);
@@ -34,7 +34,7 @@ async fn per_file_keeps_the_transport_contract() {
         return;
     };
     let rcd = Arc::new(Rcd::start(&binary).await.unwrap());
-    let transport = RcloneTransport::new(rcd, Strategy::PerFile);
+    let transport = RcloneTransport::new(rcd);
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("dest");
     std::fs::create_dir(&root).unwrap();
@@ -63,7 +63,7 @@ async fn librclone_keeps_the_transport_contract() {
     let lib = filebridge_transport_rclone::Librclone::open(&path)
         .await
         .unwrap();
-    let transport = RcloneTransport::new(lib, Strategy::PerFile);
+    let transport = RcloneTransport::new(lib);
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("dest");
     std::fs::create_dir(&root).unwrap();

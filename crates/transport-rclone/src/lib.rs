@@ -6,18 +6,14 @@
 //! [`RcCall`]. Backends are passed as connection strings built from a
 //! [`Destination`](filebridge_transport_api::Destination).
 //!
-//! Two transfer strategies are implemented so Phase 0 can compare them:
-//! - [`Strategy::PerFile`] (plan A): one `operations/copyfile` per file, straight to the
-//!   corrected name.
-//! - [`Strategy::TempThenRename`] (plan B): `sync/copy` with original names into a temp folder
-//!   next to the destination, batch rename there, then `sync/move` into place.
+//! Files reach their corrected names with one `operations/copyfile` per file, straight to the
+//! corrected name (plan A, ADR 0007).
 
 mod client;
 pub mod fs;
 #[cfg(feature = "librclone")]
 mod librclone;
 mod rcd;
-mod rename;
 pub mod stats;
 mod transport;
 
@@ -25,4 +21,4 @@ pub use client::{RcCall, RcClient};
 #[cfg(feature = "librclone")]
 pub use librclone::Librclone;
 pub use rcd::Rcd;
-pub use transport::{RcloneTransport, Strategy};
+pub use transport::RcloneTransport;

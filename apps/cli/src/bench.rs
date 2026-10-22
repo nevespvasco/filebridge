@@ -1,5 +1,5 @@
-//! Phase 0 benchmark: baseline `sync/copy` vs plan A vs plan B on the same source, plus plan A
-//! sent the way the app sends it (`engine`: the Engine with its SQLite manifest, batches and
+//! Phase 0 benchmark: baseline `sync/copy` vs plan A on the same source, plus plan A sent the
+//! way the app sends it (`engine`: the Engine with its SQLite manifest, batches and
 //! per-file state saving), so the gate measures the pipeline that ships.
 //!
 //! Each mode writes to its own new folder `<dest-root>/filebridge-bench-<unix time>/<mode>`.
@@ -21,7 +21,7 @@ use filebridge_transport_api::{
     Backend, Destination, ProgressEvent, ProgressSink, StatsSnapshot, TransferJob, TransferOptions,
     Transport,
 };
-use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport, Strategy, fs, stats};
+use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport, fs, stats};
 use serde::Serialize;
 use serde_json::json;
 
@@ -52,7 +52,7 @@ pub struct Args {
         long,
         value_enum,
         value_delimiter = ',',
-        default_value = "baseline,plan-a,plan-b,engine"
+        default_value = "baseline,plan-a,engine"
     )]
     modes: Vec<Mode>,
     /// Files in flight (rclone --transfers for sync/copy, parallel copyfile calls for plan A).
@@ -72,8 +72,6 @@ enum Mode {
     Baseline,
     /// operations/copyfile per file, straight to the NFC name.
     PlanA,
-    /// sync/copy to a temp folder, batch rename there, move into place.
-    PlanB,
     /// Plan A through the Engine, as the app sends: analysis, SQLite manifest, batches.
     Engine,
 }
@@ -83,7 +81,6 @@ impl Mode {
         match self {
             Mode::Baseline => "baseline",
             Mode::PlanA => "plan-a",
-            Mode::PlanB => "plan-b",
             Mode::Engine => "engine",
         }
     }
@@ -251,13 +248,8 @@ async fn run_mode(
                 .collect::<BTreeSet<_>>();
             (totals.0 as usize, totals.1, 0, expected)
         }
-        Mode::PlanA | Mode::PlanB => {
-            let strategy = if mode == Mode::PlanA {
-                Strategy::PerFile
-            } else {
-                Strategy::TempThenRename
-            };
-            let transport = RcloneTransport::new(rcd.clone(), strategy);
+        Mode::PlanA => {
+            let transport = RcloneTransport::new(rcd.clone());
             let job = TransferJob {
                 id: format!("{stamp}-{}", mode.dir()),
                 source_root: args.source.clone(),
@@ -341,10 +333,7 @@ async fn through_engine(
         .context("create the bench database directory")?;
     let store = Store::open(&tmp.path().join("bench.db")).context("open the bench database")?;
     let mut registry = Registry::new();
-    registry.add_transport(Arc::new(RcloneTransport::new(
-        rcd.clone(),
-        Strategy::PerFile,
-    )));
+    registry.add_transport(Arc::new(RcloneTransport::new(rcd.clone())));
     let engine = Engine::new(
         store.clone(),
         registry,

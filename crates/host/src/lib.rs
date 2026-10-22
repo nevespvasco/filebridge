@@ -19,7 +19,7 @@ use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
 use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore, StoreResolver};
 use filebridge_transport_fake::FakeTransport;
-use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport, Strategy};
+use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport};
 
 pub use operations::EngineOperations;
 
@@ -159,7 +159,7 @@ impl Host {
         };
         if let Some(rc) = &rclone {
             registry.add_transport(Arc::new(
-                RcloneTransport::new(rc.clone(), Strategy::PerFile).with_secrets(resolver.clone()),
+                RcloneTransport::new(rc.clone()).with_secrets(resolver.clone()),
             ));
             transport = Some(RcloneTransport::ID);
         }

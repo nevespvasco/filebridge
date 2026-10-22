@@ -76,9 +76,8 @@ JUST FINISHED                                                        ▸ show
 - **Just finished**: core already gets `ProgressEvent::ItemDone` and saves those entries in
   batches every 500 ms. On the same tick it emits one `EntriesDone` with up to 20 of them, plus a
   count of the rest. The window keeps the last 20.
-- **Plan B** (`Strategy::TempThenRename`) reports a single `copy` batch, and rclone names each
-  file by its **source** path, as in plan A. The adapter maps that path to the destination name,
-  so the rows show the final names in both strategies and no extra note is needed.
+- rclone names each file in flight by its **source** path. The adapter maps that path to the
+  destination name, so the rows show the final names.
 
 ## States
 

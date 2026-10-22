@@ -20,7 +20,7 @@ use filebridge_core::{
 };
 use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, StoreResolver, reference};
 use filebridge_transport_api::{Backend, Destination};
-use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
+use filebridge_transport_rclone::{Rcd, RcloneTransport};
 
 #[tokio::main]
 async fn main() {
@@ -51,8 +51,7 @@ async fn main() {
     let rcd = Arc::new(Rcd::start(&rclone).await.unwrap());
     let mut registry = Registry::new();
     registry.add_transport(Arc::new(
-        RcloneTransport::new(rcd.clone(), Strategy::PerFile)
-            .with_secrets(Arc::new(StoreResolver(secrets.clone()))),
+        RcloneTransport::new(rcd.clone()).with_secrets(Arc::new(StoreResolver(secrets.clone()))),
     ));
     registry.set_secrets(secrets.clone());
     let store = Store::open_in_memory().unwrap();

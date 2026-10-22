@@ -286,22 +286,6 @@ pub fn join(root: &str, sub: &str) -> String {
     }
 }
 
-/// Splits a root into (parent, last component). Fails for `""` and `"/"`.
-pub fn split_root(root: &str) -> Result<(&str, &str)> {
-    let trimmed = root.trim_end_matches('/');
-    let (parent, base) = match trimmed.rsplit_once('/') {
-        Some(("", base)) => ("/", base),
-        Some((parent, base)) => (parent, base),
-        None => ("", trimmed),
-    };
-    if base.is_empty() {
-        return Err(TransportError::fatal(format!(
-            "destination root {root:?} has no parent"
-        )));
-    }
-    Ok((parent, base))
-}
-
 pub(crate) fn utf8(path: &Path) -> Result<&str> {
     path.to_str().ok_or_else(|| {
         TransportError::fatal(format!(
@@ -481,12 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn split_and_join() {
-        assert_eq!(split_root("/a/b").unwrap(), ("/a", "b"));
-        assert_eq!(split_root("/a").unwrap(), ("/", "a"));
-        assert_eq!(split_root("rel").unwrap(), ("", "rel"));
-        assert!(split_root("/").is_err());
-        assert!(split_root("").is_err());
+    fn join_paths() {
         assert_eq!(join("/", "x"), "/x");
         assert_eq!(join("", "x"), "x");
         assert_eq!(join("/a/", ""), "/a/");

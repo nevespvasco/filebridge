@@ -13,19 +13,11 @@ use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use crate::fs::{Creds, dest_fs, join, local_fs, split_root, utf8};
-use crate::{RcClient, rename, stats};
-
-/// How files reach their corrected names. See the crate docs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Strategy {
-    PerFile,
-    TempThenRename,
-}
+use crate::fs::{Creds, dest_fs, local_fs, utf8};
+use crate::{RcClient, stats};
 
 pub struct RcloneTransport {
     rc: RcClient,
-    strategy: Strategy,
     /// Reads profiles' passwords and keys (the host's, over the OS keyring); without one,
     /// profiles that need a secret fail.
     secrets: Option<Arc<dyn SecretResolver>>,
@@ -35,10 +27,9 @@ impl RcloneTransport {
     pub const ID: &'static str = "rclone";
 
     /// A transport over `rc`: an `Arc<Rcd>` (desktop) or an `Arc<Librclone>` (phones).
-    pub fn new(rc: impl Into<RcClient>, strategy: Strategy) -> Self {
+    pub fn new(rc: impl Into<RcClient>) -> Self {
         Self {
             rc: rc.into(),
-            strategy,
             secrets: None,
         }
     }
@@ -279,154 +270,6 @@ impl RcloneTransport {
             None => Ok(outcomes),
         }
     }
-
-    async fn temp_then_rename(
-        &self,
-        src_fs: &str,
-        dest: &Destination,
-        group: &str,
-        job: &TransferJob,
-        progress: &ProgressSink,
-    ) -> Result<()> {
-        let creds = self.creds(dest).await?;
-        let rc = self.rc();
-        let concurrency = job.options.concurrency.max(1);
-        let (parent, base) = split_root(&dest.root)?;
-        let tmp_name = format!(".{base}.filebridge-tmp-{}", job.id);
-        let tmp = Destination {
-            root: join(parent, &tmp_name),
-            ..dest.clone()
-        };
-        let tmp_fs = dest_fs(&tmp, &creds, "")?;
-        let config = json!({ "Transfers": concurrency, "Checkers": concurrency * 2 });
-
-        let mut pairs = Vec::with_capacity(job.items.len());
-        for item in &job.items {
-            pairs.push((utf8(&item.source)?, item.dest.as_str()));
-        }
-        let plan = rename::plan(pairs.iter().copied())?;
-
-        // 1. Copy with original names. The file list keeps rclone to exactly the job's items.
-        progress.send(ProgressEvent::Stage("copy".into()));
-        let list = std::env::temp_dir().join(format!("filebridge-{}-files.txt", job.id));
-        let mut body = String::new();
-        for (src, _) in &pairs {
-            if src.contains('\n') {
-                return Err(TransportError::fatal(format!("newline in name: {src:?}")));
-            }
-            body.push_str(src);
-            body.push('\n');
-        }
-        std::fs::write(&list, body)
-            .map_err(|e| TransportError::fatal(format!("write {}: {e}", list.display())))?;
-        let copied = rc
-            .call_job(
-                "sync/copy",
-                json!({
-                    "srcFs": src_fs, "dstFs": tmp_fs,
-                    "_filter": { "FilesFromRaw": [utf8(&list)?] },
-                    "_config": config, "_group": group,
-                }),
-            )
-            .await;
-        let _ = std::fs::remove_file(&list);
-        copied?;
-
-        // 2. Batch rename inside the temp folder: files, then directories deepest-first. Each
-        //    rename goes through a unique intermediate name, so it never targets a name the
-        //    server may treat as equal to its own source (NFD vs NFC on a normalising
-        //    filesystem): there `sync/move` sees "unchanged" files and deletes them.
-        progress.send(ProgressEvent::Stage(format!(
-            "rename ({} nodes)",
-            plan.len()
-        )));
-        let mid = |from: &str, n: usize| {
-            let parent = from.rsplit_once('/').map_or("", |(p, _)| p);
-            join(parent, &format!(".fb-{n}-{}", job.id))
-        };
-        let file_move = |from: &str, to: &str| {
-            (
-                "operations/movefile",
-                json!({
-                    "srcFs": tmp_fs, "srcRemote": from,
-                    "dstFs": tmp_fs, "dstRemote": to, "_group": group,
-                }),
-            )
-        };
-        let mids: Vec<String> = (0..plan.files.len())
-            .map(|n| mid(&plan.files[n].0, n))
-            .collect();
-        let step1 = plan.files.iter().zip(&mids);
-        run_all(
-            rc,
-            step1.map(|((from, _), m)| file_move(from, m)).collect(),
-            concurrency,
-        )
-        .await?;
-        let step2 = plan.files.iter().zip(&mids);
-        run_all(
-            rc,
-            step2.map(|((_, to), m)| file_move(m, to)).collect(),
-            concurrency,
-        )
-        .await?;
-        for renames in plan.dirs_by_depth.values().rev() {
-            let mids: Vec<String> = renames
-                .iter()
-                .enumerate()
-                .map(|(n, (from, _))| mid(from, n))
-                .collect();
-            for step in 0..2 {
-                let mut moves = Vec::with_capacity(renames.len());
-                for ((from, to), m) in renames.iter().zip(&mids) {
-                    let (a, b) = if step == 0 { (from, m) } else { (m, to) };
-                    // The target never exists, so rclone does a single server-side DirMove.
-                    moves.push((
-                        "sync/move",
-                        json!({
-                            "srcFs": dest_fs(&tmp, &creds, a)?, "dstFs": dest_fs(&tmp, &creds, b)?,
-                            "deleteEmptySrcDirs": true, "_group": group,
-                        }),
-                    ));
-                }
-                // One at a time: directory renames are few, and rclone's own VFS server crashes
-                // on concurrent ones (seen with `rclone serve sftp` v1.75.2).
-                run_all(rc, moves, 1).await?;
-            }
-        }
-
-        // 3. Move into place. When the destination doesn't exist yet this is one server-side
-        //    directory rename; otherwise one server-side move per file.
-        progress.send(ProgressEvent::Stage("move-into-place".into()));
-        rc.call_job(
-            "sync/move",
-            json!({
-                "srcFs": tmp_fs, "dstFs": dest_fs(dest, &creds, "")?,
-                "deleteEmptySrcDirs": true, "_config": config, "_group": group,
-            }),
-        )
-        .await?;
-        // Gone already after a directory rename; otherwise empty, and rmdir only removes it then.
-        let parent_dest = Destination {
-            root: parent.to_owned(),
-            ..dest.clone()
-        };
-        let parent_fs = dest_fs(&parent_dest, &creds, "")?;
-        let left = rc
-            .call(
-                "operations/stat",
-                json!({ "fs": parent_fs, "remote": tmp_name }),
-            )
-            .await?;
-        if !left["item"].is_null() {
-            rc.call(
-                "operations/rmdir",
-                json!({ "fs": parent_fs, "remote": tmp_name }),
-            )
-            .await?;
-        }
-        Ok(())
-    }
 }
 
 /// One finished copy: its outcome, its `ItemDone`, and the first `Auth` error in `refused`.
@@ -445,32 +288,6 @@ fn record(
         outcomes[i] = ItemOutcome::Failed(e);
     }
     progress.send(ProgressEvent::ItemDone { index: i, ok });
-}
-
-/// Runs independent rc calls with bounded concurrency; fails on the first error.
-async fn run_all(
-    rc: &RcClient,
-    calls: Vec<(&'static str, Value)>,
-    concurrency: usize,
-) -> Result<()> {
-    let sem = Arc::new(Semaphore::new(concurrency));
-    let mut set = JoinSet::new();
-    for (method, params) in calls {
-        let permit = sem
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("semaphore is never closed");
-        let rc = rc.clone();
-        set.spawn(async move {
-            let _permit = permit;
-            rc.call(method, params).await
-        });
-    }
-    while let Some(done) = set.join_next().await {
-        done.map_err(|e| TransportError::fatal(e.to_string()))??;
-    }
-    Ok(())
 }
 
 #[async_trait]
@@ -615,17 +432,10 @@ impl Transport for RcloneTransport {
             Duration::from_millis(500),
         );
 
-        let outcomes = match self.strategy {
-            Strategy::PerFile => {
-                progress.send(ProgressEvent::Stage("copy".into()));
-                self.per_file(&src_fs, &dst_fs, &group, job, &progress)
-                    .await
-            }
-            Strategy::TempThenRename => self
-                .temp_then_rename(&src_fs, dest, &group, job, &progress)
-                .await
-                .map(|()| vec![ItemOutcome::Done; job.items.len()]),
-        };
+        progress.send(ProgressEvent::Stage("copy".into()));
+        let outcomes = self
+            .per_file(&src_fs, &dst_fs, &group, job, &progress)
+            .await;
         poller.abort();
         if let Ok(s) = stats::snapshot(rc, &group, Some(&names)).await {
             progress.send(ProgressEvent::Stats(s));

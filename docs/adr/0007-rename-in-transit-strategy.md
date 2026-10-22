@@ -39,8 +39,12 @@ Use **plan A**: `Transport::transfer` sends each file straight to its mapped nam
 `operations/copyfile`, with bounded concurrency (default 8, user-tunable).
 - `rclone rcd` runs with `--no-unicode-normalization`. Name normalisation belongs to `names`
   only, and rclone compares bytes as-is.
-- Plan B stays in the code for now, as `Strategy::TempThenRename`, for comparison. It is removed
-  if the real-server run confirms this decision.
+- Plan B (`Strategy::TempThenRename`) was removed on 2026-10-22, before the real-server run: no
+  part of the app used it, it reported no per-file `ItemDone` (the engine's record of what
+  arrived, so a crash mid-batch would resend everything), and it carried the NFD/NFC hazard
+  below. `filebridge bench` compares baseline, plan A and engine. If the real-server run rejects
+  plan A, plan B comes back from git history (`crates/transport-rclone/src/rename.rs` and
+  `temp_then_rename` in `transport.rs`, before that change).
 
 The gate is **not** closed yet. This ADR becomes Accepted (or is revised) after
 `filebridge bench` runs against the real Nextcloud server with a subset of the real `Backup`
