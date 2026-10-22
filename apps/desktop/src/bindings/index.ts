@@ -153,6 +153,17 @@ export const commands = {
 	serviceReplacing: () => __TAURI_INVOKE<boolean>("service_replacing"),
 	/**  Translated tray menu labels; the strings live in the UI's i18n files. */
 	setTrayLabels: (show: string, quit: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_tray_labels", { show, quit })),
+	platform: () => __TAURI_INVOKE<Platform>("platform"),
+	/**  Android: the system folder picker, as a path (`null` when cancelled). */
+	pickFolder: () => typedError<string | null, ErrorBody>(__TAURI_INVOKE("pick_folder")),
+	/**  Android: whether filebridge may read the phone's files ("All files access"). */
+	storageAccess: () => typedError<boolean, ErrorBody>(__TAURI_INVOKE("storage_access")),
+	/**  Android: opens the "All files access" screen; answers whether it was granted. */
+	requestStorageAccess: () => typedError<boolean, ErrorBody>(__TAURI_INVOKE("request_storage_access")),
+	/**  Android: asks not to be stopped to save battery during long sends. */
+	requestBatteryExemption: () => typedError<null, ErrorBody>(__TAURI_INVOKE("request_battery_exemption")),
+	/**  Phones: the translated text of the notification shown while sending; `many` has `{n}`. */
+	setSendNoticeLabels: (title: string, one: string, many: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_send_notice_labels", { title, one, many })),
 };
 
 /** Events */
@@ -1020,6 +1031,9 @@ export type NextcloudWebdavRequest = {
  *  shows it, so neither does any request, envelope or log line that carries one.
  */
 export type Password = string;
+
+/**  Where the app runs, for what the UI shows (no tray, service or drag & drop on a phone). */
+export type Platform = "desktop" | "android" | "ios";
 
 export type Pong = {
 	protocol: number,

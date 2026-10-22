@@ -21,7 +21,7 @@ use filebridge_transport_api::{
     Backend, Destination, ProgressEvent, ProgressSink, StatsSnapshot, TransferJob, TransferOptions,
     Transport,
 };
-use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy, fs, stats};
+use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport, Strategy, fs, stats};
 use serde::Serialize;
 use serde_json::json;
 
@@ -122,7 +122,7 @@ pub async fn run(args: Args) -> Result<()> {
     }
 
     let rcd = Arc::new(Rcd::start(&args.rclone).await?);
-    let rc = rcd.client().clone();
+    let rc = RcClient::from(rcd.clone());
     let version = rc.call("core/version", json!({})).await?;
     let version = version["version"].as_str().unwrap_or("?").to_owned();
     let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
@@ -212,7 +212,7 @@ async fn run_mode(
     args: &Args,
     stamp: u64,
 ) -> Result<Run> {
-    let rc = rcd.client();
+    let rc = &RcClient::from(rcd.clone());
     let (sink, rx) = ProgressSink::channel();
     let printer = tokio::spawn(print_progress(mode, rx));
     let started = Instant::now();

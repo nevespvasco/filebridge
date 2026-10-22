@@ -1,5 +1,7 @@
 // Window-side platform features: the file picker, drag & drop, OS notifications. They come from
-// Tauri plugins and `@tauri-apps/api`, not from the service.
+// Tauri plugins and `@tauri-apps/api`, not from the service. On a phone (ADR 0013) the folder
+// picker is the app's own Android plugin, and drag & drop, the tray and "show in the file
+// manager" don't exist.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   isPermissionGranted,
@@ -8,8 +10,28 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { commands, type Platform } from "@/bindings";
+import { i18n } from "@/i18n";
+import { api } from "@/lib/api";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
+
+let current: Platform = "desktop";
+
+/** Asks Rust where the app runs; called once before the app mounts. */
+export async function initPlatform(): Promise<void> {
+  if (!isMock) current = await commands.platform();
+}
+
+/** Android or iOS: no tray, no service, no drag & drop, folders only. */
+export function isMobile(): boolean {
+  return current !== "desktop";
+}
+
+/** Whether "show in the file manager" exists here (not on a phone). */
+export function canReveal(): boolean {
+  return !isMobile();
+}
 
 export type PickOptions = { directory: boolean; multiple?: boolean; title?: string };
 
@@ -19,9 +41,11 @@ export function setMockPicker(picker: (opts: PickOptions) => Promise<string[]>) 
   mockPicker = picker;
 }
 
-/** Native picker. Returns absolute paths (empty when cancelled). */
+/** Native picker. Returns absolute paths (empty when cancelled). On a phone only folders can
+ *  be picked, one at a time, after Android's "All files access" is granted. */
 export async function pickPaths(opts: PickOptions): Promise<string[]> {
   if (isMock) return mockPicker ? mockPicker(opts) : [];
+  if (isMobile()) return pickPhoneFolder(opts);
   const picked = await open({
     directory: opts.directory,
     multiple: opts.multiple ?? true,
@@ -29,6 +53,15 @@ export async function pickPaths(opts: PickOptions): Promise<string[]> {
   });
   if (picked == null) return [];
   return Array.isArray(picked) ? picked : [picked];
+}
+
+async function pickPhoneFolder(opts: PickOptions): Promise<string[]> {
+  if (!opts.directory) return [];
+  if (!(await api.storageAccess()) && !(await api.requestStorageAccess())) {
+    throw new Error(i18n.global.t("mobile.storageDenied"));
+  }
+  const path = await api.pickFolder();
+  return path ? [path] : [];
 }
 
 /** Mock mode only: where "Save as" answers from. */
@@ -48,6 +81,7 @@ export type DropState = "over" | "drop" | "leave";
 /** Files and folders dropped on the window. Returns an unsubscribe function. */
 export async function onFileDrop(cb: (state: DropState, paths: string[]) => void): Promise<() => void> {
   if (isMock) return mockFileDrop(cb);
+  if (isMobile()) return () => {};
   return getCurrentWebview().onDragDropEvent((event) => {
     const p = event.payload;
     if (p.type === "enter" || p.type === "over") cb("over", []);
@@ -102,11 +136,29 @@ export async function notify(title: string, body: string): Promise<void> {
 
 /** Opens the OS file manager with `path` selected. Reads only: nothing is opened or changed. */
 export async function revealInFileManager(path: string): Promise<void> {
+  if (!canReveal()) return;
   if (isMock) {
     console.info(`[reveal] ${path}`);
     return;
   }
   await revealItemInDir(path);
+}
+
+/** Phones: asks Android, once, not to stop filebridge to save battery while it sends. */
+export async function askBatteryExemptionOnce(): Promise<void> {
+  if (isMock || current !== "android") return;
+  const key = "filebridge.batteryAsked";
+  try {
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+  } catch {
+    // No storage: ask every time rather than never.
+  }
+  try {
+    await api.requestBatteryExemption();
+  } catch (e) {
+    console.warn("battery exemption:", e);
+  }
 }
 
 /** Copies text to the clipboard. */

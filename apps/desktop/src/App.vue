@@ -37,11 +37,14 @@ onMounted(async () => {
   void jobs.loadPage(0);
 });
 
-// The tray menu is built in Rust; its labels come from here so they follow the language.
+// The tray menu (desktop) and the sending notification (phones) are built in Rust; their labels
+// come from here so they follow the language.
 watch(
   () => settings.locale,
   () => {
-    if (!isMock) void commands.setTrayLabels(t("tray.show"), t("tray.quit"));
+    if (isMock) return;
+    void commands.setTrayLabels(t("tray.show"), t("tray.quit"));
+    void commands.setSendNoticeLabels("filebridge", t("mobile.sendingOne"), t("mobile.sendingMany"));
   },
   { immediate: true },
 );

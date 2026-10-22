@@ -6,6 +6,10 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# rclone loaded into the process (`TransportChoice::Librclone`), for phones (ADR 0014).
+librclone = ["filebridge-transport-rclone/librclone"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true

@@ -20,6 +20,15 @@
     "show": "Open filebridge",
     "quit": "Close window (sends keep running)"
   },
+  "mobile": {
+    "pickLead": "Choose a folder on this phone",
+    "pickFolder": "Choose a folder",
+    "pickHint": "The camera roll, Downloads, an SD card… Add one folder at a time.",
+    "addMore": "Add another folder",
+    "storageDenied": "filebridge needs “All files access” to read the phone's files. Allow it in Android's settings and try again.",
+    "sendingOne": "Sending 1 transfer",
+    "sendingMany": "Sending {n} transfers"
+  },
   "conn": {
     "connected": "Copy engine running",
     "connecting": "Starting the copy engine…",

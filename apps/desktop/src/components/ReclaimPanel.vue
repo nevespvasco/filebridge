@@ -7,7 +7,7 @@ import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import type { ReclaimBlocker } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
-import { revealInFileManager } from "@/lib/platform";
+import { canReveal, revealInFileManager } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
 import { useReclaim } from "@/stores/reclaim";
@@ -80,7 +80,7 @@ const allBlockers = computed(() => [...(s.value?.blockers ?? []), ...(s.value?.s
         <li v-for="src in s.sources" :key="src.path">
           <span class="path">{{ src.path }}</span>
           <span class="small muted num">{{ $t("reclaim.size", { files: fmt.count(src.files), size: fmt.bytes(src.bytes) }) }}</span>
-          <button class="btn btn-small" @click="revealInFileManager(src.path)"><AppIcon name="reveal" /> {{ $t("entry.revealFile") }}</button>
+          <button v-if="canReveal()" class="btn btn-small" @click="revealInFileManager(src.path)"><AppIcon name="reveal" /> {{ $t("entry.revealFile") }}</button>
         </li>
       </ul>
       <p class="never small"><AppIcon name="lock" /> {{ $t("reclaim.never") }}</p>

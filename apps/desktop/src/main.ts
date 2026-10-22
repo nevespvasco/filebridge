@@ -3,6 +3,7 @@ import { createPinia } from "pinia";
 import App from "./App.vue";
 import { i18n } from "./i18n";
 import { router } from "./router";
+import { initPlatform } from "./lib/platform";
 import "./style.css";
 
 async function boot() {
@@ -11,6 +12,7 @@ async function boot() {
     const { installMock } = await import("./dev/mock");
     installMock();
   }
+  await initPlatform();
   createApp(App).use(createPinia()).use(i18n).use(router).mount("#app");
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "filebridge-desktop"
-description = "filebridge desktop app: a thin Tauri client of filebridge-service"
+description = "filebridge app: a thin Tauri client of filebridge-service on desktop, the engine itself on phones (ADR 0014)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,8 @@ publish.workspace = true
 
 [lib]
 name = "filebridge_desktop"
-crate-type = ["rlib"]
+# staticlib/cdylib: what Tauri's Android and iOS builds link.
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "filebridge-desktop"
@@ -20,6 +21,7 @@ tauri-build = { version = "2.5", features = [] }
 [dependencies]
 filebridge-ipc.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 specta = { workspace = true, features = ["derive", "serde_json"] }
 specta-typescript.workspace = true
 tauri = { version = "2.12", features = ["tray-icon", "image-png"] }
@@ -30,6 +32,11 @@ tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "net"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Phones run the engine in the app, with librclone in the process (ADR 0014).
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+filebridge-host = { workspace = true, features = ["librclone"] }
+filebridge-secrets.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -1,70 +1,48 @@
+use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use filebridge_transport_api::{ErrorKind, Result, TransportError};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::fs::Scrubber;
 
-/// Authenticated client for one `rclone rcd` instance.
+/// One way to reach rclone's rc API: the `rclone rcd` sidecar over HTTP ([`crate::Rcd`]), or
+/// librclone linked into the process (`Librclone`, feature `librclone`, on phones: ADR 0014).
+/// Both take the same methods and JSON.
+#[async_trait]
+pub trait RcCall: Send + Sync {
+    /// Calls an rc method. Errors carry a kind from the status and rclone's message
+    /// ([`kind_of`]), scrubbed of the secrets in use ([`RcCall::scrubber`]).
+    async fn call(&self, method: &str, params: Value) -> Result<Value>;
+
+    /// What scrubs secrets from this rclone's errors and log lines.
+    fn scrubber(&self) -> &Scrubber;
+}
+
+/// What the transport talks to rclone through. Cheap to clone; keeps rclone (the sidecar, or
+/// the library) alive for as long as a clone exists.
 #[derive(Clone)]
 pub struct RcClient {
-    http: reqwest::Client,
-    base: String,
-    user: String,
-    pass: String,
-    /// Secrets in use with this rcd, scrubbed from every error it returns.
-    scrubber: Scrubber,
+    inner: Arc<dyn RcCall>,
+}
+
+impl<T: RcCall + 'static> From<Arc<T>> for RcClient {
+    fn from(inner: Arc<T>) -> Self {
+        Self { inner }
+    }
 }
 
 impl RcClient {
-    pub(crate) fn new(port: u16, user: String, pass: String) -> Self {
-        let http = reqwest::Client::builder()
-            .no_proxy()
-            .connect_timeout(Duration::from_secs(5))
-            .build()
-            .expect("static reqwest config is valid");
-        Self {
-            http,
-            base: format!("http://127.0.0.1:{port}"),
-            user,
-            pass,
-            scrubber: Scrubber::default(),
-        }
-    }
-
-    /// What scrubs secrets from this rcd's errors and log lines.
+    /// What scrubs secrets from this rclone's errors and log lines.
     pub fn scrubber(&self) -> &Scrubber {
-        &self.scrubber
+        self.inner.scrubber()
     }
 
-    /// Calls an rc method. Errors get a kind from the HTTP status and rclone's message (see
-    /// [`kind_of`]): 5xx and network errors are `Transient`.
+    /// Calls an rc method.
     pub async fn call(&self, method: &str, params: Value) -> Result<Value> {
-        let resp = self
-            .http
-            .post(format!("{}/{method}", self.base))
-            .basic_auth(&self.user, Some(&self.pass))
-            .json(&params)
-            .send()
-            .await
-            .map_err(|e| TransportError::retryable(format!("rclone rc {method}: {e}")))?;
-        let status = resp.status();
-        let body: Value = resp.json().await.map_err(|e| {
-            TransportError::retryable(format!("rclone rc {method}: bad response: {e}"))
-        })?;
-        if status.is_success() {
-            return Ok(body);
-        }
-        let msg = body
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        Err(error(
-            Some(status),
-            &format!("rclone rc {method}"),
-            &self.scrubber.scrub(msg),
-        ))
+        self.inner.call(method, params).await
     }
 
     /// Starts `method` as an rc job (`_async`) and waits for it to finish.
@@ -91,10 +69,80 @@ impl RcClient {
             return Err(error(
                 None,
                 &format!("rclone job {method}"),
-                &self.scrubber.scrub(err),
+                &self.scrubber().scrub(err),
             ));
         }
     }
+}
+
+/// Authenticated HTTP client for one `rclone rcd` instance.
+pub(crate) struct HttpRc {
+    http: reqwest::Client,
+    base: String,
+    user: String,
+    pass: String,
+    /// Secrets in use with this rcd, scrubbed from every error it returns.
+    scrubber: Scrubber,
+}
+
+impl HttpRc {
+    pub(crate) fn new(port: u16, user: String, pass: String) -> Self {
+        let http = reqwest::Client::builder()
+            .no_proxy()
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .expect("static reqwest config is valid");
+        Self {
+            http,
+            base: format!("http://127.0.0.1:{port}"),
+            user,
+            pass,
+            scrubber: Scrubber::default(),
+        }
+    }
+
+    pub(crate) fn scrubber(&self) -> &Scrubber {
+        &self.scrubber
+    }
+
+    /// Calls an rc method. 5xx and network errors are `Transient`.
+    pub(crate) async fn call(&self, method: &str, params: Value) -> Result<Value> {
+        let resp = self
+            .http
+            .post(format!("{}/{method}", self.base))
+            .basic_auth(&self.user, Some(&self.pass))
+            .json(&params)
+            .send()
+            .await
+            .map_err(|e| TransportError::retryable(format!("rclone rc {method}: {e}")))?;
+        let status = resp.status();
+        let body: Value = resp.json().await.map_err(|e| {
+            TransportError::retryable(format!("rclone rc {method}: bad response: {e}"))
+        })?;
+        answer(method, status, body, &self.scrubber)
+    }
+}
+
+/// An rc call's result from its status and JSON body, the same for HTTP and librclone. An
+/// error's message is scrubbed by `scrubber`.
+pub(crate) fn answer(
+    method: &str,
+    status: StatusCode,
+    body: Value,
+    scrubber: &Scrubber,
+) -> Result<Value> {
+    if status.is_success() {
+        return Ok(body);
+    }
+    let msg = body
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown error");
+    Err(error(
+        Some(status),
+        &format!("rclone rc {method}"),
+        &scrubber.scrub(msg),
+    ))
 }
 
 /// An rclone error, already scrubbed, as a `TransportError`: its kind (see [`kind_of`]) and, for

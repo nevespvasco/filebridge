@@ -12,6 +12,7 @@ import type {
   SourceInfo_Serialize,
 } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
+import { askBatteryExemptionOnce } from "@/lib/platform";
 import { useJobs } from "./jobs";
 import { useProfiles } from "./profiles";
 
@@ -249,6 +250,7 @@ export const useWizard = defineStore("wizard", () => {
     try {
       await saveOptions();
       await api.start(jobId.value);
+      void askBatteryExemptionOnce();
       await useJobs().refresh(jobId.value);
       step.value = 5;
       return true;

@@ -1,14 +1,20 @@
-//! filebridge desktop app: a thin Tauri client of `filebridge-service` (ADR 0008).
-//!
-//! Every command forwards to `filebridge_ipc::Client`; the TypeScript bindings in
-//! `../src/bindings/` are generated from them by tauri-specta (`pnpm bindings`, or any debug
-//! run of the app).
+//! filebridge app. On desktop, a thin Tauri client of `filebridge-service` (ADR 0008): every
+//! command forwards to `filebridge_ipc::Client`. On phones the engine runs in this process
+//! (ADR 0014, [`engine`]) and the same commands call it directly. The TypeScript bindings in
+//! `../src/bindings/` are generated from the commands by tauri-specta (`pnpm bindings`, or any
+//! debug run of the app on desktop).
 
 mod commands;
+mod native;
+#[cfg(mobile)]
+#[path = "engine.rs"]
 mod service;
+#[cfg(desktop)]
+mod service;
+#[cfg(desktop)]
 mod tray;
 
-use tauri::{Manager, WindowEvent};
+use tauri::Manager;
 use tauri_specta::{Builder, collect_events};
 
 pub use service::{ConnectionChanged, Service, ServiceEvent};
@@ -43,47 +49,52 @@ pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_init();
     let builder = specta_builder();
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, desktop))]
     if let Err(e) = export_bindings(&builder) {
         tracing::error!("could not export the TypeScript bindings: {e}");
     }
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(native::plugin())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
             let handle = app.handle().clone();
             let service = Service::new(handle.clone());
             app.manage(service.clone());
+            #[cfg(desktop)]
             app.manage(tray::install(&handle)?);
-            // Connect (and start the service if needed) right away, so the first screen
-            // doesn't wait for it.
+            // Connect (desktop: start the service if needed; phones: open the engine) right
+            // away, so the first screen doesn't wait for it.
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = service.client().await {
-                    tracing::warn!("filebridge-service: {e}");
+                    tracing::warn!("engine: {}", e.message);
                 }
             });
             Ok(())
-        })
-        .on_window_event(|window, event| {
-            // Closing the window hides it; sends continue in the service.
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-            }
-        })
-        .run(tauri::generate_context!())
+        });
+    #[cfg(desktop)]
+    let app = app.on_window_event(|window, event| {
+        // Closing the window hides it; sends continue in the service.
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = window.hide();
+        }
+    });
+    app.run(tauri::generate_context!())
         .expect("error while running the filebridge window");
 }
 
 fn tracing_init() {
-    // Logs go to stderr (`RUST_LOG=debug`); the service keeps its own log.
+    // Logs go to stderr (`RUST_LOG=debug`); the service keeps its own log. On Android stderr
+    // is not shown: `adb logcat` has what the WebView and the plugin log.
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),

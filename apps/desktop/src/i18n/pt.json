@@ -20,6 +20,15 @@
     "show": "Abrir filebridge",
     "quit": "Fechar janela (os envios continuam)"
   },
+  "mobile": {
+    "pickLead": "Escolha uma pasta deste telemóvel",
+    "pickFolder": "Escolher pasta",
+    "pickHint": "A câmara, as Transferências, um cartão SD… Junte uma pasta de cada vez.",
+    "addMore": "Juntar outra pasta",
+    "storageDenied": "O filebridge precisa de “Acesso a todos os ficheiros” para ler os ficheiros do telemóvel. Permita-o nas definições do Android e tente outra vez.",
+    "sendingOne": "A enviar 1 transferência",
+    "sendingMany": "A enviar {n} transferências"
+  },
   "conn": {
     "connected": "Motor de cópia a funcionar",
     "connecting": "A iniciar o motor de cópia…",

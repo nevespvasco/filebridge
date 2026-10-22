@@ -149,8 +149,9 @@ Drawer or a narrow window:
 | Wizard stepper | Under 700px every step keeps its number and only the current one its label |
 | Source list | Under 460px the parent folder goes under the name |
 
-A narrow window is the only "mobile" layout. No phone app is planned (D12 in the
-[review](00-reference-review.md#d--uplink-file-transfer-service-case-study)).
+A narrow window is the only "mobile" layout today (D12 in the
+[review](00-reference-review.md#d--uplink-file-transfer-service-case-study)). The Android app (Phase 4)
+reuses these narrow forms ([11 — Mobile](../11-mobile.md)).
 
 ## Acceptance criteria
 
