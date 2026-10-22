@@ -25,13 +25,13 @@ pub use server::{Handler, bind, serve};
 /// carry, so clients need only this crate. It doesn't depend on `core`: a client never compiles
 /// the engine (ADR 0008: the window reaches `core` only through `ipc`).
 pub use filebridge_model::{
-    ActivityItem, AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecideManyResult,
-    DecisionInput, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort,
-    EntryStatus, EntryView, Event, ExportResult, Family, HashView, IssueDecision, IssueSeverity,
-    IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry,
-    LogLevel, PreflightView, Profile, ProfileTest, RecentSource, RefusedIssue, ReportFormat,
-    ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow, SpaceView, StatusCount,
-    StorageView, TargetSpec, job_operations,
+    ActivityItem, AnalysisSummary, AppSettings, BlockerView, CategoryCount, CheckView, Counts,
+    DecideManyResult, DecisionInput, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
+    EntrySort, EntryStatus, EntryView, Event, ExportResult, Family, HashView, IssueDecision,
+    IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary,
+    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker,
+    ReclaimStatus, RefusedIssue, ReportFormat, ReportRequest, ReportScope, RuleCount, SendOptions,
+    SendWindow, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -49,7 +49,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 10: `activity`.
 /// 11: `decide_many`; `issues`, `rule_counts` and `decide_all` take a path `query`.
 /// 12: `export_report` and the `report_progress` event.
-pub const PROTOCOL_VERSION: u32 = 12;
+/// 13: `reclaim_status`, `recheck_sources`, `dismiss_reclaim`, the `reclaim_check_progress` event.
+pub const PROTOCOL_VERSION: u32 = 13;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

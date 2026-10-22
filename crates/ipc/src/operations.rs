@@ -56,6 +56,12 @@ macro_rules! for_each_operation {
             /// profile; its analysis reuses the earlier name decisions.
             SendAgain send_again(job_id: String, profile_id: Option<String>) -> String;
             Job job(job_id: String) -> $crate::JobSummary;
+            /// Whether a job's sources can be freed safely, and why not; no I/O at the source.
+            ReclaimStatus reclaim_status(job_id: String) -> $crate::ReclaimStatus;
+            /// Re-reads the job's sources (read-only) and compares them with the manifest.
+            RecheckSources recheck_sources(job_id: String) -> $crate::ReclaimStatus;
+            /// Hides a job from the reclaimable total (or shows it again).
+            DismissReclaim dismiss_reclaim(job_id: String, dismissed: bool) -> ();
             /// Writes a finished job's report to `req.path` on the service's machine.
             ExportReport export_report(job_id: String, req: $crate::ReportRequest) -> $crate::ExportResult;
             /// Milestones of every job and profile changes, newest first, before `before_id`.

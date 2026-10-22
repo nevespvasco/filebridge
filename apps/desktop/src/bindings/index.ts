@@ -62,6 +62,12 @@ export const commands = {
 	 */
 	sendAgain: (jobId: string, profileId: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("send_again", { jobId, profileId })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
+	/**  Whether a job's sources can be freed safely, and why not; no I/O at the source. */
+	reclaimStatus: (jobId: string) => typedError<ReclaimStatus_Serialize, ErrorBody>(__TAURI_INVOKE("reclaim_status", { jobId })),
+	/**  Re-reads the job's sources (read-only) and compares them with the manifest. */
+	recheckSources: (jobId: string) => typedError<ReclaimStatus_Serialize, ErrorBody>(__TAURI_INVOKE("recheck_sources", { jobId })),
+	/**  Hides a job from the reclaimable total (or shows it again). */
+	dismissReclaim: (jobId: string, dismissed: boolean) => typedError<null, ErrorBody>(__TAURI_INVOKE("dismiss_reclaim", { jobId, dismissed })),
 	/**  Writes a finished job's report to `req.path` on the service's machine. */
 	exportReport: (jobId: string, req: ReportRequest) => typedError<ExportResult, ErrorBody>(__TAURI_INVOKE("export_report", { jobId, req })),
 	/**  Milestones of every job and profile changes, newest first, before `before_id`. */
@@ -100,7 +106,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 12 as const;
+export const PROTOCOL_VERSION = 13 as const;
 
 /* Types */
 /**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
@@ -191,6 +197,20 @@ export type Backend_Serialize = { kind: "local" } | { kind: "sftp"; host: string
 key_file: string | null; 
 /**  Host keys are always verified; defaults to `~/.ssh/known_hosts`. */
 known_hosts_file: string | null; password: KeyringRef | null };
+
+export type BlockerView = BlockerView_Serialize | BlockerView_Deserialize;
+
+export type BlockerView_Deserialize = {
+	code: ReclaimBlocker,
+	/**  How many files it concerns, when that is meaningful. */
+	count?: number | null,
+};
+
+export type BlockerView_Serialize = {
+	code: ReclaimBlocker,
+	/**  How many files it concerns, when that is meaningful. */
+	count: number | null,
+};
 
 /**  How many files of one Category a job has, and their size (docs/design/specs/D02). */
 export type CategoryCount = {
@@ -363,7 +383,7 @@ export type EntryDetail_Deserialize = {
 	source_path_hex?: string | null,
 	/**  The profile root joined with the destination path. */
 	dest_path?: string | null,
-	/**  Unix seconds, when the scan recorded it. */
+	/**  Unix ms, when the scan recorded it. */
 	mtime?: number | null,
 	/**  The source file's digest, kept by verification. */
 	hash?: HashView | null,
@@ -381,7 +401,7 @@ export type EntryDetail_Serialize = {
 	source_path_hex: string | null,
 	/**  The profile root joined with the destination path. */
 	dest_path: string | null,
-	/**  Unix seconds, when the scan recorded it. */
+	/**  Unix ms, when the scan recorded it. */
 	mtime: number | null,
 	/**  The source file's digest, kept by verification. */
 	hash: HashView | null,
@@ -503,6 +523,8 @@ in_flight: InFlightView_Deserialize[] } |
  *  rest). Advisory like every progress event, and never written to the job log.
  */
 { type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | 
+/**  Files of a job's sources re-checked so far (advisory, D10). */
+{ type: "reclaim_check_progress"; job_id: string; checked: number; total: number } | 
 /**  Rows of a report written so far (advisory). */
 { type: "report_progress"; job_id: string; rows: number; total: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
@@ -520,6 +542,8 @@ in_flight: InFlightView_Serialize[] } |
  *  rest). Advisory like every progress event, and never written to the job log.
  */
 { type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | 
+/**  Files of a job's sources re-checked so far (advisory, D10). */
+{ type: "reclaim_check_progress"; job_id: string; checked: number; total: number } | 
 /**  Rows of a report written so far (advisory). */
 { type: "report_progress"; job_id: string; rows: number; total: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
@@ -822,6 +846,54 @@ export type RecentSource = {
 	exists: boolean,
 };
 
+/**  Why a job's source can't be freed yet (docs/design/specs/D10). */
+export type ReclaimBlocker = "not_completed" | "not_verified" | "different" | "unverifiable" | "failed" | "skipped" | "not_checked" | "changed" | "stale_check" | "source_unavailable";
+
+/**  Whether a finished job's sources can be freed safely (ADR 0011: shown, never freed). */
+export type ReclaimStatus = ReclaimStatus_Serialize | ReclaimStatus_Deserialize;
+
+/**  Whether a finished job's sources can be freed safely (ADR 0011: shown, never freed). */
+export type ReclaimStatus_Deserialize = {
+	job_id: string,
+	/**  Every source can be freed. */
+	eligible: boolean,
+	/**  Bytes of the sources that can be freed. */
+	bytes: number,
+	/**  When the verifying run finished (Unix ms). */
+	verified_at?: number | null,
+	/**  When the sources were last re-checked (Unix ms). */
+	checked_at?: number | null,
+	/**  The re-check compared sizes only (the job was analysed before mtimes were kept). */
+	size_only: boolean,
+	sources: SourceReclaim_Deserialize[],
+	/**  Blockers of the whole job (not completed, not verified, not re-checked…). */
+	blockers: BlockerView_Deserialize[],
+	/**  The first files found new or changed at the source, for "See them". */
+	changed_sample: string[],
+	dismissed: boolean,
+};
+
+/**  Whether a finished job's sources can be freed safely (ADR 0011: shown, never freed). */
+export type ReclaimStatus_Serialize = {
+	job_id: string,
+	/**  Every source can be freed. */
+	eligible: boolean,
+	/**  Bytes of the sources that can be freed. */
+	bytes: number,
+	/**  When the verifying run finished (Unix ms). */
+	verified_at: number | null,
+	/**  When the sources were last re-checked (Unix ms). */
+	checked_at: number | null,
+	/**  The re-check compared sizes only (the job was analysed before mtimes were kept). */
+	size_only: boolean,
+	sources: SourceReclaim_Serialize[],
+	/**  Blockers of the whole job (not completed, not verified, not re-checked…). */
+	blockers: BlockerView_Serialize[],
+	/**  The first files found new or changed at the source, for "See them". */
+	changed_sample: string[],
+	dismissed: boolean,
+};
+
 /**  An issue `decide_many` left as it was, and why. */
 export type RefusedIssue = {
 	id: number,
@@ -874,6 +946,29 @@ export type ServiceEvent_Deserialize = Event_Deserialize;
 
 /**  Every engine event, forwarded as is from `Client::events()`. */
 export type ServiceEvent_Serialize = Event_Serialize;
+
+/**  One source root of a job, and whether it can be freed. */
+export type SourceReclaim = SourceReclaim_Serialize | SourceReclaim_Deserialize;
+
+/**  One source root of a job, and whether it can be freed. */
+export type SourceReclaim_Deserialize = {
+	/**  Absolute, lossily decoded. */
+	path: string,
+	files: number,
+	bytes: number,
+	eligible: boolean,
+	blockers: BlockerView_Deserialize[],
+};
+
+/**  One source root of a job, and whether it can be freed. */
+export type SourceReclaim_Serialize = {
+	/**  Absolute, lossily decoded. */
+	path: string,
+	files: number,
+	bytes: number,
+	eligible: boolean,
+	blockers: BlockerView_Serialize[],
+};
 
 /**  Free, total and used space as one side reports it. */
 export type SpaceView = SpaceView_Serialize | SpaceView_Deserialize;

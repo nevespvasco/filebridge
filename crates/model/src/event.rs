@@ -39,6 +39,12 @@ pub enum Event {
         entries: Vec<DoneView>,
         more: u64,
     },
+    /// Files of a job's sources re-checked so far (advisory, D10).
+    ReclaimCheckProgress {
+        job_id: String,
+        checked: u64,
+        total: u64,
+    },
     /// Rows of a report written so far (advisory).
     ReportProgress {
         job_id: String,
@@ -97,6 +103,7 @@ impl Event {
             | Self::TransferProgress { job_id, .. }
             | Self::EntriesDone { job_id, .. }
             | Self::ReportProgress { job_id, .. }
+            | Self::ReclaimCheckProgress { job_id, .. }
             | Self::EntryFailed { job_id, .. }
             | Self::RetryScheduled { job_id, .. }
             | Self::SendWindowWait { job_id, .. }

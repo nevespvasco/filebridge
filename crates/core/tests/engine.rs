@@ -11,8 +11,8 @@ use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter, EntryStatus, Event,
     FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock, LogLevel, Profile,
-    Registry, ReportFormat, ReportRequest, ReportScope, SendOptions, SendWindow, Store, StoreError,
-    TargetSpec,
+    ReclaimBlocker, Registry, ReportFormat, ReportRequest, ReportScope, SendOptions, SendWindow,
+    Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -705,6 +705,108 @@ async fn a_finished_transfer_exports_its_proof() {
     assert_eq!(v["entries"][0]["sha256"].as_str().unwrap().len(), 64);
     assert_eq!(v["destination"]["backend"], "local");
     assert_eq!(v["destination"]["profile"], "Test");
+}
+
+/// Every file under `dir` with its bytes and modification time: to prove nothing changed.
+fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
+    let mut out: Vec<_> = walk(dir)
+        .into_iter()
+        .map(|p| {
+            let m = std::fs::metadata(&p).unwrap().modified().unwrap();
+            let data = std::fs::read(&p).unwrap();
+            (p, data, m)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+#[tokio::test]
+async fn a_verified_unchanged_source_is_shown_as_reclaimable_never_freed() {
+    let s = setup().await;
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let before = snapshot(&s.src);
+
+    let status = s.engine.reclaim_status(&job).await.unwrap();
+    assert!(!status.eligible);
+    assert!(
+        status
+            .blockers
+            .iter()
+            .any(|b| b.code == ReclaimBlocker::NotChecked)
+    );
+
+    let status = s.engine.recheck_sources(&job).await.unwrap();
+    assert!(status.eligible, "{status:?}");
+    assert_eq!(status.bytes, 18);
+    assert!(!status.size_only, "the scan kept modification times");
+    let page = s
+        .engine
+        .list_jobs_page(
+            JobFilter {
+                reclaimable: true,
+                ..Default::default()
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.items.len(), 1);
+
+    s.engine.dismiss_reclaim(&job, true).await.unwrap();
+    let hidden = s
+        .engine
+        .list_jobs_page(
+            JobFilter {
+                reclaimable: true,
+                ..Default::default()
+            },
+            10,
+            0,
+        )
+        .await
+        .unwrap();
+    assert!(hidden.items.is_empty(), "hidden from the total");
+    assert!(s.engine.reclaim_status(&job).await.unwrap().dismissed);
+
+    // Nothing at the source changed through any of that.
+    assert_eq!(snapshot(&s.src), before);
+
+    // A file changed after the send blocks it, and is named.
+    std::fs::write(s.src.join("Fotos/Inverno.jpg"), b"winter, edited").unwrap();
+    let status = s.engine.recheck_sources(&job).await.unwrap();
+    assert!(!status.eligible);
+    let changed = status.sources[0]
+        .blockers
+        .iter()
+        .find(|b| b.code == ReclaimBlocker::Changed)
+        .expect("a changed file");
+    assert_eq!(changed.count, Some(1));
+    assert_eq!(status.changed_sample, ["Acme/Fotos/Inverno.jpg"]);
+}
+
+#[tokio::test]
+async fn an_unverified_transfer_is_never_reclaimable() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let status = s.engine.recheck_sources(&job).await.unwrap();
+    assert!(!status.eligible);
+    assert!(
+        status
+            .blockers
+            .iter()
+            .any(|b| b.code == ReclaimBlocker::NotVerified)
+    );
 }
 
 #[tokio::test]

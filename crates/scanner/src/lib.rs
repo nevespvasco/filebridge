@@ -1,8 +1,8 @@
 //! Walks the source and reads names as **bytes**, never assuming UTF-8.
 //!
 //! Read-only: the scanner never writes to, renames or deletes anything under the source.
-//! Phase 0 scope: a sequential walk producing [`names::Entry`] values. Parallel walking, mtime and
-//! hashing land in later phases.
+//! A sequential walk producing [`names::Entry`] values, with each entry's modification time
+//! alongside. Parallel walking and hashing land in later phases.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,9 @@ use walkdir::WalkDir;
 pub struct Scan {
     /// Parents always come before their children.
     pub entries: Vec<Entry>,
+    /// Modification time of each entry (Unix ms), same order as `entries`; `None` when the OS
+    /// doesn't say. Used to tell whether a source changed after it was sent (D10).
+    pub mtimes: Vec<Option<i64>>,
     /// Symlinks are not followed and not sent (Phase 0); listed here.
     pub skipped_symlinks: Vec<PathBuf>,
     /// Paths that could not be read (permissions, races), with the error.
@@ -65,17 +68,16 @@ pub fn scan(root: &Path) -> std::io::Result<Scan> {
             out.skipped_symlinks.push(item.into_path());
             continue;
         }
-        let size = if ft.is_file() {
-            match item.metadata() {
-                Ok(m) => m.len(),
-                Err(err) => {
-                    out.errors.push((item.into_path(), err.to_string()));
-                    continue;
-                }
+        // One metadata read gives both the size and the modification time.
+        let meta = match item.metadata() {
+            Ok(m) => m,
+            Err(err) => {
+                out.errors.push((item.into_path(), err.to_string()));
+                continue;
             }
-        } else {
-            0
         };
+        let size = if ft.is_file() { meta.len() } else { 0 };
+        let mtime = mtime_ms(&meta);
         let rel = item
             .path()
             .strip_prefix(root)
@@ -89,11 +91,19 @@ pub fn scan(root: &Path) -> std::io::Result<Scan> {
             ft.is_dir(),
             parent,
         ));
+        out.mtimes.push(mtime);
         if ft.is_dir() {
             dir_stack.push(id);
         }
     }
     Ok(out)
+}
+
+/// A file's modification time in Unix milliseconds, when the OS gives one.
+pub fn mtime_ms(meta: &std::fs::Metadata) -> Option<i64> {
+    let t = meta.modified().ok()?;
+    let d = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(d.as_millis()).ok()
 }
 
 #[cfg(unix)]
@@ -127,6 +137,11 @@ mod tests {
 
         let dir = by_path(b"Vera\xcc\x83o");
         assert!(scan.entries[dir].is_dir);
+        assert_eq!(scan.mtimes.len(), scan.entries.len());
+        assert!(
+            scan.mtimes.iter().all(Option::is_some),
+            "the OS gives a time"
+        );
         assert_eq!(scan.entries[dir].raw_name, b"Vera\xcc\x83o");
 
         let child = by_path(b"Vera\xcc\x83o/praia.jpg");

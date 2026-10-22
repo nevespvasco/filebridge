@@ -835,5 +835,34 @@
     "rows": "{n} linhas escritas",
     "export": "Exportar",
     "saved": "Relatório guardado: {rows} linhas, {size}."
+  },
+  "reclaim": {
+    "title": "Espaço que pode libertar na origem",
+    "notYet": "Ainda não é seguro libertar a origem",
+    "body": "Os {files} ficheiros desta transferência chegaram e foram verificados idênticos em {destination} a {date}. Nada mudou na origem desde então",
+    "checked": "verificado",
+    "size": "{files} ficheiros · {size}",
+    "never": "O filebridge nunca apaga nada. Se quiser recuperar o espaço, apague estas pastas você mesmo, no gestor de ficheiros.",
+    "sizeOnly": "Comparado só pelo tamanho (transferência de uma versão anterior).",
+    "checkAgain": "Verificar de novo",
+    "seeThem": "Ver",
+    "changedList": "Ficheiros novos ou alterados na origem",
+    "checking": "A verificar a origem: {done} / {total}",
+    "hide": "Esconder do Início",
+    "show": "Mostrar de novo",
+    "hidden": "Escondido do Início",
+    "notice": "{size} verificados e recuperáveis",
+    "blocker": {
+      "not_completed": "A transferência não foi concluída.",
+      "not_verified": "A verificação estava desligada nesta transferência.",
+      "different": "{n} ficheiro está diferente no destino. | {n} ficheiros estão diferentes ou em falta no destino.",
+      "unverifiable": "{n} ficheiro não pôde ser verificado. | {n} ficheiros não puderam ser verificados.",
+      "failed": "{n} ficheiro não chegou. | {n} ficheiros não chegaram.",
+      "skipped": "{n} ficheiro foi ignorado e só existe na origem. | {n} ficheiros foram ignorados e só existem na origem.",
+      "not_checked": "A origem ainda não foi verificada desde a transferência.",
+      "changed": "{n} ficheiro mudou na origem depois da transferência. | {n} ficheiros são novos ou mudaram na origem depois da transferência.",
+      "stale_check": "A última verificação da origem tem mais de um dia.",
+      "source_unavailable": "A origem não está disponível. Ligue o disco para a verificar."
+    }
   }
 }

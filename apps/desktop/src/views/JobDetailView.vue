@@ -7,6 +7,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import FilesTab from "@/components/FilesTab.vue";
 import JobActions from "@/components/JobActions.vue";
+import ReclaimPanel from "@/components/ReclaimPanel.vue";
 import ReportDialog from "@/components/ReportDialog.vue";
 import JobLog from "@/components/JobLog.vue";
 import { defaultLabel, jobLabel } from "@/lib/jobs";
@@ -188,6 +189,7 @@ const details = computed(() => [
           </section>
         </div>
 
+        <ReclaimPanel v-if="TERMINAL.includes(job.state)" :job-id="id" />
       </div>
 
       <div v-else-if="tab === 'files'" id="panel-files" role="tabpanel" aria-labelledby="tab-files">

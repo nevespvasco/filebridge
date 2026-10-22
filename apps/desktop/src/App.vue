@@ -10,12 +10,14 @@ import { isMock } from "@/lib/platform";
 import { useConnection } from "@/stores/connection";
 import { needsYou, useJobs, RUNNING } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
+import { useReclaim } from "@/stores/reclaim";
 import { useSettings } from "@/stores/settings";
 
 const conn = useConnection();
 const jobs = useJobs();
 const profiles = useProfiles();
 const settings = useSettings();
+const reclaim = useReclaim();
 const { t } = useI18n();
 const router = useRouter();
 const fmt = useFmt();
@@ -24,6 +26,7 @@ onMounted(async () => {
   await jobs.init();
   await conn.init();
   void profiles.load().then(() => profiles.loadAllStorage());
+  void reclaim.loadEligible();
   void settings.loadApp();
   conn.onReconnect(() => void settings.loadApp());
   void jobs.loadPage(0);
@@ -62,8 +65,14 @@ const notice = computed(() => {
     const s = profiles.storage[p.id];
     const key = `low:${p.id}`;
     if (s?.checked_at != null && dismissed.value[key] !== s.checked_at) {
-      return { key, at: s.checked_at, text: t("storage.lowNotice", { name: p.name, free: fmt.bytes(s.free_bytes) }), to: "/destinations" };
+      return { key, at: s.checked_at, text: t("storage.lowNotice", { name: p.name, free: fmt.bytes(s.free_bytes) }), to: "/destinations", icon: "warning" as const, tone: "warn" };
     }
+  }
+  // Lowest priority: space that can be freed at the source (D10), hidden per set of jobs.
+  if (reclaim.eligible.length) {
+    const key = `reclaim:${reclaim.eligible.map((s) => s.job_id).join(",")}`;
+    const at = Math.max(...reclaim.eligible.map((s) => s.checked_at ?? 0));
+    if (dismissed.value[key] !== at) return { key, at, text: t("reclaim.notice", { size: fmt.bytes(reclaim.totalBytes) }), to: `/jobs/${reclaim.eligible[0].job_id}`, icon: "broom" as const, tone: "ok" };
   }
   return null;
 });
@@ -106,8 +115,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <AppIcon name="settings" :size="20" /><span class="label">{{ $t("nav.settings") }}</span>
       </RouterLink>
       <span class="grow" />
-      <div v-if="notice" class="notice small" role="status">
-        <AppIcon name="warning" class="warn-text" />
+      <div v-if="notice" class="notice small" :class="`tone-${notice.tone}`" role="status">
+        <AppIcon :name="notice.icon" :class="notice.tone === 'ok' ? 'ok-text' : 'warn-text'" />
         <RouterLink :to="notice.to" class="notice-text">{{ notice.text }}</RouterLink>
         <button class="dismiss" :aria-label="$t('common.dismiss')" @click="dismiss(notice.key, notice.at)"><AppIcon name="close" /></button>
       </div>
@@ -165,6 +174,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .side a.new-transfer.router-link-active { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 4px var(--accent); }
 .attention { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
 .notice { display: flex; gap: 0.4rem; align-items: flex-start; padding: 0.55rem 0.6rem; border-radius: var(--radius-sm); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); margin: 0 0.1rem 0.5rem; }
+.notice.tone-ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 .side a.notice-text { all: unset; flex: 1; cursor: pointer; color: var(--text); }
 .side a.notice-text:hover { text-decoration: underline; }
 .dismiss { background: none; border: 0; padding: 0; color: var(--text-2); cursor: pointer; display: inline-flex; }

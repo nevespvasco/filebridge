@@ -12,6 +12,7 @@ mod files;
 pub mod inhibit;
 mod lifecycle;
 mod profile;
+mod reclaim;
 mod registry;
 pub mod report;
 mod run;
@@ -26,9 +27,9 @@ pub use filebridge_model::{
     EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
     EntryView, Event, ExportResult, Family, FileCategory, InFlightView, IssueDecision,
     IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary,
-    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, ReportFormat,
-    ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow, StorageView, TargetSpec,
-    UnknownValue, job_operations,
+    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker,
+    ReclaimStatus, ReportFormat, ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow,
+    StorageView, TargetSpec, UnknownValue, job_operations,
 };
 pub use registry::Registry;
 pub use settings::LocalClock;

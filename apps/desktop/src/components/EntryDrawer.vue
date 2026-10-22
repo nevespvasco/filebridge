@@ -147,7 +147,7 @@ async function reveal() {
           <dt>{{ $t("entry.size") }}</dt>
           <dd class="num">{{ $t("entry.bytes", { n: fmt.count(v.size) }) }}</dd>
           <dt>{{ $t("entry.modified") }}</dt>
-          <dd class="num">{{ detail.mtime ? fmt.date(detail.mtime * 1000) : "—" }}</dd>
+          <dd class="num">{{ detail.mtime ? fmt.date(detail.mtime) : "—" }}</dd>
           <dt>{{ $t("entry.category") }}</dt>
           <dd>{{ $t(`category.${v.category}`) }}<span v-if="extension" class="muted"> ({{ extension }})</span></dd>
           <dt>{{ $t("entry.verification") }}</dt>

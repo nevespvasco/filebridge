@@ -33,6 +33,7 @@ import {
   type JobGroup,
   type JobSummary_Serialize,
   type LogEntry,
+  type ReclaimStatus_Serialize,
   type RecentSource,
   type StorageView_Serialize as StorageView,
   type Profile_Serialize,
@@ -317,9 +318,28 @@ const GROUPS: Record<JobGroup, JobState[]> = {
   finished: ["completed", "completed_with_warnings"],
   cancelled: ["cancelled"],
 };
-/** Reclaimable sources come with D10; until then nothing is. */
-function reclaimable(_job: JobSummary_Serialize): boolean {
-  return false;
+/** The source re-check of each job (D10): when it ran, and whether it found changes. */
+const rechecks = new Map<string, { at: number; changed: number }>();
+const dismissedReclaim = new Set<string>();
+function reclaimStatusOf(job: JobSummary_Serialize): ReclaimStatus_Serialize {
+  const blockers: ReclaimStatus_Serialize["blockers"] = [];
+  if (job.state !== "completed") blockers.push({ code: "not_completed", count: null });
+  if (!job.options.verify) blockers.push({ code: "not_verified", count: null });
+  const check = rechecks.get(job.id);
+  if (!check) blockers.push({ code: "not_checked", count: null });
+  else if (Date.now() - check.at > 24 * 3_600_000) blockers.push({ code: "stale_check", count: null });
+  const sources = job.sources.map((path, i) => {
+    const b: ReclaimStatus_Serialize["blockers"] = [];
+    if (check?.changed && i === 0) b.push({ code: "changed", count: check.changed });
+    const share = Math.round(job.counts.bytes / job.sources.length);
+    return { path, files: Math.round(job.counts.files / job.sources.length), bytes: share, eligible: !b.length && !blockers.length, blockers: b };
+  });
+  const eligible = !blockers.length && sources.every((s) => s.eligible);
+  return { job_id: job.id, eligible, bytes: sources.filter((s) => s.eligible).reduce((n, s) => n + s.bytes, 0), verified_at: job.finished_at, checked_at: check?.at ?? null, size_only: false, sources, blockers, changed_sample: check?.changed ? ["Documentos/Contratos/contrato_7.docx"] : [], dismissed: dismissedReclaim.has(job.id) };
+}
+function reclaimable(job: JobSummary_Serialize): boolean {
+  const s = reclaimStatusOf(job);
+  return s.eligible && !s.dismissed;
 }
 
 /** Each destination's space (bytes), and when it was last checked. */
@@ -711,7 +731,7 @@ const handlers: Handlers = {
       source_path: source,
       source_path_hex: null,
       dest_path: view.status === "not_sent" ? null : `/media/disco/Backup/${view.dir}/${view.name}`,
-      mtime: 1_690_000_000 + (a.idx as number) * 37,
+      mtime: 1_690_000_000_000 + (a.idx as number) * 37_000,
       hash: view.status === "verified" || view.status === "different" ? { algo: "sha256", hex: Array.from({ length: 32 }, (_, i) => (((a.idx as number) * 31 + i * 17) % 256).toString(16).padStart(2, "0")).join("") } : null,
       issues: renamed ? [issue(rulesFor(job.id)[0], a.idx as number)] : [],
       error: view.status === "failed" ? "permission denied" : null,
@@ -724,6 +744,22 @@ const handlers: Handlers = {
       checkedAt.set(a.id as string, Date.now());
     }
     return storageOf(a.id as string);
+  },
+  reclaimStatus: (a) => reclaimStatusOf(find(a.jobId)),
+  recheckSources: async (a) => {
+    const job = find(a.jobId);
+    const total = job.counts.files;
+    for (let i = 1; i <= 4; i++) {
+      await sleep(300);
+      send({ type: "reclaim_check_progress", job_id: job.id, checked: Math.round((total * i) / 4), total });
+    }
+    rechecks.set(job.id, { at: Date.now(), changed: 0 });
+    return reclaimStatusOf(job);
+  },
+  dismissReclaim: (a) => {
+    if (a.dismissed) dismissedReclaim.add(a.jobId as string);
+    else dismissedReclaim.delete(a.jobId as string);
+    return null;
   },
   exportReport: async (a) => {
     const job = find(a.jobId);

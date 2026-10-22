@@ -173,7 +173,7 @@ pub struct EntryDetail {
     pub source_path_hex: Option<String>,
     /// The profile root joined with the destination path.
     pub dest_path: Option<String>,
-    /// Unix seconds, when the scan recorded it.
+    /// Unix ms, when the scan recorded it.
     pub mtime: Option<i64>,
     /// The source file's digest, kept by verification.
     pub hash: Option<HashView>,

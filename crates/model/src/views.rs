@@ -353,3 +353,62 @@ pub struct DecideManyResult {
     /// The issues the name rules refused that decision for; they keep theirs.
     pub refused: Vec<RefusedIssue>,
 }
+
+/// Why a job's source can't be freed yet (docs/design/specs/D10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ReclaimBlocker {
+    NotCompleted,
+    NotVerified,
+    Different,
+    Unverifiable,
+    Failed,
+    Skipped,
+    NotChecked,
+    Changed,
+    StaleCheck,
+    SourceUnavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct BlockerView {
+    pub code: ReclaimBlocker,
+    /// How many files it concerns, when that is meaningful.
+    pub count: Option<u64>,
+}
+
+/// One source root of a job, and whether it can be freed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SourceReclaim {
+    /// Absolute, lossily decoded.
+    pub path: String,
+    pub files: u64,
+    pub bytes: u64,
+    pub eligible: bool,
+    pub blockers: Vec<BlockerView>,
+}
+
+/// Whether a finished job's sources can be freed safely (ADR 0011: shown, never freed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ReclaimStatus {
+    pub job_id: String,
+    /// Every source can be freed.
+    pub eligible: bool,
+    /// Bytes of the sources that can be freed.
+    pub bytes: u64,
+    /// When the verifying run finished (Unix ms).
+    pub verified_at: Option<i64>,
+    /// When the sources were last re-checked (Unix ms).
+    pub checked_at: Option<i64>,
+    /// The re-check compared sizes only (the job was analysed before mtimes were kept).
+    pub size_only: bool,
+    pub sources: Vec<SourceReclaim>,
+    /// Blockers of the whole job (not completed, not verified, not re-checked…).
+    pub blockers: Vec<BlockerView>,
+    /// The first files found new or changed at the source, for "See them".
+    pub changed_sample: Vec<String>,
+    pub dismissed: bool,
+}
+
+/// A re-check of a job's sources is good for this long.
+pub const RECLAIM_CHECK_FRESH_MS: i64 = 24 * 3_600_000;

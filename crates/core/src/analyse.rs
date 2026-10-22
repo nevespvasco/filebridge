@@ -62,6 +62,7 @@ pub(crate) fn analyse_sources(
     mut on_source: impl FnMut(&Path, u64, u64),
 ) -> Result<Analysis> {
     let mut entries: Vec<Entry> = Vec::new();
+    let mut mtimes: Vec<Option<i64>> = Vec::new();
     let mut source_of: Vec<u32> = Vec::new();
     let mut scan_errors = Vec::new();
     let mut skipped_symlinks = 0u64;
@@ -87,10 +88,12 @@ pub(crate) fn analyse_sources(
             meta.is_dir(),
             None,
         ));
+        mtimes.push(filebridge_scanner::mtime_ms(&meta));
         source_of.push(si as u32);
         let (mut files, mut bytes) = (u64::from(!meta.is_dir()), size);
         if meta.is_dir() {
             let scan = filebridge_scanner::scan(source)?;
+            mtimes.extend(scan.mtimes.iter().copied());
             for e in scan.entries {
                 let mut raw_path = name.clone();
                 raw_path.push(b'/');
@@ -151,7 +154,7 @@ pub(crate) fn analyse_sources(
             parent_idx: entry.parent.map(|p| p as u64),
             is_dir: entry.is_dir,
             size: entry.size,
-            mtime: None,
+            mtime: mtimes.get(i).copied().flatten(),
             hash: None,
             hash_algo: None,
             category: if entry.is_dir {

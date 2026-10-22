@@ -835,5 +835,34 @@
     "rows": "{n} rows written",
     "export": "Export",
     "saved": "Report saved: {rows} rows, {size}."
+  },
+  "reclaim": {
+    "title": "Space you can free at the source",
+    "notYet": "Freeing the source isn't safe yet",
+    "body": "All {files} files of this transfer arrived and were verified identical at {destination} on {date}. Nothing changed at the source since",
+    "checked": "checked",
+    "size": "{files} files · {size}",
+    "never": "filebridge never deletes anything. If you want the space back, delete these folders yourself, in your file manager.",
+    "sizeOnly": "Compared by size only (transfer from an older version).",
+    "checkAgain": "Check again",
+    "seeThem": "See them",
+    "changedList": "Files new or changed at the source",
+    "checking": "Checking the source: {done} / {total}",
+    "hide": "Hide from Home",
+    "show": "Show again",
+    "hidden": "Hidden from Home",
+    "notice": "{size} verified and reclaimable",
+    "blocker": {
+      "not_completed": "The transfer didn't complete.",
+      "not_verified": "Verification was off for this transfer.",
+      "different": "{n} file is different at the destination. | {n} files are different or missing at the destination.",
+      "unverifiable": "{n} file couldn't be verified. | {n} files couldn't be verified.",
+      "failed": "{n} file didn't arrive. | {n} files didn't arrive.",
+      "skipped": "{n} file was skipped and exists only at the source. | {n} files were skipped and exist only at the source.",
+      "not_checked": "The source hasn't been checked since the transfer.",
+      "changed": "{n} file changed at the source after the transfer. | {n} files are new or changed at the source after the transfer.",
+      "stale_check": "The last check of the source is more than a day old.",
+      "source_unavailable": "The source isn't there now. Connect the disk to check it."
+    }
   }
 }

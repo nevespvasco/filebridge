@@ -481,6 +481,46 @@ impl Store {
         .await
     }
 
+    /// Files per source position and `(transfer_state, verify_state)`: `(source, transfer,
+    /// verify, files, bytes)`.
+    pub async fn source_state_counts(
+        &self,
+        job_id: &str,
+    ) -> Result<Vec<(u32, String, String, u64, u64)>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT source, transfer_state, verify_state, COUNT(*), COALESCE(SUM(size), 0)
+                 FROM manifest_entries WHERE job_id = ?1 AND is_dir = 0
+                 GROUP BY source, transfer_state, verify_state",
+            )?;
+            let rows = stmt.query_map([&job_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
+    /// Every file of a job as `(source, raw_path, size, mtime)`, for comparing with the source.
+    pub async fn file_fingerprints(
+        &self,
+        job_id: &str,
+    ) -> Result<Vec<(u32, Vec<u8>, u64, Option<i64>)>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT source, raw_path, size, mtime FROM manifest_entries
+                 WHERE job_id = ?1 AND is_dir = 0 ORDER BY idx",
+            )?;
+            let rows = stmt.query_map([&job_id], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
     /// Files (not directories) per `(transfer_state, verify_state)`, and how many were renamed.
     pub async fn entry_state_counts(
         &self,

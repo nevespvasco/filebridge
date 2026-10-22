@@ -8,6 +8,7 @@ import {
   PhArrowRight,
   PhArrowsClockwise,
   PhArrowsLeftRight,
+  PhBroom,
   PhCaretDown,
   PhCaretRight,
   PhCheck,
@@ -112,6 +113,7 @@ export const ICONS = {
   reveal: PhFolderOpen,
   menu: PhDotsThreeVertical,
   export: PhExport,
+  broom: PhBroom,
   // Status
   check: PhCheck,
   different: PhNotEquals,

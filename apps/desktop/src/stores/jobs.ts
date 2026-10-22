@@ -20,6 +20,8 @@ export type Live = {
   verify?: Of<"verify_progress">;
   integration?: Of<"integration_progress">;
   retry?: Of<"retry_scheduled"> & { at: number };
+  /** Files of the sources re-checked so far, while a reclaim check runs. */
+  reclaim?: Of<"reclaim_check_progress">;
   /** Rows of a report written so far, while one is being exported. */
   report?: Of<"report_progress">;
   /** When the send window opens, while the job waits for it. */
@@ -136,6 +138,9 @@ export const useJobs = defineStore("jobs", () => {
         break;
       case "transfer_progress":
         l.transfer = ev;
+        break;
+      case "reclaim_check_progress":
+        l.reclaim = ev;
         break;
       case "report_progress":
         l.report = ev;

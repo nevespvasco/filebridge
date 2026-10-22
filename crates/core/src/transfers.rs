@@ -10,12 +10,6 @@ use crate::{CoreError, Engine, JobKind, JobState, Result, decisions};
 pub const MAX_LABEL: usize = 120;
 
 impl Engine {
-    /// Jobs whose sources can be freed safely (docs/design/specs/D10). Nothing is, until the
-    /// source re-check of D10 exists: it is one of the conditions.
-    pub(crate) async fn reclaimable_ids(&self) -> Result<Vec<String>> {
-        Ok(Vec::new())
-    }
-
     /// A page of jobs matching `filter`, and how many match in all.
     pub async fn list_jobs_page(
         &self,

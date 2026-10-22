@@ -12,7 +12,7 @@ use filebridge_ipc::{
     DetectNextcloudRequest, DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets,
     EntryFilter, EntryPage, ErrorBody, ExportResult, Handler, IssueView, JobFilter, JobPage,
     JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource,
-    ReportRequest, RuleCount, SendOptions, StorageView,
+    ReclaimStatus, ReportRequest, RuleCount, SendOptions, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -235,6 +235,21 @@ impl Operations for EngineOperations {
     async fn entry(&self, job_id: String, idx: u64) -> Res<EntryDetail> {
         self.engine
             .entry_detail(&job_id, idx)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn reclaim_status(&self, job_id: String) -> Res<ReclaimStatus> {
+        self.engine.reclaim_status(&job_id).await.map_err(to_error)
+    }
+
+    async fn recheck_sources(&self, job_id: String) -> Res<ReclaimStatus> {
+        self.engine.recheck_sources(&job_id).await.map_err(to_error)
+    }
+
+    async fn dismiss_reclaim(&self, job_id: String, dismissed: bool) -> Res<()> {
+        self.engine
+            .dismiss_reclaim(&job_id, dismissed)
             .await
             .map_err(to_error)
     }

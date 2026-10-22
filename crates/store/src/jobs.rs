@@ -301,6 +301,44 @@ impl Store {
         .await
     }
 
+    /// Keeps what a re-check of the job's sources found (D10).
+    pub async fn set_reclaim_check(&self, id: &str, check: serde_json::Value) -> Result<()> {
+        let (id, check) = (id.to_owned(), serde_json::to_string(&check)?);
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE jobs SET reclaim_check = ?2 WHERE id = ?1",
+                params![id, check],
+            )?;
+            expect_one(n, &id)
+        })
+        .await
+    }
+
+    /// Hides the job from the reclaimable total (`Some(time)`), or shows it again (`None`).
+    pub async fn set_reclaim_dismissed(&self, id: &str, at: Option<i64>) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE jobs SET reclaim_dismissed_at = ?2 WHERE id = ?1",
+                params![id, at],
+            )?;
+            expect_one(n, &id)
+        })
+        .await
+    }
+
+    /// Ids of completed jobs, newest first: the candidates for a reclaimable source.
+    pub async fn completed_job_ids(&self) -> Result<Vec<String>> {
+        self.call(|c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT id FROM jobs WHERE state = 'completed' ORDER BY created_at DESC",
+            )?;
+            let ids = stmt.query_map([], |r| r.get(0))?;
+            Ok(ids.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+
     /// Names a job; `None` clears the name.
     pub async fn set_job_label(&self, id: &str, label: Option<String>) -> Result<()> {
         let id = id.to_owned();

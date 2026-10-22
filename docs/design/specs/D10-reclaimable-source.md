@@ -1,6 +1,6 @@
 # D10 — Reclaimable source
 
-- ID: D10 · Status: Proposed · Phase: 2
+- ID: D10 · Status: **Built** · Phase: 2
 - Inspired by: F17 (Vault & Vine "Cleanup scan that surfaces reclaimable space"), adapted under
   [ADR 0011](../../adr/0011-reclaimable-source-is-shown-never-freed.md)
 - Layers touched: `crates/scanner` (record mtime), `crates/core` (eligibility, re-check),
@@ -119,6 +119,17 @@ this is a window-side read.
 **Hide** sets `reclaim_dismissed_at`, which removes the job from Home's sum and the sidebar
 notice. The panel on the job stays visible (with "Hidden from Home", and Show again). Nothing
 records whether the user actually deleted anything; filebridge never finds out, by design.
+
+### As built
+
+- The scanner returns modification times in `Scan.mtimes`, aligned with its entries (no change to
+  `names::Entry`), and the analysis stores them in the manifest in **Unix ms**.
+- The re-check result is kept as JSON in `jobs.reclaim_check` (time, size-only flag, per source:
+  available / changed / new / gone, and up to 100 sample paths). Eligibility is computed from
+  stored state only; `reclaimable_ids` walks the completed jobs.
+- A file that is `done` but has no verify result counts as "couldn't verify".
+- An engine test runs a job, its reclaim status, a re-check and a hide, and compares every source
+  file's bytes and modification time before and after: equal.
 
 ## States
 
