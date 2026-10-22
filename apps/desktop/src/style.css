@@ -233,6 +233,15 @@ input:disabled { background: var(--surface-2); }
 .req { color: var(--danger); margin-left: 0.15rem; }
 .why-disabled { font-size: 0.85rem; color: var(--text-2); }
 
+/* The height of the bottom tab bar on a narrow window (App.vue), 0 elsewhere. Anything sticky at
+   the bottom of a page stands on it; scrolling into view (focus, the guide) keeps clear of it and
+   of the top bar. */
+:root { --nav-bottom: 0px; }
+@media (max-width: 759px) {
+  :root { --nav-bottom: 3.6rem; }
+  html { scroll-padding: 4.5rem 0 calc(var(--nav-bottom) + 0.5rem); }
+}
+
 /* Narrow windows (docs/design/02, "Window sizes"). A footer's hint goes on its own line above the
    buttons, so Back stays left and the next step right; a page head's actions go under the title. */
 @media (max-width: 559px) {

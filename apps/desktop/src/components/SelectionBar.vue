@@ -17,6 +17,6 @@ const fmt = useFmt();
 </template>
 
 <style scoped>
-.selection-bar { position: sticky; bottom: 0.75rem; z-index: 5; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; padding: 0.6rem 0.8rem; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--accent); box-shadow: var(--shadow-pop); }
+.selection-bar { position: sticky; bottom: calc(var(--nav-bottom) + 0.75rem); z-index: 5; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; padding: 0.6rem 0.8rem; border-radius: var(--radius-md); background: var(--surface); border: 1px solid var(--accent); box-shadow: var(--shadow-pop); }
 .grow { flex: 1; }
 </style>

@@ -235,42 +235,54 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 @media (max-width: 1099px) {
   .main { padding: 1.25rem 1.5rem 2.5rem; }
 }
-/* Below 760px the sidebar becomes a top bar (docs/design/02, "Window sizes"): brand, status and
-   New transfer on one row, the four places as even tabs under it, and the notice as a strip. */
+/* Below 760px the sidebar splits in two (docs/design/02, "Window sizes"), both always on screen:
+   a top bar (brand, status, New transfer, and the notice as a strip) and a tab bar at the bottom
+   with the four places. The bar's height is `--nav-bottom` (style.css), which whatever sticks to
+   the bottom of the page stands on. */
 @media (max-width: 759px) {
   .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .side {
     display: grid;
     align-content: start;
     grid-template-columns: minmax(0, 1fr) auto auto;
-    grid-template-areas: "brand conn new" "places places places" "notice notice notice";
+    grid-template-areas: "brand conn new" "notice notice notice";
     align-items: center;
     gap: 0.5rem 0.4rem;
     height: auto;
-    padding: 0.5rem 0.75rem 0;
-    position: static;
+    padding: 0.5rem 0.75rem;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    overflow: visible;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
   .brand { grid-area: brand; padding: 0.25rem; min-width: 0; }
   .side a.new-transfer { grid-area: new; margin: 0; padding: 0.4rem 0.75rem; }
-  .places { grid-area: places; display: flex; gap: 0.15rem; margin: 0 -0.25rem; }
-  .places a { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0.5rem 0.4rem; border-radius: 6px 6px 0 0; border-bottom: 2px solid transparent; position: relative; }
+  .places {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    display: flex;
+    gap: 0.15rem;
+    height: calc(var(--nav-bottom) + env(safe-area-inset-bottom, 0px));
+    padding: 0 0.5rem env(safe-area-inset-bottom, 0px);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 12px -6px rgb(0 0 0 / 0.15);
+  }
+  .places a { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 0.15rem; font-size: var(--fs-xs); padding: 0.3rem 0.2rem; border-radius: 0; border-top: 2px solid transparent; position: relative; }
   .places a .label { flex: none; white-space: nowrap; }
-  .side .places a.router-link-active { background: transparent; border-bottom-color: var(--accent); }
+  .side .places a.router-link-active { background: transparent; border-top-color: var(--accent); }
+  .places a .badge { position: absolute; top: 0.25rem; left: calc(50% + 0.5rem); padding: 0 0.35rem; }
+  .places a .attention { position: absolute; top: 0.45rem; left: calc(50% - 0.9rem); }
   .grow { display: none; }
-  .notice { grid-area: notice; margin: 0 0 0.5rem; }
+  .notice { grid-area: notice; margin: 0; }
   .conn { grid-area: conn; padding: 0.25rem; gap: 0.25rem; }
   /* Connected is the usual state: the green dot alone says it (with its tooltip and the text for
      screen readers). Connecting or not responding is always spelled out. */
   .conn.on .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .main { padding: 1rem 1rem 2rem; }
-}
-/* Too narrow for icon and label side by side: the label goes under the icon. */
-@media (max-width: 559px) {
-  .places a { flex-direction: column; gap: 0.15rem; font-size: var(--fs-xs); padding: 0.4rem 0.2rem; }
-  .places a .badge { position: absolute; top: 0.1rem; left: calc(50% + 0.5rem); padding: 0 0.35rem; }
-  .places a .attention { position: absolute; top: 0.3rem; left: calc(50% - 0.9rem); }
+  .main { padding: 1rem 1rem calc(var(--nav-bottom) + 2rem); }
 }
 /* A phone-sized window: New transfer keeps its icon and its accessible name, not its text. */
 @media (max-width: 399px) {

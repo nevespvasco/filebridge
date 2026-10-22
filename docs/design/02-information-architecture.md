@@ -67,7 +67,7 @@ up in logs and crash reports.
 
 Width stays 200px, and the labels never truncate in en or pt. "Transferências" is the longest
 label, and it fits at 15px. A window shorter than the sidebar scrolls it. Below 760px the sidebar
-becomes a top bar ([Window sizes](#window-sizes)).
+becomes a top bar and a bottom tab bar ([Window sizes](#window-sizes)).
 
 ## Page anatomy
 
@@ -130,8 +130,8 @@ sideways except code in "Technical details".
 | ≥ 1600px | Sidebar + main; the main column grows to 1280px, centred |
 | 1100–1599px | Sidebar + main (1100px, centred); Home in two columns (D01) |
 | 760–1099px | Sidebar + main; Home in one column; lists drop columns or become cards by the width they get (below) |
-| 560–759px | The sidebar becomes a **top bar**: brand, service status and New transfer on one row; Home, Transfers, Destinations and Settings as even tabs under it (active one underlined); the notice slot as a strip. The status shows its dot and `?`, plus its text whenever it is not "running" |
-| < 560px | Place tabs put the label under the icon. Footers put their hint on its own line above Back / Next; page heads wrap their actions under the title; the Drawer is full width |
+| < 760px | The sidebar splits in two, **both always on screen**. A **top bar** (sticky): brand, service status and New transfer on one row, the notice slot as a strip under it. The status shows its dot and `?`, plus its text whenever it is not "running". A **bottom tab bar** (fixed, `--nav-bottom` = 3.6rem tall): Home, Transfers, Destinations and Settings as even tabs, icon over label, the active one marked on top, with the Transfers badge and dot. Whatever sticks to the bottom of a page (the Source step's footer, the selection bar) stands on the tab bar, and scrolling into view keeps clear of both bars |
+| < 560px | Footers put their hint on its own line above Back / Next; page heads wrap their actions under the title; the Drawer is full width |
 | < 400px | New transfer in the top bar keeps its icon and accessible name, not its text |
 
 Lists and rows that sit in columns of different widths respond to **their own width**

@@ -173,7 +173,7 @@ const blocked = computed(() => wizard.sourceBlockers.length);
 .grow { flex: 1; }
 .sticky {
   position: sticky;
-  bottom: 0;
+  bottom: var(--nav-bottom);
   z-index: 5;
   margin-top: 0.5rem;
   padding: 0.75rem 0;
