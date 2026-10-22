@@ -76,7 +76,8 @@ pub struct Pong {
     pub version: String,
 }
 
-/// Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH).
+/// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the
+/// SSH host itself).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct DetectNextcloudRequest {
     /// Name for the profile saved when detection succeeds.
@@ -105,6 +106,10 @@ pub struct DetectStepView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct DetectNextcloudResponse {
+    /// The setup the last steps describe: `proxmox-lxc` (a container on the Proxmox node
+    /// reached over SSH) or `host` (Nextcloud on the SSH host itself).
+    #[serde(default)]
+    pub detector: String,
     pub steps: Vec<DetectStepView>,
     /// Containers seen, when the choice was ambiguous.
     pub containers: Vec<String>,

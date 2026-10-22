@@ -21,19 +21,22 @@ pub enum NextcloudSettings {
 pub enum Runtime {
     /// The SSH host is a Proxmox node; Nextcloud is in container `ctid` (`pct exec`).
     ProxmoxLxc { ctid: u32 },
+    /// Nextcloud runs on the SSH host itself (its LXC or VM reached directly, or a bare-metal
+    /// server): "container" commands are plain host commands, and both views of a path match.
+    Host,
 }
 
-/// How to become the web-server user inside the container to run `occ`.
+/// How to become the web-server user where Nextcloud runs, to run `occ`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunAs {
     /// `sudo -n -u <web_user> php occ …`
     Sudo,
-    /// `su -s /bin/bash <web_user> -c 'php occ …'` (containers without sudo).
+    /// `su -s /bin/bash <web_user> -c 'php occ …'` (machines without sudo).
     Su,
 }
 
-/// Numeric owner on the host, after the container's idmap.
+/// Numeric owner on the SSH host (after the container's idmap, for [`Runtime::ProxmoxLxc`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Owner {
     pub uid: u32,
@@ -53,14 +56,15 @@ pub struct NextcloudDirectProfile {
     /// Host commands need `sudo -n` (the SSH user is not root).
     pub host_sudo: bool,
     pub runtime: Runtime,
-    /// Nextcloud install directory inside the container (holds `occ` and `config/`).
+    /// Nextcloud install directory where Nextcloud runs (holds `occ` and `config/`).
     pub install_dir: String,
     pub php: String,
     pub run_as: RunAs,
     pub web_user: String,
     /// `datadirectory` from `config.php`, as the container sees it.
     pub data_dir: String,
-    /// The same directory as the SSH host sees it (through the bind mount).
+    /// The same directory as the SSH host sees it (through the bind mount); equal to
+    /// `data_dir` for [`Runtime::Host`].
     pub host_data_dir: String,
     /// Nextcloud user id whose `files/` receives the send.
     pub user: String,
@@ -94,6 +98,12 @@ impl NextcloudDirectProfile {
                     "{what} must be absolute: {v:?}"
                 )));
             }
+        }
+        if self.runtime == Runtime::Host && self.host_data_dir != self.data_dir {
+            return Err(IntegrationError::fatal(format!(
+                "Nextcloud runs on the SSH host, so host_data_dir {:?} must equal data_dir {:?}",
+                self.host_data_dir, self.data_dir
+            )));
         }
         if self.user.is_empty() || self.user.contains('/') || self.user.starts_with('.') {
             return Err(IntegrationError::fatal(format!(
@@ -143,7 +153,7 @@ impl NextcloudDirectProfile {
         self.exec().host(argv)
     }
 
-    /// A command inside the container, as its root.
+    /// A command where Nextcloud runs (inside the container, as its root; or on the host).
     pub fn container_cmd<S: AsRef<str>>(&self, argv: &[S]) -> String {
         self.exec().container(argv)
     }
@@ -177,13 +187,19 @@ impl Exec {
         join(&words)
     }
 
+    /// A command where Nextcloud runs: `pct exec <id> -- argv…` for an LXC, the host command
+    /// itself for [`Runtime::Host`].
     pub fn container<S: AsRef<str>>(&self, argv: &[S]) -> String {
-        let Runtime::ProxmoxLxc { ctid } = self.runtime;
-        let ctid = ctid.to_string();
-        // `pct exec` runs argv directly (no shell inside the container).
-        let mut words: Vec<&str> = vec!["pct", "exec", &ctid, "--"];
-        words.extend(argv.iter().map(AsRef::as_ref));
-        self.host(&words)
+        match self.runtime {
+            Runtime::ProxmoxLxc { ctid } => {
+                let ctid = ctid.to_string();
+                // `pct exec` runs argv directly (no shell inside the container).
+                let mut words: Vec<&str> = vec!["pct", "exec", &ctid, "--"];
+                words.extend(argv.iter().map(AsRef::as_ref));
+                self.host(&words)
+            }
+            Runtime::Host => self.host(argv),
+        }
     }
 
     pub fn occ<S: AsRef<str>>(
@@ -296,6 +312,37 @@ pub(crate) mod tests {
         assert_eq!(p.host_cmd(&["df", "-Pk", "/a b"]), "sudo -n df -Pk '/a b'");
     }
 
+    pub fn sample_host() -> NextcloudDirectProfile {
+        NextcloudDirectProfile {
+            ssh: SshTarget {
+                host: "nextcloud.tailnet".into(),
+                ..sample().ssh
+            },
+            runtime: Runtime::Host,
+            data_dir: "/mnt/ncdata".into(),
+            host_data_dir: "/mnt/ncdata".into(),
+            owner: Owner { uid: 33, gid: 33 },
+            ..sample()
+        }
+    }
+
+    #[test]
+    fn host_runtime_runs_commands_as_they_are() {
+        let mut p = sample_host();
+        assert_eq!(p.container_cmd(&["test", "-d", "/a b"]), "test -d '/a b'");
+        assert_eq!(
+            p.occ_cmd(&["status"]),
+            "su -s /bin/bash www-data -c 'php /var/www/nextcloud/occ status'"
+        );
+        p.run_as = RunAs::Sudo;
+        p.host_sudo = true;
+        assert_eq!(
+            p.occ_cmd(&["status"]),
+            "sudo -n sudo -n -u www-data php /var/www/nextcloud/occ status"
+        );
+        assert_eq!(p.container_files_dir(), p.host_files_dir());
+    }
+
     #[test]
     fn settings_json_shape() {
         let s = NextcloudSettings::Direct(sample());
@@ -305,6 +352,11 @@ pub(crate) mod tests {
         assert_eq!(v["run_as"], "su");
         let back: NextcloudSettings = serde_json::from_value(v).unwrap();
         assert_eq!(back, s);
+
+        let h = NextcloudSettings::Direct(sample_host());
+        let v = serde_json::to_value(&h).unwrap();
+        assert_eq!(v["runtime"], serde_json::json!({ "kind": "host" }));
+        assert_eq!(serde_json::from_value::<NextcloudSettings>(v).unwrap(), h);
     }
 
     #[test]
@@ -319,6 +371,10 @@ pub(crate) mod tests {
         let mut p = sample();
         p.host_data_dir = "relative".into();
         assert!(p.validate().is_err());
+        assert!(sample_host().validate().is_ok());
+        let mut p = sample_host();
+        p.host_data_dir = "/tank/nextcloud-data".into();
+        assert!(p.validate().is_err(), "one machine sees one data path");
     }
 
     #[test]

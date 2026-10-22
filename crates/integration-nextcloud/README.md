@@ -6,8 +6,10 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 - Two modes: **WebDAV** (default; app password; no scan needed — Phase 2) and **direct** (SFTP
   into the data folder; owner/permissions from the profile; `occ files:scan --path` on changed
   folders).
-- Profile detection: pluggable `Detector`s (`Nextcloud::detectors()`); `LxcDetector` for
-  Nextcloud in a Proxmox LXC; Docker/AIO/Snap later.
+- Profile detection: pluggable `Detector`s (`Nextcloud::detectors()`, tried until one applies);
+  `LxcDetector` for Nextcloud in a Proxmox LXC reached through the node, `HostDetector` for
+  Nextcloud on the SSH host itself (its LXC or VM reached directly, bare metal; ADR 0009);
+  Docker/AIO/Snap later.
 - Name rules: `nextcloud-nfc`, `nextcloud-reserved` (`.htaccess`, `.part`, `.filepart`).
 - Preflight and after-transfer for direct mode.
 
@@ -19,22 +21,27 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | `fake` | `FakeShell` (answers keyed by exact command string, records what ran) and `FakeConnector`, public for `core`/CLI tests |
 | `quote` | POSIX `sh` quoting; every command is built with it |
 | `profile` | `NextcloudSettings` (tagged `mode: "direct"`), `NextcloudDirectProfile`, command builders (`host_cmd`, `container_cmd`, `occ_cmd`) |
-| `detect` | `Detector`, `LxcDetector`, `DetectInput`, `Detection` (steps with the commands they ran) |
+| `detect` | `Detector`, `LxcDetector`, `HostDetector`, `DetectInput`, `Detection` (steps with the commands they ran; whether the detector applies) |
 | `parse` | `pct list`, `pct config`, `config.php`, `id`, `stat`, `df`, `occ status`, `occ files:scan` output |
 | `direct` | preflight, owner/mode fix, minimal folder set, scan with progress |
 | `rules` | `NextcloudNfc`, `NextcloudReserved` |
 | `setup` | The profile wizard, `Nextcloud::set_up(req, transport)`: connect with the integration's own `ShellConnector`, run each detector, build the destination (SFTP to the SSH host, rooted at the user's files folder) and settings. `check_direct` is what every saved profile must pass (valid settings, same host for SFTP and SSH, root inside the files folder); `Integration::check_profile` runs it on every save |
 
 ## Direct mode
-**Commands.** The SSH host is the Proxmox node. Host commands run as the SSH user, or through
-`sudo -n` when detection found that `pct` needs it. Container commands are
-`pct exec <id> -- argv…` (no shell inside). `occ` runs as the web user through
-`sudo -n -u www-data php occ …`, or `su -s /bin/bash www-data -c '<quoted line>'` when the
-container has no sudo (quoted twice: once for `su -c`, once for the SSH command line).
+**Commands.** The SSH host is the Proxmox node (`Runtime::ProxmoxLxc`) or the machine Nextcloud
+runs on (`Runtime::Host`). Host commands run as the SSH user, or through `sudo -n` when detection
+found that `pct` (or, on the Nextcloud machine, a non-root user) needs it. Container commands are
+`pct exec <id> -- argv…` (no shell inside); for `Runtime::Host` they are the host commands
+themselves. `occ` runs as the web user through `sudo -n -u www-data php occ …`, or
+`su -s /bin/bash www-data -c '<quoted line>'` when there is no sudo where Nextcloud runs (quoted
+twice: once for `su -c`, once for the SSH command line).
 
-**Detection** (each step a `Check` plus the commands it ran, for the Details panel):
+**Detection, Proxmox node** (`LxcDetector`; each step a `Check` plus the commands it ran, for the
+Details panel):
 1. `pct-list` — `pct list` (retried with `sudo -n`); picks the one running container named like
-   Nextcloud, or `DetectInput::ctid`.
+   Nextcloud, or `DetectInput::ctid`. Exit 127 with no `/usr/sbin/pct` means this is not a
+   Proxmox node: the step passes, the detector reports it doesn't apply, and the wizard goes on
+   to `HostDetector` (unless a container was chosen by id, which fails).
 2. `pct-config` — `pct config <id>`: `mpN` mounts (host paths, or storage volumes resolved with
    `pvesm path`), `unprivileged`, `lxc.idmap`.
 3. `datadirectory` — finds `config/config.php` (`ls -d` over the usual install dirs, or
@@ -47,6 +54,13 @@ container has no sudo (quoted twice: once for `su -c`, once for the SSH command 
    proves it (maintenance mode is a warning here).
 6. `owner` — `id <web user>` mapped through the idmap (default unprivileged: `100000 + 33` =
    `100033`); cross-checked against `stat -c %u:%g` of the host data dir (mismatch = warning).
+
+**Detection, Nextcloud on the SSH host** (`HostDetector`; same helpers and step ids):
+1. `host` — `id -u` is 0, or `sudo -n true` works (setting the owner needs root).
+2. `datadirectory` — as above, without the mount mapping; no `datadirectory` line means
+   Nextcloud's default `<install>/data`. `data-path` — the data dir and `<data>/<user>/files` exist.
+3. `occ`, `run-as` — as above, on the host.
+4. `owner` — `id <web user>` as is (no idmap), cross-checked with `stat -c %u:%g`.
 
 Stdout is never kept in the detection result.
 

@@ -23,8 +23,8 @@ macro_rules! for_each_operation {
             DeleteProfile delete_profile(id: String) -> ();
             /// Connection test: the transport's and the integration's preflight.
             TestProfile test_profile(id: String) -> $crate::ProfileTest;
-            /// Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH). Saves the
-            /// profile when every step passes.
+            /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
+            /// Nextcloud on the SSH host itself). Saves the profile when every step passes.
             DetectNextcloud detect_nextcloud(req: $crate::DetectNextcloudRequest) -> $crate::DetectNextcloudResponse;
             /// A draft job; nothing is read from the sources yet.
             CreateJob create_job(sources: Vec<String>, profile_id: String, options: $crate::SendOptions) -> String;

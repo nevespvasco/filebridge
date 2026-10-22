@@ -1,4 +1,5 @@
-//! Direct mode: preflight and after-transfer over a [`RemoteShell`] on the Proxmox host.
+//! Direct mode: preflight and after-transfer over a [`RemoteShell`] on the SSH host (the Proxmox
+//! node, or the machine Nextcloud runs on).
 //!
 //! Paths: a `RemotePath` is relative to the job's destination root, which must sit inside the
 //! user's files folder (`<datadir>/<user>/files`, host or container view). "Files-relative"

@@ -87,6 +87,7 @@ async fn detect_nextcloud(
         ),
     };
     Ok(DetectNextcloudResponse {
+        detector: setup.detection.detector.clone(),
         steps,
         containers,
         profile,

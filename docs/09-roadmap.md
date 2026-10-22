@@ -46,7 +46,8 @@ flowchart TB
 - [ ] TypeScript bindings generated for the desktop app (Wave 3).
 - [x] NFC and forbidden-character rules (`nfc`, `forbidden-chars`, `trailing`, `reserved`).
 - [x] SFTP profile, automatic resume with backoff (crash-tested: `kill -9` mid-send, then resume).
-- [ ] Nextcloud direct mode: LXC detection, owner `100033`, scan by path. *Code and CLI
+- [ ] Nextcloud direct mode: LXC detection (through the Proxmox node, or SSH straight into the
+      Nextcloud machine — ADR 0009), owner `100033`, scan by path. *Code and CLI
       done; not yet run against the real server.*
 - [x] Engine as a background service (`filebridge-service`, `systemd --user` unit) and sleep
       inhibit.

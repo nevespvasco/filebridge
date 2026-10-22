@@ -403,7 +403,7 @@
     "kindsHint": {
       "local": "An external disk, a USB stick or another folder on this computer",
       "sftp": "A server or NAS you reach over SSH (Synology, TrueNAS, Raspberry Pi…)",
-      "nextcloud": "Nextcloud in a Proxmox container (advanced)"
+      "nextcloud": "Nextcloud on Proxmox or on its own server (advanced)"
     },
     "name": "Name",
     "nameHintLocal": "External disk",
@@ -456,23 +456,29 @@
     }
   },
   "nextcloud": {
-    "intro": "filebridge connects over SSH to the Proxmox host, finds the Nextcloud container and checks each step. Nothing is changed during detection.",
-    "host": "Proxmox host",
+    "intro": "filebridge connects over SSH either to the Proxmox host (and finds the Nextcloud container) or straight to the machine Nextcloud runs on, and checks each step. Nothing is changed during detection.",
+    "host": "Server (Proxmox or Nextcloud)",
     "sshUser": "SSH user",
     "ncUser": "Nextcloud user",
     "ncUserHint": "the account that receives the files",
     "folder": "Folder in that user's files",
     "folderHint": "Empty = the top of that user's files",
-    "ctid": "Container (CTID)",
+    "folderHostPath": "This looks like a path on the server. Type a folder inside the Nextcloud user's files (e.g. Backup): filebridge finds the data folder by itself.",
+    "ctid": "Container (CTID, Proxmox only)",
     "installDir": "Nextcloud install folder",
     "auto": "automatic",
     "detect": "Detect",
     "detecting": "Detecting…",
     "pickContainer": "More than one container looks like Nextcloud. Which one?",
     "saved": "Destination “{name}” saved.",
+    "runtime": {
+      "proxmox-lxc": "Nextcloud runs in a container on this Proxmox host.",
+      "host": "Nextcloud runs on this machine itself (no Proxmox container)."
+    },
     "steps": {
       "ssh": "SSH connection",
       "pct-list": "Containers",
+      "host": "Nextcloud on this machine",
       "pct-config": "Container configuration",
       "datadirectory": "Data directory",
       "data-path": "Data path on the host",
@@ -485,14 +491,14 @@
     "detectTip": "Connects and checks everything, step by step. Nothing is changed on the server.",
     "help": {
       "ncUser": "The Nextcloud account that receives the files: the login name, not the display name.",
-      "host": "The address of the Proxmox server where Nextcloud runs.",
-      "sshUser": "The user filebridge logs in with over SSH on the Proxmox server. Usually root.",
+      "host": "The address of the Proxmox node that runs the Nextcloud container, or of the machine Nextcloud runs on (its container, VM or server, e.g. its Tailscale address).",
+      "sshUser": "The user filebridge logs in with over SSH on that server. It must be root or have passwordless sudo. Usually root.",
       "folder": "A folder inside that user's files. Empty puts the files at the top.",
-      "ctid": "The number of the Proxmox container where Nextcloud runs. Leave empty and filebridge finds it.",
+      "ctid": "Proxmox only: the number of the container where Nextcloud runs. Leave empty and filebridge finds it.",
       "installDir": "Where Nextcloud is installed inside the container. Leave empty and filebridge finds it."
     },
     "hint": {
-      "host": "Name or IP address of the Proxmox server",
+      "host": "The Proxmox node or the Nextcloud server itself",
       "sshUser": "Usually root"
     }
   },

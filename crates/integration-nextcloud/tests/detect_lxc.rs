@@ -289,16 +289,56 @@ async fn ambiguous_containers_ask_the_user() {
 }
 
 #[tokio::test]
-async fn not_a_proxmox_host() {
+async fn not_a_proxmox_host_hands_over_to_the_next_detector() {
     let shell = FakeShell::new();
-    shell.on("pct list", Output::fail(127, "sh: 1: pct: not found\n"));
+    shell
+        .on("pct list", Output::fail(127, "sh: 1: pct: not found\n"))
+        .on("test -x /usr/sbin/pct", Output::fail(1, ""));
     let d = LxcDetector.detect(&shell, &input()).await;
-    assert!(d.steps[0].check.message.contains("Proxmox node"));
+    assert!(!d.applies);
+    assert!(d.profile.is_none());
+    assert_eq!(statuses(&d), [("pct-list".into(), CheckStatus::Ok)]);
+    assert!(d.steps[0].check.message.contains("not a Proxmox node"));
     assert_eq!(
         shell.ran(),
-        ["pct list"],
+        ["pct list", "test -x /usr/sbin/pct"],
         "no sudo retry when pct is missing"
     );
+}
+
+#[tokio::test]
+async fn a_chosen_container_without_pct_fails() {
+    let shell = FakeShell::new();
+    shell
+        .on("pct list", Output::fail(127, "sh: 1: pct: not found\n"))
+        .on("test -x /usr/sbin/pct", Output::fail(1, ""));
+    let input = DetectInput {
+        ctid: Some(105),
+        ..input()
+    };
+    let d = LxcDetector.detect(&shell, &input).await;
+    assert!(d.applies, "the user asked for a container");
+    assert_eq!(statuses(&d), [("pct-list".into(), CheckStatus::Fail)]);
+    assert!(d.steps[0].check.message.contains("Proxmox node"));
+}
+
+#[tokio::test]
+async fn pct_outside_a_non_root_path_is_retried_with_sudo() {
+    // Debian gives non-root users no /usr/sbin in PATH; sudo's secure_path has it.
+    let shell = FakeShell::new();
+    shell
+        .on("pct list", Output::fail(127, "sh: 1: pct: not found\n"))
+        .on("test -x /usr/sbin/pct", Output::ok(""))
+        .on("sudo -n pct list", Output::ok(PCT_LIST));
+    let d = LxcDetector.detect(&shell, &input()).await;
+    assert!(d.applies);
+    assert_eq!(d.steps[0].check.id, "pct-list");
+    assert_eq!(d.steps[0].check.status, CheckStatus::Ok);
+    assert_eq!(
+        shell.ran()[..3],
+        ["pct list", "test -x /usr/sbin/pct", "sudo -n pct list"]
+    );
+    assert_eq!(shell.ran()[3], "sudo -n pct config 105");
 }
 
 #[tokio::test]
@@ -387,10 +427,17 @@ async fn the_wizard_refuses_bad_modes_and_reports_a_failed_connection() {
 
 #[tokio::test]
 async fn a_failed_detection_has_no_profile() {
-    let shell = FakeShell::new();
-    shell.on("pct list", Output::fail(127, "sh: 1: pct: not found\n"));
-    let nextcloud = Nextcloud::new(Arc::new(FakeConnector::new(Arc::new(shell))));
+    let shell = Arc::new(FakeShell::new());
+    shell.on(
+        "pct list",
+        Output::fail(2, "Unable to load access control list: Permission denied\n"),
+    );
+    let nextcloud = Nextcloud::new(Arc::new(FakeConnector::new(shell.clone())));
     let setup = nextcloud.set_up(&setup_request(""), "t").await.unwrap();
     assert!(setup.profile.is_none());
+    assert_eq!(setup.detection.detector, LxcDetector::ID);
+    assert_eq!(setup.detection.steps.len(), 1);
     assert_eq!(setup.detection.steps[0].check.status, CheckStatus::Fail);
+    // A Proxmox node whose detection failed is not searched for Nextcloud on the node itself.
+    assert_eq!(shell.ran(), ["pct list", "sudo -n pct list"]);
 }

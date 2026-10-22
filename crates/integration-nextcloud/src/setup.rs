@@ -18,9 +18,10 @@ pub struct SetupRequest {
     pub nextcloud_user: String,
     /// Folder inside the user's files that receives sends (`""` for the root).
     pub folder: String,
-    /// Container to use; when absent, the one running container named like Nextcloud.
+    /// Container to use; when absent, the one running container named like Nextcloud (or, on a
+    /// host without `pct`, Nextcloud on the host itself).
     pub ctid: Option<u32>,
-    /// Nextcloud install dir inside the container; when absent, the usual places are tried.
+    /// Nextcloud install dir where it runs; when absent, the usual places are tried.
     pub install_dir: Option<String>,
     /// Octal modes applied after a send; default `750` / `640`.
     pub modes: Option<(String, String)>,
@@ -49,7 +50,7 @@ pub enum SetupError {
 }
 
 impl Nextcloud {
-    /// Connects over this integration's own connector, runs each detector until one passes,
+    /// Connects over this integration's own connector, runs each detector until one applies,
     /// and builds the destination: SFTP to the same host as SSH, rooted at the user's files
     /// folder (plus `folder`), sent with the transport `transport`. The result passes
     /// [`Nextcloud::check_direct`], as every saved profile must.
@@ -69,16 +70,21 @@ impl Nextcloud {
             ctid: req.ctid,
             install_dir: req.install_dir.clone(),
         };
-        let mut detection = None;
+        // The first detector whose setup is on the host decides; the steps of those that
+        // didn't apply (no `pct` there) stay in front, so the Details panel shows why.
+        let mut steps = Vec::new();
+        let mut last = None;
         for detector in Self::detectors() {
-            let found = detector.detect(shell.as_ref(), &input).await;
-            let passed = found.profile.is_some();
-            detection = Some(found);
-            if passed {
+            let mut found = detector.detect(shell.as_ref(), &input).await;
+            steps.append(&mut found.steps);
+            let applies = found.applies;
+            last = Some(found);
+            if applies {
                 break;
             }
         }
-        let detection = detection.expect("there is at least one detector");
+        let mut detection = last.expect("there is at least one detector");
+        detection.steps = steps;
         let Some(mut nc) = detection.profile.clone() else {
             return Ok(Setup {
                 detection,

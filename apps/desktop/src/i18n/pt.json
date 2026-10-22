@@ -403,7 +403,7 @@
     "kindsHint": {
       "local": "Um disco externo, uma pen USB ou outra pasta deste computador",
       "sftp": "Um servidor ou NAS a que acede por SSH (Synology, TrueNAS, Raspberry Pi…)",
-      "nextcloud": "Nextcloud num contentor Proxmox (avançado)"
+      "nextcloud": "Nextcloud no Proxmox ou no seu próprio servidor (avançado)"
     },
     "name": "Nome",
     "nameHintLocal": "Disco externo",
@@ -456,23 +456,29 @@
     }
   },
   "nextcloud": {
-    "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox, encontra o contentor do Nextcloud e verifica cada passo. Nada é alterado durante a deteção.",
-    "host": "Anfitrião Proxmox",
+    "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox (e encontra o contentor do Nextcloud) ou diretamente à máquina onde o Nextcloud corre, e verifica cada passo. Nada é alterado durante a deteção.",
+    "host": "Servidor (Proxmox ou Nextcloud)",
     "sshUser": "Utilizador SSH",
     "ncUser": "Utilizador do Nextcloud",
     "ncUserHint": "a conta que recebe os ficheiros",
     "folder": "Pasta nos ficheiros desse utilizador",
     "folderHint": "Vazio = o topo dos ficheiros desse utilizador",
-    "ctid": "Contentor (CTID)",
+    "folderHostPath": "Isto parece um caminho no servidor. Escreva uma pasta dentro dos ficheiros do utilizador do Nextcloud (p. ex. Backup): o filebridge encontra sozinho a pasta de dados.",
+    "ctid": "Contentor (CTID, só Proxmox)",
     "installDir": "Pasta de instalação do Nextcloud",
     "auto": "automático",
     "detect": "Detetar",
     "detecting": "A detetar…",
     "pickContainer": "Há mais do que um contentor com ar de Nextcloud. Qual é?",
     "saved": "Destino “{name}” guardado.",
+    "runtime": {
+      "proxmox-lxc": "O Nextcloud corre num contentor deste anfitrião Proxmox.",
+      "host": "O Nextcloud corre nesta própria máquina (sem contentor Proxmox)."
+    },
     "steps": {
       "ssh": "Ligação SSH",
       "pct-list": "Contentores",
+      "host": "Nextcloud nesta máquina",
       "pct-config": "Configuração do contentor",
       "datadirectory": "Pasta de dados",
       "data-path": "Caminho dos dados no anfitrião",
@@ -485,14 +491,14 @@
     "detectTip": "Liga-se e verifica tudo, passo a passo. Nada é alterado no servidor.",
     "help": {
       "ncUser": "A conta do Nextcloud que recebe os ficheiros: o nome de login, não o nome que aparece.",
-      "host": "O endereço do servidor Proxmox onde corre o Nextcloud.",
-      "sshUser": "O utilizador com que o filebridge entra por SSH no servidor Proxmox. Normalmente root.",
+      "host": "O endereço do nó Proxmox que corre o contentor do Nextcloud, ou da máquina onde o Nextcloud corre (o contentor, VM ou servidor, p. ex. o endereço Tailscale).",
+      "sshUser": "O utilizador com que o filebridge entra por SSH nesse servidor. Tem de ser root ou ter sudo sem palavra-passe. Normalmente root.",
       "folder": "Uma pasta dentro dos ficheiros desse utilizador. Vazio põe os ficheiros no topo.",
-      "ctid": "O número do contentor Proxmox onde corre o Nextcloud. Deixe vazio e o filebridge encontra-o.",
+      "ctid": "Só Proxmox: o número do contentor onde corre o Nextcloud. Deixe vazio e o filebridge encontra-o.",
       "installDir": "Onde o Nextcloud está instalado dentro do contentor. Deixe vazio e o filebridge encontra-a."
     },
     "hint": {
-      "host": "Nome ou endereço IP do servidor Proxmox",
+      "host": "O nó Proxmox ou o próprio servidor do Nextcloud",
       "sshUser": "Normalmente root"
     }
   },

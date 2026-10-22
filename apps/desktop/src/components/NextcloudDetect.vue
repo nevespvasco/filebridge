@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// Nextcloud direct mode (docs/05): SSH to the Proxmox host, find the Nextcloud container, its
-// data directory, `occ` and the file owner. Each step shows ✓ / ! / ✗, and the Details panel the
-// commands it ran.
+// Nextcloud direct mode (docs/05): SSH to the Proxmox host (and find the Nextcloud container) or
+// to the machine Nextcloud runs on, then find its data directory, `occ` and the file owner. Each
+// step shows ✓ / ! / ✗, and the Details panel the commands it ran.
 import { computed, reactive, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
@@ -44,6 +44,12 @@ const missing = computed(() => {
 });
 const valid = computed(() => !missing.value.length);
 const commands = computed(() => result.value?.steps.flatMap((s) => [`# ${s.id}`, ...s.commands]) ?? []);
+// The folder is relative to the Nextcloud user's files; an absolute path under a usual server
+// mount point (e.g. /mnt/pve/data/…) is almost certainly the data folder on the host instead.
+const folderLooksLikeHostPath = computed(() =>
+  /^\/(mnt|srv|var|home|media|opt|data|tank|rpool|storage|root|usr|etc)(\/|$)/i.test(form.folder.trim()),
+);
+const runtimeKey = computed(() => `nextcloud.runtime.${result.value?.detector ?? ""}`);
 
 function stepLabel(id: string) {
   const key = `nextcloud.steps.${id}`;
@@ -105,7 +111,7 @@ function chooseContainer(c: string) {
       </label>
       <label class="field">
         <span class="label-line">{{ $t("nextcloud.host") }}<span class="req" aria-hidden="true">*</span>
-          <HelpTip :text="$t('nextcloud.help.host')" example="proxmox.local · 192.168.77.5" :label="$t('nextcloud.host')" />
+          <HelpTip :text="$t('nextcloud.help.host')" example="proxmox.local · nextcloud.tailnet" :label="$t('nextcloud.host')" />
         </span>
         <input v-model="form.host" required spellcheck="false" placeholder="proxmox.local" />
         <span class="hint">{{ $t("nextcloud.hint.host") }}</span>
@@ -128,7 +134,8 @@ function chooseContainer(c: string) {
           <HelpTip :text="$t('nextcloud.help.folder')" example="Backup/2026" :label="$t('nextcloud.folder')" />
         </span>
         <input v-model="form.folder" spellcheck="false" :placeholder="$t('common.optional')" />
-        <span class="hint">{{ $t("nextcloud.folderHint") }}</span>
+        <span v-if="folderLooksLikeHostPath" class="small warn-text">{{ $t("nextcloud.folderHostPath") }}</span>
+        <span v-else class="hint">{{ $t("nextcloud.folderHint") }}</span>
       </label>
       <label class="field wide">
         <span class="label-line">{{ $t("profile.keyFile") }}
@@ -189,6 +196,7 @@ function chooseContainer(c: string) {
         <p class="small">{{ $t("nextcloud.pickContainer") }}</p>
         <button v-for="c in result.containers" :key="c" type="button" class="btn btn-small" @click="chooseContainer(c)">{{ c }}</button>
       </div>
+      <p v-if="result.profile && te(runtimeKey)" class="small muted">{{ t(runtimeKey) }}</p>
       <div v-if="result.profile" class="saved">
         <p class="ok-text small">{{ $t("nextcloud.saved", { name: result.profile.name }) }}</p>
         <button type="button" class="btn btn-primary" @click="emit('saved', result.profile!)">{{ $t("nextcloud.done") }}</button>
@@ -199,7 +207,7 @@ function chooseContainer(c: string) {
 </template>
 
 <style scoped>
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; align-items: start; }
 .wide { grid-column: 1 / -1; }
 .with-button { display: flex; gap: 0.5rem; }
 .with-button input { flex: 1; }

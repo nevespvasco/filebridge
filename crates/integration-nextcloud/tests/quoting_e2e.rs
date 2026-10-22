@@ -36,7 +36,7 @@ fn stubs(dir: &Path) {
     }
 }
 
-fn profile(run_as: RunAs, host_sudo: bool) -> NextcloudDirectProfile {
+fn profile(runtime: Runtime, run_as: RunAs, host_sudo: bool) -> NextcloudDirectProfile {
     NextcloudDirectProfile {
         ssh: SshTarget {
             host: "pve.lan".into(),
@@ -46,7 +46,7 @@ fn profile(run_as: RunAs, host_sudo: bool) -> NextcloudDirectProfile {
             known_hosts_file: None,
         },
         host_sudo,
-        runtime: Runtime::ProxmoxLxc { ctid: 105 },
+        runtime,
         install_dir: "/var/www/next cloud".into(),
         php: "php".into(),
         run_as,
@@ -80,13 +80,25 @@ fn occ_receives_exact_arguments() {
         "--path=alice/files/line\nbreak",
         "--path=alice/files/''",
     ];
-    for (run_as, host_sudo) in [
+    let cases = [
         (RunAs::Su, false),
         (RunAs::Sudo, false),
         (RunAs::Su, true),
         (RunAs::Sudo, true),
-    ] {
-        let p = profile(run_as, host_sudo);
+    ];
+    // Through `pct exec` on a Proxmox node, and on the machine Nextcloud runs on.
+    let runtimes = [Runtime::ProxmoxLxc { ctid: 105 }, Runtime::Host];
+    for (runtime, (run_as, host_sudo)) in runtimes
+        .iter()
+        .flat_map(|r| cases.iter().map(move |c| (r.clone(), *c)))
+    {
+        let p = profile(runtime.clone(), run_as, host_sudo);
+        assert_eq!(
+            p.occ_cmd(&["status"]).starts_with("pct ")
+                || p.occ_cmd(&["status"]).starts_with("sudo -n pct "),
+            runtime != Runtime::Host,
+            "{runtime:?}"
+        );
         for arg in nasty {
             let cmd = p.occ_cmd(&["files:scan", "-v", arg]);
             // What sshd does with the command string: hand it to the login shell.
@@ -105,7 +117,7 @@ fn occ_receives_exact_arguments() {
             assert_eq!(
                 argv,
                 ["/var/www/next cloud/occ", "files:scan", "-v", arg],
-                "{run_as:?} host_sudo={host_sudo}: {cmd}"
+                "{runtime:?} {run_as:?} host_sudo={host_sudo}: {cmd}"
             );
         }
     }

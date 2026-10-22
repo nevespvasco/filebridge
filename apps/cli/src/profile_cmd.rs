@@ -68,8 +68,9 @@ pub enum ProfileCmd {
         #[arg(long)]
         windows: bool,
     },
-    /// Nextcloud in a Proxmox LXC, direct mode: detects the container, data folder, `occ` and
-    /// owner over SSH, then saves the profile. Runs read-only commands on the host.
+    /// Nextcloud direct mode, over SSH to the Proxmox node (Nextcloud in an LXC) or to the
+    /// machine Nextcloud runs on: detects the container, data folder, `occ` and owner, then
+    /// saves the profile. Runs read-only commands on the host.
     AddNextcloud {
         #[arg(long)]
         name: String,
@@ -81,10 +82,10 @@ pub enum ProfileCmd {
         /// Folder inside that user's files, e.g. `Backup` (default: the files root).
         #[arg(long, default_value = "")]
         folder: String,
-        /// Container id (default: the running container named like Nextcloud).
+        /// Container id on a Proxmox node (default: the running container named like Nextcloud).
         #[arg(long)]
         ctid: Option<u32>,
-        /// Nextcloud install dir inside the container (default: the usual places).
+        /// Nextcloud install dir where it runs (default: the usual places).
         #[arg(long)]
         install_dir: Option<String>,
         #[arg(long, default_value = NextcloudDirectProfile::DEFAULT_DIR_MODE)]
@@ -225,6 +226,13 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 }
                 bail!("detection did not finish; fix the failed step and run it again");
             };
+            println!(
+                "{}",
+                match res.detector.as_str() {
+                    "host" => "Nextcloud runs on the SSH host itself",
+                    _ => "Nextcloud runs in a container on the Proxmox node",
+                }
+            );
             println!("files go to {}", saved.destination.root);
             println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
             println!("test it with: filebridge profile test {:?}", saved.name);

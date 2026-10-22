@@ -32,26 +32,39 @@ The Nextcloud profile wizard detects the setup by itself:
 
 1. **Ask for the URL and an app password**, and test via WebDAV (`PROPFIND` on
    `/remote.php/dav/files/<user>/`). Store the app password in the keyring.
-2. **If the user enables direct mode**, connect over SSH to the host and run `pct list` and
-   `pct config <id>` to find the LXC and its bind mounts (`mpN:` lines).
+2. **If the user enables direct mode**, connect over SSH to the server — the Proxmox node, or the
+   machine Nextcloud runs on — and run `pct list`.
+   - **`pct` exists** (Proxmox node): run `pct config <id>` to find the LXC and its bind mounts
+     (`mpN:` lines). Container commands go through `pct exec <id> --`.
+   - **No `pct`** (exit 127 and no `/usr/sbin/pct`): Nextcloud runs on the SSH host itself — its
+     LXC or VM reached directly (e.g. over Tailscale), or a bare-metal server. Commands run there
+     as they are; the SSH user must be root or have passwordless `sudo -n`. See
+     [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md).
 3. **Read `datadirectory` from `config.php`** and confirm the path exists (inside the container and
    mapped to the host via the bind mount). This avoids the original "No such file or directory"
-   error, when Nextcloud was still using the container's internal disk.
-4. **Find the `occ` path** and whether the container has `sudo` (the real one didn't) or needs
-   `su -s /bin/bash www-data -c '…'`.
+   error, when Nextcloud was still using the container's internal disk. On the SSH host itself
+   there is no mapping: `datadirectory` (or Nextcloud's default `<install>/data`) is the path
+   SFTP writes to.
+4. **Find the `occ` path** and whether the container (or machine) has `sudo` (the real one didn't)
+   or needs `su -s /bin/bash www-data -c '…'`.
 5. **Compute the mapped UID** (`100000 + 33` = `100033`) from the LXC `idmap` (default unprivileged
    offset 100000 unless `lxc.idmap` lines say otherwise) and the `www-data` UID inside the container.
+   On the SSH host itself the owner is the web user's own uid:gid (e.g. `33:33`).
 6. **Save everything in a reusable profile** (`profiles` table; secrets as keyring references).
 
 Each step shows ✓/✗ with the command it ran in the "Details" panel and an actionable message on
-failure.
+failure. When the host has no `pct`, the "Containers" step says so and the steps for Nextcloud on
+the host follow it, so the panel shows which setup was found.
 
 ### Setups supported
 
-v1 targets **Nextcloud in a Proxmox LXC** (the author's setup). Docker, AIO and Snap differ in
-`occ` invocation and data paths; the detector grows case by case (see
-[10 — Risks](10-risks-and-open-decisions.md)). Detection is structured as a list of `Detector`s so
-adding `DockerDetector` doesn't change the wizard.
+v1 targets **Nextcloud in a Proxmox LXC** (the author's setup), reached either through the Proxmox
+node (`LxcDetector`, `Runtime::ProxmoxLxc`) or directly over SSH, and more generally **Nextcloud
+on the SSH host** — an LXC, a VM or a bare-metal server with a package or tarball install
+(`HostDetector`, `Runtime::Host`; [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md)). Docker, AIO
+and Snap differ in `occ` invocation and data paths; the detector grows case by case (see
+[10 — Risks](10-risks-and-open-decisions.md)). Detection is structured as a list of `Detector`s,
+tried until one applies, so adding `DockerDetector` doesn't change the wizard.
 
 The wizard lives in the plugin (`Nextcloud::set_up`): it detects over the integration's own
 `ShellConnector` (so it is tested with the fake shell) and builds the whole profile: SFTP to the

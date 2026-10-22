@@ -277,20 +277,28 @@ const handlers: Handlers = {
       folder: string;
       ctid: number | null;
     };
-    const steps = [
-      { id: "ssh", status: "ok", message: "connected as root", commands: ["ssh -p 22 root@pve.example.lan true"] },
-      { id: "pct-list", status: req.ctid == null ? "warn" : "ok", message: req.ctid == null ? "2 containers look like Nextcloud" : `container ${req.ctid}`, commands: ["pct list"] },
-    ];
-    if (req.ctid == null) return { steps, containers: ["105 nextcloud", "112 nextcloud-test"], profile: null };
+    // A host named like Proxmox has `pct`; anything else is the Nextcloud machine itself.
+    const proxmox = /proxmox|pve/i.test(req.host);
+    const detector = proxmox ? "proxmox-lxc" : "host";
+    const steps = proxmox
+      ? [{ id: "pct-list", status: req.ctid == null ? "fail" : "ok", message: req.ctid == null ? "found 2 running containers named like Nextcloud; choose one" : `container ${req.ctid} (nextcloud) is running`, commands: ["pct list  (exit 0)"] }]
+      : [
+          { id: "pct-list", status: "ok", message: "no `pct` here, so this is not a Proxmox node: looking for Nextcloud on this machine itself", commands: ["pct list  (exit 127)", "test -x /usr/sbin/pct  (exit 1)"] },
+          { id: "host", status: "ok", message: "not in a Proxmox container; commands run as root", commands: ["id -u  (exit 0)"] },
+        ];
+    if (proxmox && req.ctid == null) return { detector, steps, containers: ["105 nextcloud (running)", "112 nextcloud-test (running)"], profile: null };
+    const run = (cmd: string) => (proxmox ? `pct exec ${req.ctid} -- ${cmd}` : cmd);
+    const data = proxmox ? "/srv/ncdata" : "/mnt/ncdata";
+    const files = `${data}/${req.nextcloud_user}/files`;
     steps.push(
-      { id: "datadirectory", status: "ok", message: "/mnt/ncdata", commands: [`pct exec ${req.ctid} -- sudo -u www-data php /var/www/nextcloud/occ config:system:get datadirectory`] },
-      { id: "data-path", status: "ok", message: "/srv/ncdata exists", commands: [`pct config ${req.ctid}`] },
-      { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data", commands: [] },
-      { id: "owner", status: "ok", message: "100033:100033", commands: ["stat -c %u:%g /srv/ncdata/demo/files"] },
+      { id: "datadirectory", status: "ok", message: proxmox ? `/mnt/ncdata in the container is ${data} on the host` : data, commands: [`${run("grep -F datadirectory /var/www/nextcloud/config/config.php")}  (exit 0)`] },
+      { id: "data-path", status: "ok", message: `${files} exists`, commands: [`test -d ${files}  (exit 0)`] },
+      { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data", commands: [`${run("test -f /var/www/nextcloud/occ")}  (exit 0)`] },
+      { id: "run-as", status: "ok", message: `Nextcloud 29.0.4 answers through su (no sudo ${proxmox ? "in the container" : "on this machine"})`, commands: [`${run("su -s /bin/bash www-data -c 'php /var/www/nextcloud/occ status --output=json'")}  (exit 0)`] },
+      { id: "owner", status: "ok", message: proxmox ? "files will be owned by 100033:100033 (www-data 33:33 in the container)" : "files will be owned by 33:33 (www-data)", commands: [`stat -c %u:%g ${data}  (exit 0)`] },
     );
     // Built from the request, so it also works when the mock starts empty (VITE_MOCK_EMPTY).
     const folder = req.folder.split("/").filter(Boolean).join("/");
-    const files = `/srv/ncdata/${req.nextcloud_user}/files`;
     const profile: Profile_Serialize = {
       id: newId("p"),
       name: req.name,
@@ -304,7 +312,7 @@ const handlers: Handlers = {
       target: { family: "unix", case_sensitive: true },
     };
     profiles.push(profile);
-    return { steps, containers: [], profile };
+    return { detector, steps, containers: [], profile };
   },
   createJob: (a) => {
     const id = newId("j");

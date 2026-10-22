@@ -22,8 +22,8 @@ export const commands = {
 	/**  Connection test: the transport's and the integration's preflight. */
 	testProfile: (id: string) => typedError<ProfileTest_Serialize, ErrorBody>(__TAURI_INVOKE("test_profile", { id })),
 	/**
-	 *  Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH). Saves the
-	 *  profile when every step passes.
+	 *  Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
+	 *  Nextcloud on the SSH host itself). Saves the profile when every step passes.
 	 */
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
 	/**  A draft job; nothing is read from the sources yet. */
@@ -156,10 +156,16 @@ export type Destination_Serialize = {
 	root: string,
 };
 
-/**  Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH). */
+/**
+ *  Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the
+ *  SSH host itself).
+ */
 export type DetectNextcloudRequest = DetectNextcloudRequest_Serialize | DetectNextcloudRequest_Deserialize;
 
-/**  Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH). */
+/**
+ *  Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the
+ *  SSH host itself).
+ */
 export type DetectNextcloudRequest_Deserialize = {
 	/**  Name for the profile saved when detection succeeds. */
 	name: string,
@@ -175,7 +181,10 @@ export type DetectNextcloudRequest_Deserialize = {
 	install_dir?: string | null,
 };
 
-/**  Nextcloud direct-mode profile wizard (Proxmox LXC detection over SSH). */
+/**
+ *  Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the
+ *  SSH host itself).
+ */
 export type DetectNextcloudRequest_Serialize = {
 	/**  Name for the profile saved when detection succeeds. */
 	name: string,
@@ -194,6 +203,11 @@ export type DetectNextcloudRequest_Serialize = {
 export type DetectNextcloudResponse = DetectNextcloudResponse_Serialize | DetectNextcloudResponse_Deserialize;
 
 export type DetectNextcloudResponse_Deserialize = {
+	/**
+	 *  The setup the last steps describe: `proxmox-lxc` (a container on the Proxmox node
+	 *  reached over SSH) or `host` (Nextcloud on the SSH host itself).
+	 */
+	detector?: string,
 	steps: DetectStepView[],
 	/**  Containers seen, when the choice was ambiguous. */
 	containers: string[],
@@ -202,6 +216,11 @@ export type DetectNextcloudResponse_Deserialize = {
 };
 
 export type DetectNextcloudResponse_Serialize = {
+	/**
+	 *  The setup the last steps describe: `proxmox-lxc` (a container on the Proxmox node
+	 *  reached over SSH) or `host` (Nextcloud on the SSH host itself).
+	 */
+	detector: string,
 	steps: DetectStepView[],
 	/**  Containers seen, when the choice was ambiguous. */
 	containers: string[],

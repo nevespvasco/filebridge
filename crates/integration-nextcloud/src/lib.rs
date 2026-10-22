@@ -22,7 +22,7 @@ use filebridge_integration_api::{
     NameRule, PreflightReport, RemotePath, Result, TransportCaps,
 };
 
-pub use detect::{DetectInput, Detection, Detector, LxcDetector};
+pub use detect::{DetectInput, Detection, Detector, HostDetector, LxcDetector};
 pub use direct::DirectOptions;
 pub use profile::{NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
 pub use rules::{NextcloudNfc, NextcloudReserved};
@@ -56,9 +56,10 @@ impl Nextcloud {
         self
     }
 
-    /// Detectors the profile wizard tries, in order.
+    /// Detectors the profile wizard tries, in order, until one applies: a Proxmox node (`pct`)
+    /// first, else Nextcloud on the SSH host itself.
     pub fn detectors() -> Vec<Box<dyn Detector>> {
-        vec![Box::new(LxcDetector)]
+        vec![Box::new(LxcDetector), Box::new(HostDetector)]
     }
 
     fn direct_profile(ctx: &JobContext) -> Result<NextcloudDirectProfile> {

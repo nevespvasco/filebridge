@@ -7,7 +7,7 @@ Headless CLI over the **same `core`** as the desktop app — for servers and scr
 ```
 filebridge profile add-local    --name N --root DIR [--windows]
 filebridge profile add-sftp     --name N --host H [--port] [--user] [--key-file] [--known-hosts] --root /DIR
-filebridge profile add-nextcloud --name N --host PROXMOX --nc-user U [--folder Backup] [--ctid] [--verbose]
+filebridge profile add-nextcloud --name N --host SERVER --nc-user U [--folder Backup] [--ctid] [--verbose]
 filebridge profile list | test <profile> | remove <profile>
 filebridge send <paths…> --to <profile> [--verify] [--concurrency 8] [--bwlimit 20M] [--yes]
 filebridge issues <job> [--rule R] [--all]
