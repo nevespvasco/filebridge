@@ -10,9 +10,9 @@ use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
-    EntryStatus, Event, FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock,
-    LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest, ReportScope,
-    SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec,
+    EntryStatus, Event, FileCategory, IssueDecision, JobFilter, JobGroup, JobKind, JobState,
+    LocalClock, LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest,
+    ReportScope, SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -1635,6 +1635,82 @@ async fn a_garbled_folder_name_waits_for_a_decision() {
         .unwrap();
     assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
     assert!(dest_files(&s.dest).contains(&"Acme/Patológica/a.txt".to_owned()));
+}
+
+#[tokio::test]
+async fn names_already_at_the_destination_are_repaired_there() {
+    let s = setup().await;
+    // What an old rsync left at the destination: a garbled folder and an NFD file name.
+    let fotos = s.dest.join("Fotos");
+    std::fs::create_dir_all(fotos.join("PatolÃ³gica")).unwrap();
+    std::fs::write(fotos.join("PatolÃ³gica/a.txt"), b"a").unwrap();
+    std::fs::write(fotos.join("Vera\u{303}o.jpg"), b"v").unwrap();
+    std::fs::write(fotos.join("ok.txt"), b"ok").unwrap();
+
+    let job = s
+        .engine
+        .create_repair_job(&s.profile_id, Some("/Fotos/".into()))
+        .await
+        .unwrap();
+    let summary = s.engine.analyse(&job).await.unwrap();
+    assert_eq!(summary.state, JobState::AwaitingApproval, "{summary:?}");
+    assert_eq!(summary.files, 3);
+    let rules: Vec<_> = summary.rules.iter().map(|r| r.rule.as_str()).collect();
+    assert!(
+        rules.contains(&"mojibake") && rules.contains(&"nfc"),
+        "{rules:?}"
+    );
+    s.engine
+        .decide_all(&job, Some("mojibake".into()), DecisionInput::Accept)
+        .await
+        .unwrap();
+
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let files = dest_files(&s.dest);
+    assert_eq!(
+        files,
+        ["Fotos/Patológica/a.txt", "Fotos/Verão.jpg", "Fotos/ok.txt"],
+        "renamed in place, nothing else touched"
+    );
+    assert_eq!(std::fs::read(fotos.join("Patológica/a.txt")).unwrap(), b"a");
+    // Nextcloud-like tools rescan the folder that holds the renamed names.
+    assert_eq!(*s.integration.changed.lock().unwrap(), ["Fotos"]);
+    let job_view = s.engine.job(&job).await.unwrap();
+    assert_eq!(job_view.kind, JobKind::Repair);
+    assert_eq!(
+        job_view.counts.done, 1,
+        "files renamed (counts are of files)"
+    );
+    assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn repair_never_overwrites_a_name_that_is_taken() {
+    let s = setup().await;
+    // A garbled name to repair; the repaired name only appears after the analysis, so the
+    // name plan couldn't see the clash and the rename itself has to refuse it.
+    std::fs::write(s.dest.join("PatolÃ³gica.txt"), b"garbled").unwrap();
+    let job = s
+        .engine
+        .create_repair_job(&s.profile_id, None)
+        .await
+        .unwrap();
+    s.engine.analyse(&job).await.unwrap();
+    s.engine
+        .decide_all(&job, Some("mojibake".into()), DecisionInput::Accept)
+        .await
+        .unwrap();
+    // Simulate the clash appearing after the analysis.
+    std::fs::write(s.dest.join("Patológica.txt"), b"arrived meanwhile").unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+    assert_eq!(
+        std::fs::read(s.dest.join("Patológica.txt")).unwrap(),
+        b"arrived meanwhile"
+    );
+    assert_eq!(
+        std::fs::read(s.dest.join("PatolÃ³gica.txt")).unwrap(),
+        b"garbled"
+    );
 }
 
 #[tokio::test]

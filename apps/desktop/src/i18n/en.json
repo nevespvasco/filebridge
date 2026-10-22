@@ -721,7 +721,8 @@
       "cancelled": "Cancelled",
       "other": "Finished"
     },
-    "unknown": "Event: {kind}"
+    "unknown": "Event: {kind}",
+    "createdRepair": "Repair of {folder} on {destination} created"
   },
   "composition": {
     "title": "What you're sending",
@@ -1017,6 +1018,31 @@
         "title": "Then choose where it goes",
         "body": "Next is ready once there is nothing to fix. The files are counted after you choose the destination."
       }
+    }
+  },
+  "repair": {
+    "title": "Repair names at the destination",
+    "lead": "Names already in {folder} on {destination}, checked with the same rules as a send. Nothing is renamed until you confirm.",
+    "label": "Repair · {folder}",
+    "root": "the whole destination",
+    "button": "Repair names…",
+    "buttonTip": "Check the names already in a folder of this destination and fix them there",
+    "pickTitle": "Which folder of {destination} to check?",
+    "pick": "Check names here",
+    "reading": "Reading the folder…",
+    "readCount": "{n} file so far | {n} files so far",
+    "clean": "Every name here is fine.",
+    "cleanBody": "{n} file checked; nothing to rename. | {n} files checked; nothing to rename.",
+    "howTo": "These names would change. Decide the ones marked pending; “Skip” leaves a name (and, for a folder, what's inside) as it is.",
+    "pending": "Decide {n} name first | Decide {n} names first",
+    "rename": "Rename at the destination",
+    "fromProblems": "Repair these names",
+    "confirm": {
+      "title": "Rename up to {n} name? | Rename up to {n} names?",
+      "where": "Names change directly on {destination}, in {folder}.",
+      "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this job's report.",
+      "taken": "A new name that is already taken is left as it was and reported.",
+      "nextcloud": "Nextcloud then rescans the folders that changed, so it shows the new names."
     }
   }
 }

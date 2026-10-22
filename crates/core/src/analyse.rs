@@ -116,7 +116,28 @@ pub(crate) fn analyse_sources(
         on_source(source, files, bytes);
     }
 
-    let mapped = names.propose(&entries);
+    Ok(build(
+        &entries,
+        &mtimes,
+        &source_of,
+        names,
+        scan_errors,
+        skipped_symlinks,
+    ))
+}
+
+/// Stage 3 over scanned entries (local sources, or a destination folder for Repair): the name
+/// rules' proposals, the issues, and the manifest rows. `entries` in scanner order (parents
+/// first); `mtimes` and `source_of` by entry.
+pub(crate) fn build(
+    entries: &[Entry],
+    mtimes: &[Option<i64>],
+    source_of: &[u32],
+    names: &NamePlan,
+    scan_errors: Vec<String>,
+    skipped_symlinks: u64,
+) -> Analysis {
+    let mapped = names.propose(entries);
 
     let mut issues = Vec::new();
     let (mut files, mut dirs, mut bytes) = (0, 0, 0);
@@ -168,7 +189,7 @@ pub(crate) fn analyse_sources(
         dest_paths.push((idx, m.dest_path));
     }
 
-    Ok(Analysis {
+    Analysis {
         entries: out_entries,
         dest_paths,
         issues,
@@ -177,7 +198,7 @@ pub(crate) fn analyse_sources(
         bytes,
         scan_errors,
         skipped_symlinks,
-    })
+    }
 }
 
 #[cfg(test)]

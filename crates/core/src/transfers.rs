@@ -69,6 +69,13 @@ impl Engine {
     pub async fn send_again(&self, job_id: &str, profile_id: Option<String>) -> Result<String> {
         let _job = self.begin(job_id, Op::SendAgain).await?;
         let row = self.store.get_job(job_id).await?;
+        if JobKind::parse(&row.kind)? == JobKind::Repair {
+            // Again = check the same folder again: names there may have changed since.
+            let options: crate::SendOptions =
+                serde_json::from_value(row.options).unwrap_or_default();
+            let profile = profile_id.unwrap_or(row.profile_id);
+            return self.create_repair_job(&profile, options.target_dir).await;
+        }
         let profile = self
             .get_profile(profile_id.as_deref().unwrap_or(&row.profile_id))
             .await?;

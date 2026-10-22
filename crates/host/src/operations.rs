@@ -302,6 +302,13 @@ impl Operations for EngineOperations {
             .map_err(to_error)
     }
 
+    async fn create_repair_job(&self, profile_id: String, dir: Option<String>) -> Res<String> {
+        self.engine
+            .create_repair_job(&profile_id, dir)
+            .await
+            .map_err(to_error)
+    }
+
     async fn inspect_sources(&self, paths: Vec<String>) -> Res<Vec<SourceInfo>> {
         if paths.len() > MAX_INSPECT {
             return Err(ErrorBody {

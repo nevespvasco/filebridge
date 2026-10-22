@@ -54,7 +54,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 13: `reclaim_status`, `recheck_sources`, `dismiss_reclaim`, the `reclaim_check_progress` event.
 /// 14: `browse`, `check_folder_name`; `SendOptions.target_dir`.
 /// 15: `inspect_sources`; nested or repeated sources refused by `create_job`.
-pub const PROTOCOL_VERSION: u32 = 15;
+/// 16: `create_repair_job` (`JobKind::Repair`); `TargetSpec` limits; rules `mojibake`, `length`.
+pub const PROTOCOL_VERSION: u32 = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

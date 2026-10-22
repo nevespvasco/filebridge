@@ -2,13 +2,14 @@
 // One name rule's issues ("312 names with decomposed accents"). Rows are paged from SQLite with
 // `after_id`, so a rule with hundreds of thousands of issues never loads at once (docs/06).
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, ref, watch } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import SearchField from "./SearchField.vue";
 import SelectionBar from "./SelectionBar.vue";
 import { useI18n } from "vue-i18n";
 import type { DecisionInput, IssueDecision, IssueView_Serialize, RuleCount } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 import { useFmt } from "@/composables/useFmt";
+import { DECISIONS, type Decisions } from "@/lib/decisions";
 import { useWizard } from "@/stores/wizard";
 import BytesDiff from "./BytesDiff.vue";
 import HelpTip from "./HelpTip.vue";
@@ -16,7 +17,8 @@ import HelpTip from "./HelpTip.vue";
 const props = defineProps<{ jobId: string; rule: RuleCount; readonly?: boolean }>();
 const { t, te } = useI18n();
 const fmt = useFmt();
-const wizard = useWizard();
+/** The wizard's job, unless the page provides its own (a Repair job). */
+const wizard: Decisions = inject(DECISIONS, null) ?? useWizard();
 
 const PAGE = 100;
 

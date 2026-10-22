@@ -83,6 +83,11 @@ export const commands = {
 	jobCategories: (jobId: string) => typedError<CategoryCount[], ErrorBody>(__TAURI_INVOKE("job_categories", { jobId })),
 	/**  Folders and files sent before, newest first, for "Recently sent from". */
 	recentSources: (limit: number) => typedError<RecentSource[], ErrorBody>(__TAURI_INVOKE("recent_sources", { limit })),
+	/**
+	 *  A draft "Repair destination" job for a folder of a profile (`None` = its root):
+	 *  `analyse`, the decisions and `start` then work on it like on a send.
+	 */
+	createRepairJob: (profileId: string, dir: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_repair_job", { profileId, dir })),
 	/**  What each chosen source is and what is wrong with it, without reading contents. */
 	inspectSources: (paths: string[]) => typedError<SourceInfo_Serialize[], ErrorBody>(__TAURI_INVOKE("inspect_sources", { paths })),
 	/**  One page of a job's files, filtered and sorted (at most 500). */
@@ -115,7 +120,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 15 as const;
+export const PROTOCOL_VERSION = 16 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 

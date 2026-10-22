@@ -119,6 +119,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `dismiss_reclaim(job_id, dismissed)` | new | D10 |
 | `browse(target, dir, prefix) -> BrowseResult` | new | D11 |
 | `check_folder_name(target, name) -> FolderNameCheck` | new | D11 |
+| `create_repair_job(profile_id, dir) -> String` | new (protocol 16), Phase 2 | [04](../04-name-correction.md#repair-destination-mode) |
 
 ### Lifecycle rules (`crates/model/src/rules.rs`)
 

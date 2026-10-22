@@ -21,7 +21,8 @@ use tokio_util::sync::CancellationToken;
 use crate::analyse::{bytes_path, source_parent};
 use crate::inhibit::{SleepGuard, inhibit};
 use crate::lifecycle::Outcome;
-use crate::{CoreError, Engine, Event, JobState, Profile, Result, SendOptions};
+use crate::repair::RepairEnd;
+use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOptions};
 use filebridge_model::{DoneView, FileCategory, InFlightView, Op};
 
 const PAGE: u32 = 2_000;
@@ -37,6 +38,8 @@ enum StageEnd<T> {
 
 struct Ctx {
     job_id: String,
+    /// A Repair job renames at the destination instead of sending (`crate::repair`).
+    kind: JobKind,
     profile: Profile,
     options: SendOptions,
     sources: Vec<PathBuf>,
@@ -68,6 +71,7 @@ impl Engine {
         let row = self.store.get_job(job_id).await?;
         let mut ctx = Ctx {
             job_id: job_id.to_owned(),
+            kind: JobKind::parse(&row.kind)?,
             profile: self.get_profile(&row.profile_id).await?,
             options: serde_json::from_value(row.options.clone()).unwrap_or_default(),
             sources: self.job_sources(&row).await,
@@ -94,6 +98,18 @@ impl Engine {
                         return Ok(());
                     }
                     JobState::Transferring
+                }
+                JobState::Transferring if ctx.kind == JobKind::Repair => {
+                    // Renames move no data: the send window and verification don't apply.
+                    let dir = ctx.options.target_dir.clone();
+                    match self
+                        .repair_stage(job_id, &ctx.profile, dir.as_deref(), cancel)
+                        .await?
+                    {
+                        RepairEnd::Done => JobState::Integrating,
+                        RepairEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
+                        RepairEnd::Cancelled => return Ok(()),
+                    }
                 }
                 JobState::Transferring if self.window_closed() => JobState::Waiting,
                 JobState::Transferring => match self.transfer_and_measure(&mut ctx).await? {
@@ -578,17 +594,12 @@ impl Engine {
 
     // ---- stage 6 -----------------------------------------------------------------------
 
-    async fn integrate_stage(&self, ctx: &mut Ctx) -> Result<StageEnd<()>> {
-        let Some(id) = ctx.profile.integration.clone() else {
-            return Ok(StageEnd::Done(()));
-        };
-        let integration = self.registry.integration(&id)?;
-        let job_ctx = self.job_context(&ctx.job_id, &ctx.profile)?;
-
+    /// The destination paths of the files sent: what stage 6 is told changed.
+    async fn sent_files(&self, job_id: &str) -> Result<Vec<RemotePath>> {
         let mut changed = Vec::new();
         let mut after = None;
         loop {
-            let page = self.store.entries_page(&ctx.job_id, after, PAGE).await?;
+            let page = self.store.entries_page(job_id, after, PAGE).await?;
             let Some(last) = page.last() else { break };
             after = Some(last.entry.idx);
             for e in page {
@@ -600,6 +611,22 @@ impl Engine {
                 }
             }
         }
+        Ok(changed)
+    }
+
+    async fn integrate_stage(&self, ctx: &mut Ctx) -> Result<StageEnd<()>> {
+        let Some(id) = ctx.profile.integration.clone() else {
+            return Ok(StageEnd::Done(()));
+        };
+        let integration = self.registry.integration(&id)?;
+        let job_ctx = self.job_context(&ctx.job_id, &ctx.profile)?;
+
+        let changed = if ctx.kind == JobKind::Repair {
+            self.repaired_folders(&ctx.job_id, ctx.options.target_dir.as_deref())
+                .await?
+        } else {
+            self.sent_files(&ctx.job_id).await?
+        };
         if changed.is_empty() {
             return Ok(StageEnd::Done(()));
         }

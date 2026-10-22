@@ -82,6 +82,9 @@ bitflags::bitflags! {
         const PARTIAL_HIDDEN = 1 << 6;
         /// `Transport::list` works (docs/design/specs/D11).
         const LIST = 1 << 7;
+        /// `Transport::move_path` works: an entry already at the destination can be renamed
+        /// there ("Repair destination", docs/04).
+        const MOVE = 1 << 8;
     }
 }
 
@@ -367,6 +370,21 @@ pub trait Transport: Send + Sync {
     ) -> Result<Vec<RemoteEntry>> {
         Err(TransportError::unsupported(
             "listing folders is not supported by this transport",
+        ))
+    }
+    /// Renames the file or folder `from` to `to`, both already under the destination's root and
+    /// normally in the same folder. Never overwrites: an entry named exactly `to` is an error.
+    /// Safe on servers that store NFD and NFC (or two cases) as one name, where `from` and `to`
+    /// may be "the same" entry: adapters go through an intermediate name. `NotFound` if `from`
+    /// isn't there. Adapters that implement it advertise [`TransportCaps::MOVE`].
+    async fn move_path(
+        &self,
+        _dest: &Destination,
+        _from: &RemotePath,
+        _to: &RemotePath,
+    ) -> Result<()> {
+        Err(TransportError::unsupported(
+            "renaming at the destination is not supported by this transport",
         ))
     }
     /// The most this transport may use, in bytes per second across all its transfers at once,

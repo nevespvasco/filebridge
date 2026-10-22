@@ -721,7 +721,8 @@
       "cancelled": "Cancelada",
       "other": "Terminada"
     },
-    "unknown": "Evento: {kind}"
+    "unknown": "Evento: {kind}",
+    "createdRepair": "Reparação de {folder} em {destination} criada"
   },
   "composition": {
     "title": "O que vai enviar",
@@ -1017,6 +1018,31 @@
         "title": "Depois escolha para onde vai",
         "body": "O Seguinte fica disponível quando não houver nada a resolver. Os ficheiros são contados depois de escolher o destino."
       }
+    }
+  },
+  "repair": {
+    "title": "Reparar nomes no destino",
+    "lead": "Nomes que já estão em {folder} em {destination}, verificados com as mesmas regras de um envio. Nada é renomeado até confirmar.",
+    "label": "Reparação · {folder}",
+    "root": "todo o destino",
+    "button": "Reparar nomes…",
+    "buttonTip": "Verificar os nomes que já estão numa pasta deste destino e corrigi-los lá",
+    "pickTitle": "Que pasta de {destination} verificar?",
+    "pick": "Verificar nomes aqui",
+    "reading": "A ler a pasta…",
+    "readCount": "{n} ficheiro até agora | {n} ficheiros até agora",
+    "clean": "Todos os nomes aqui estão bem.",
+    "cleanBody": "{n} ficheiro verificado; nada a renomear. | {n} ficheiros verificados; nada a renomear.",
+    "howTo": "Estes nomes mudariam. Decida os que estão pendentes; “Saltar” deixa um nome (e, numa pasta, o que está lá dentro) como está.",
+    "pending": "Decida primeiro {n} nome | Decida primeiro {n} nomes",
+    "rename": "Renomear no destino",
+    "fromProblems": "Reparar estes nomes",
+    "confirm": {
+      "title": "Renomear até {n} nome? | Renomear até {n} nomes?",
+      "where": "Os nomes mudam diretamente em {destination}, em {folder}.",
+      "onlyNames": "Os ficheiros não são copiados, alterados nem apagados: só renomeados. Os nomes antigos ficam no relatório desta tarefa.",
+      "taken": "Um nome novo que já esteja ocupado fica como estava e é reportado.",
+      "nextcloud": "O Nextcloud volta depois a analisar as pastas que mudaram, para mostrar os nomes novos."
     }
   }
 }

@@ -73,6 +73,6 @@ apps/desktop/src/
 | `set_options(job_id, options)` | Review step: change "verify" etc. without a new analysis |
 | `start_job(job_id, options)` / `pause_job` / `resume_job` / `cancel_job` / `verify_job` | Lifecycle |
 | `list_jobs()` / `get_job(job_id)` / `get_job_log(job_id, page)` | Jobs screens (the log is `job_log(job_id, after_id, before_id, limit)`, implemented: design D07) |
-| `start_repair(profile_id, remote_path)` | Repair destination |
+| `create_repair_job(profile_id, dir)` (as built; then `analyse`, the decisions and `start`, like a send) | Repair destination |
 | `get_settings()` / `save_settings(settings)` | Settings: app-wide bandwidth limit and send window (implemented) |
 | `remove_access(profile_id)` | "Remove access" wizard |

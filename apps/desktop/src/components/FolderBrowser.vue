@@ -19,6 +19,9 @@ const props = defineProps<{
   start?: string | null;
   /** Without it, the dialog only looks (no "Choose"). */
   chooseLabel?: string;
+  /** Offer "New folder" (a pending part of the path). Off where only existing folders make
+   *  sense, like the folder to repair. Default: on when choosing. */
+  allowNew?: boolean;
 }>();
 const emit = defineEmits<{ choose: [path: string]; close: [] }>();
 const { t } = useI18n();
@@ -172,7 +175,7 @@ function onKey(e: KeyboardEvent) {
           </li>
         </ul>
 
-        <div v-if="chooseLabel" class="new">
+        <div v-if="chooseLabel && allowNew !== false" class="new">
           <button v-if="!naming" class="btn btn-small" @click="naming = true"><AppIcon name="addFolder" /> {{ $t("browse.newFolder") }}</button>
           <template v-else>
             <input v-model="newName" :placeholder="$t('browse.newName')" :aria-label="$t('browse.newName')" @keydown.enter="addFolder" />

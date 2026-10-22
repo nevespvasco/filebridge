@@ -12,4 +12,6 @@ async fn keeps_the_transport_contract() {
         root: root.to_string_lossy().into_owned(),
     };
     filebridge_transport_api::contract::check(&FakeTransport::default(), &dest, dir.path()).await;
+    filebridge_transport_api::contract::check_move(&FakeTransport::default(), &dest, dir.path())
+        .await;
 }

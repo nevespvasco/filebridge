@@ -157,3 +157,100 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
         assert_eq!(err.kind, ErrorKind::Unsupported, "{err:?}");
     }
 }
+
+/// The promise of [`Transport::move_path`], for adapters with [`TransportCaps::MOVE`]: a file
+/// and a folder (with what is inside) are renamed in place, an NFD name becomes its NFC
+/// spelling, an existing name is never overwritten, and a missing source is `NotFound`.
+pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: &Path) {
+    assert!(transport.capabilities().contains(TransportCaps::MOVE));
+    let src = scratch.join("contract-move-src");
+    let seed: [(&str, &str); 4] = [
+        ("a.txt", "mv/a.txt"),
+        ("b.txt", "mv/dir/b.txt"),
+        ("t.txt", "mv/taken.txt"),
+        ("n.txt", "mv/Vera\u{303}o.txt"),
+    ];
+    let mut items = Vec::new();
+    for (name, to) in seed {
+        tokio::fs::create_dir_all(&src).await.unwrap();
+        tokio::fs::write(src.join(name), name.as_bytes())
+            .await
+            .unwrap();
+        items.push(TransferItem {
+            source: name.into(),
+            dest: RemotePath::new(to).unwrap(),
+            size: name.len() as u64,
+            expected_hash: None,
+        });
+    }
+    let job = TransferJob {
+        id: "contract-move".into(),
+        source_root: src,
+        items,
+        options: TransferOptions::default(),
+    };
+    transport
+        .transfer(dest, &job, ProgressSink::noop())
+        .await
+        .unwrap();
+    let p = |s: &str| RemotePath::new(s).unwrap();
+    let names = |dir: &'static str| async move {
+        let mut v: Vec<String> = transport
+            .list(dest, Some(&RemotePath::new(dir).unwrap()), false)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        v.sort();
+        v
+    };
+
+    transport
+        .move_path(dest, &p("mv/a.txt"), &p("mv/a2.txt"))
+        .await
+        .unwrap();
+    transport
+        .move_path(dest, &p("mv/dir"), &p("mv/dir2"))
+        .await
+        .unwrap();
+    transport
+        .move_path(dest, &p("mv/Vera\u{303}o.txt"), &p("mv/Ver\u{e3}o.txt"))
+        .await
+        .unwrap();
+    let listed = names("mv").await;
+    for want in ["a2.txt", "dir2", "taken.txt", "Ver\u{e3}o.txt"] {
+        assert!(listed.contains(&want.to_owned()), "{want} in {listed:?}");
+    }
+    for gone in ["a.txt", "dir", "Vera\u{303}o.txt"] {
+        assert!(!listed.contains(&gone.to_owned()), "{gone} in {listed:?}");
+    }
+    assert!(
+        listed.iter().all(|n| !n.starts_with(".fb-")),
+        "no intermediate name left: {listed:?}"
+    );
+    assert_eq!(names("mv/dir2").await, ["b.txt"]);
+
+    let refused = transport
+        .move_path(dest, &p("mv/a2.txt"), &p("mv/taken.txt"))
+        .await;
+    assert!(refused.is_err(), "an existing name is never overwritten");
+    let listed = names("mv").await;
+    assert!(listed.contains(&"a2.txt".to_owned()) && listed.contains(&"taken.txt".to_owned()));
+    let digest = transport
+        .hash(dest, &p("mv/taken.txt"), HashAlgo::Sha256)
+        .await;
+    if let Ok(d) = digest {
+        assert_eq!(
+            d.bytes,
+            Sha256::digest(b"t.txt").to_vec(),
+            "taken.txt untouched"
+        );
+    }
+
+    let missing = transport
+        .move_path(dest, &p("mv/nope.txt"), &p("mv/nope2.txt"))
+        .await
+        .unwrap_err();
+    assert_eq!(missing.kind, ErrorKind::NotFound);
+}

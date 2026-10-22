@@ -653,6 +653,35 @@ const handlers: Handlers = {
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
   },
+  createRepairJob: (a) => {
+    const id = newId("j");
+    const dir = trimBoth((a.dir as string | null) ?? "", "/") || null;
+    jobs.unshift({
+      id,
+      kind: "repair",
+      profile_id: a.profileId as string,
+      state: "draft",
+      error: null,
+      attempt: 0,
+      next_retry_at: null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      finished_at: null,
+      sources: [],
+      options: { verify: false, concurrency: 8, target_dir: dir },
+      counts: counts(0, 0, 0),
+      label: null,
+      again_of: null,
+    });
+    // What an old rsync leaves behind: garbled and NFD names, nothing that blocks.
+    const base = (rulesByJob.size + 1) * 10_000_000;
+    rulesByJob.set(id, [
+      { rule: "mojibake", total: 37, auto: false, base: base + 1 },
+      { rule: "nfc", total: 1_204, auto: true, base: base + 1_000_001 },
+    ]);
+    log(id, "created", { repair: dir ?? "", profile_id: a.profileId as string });
+    return id;
+  },
   setOptions: (a) => {
     const job = find(a.jobId);
     allow("set_options", job);
@@ -667,7 +696,8 @@ const handlers: Handlers = {
     const bytes = 412_000_000_000;
     for (let s = 1; s <= 10; s++) {
       await sleep(250);
-      send({ type: "scan_progress", job_id: job.id, files: Math.floor((files * s) / 10), bytes: Math.floor((bytes * s) / 10), current: `${job.sources[0]}/${2010 + s}` });
+      const at = job.kind === "repair" ? (job.options.target_dir ?? "") : job.sources[0];
+      send({ type: "scan_progress", job_id: job.id, files: Math.floor((files * s) / 10), bytes: Math.floor((bytes * s) / 10), current: `${at}/${2010 + s}` });
     }
     job.counts = counts(files, bytes, 0);
     const rules = ruleCounts(job.id);

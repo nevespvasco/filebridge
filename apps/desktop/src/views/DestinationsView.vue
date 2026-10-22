@@ -2,6 +2,7 @@
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import type { Profile_Serialize } from "@/bindings";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
@@ -10,7 +11,7 @@ import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import ProfileForm from "@/components/ProfileForm.vue";
-import { errorMessage } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { request } from "@/lib/requests";
 import { profileKind, profileWhere, useProfiles } from "@/stores/profiles";
 
@@ -20,6 +21,22 @@ const creating = ref(false);
 /** The destination being browsed (look only). */
 const browsing = ref<Profile_Serialize | null>(null);
 const deleting = ref<Profile_Serialize | null>(null);
+/** The destination whose folder to repair is being picked (docs/04, "Repair destination"). */
+const repairing = ref<Profile_Serialize | null>(null);
+const router = useRouter();
+
+async function startRepair(dir: string) {
+  const p = repairing.value;
+  repairing.value = null;
+  if (!p) return;
+  error.value = null;
+  try {
+    const id = await api.createRepairJob(p.id, dir || null);
+    void router.push({ name: "repair", params: { id } });
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
 const busy = ref(false);
 const error = ref<string | null>(null);
 
@@ -95,6 +112,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
           <div class="actions">
             <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running" @click="profiles.test(p.id)">{{ $t("dest.test") }}</button>
             <button class="btn btn-small" :title="$t('destinations.browseTip')" @click="browsing = p"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
+            <button class="btn btn-small" :title="$t('repair.buttonTip')" @click="repairing = p"><AppIcon name="renamed" /> {{ $t("repair.button") }}</button>
             <button class="btn btn-small btn-danger" :title="$t('destinations.deleteTip')" @click="deleting = p">{{ $t("common.delete") }}</button>
           </div>
         </div>
@@ -120,6 +138,14 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       :target="browsing ? { kind: 'profile', id: browsing.id } : null"
       :title="$t('browse.title', { destination: browsing?.name ?? '' })"
       @close="browsing = null"
+    />
+    <FolderBrowser
+      :target="repairing ? { kind: 'profile', id: repairing.id } : null"
+      :title="$t('repair.pickTitle', { destination: repairing?.name ?? '' })"
+      :choose-label="$t('repair.pick')"
+      :allow-new="false"
+      @choose="startRepair"
+      @close="repairing = null"
     />
 
     <ConfirmDialog

@@ -1,5 +1,5 @@
-//! `filebridge send`, `issues`, `decide`, `decide-all`, `start`, `resume`, `jobs`, `job`,
-//! `cancel`. Operations go through `filebridge_ipc::Operations`, like the window's.
+//! `filebridge send`, `repair`, `issues`, `decide`, `decide-all`, `start`, `resume`, `jobs`,
+//! `job`, `cancel`. Operations go through `filebridge_ipc::Operations`, like the window's.
 //!
 //! The CLI runs the engine in-process: a send stops when the command exits (Ctrl-C pauses it
 //! cleanly) and continues with `filebridge resume`. The background service (ADR 0008) removes
@@ -38,6 +38,19 @@ pub struct SendArgs {
     #[arg(long)]
     into: Option<String>,
     /// Don't ask before sending.
+    #[arg(long, short)]
+    yes: bool,
+}
+
+#[derive(clap::Args)]
+pub struct RepairArgs {
+    /// Destination profile (name or id).
+    #[arg(long)]
+    to: String,
+    /// The folder to check, under the destination's root (default: the whole destination).
+    #[arg(long)]
+    dir: Option<String>,
+    /// Don't ask before renaming.
     #[arg(long, short)]
     yes: bool,
 }
@@ -96,6 +109,49 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
     if !args.yes && !confirm("Send now?")? {
         println!(
             "not sent; start later with `filebridge start {}`",
+            &job[..8]
+        );
+        return Ok(());
+    }
+    app.ops.start(job.clone()).await?;
+    follow(&app.engine, &job).await
+}
+
+/// "Repair destination" (docs/04): checks the names already in a destination folder with the
+/// same rules as a send, then renames them there.
+pub async fn repair(g: &Global, args: RepairArgs) -> Result<()> {
+    let app = App::open(g, Access::Exclusive, true).await?;
+    let profile = app.profile(&args.to).await?;
+    let job = app
+        .ops
+        .create_repair_job(profile.id.clone(), args.dir.clone())
+        .await?;
+    let folder = args.dir.as_deref().unwrap_or("/");
+    eprintln!("job {} → repair {folder} on {}", &job[..8], profile.name);
+    eprintln!("reading the folder …");
+    let summary = app.ops.analyse(job.clone()).await?;
+    print_analysis(&summary);
+    if summary.rules.is_empty() {
+        println!("every name is fine; nothing to rename");
+        return Ok(());
+    }
+    if summary.state == JobState::AwaitingApproval {
+        println!();
+        println!(
+            "{} names need a decision: `filebridge issues {j}`, then `filebridge decide {j} …` or `filebridge decide-all {j} …`, then `filebridge start {j}` to rename.",
+            summary.pending_decisions,
+            j = &job[..8],
+        );
+        return Ok(());
+    }
+    let changes: u64 = summary.rules.iter().map(|r| r.total).sum();
+    let question = format!(
+        "Rename up to {changes} names on {} in {folder}? Files are only renamed, never changed or deleted.",
+        profile.name
+    );
+    if !args.yes && !confirm(&question)? {
+        println!(
+            "nothing renamed; rename later with `filebridge start {}`",
             &job[..8]
         );
         return Ok(());

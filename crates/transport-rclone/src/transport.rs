@@ -282,6 +282,7 @@ impl Transport for RcloneTransport {
             | TransportCaps::RENAME
             | TransportCaps::PARTIAL_HIDDEN
             | TransportCaps::LIST
+            | TransportCaps::MOVE
     }
 
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport> {
@@ -318,6 +319,70 @@ impl Transport for RcloneTransport {
             message: "write permission is not probed yet (Phase 1)".into(),
         });
         Ok(report)
+    }
+
+    async fn move_path(
+        &self,
+        dest: &Destination,
+        from: &RemotePath,
+        to: &RemotePath,
+    ) -> Result<()> {
+        let parent_of = |p: &RemotePath| p.parent().map(RemotePath::new).transpose();
+        let listed = |dir: Option<RemotePath>| async move {
+            match self.list(dest, dir.as_ref(), false).await {
+                Err(e) if e.kind == ErrorKind::NotFound => Ok(Vec::new()),
+                other => other,
+            }
+        };
+        let source = listed(parent_of(from)?)
+            .await?
+            .into_iter()
+            .find(|e| e.name == from.file_name())
+            .ok_or_else(|| TransportError::not_found(format!("{from} is not there")))?;
+        if from == to {
+            return Ok(());
+        }
+        // Exact names only: on a server that normalises or ignores case, `to` may be `from`
+        // itself under another spelling, and that is not a clash.
+        if listed(parent_of(to)?)
+            .await?
+            .iter()
+            .any(|e| e.name == to.file_name())
+        {
+            return Err(TransportError::fatal(format!("{to} already exists")));
+        }
+        // Through an intermediate name, as in the temp-folder rename: a server that treats the
+        // two spellings as one name would otherwise see "unchanged" and delete the source.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        let mid = join(
+            from.parent().unwrap_or(""),
+            &format!(".fb-move-{}-{nanos}", std::process::id()),
+        );
+        let root = dest_fs(dest, "")?;
+        for (a, b) in [(from.as_str(), mid.as_str()), (mid.as_str(), to.as_str())] {
+            if source.is_dir {
+                // The target never exists, so rclone does a single server-side DirMove.
+                self.rc()
+                    .call_job(
+                        "sync/move",
+                        json!({
+                            "srcFs": dest_fs(dest, a)?, "dstFs": dest_fs(dest, b)?,
+                            "deleteEmptySrcDirs": true,
+                        }),
+                    )
+                    .await?;
+            } else {
+                self.rc()
+                    .call(
+                        "operations/movefile",
+                        json!({ "srcFs": root, "srcRemote": a, "dstFs": root, "dstRemote": b }),
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn list(

@@ -103,6 +103,25 @@ the same preview, renames **on the destination**, then runs the integration upda
 (`Integration::after_transfer` with the renamed paths). It's a job type of its own
 (`JobKind::Repair`) and reuses stages 2, 3 and 6.
 
+As built (`crates/core/src/repair.rs`):
+- `create_repair_job(profile_id, dir)` needs a transport with `LIST | MOVE`. The folder is kept as
+  the job's `target_dir`, so the name plan's paths land under it as a send's land under its
+  target folder; repair jobs never verify and ignore the send window (renames move no data).
+- Stage 2 lists the folder one level at a time, parents first, up to 500 000 entries. Stage 3 is
+  the same name plan and decisions as a send.
+- Stage 4 renames every entry whose own name changes, **deepest first**, so each rename happens
+  under its parent's old path; each entry's result is saved before the next. `Transport::move_path`
+  goes through an intermediate name (servers that store NFD and NFC, or two cases, as one name)
+  and **never overwrites**: a new name already taken fails that entry alone, reported as a
+  warning. A resumed job counts an entry whose old name is gone and new name is there as done.
+- Skip on a folder leaves it and everything inside it as they are.
+- Stage 6 gets the folders that hold renamed entries (the outermost ones), so Nextcloud rescans
+  them and drops the old names.
+- Entry points: Destinations → "Repair names…" (pick a folder), the job log's "Repair these
+  names" on an integration problem that asks for it (Nextcloud's incompatible encoding), and
+  `filebridge repair --to <profile> [--dir <folder>]`. Renaming waits for a confirmation that
+  says where, what changes and what doesn't.
+
 ## Phase 0 risk
 
 Renaming per file with rclone may be slow for hundreds of thousands of files. Phase 0 measures it.

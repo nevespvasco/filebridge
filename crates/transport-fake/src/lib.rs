@@ -62,6 +62,7 @@ impl Transport for FakeTransport {
             | TransportCaps::HASH_SHA256
             | TransportCaps::RENAME
             | TransportCaps::LIST
+            | TransportCaps::MOVE
     }
 
     async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
@@ -163,6 +164,34 @@ impl Transport for FakeTransport {
             algo,
             bytes: Sha256::digest(&data).to_vec(),
         })
+    }
+
+    async fn move_path(
+        &self,
+        dest: &Destination,
+        from: &RemotePath,
+        to: &RemotePath,
+    ) -> Result<()> {
+        let root = Path::new(&dest.root);
+        let src = root.join(from.as_str());
+        std::fs::symlink_metadata(&src).map_err(|e| io_error("move", e))?;
+        if from == to {
+            return Ok(());
+        }
+        let parent = root.join(to.parent().unwrap_or(""));
+        std::fs::create_dir_all(&parent).map_err(|e| io_error("move", e))?;
+        // Exact names only: on a filesystem that normalises or ignores case, `to` may be
+        // `from` itself under another spelling, and that is not a clash.
+        let taken = std::fs::read_dir(&parent)
+            .map_err(|e| io_error("move", e))?
+            .filter_map(|e| e.ok())
+            .any(|e| e.file_name().to_str() == Some(to.file_name()));
+        if taken {
+            return Err(TransportError::fatal(format!("{to} already exists")));
+        }
+        let mid = parent.join(format!(".fb-move-{}", std::process::id()));
+        std::fs::rename(&src, &mid).map_err(|e| io_error("move", e))?;
+        std::fs::rename(&mid, root.join(to.as_str())).map_err(|e| io_error("move", e))
     }
 
     async fn list(

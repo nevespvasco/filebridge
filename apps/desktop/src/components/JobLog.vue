@@ -5,6 +5,7 @@
 import { baseName } from "@/lib/format";
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { useRouter } from "vue-router";
 import type { LogEntry } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { bcp47 } from "@/i18n";
@@ -19,6 +20,31 @@ const jobs = useJobs();
 const profiles = useProfiles();
 const fmt = useFmt();
 const { t, te, locale } = useI18n();
+const router = useRouter();
+
+/** The folder holding every path an integration flagged for "Repair destination" (Nextcloud's
+ *  incompatible encoding), `""` for the destination root; `null` when nothing asks for it. */
+function repairFolder(d: Record<string, unknown>): string | null {
+  const problems = Array.isArray(d.problems) ? (d.problems as Record<string, unknown>[]) : [];
+  const flagged = problems.filter((p) => p.fix === "repair_destination");
+  if (!flagged.length) return null;
+  const dirs = flagged.map((p) => (typeof p.path === "string" ? p.path.split("/").slice(0, -1) : []));
+  const common: string[] = [];
+  for (let i = 0; dirs.every((d) => i < d.length && d[i] === dirs[0][i]); i++) common.push(dirs[0][i]);
+  return common.join("/");
+}
+
+async function repair(folder: string) {
+  const job = jobs.byId[props.jobId];
+  if (!job) return;
+  error.value = null;
+  try {
+    const id = await api.createRepairJob(job.profile_id, folder || null);
+    void router.push({ name: "repair", params: { id } });
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
 
 const PAGE = 100;
 /** Newest first. */
@@ -109,7 +135,8 @@ function dayLabel(d: Date): string {
   return d.toLocaleDateString(bcp47(locale.value), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
-type Line = { icon: IconName; text: string; detail?: string };
+/** `repair`: the folder a "Repair these names" button opens, when the entry asks for one. */
+type Line = { icon: IconName; text: string; detail?: string; repair?: string | null };
 const n = (e: LogEntry, k: string) => Number((e.data as Record<string, unknown>)?.[k] ?? 0);
 const str = (e: LogEntry, k: string) => {
   const v = (e.data as Record<string, unknown>)?.[k];
@@ -122,8 +149,11 @@ function describe(e: LogEntry): Line {
   const d = (e.data ?? {}) as Record<string, unknown>;
   switch (e.kind) {
     case "created": {
-      const sources = Array.isArray(d.sources) ? (d.sources as string[]).map(base) : [];
       const destination = profiles.byId[str(e, "profile_id")]?.name ?? "—";
+      if (typeof d.repair === "string") {
+        return { icon: "renamed", text: t("joblog.createdRepair", { folder: d.repair ? `/${d.repair}` : t("repair.root"), destination }) };
+      }
+      const sources = Array.isArray(d.sources) ? (d.sources as string[]).map(base) : [];
       return { icon: "plus", text: t("joblog.created", { sources: sources.join(", "), destination }) };
     }
     case "options": {
@@ -165,6 +195,7 @@ function describe(e: LogEntry): Line {
         icon: problems ? "warning" : "info",
         text: t("joblog.integration", { items: fmt.count(n(e, "items")) }),
         detail: problems ? t("joblog.problems", { n: problems }, problems) : undefined,
+        repair: repairFolder(d),
       };
     }
     case "finished": {
@@ -223,6 +254,9 @@ async function copy() {
           <span class="text">
             {{ describe(e).text }}
             <span v-if="describe(e).detail" class="detail small">{{ describe(e).detail }}</span>
+            <button v-if="describe(e).repair != null" class="btn btn-small repair" @click="repair(describe(e).repair!)">
+              <AppIcon name="renamed" /> {{ $t("repair.fromProblems") }}
+            </button>
           </span>
         </li>
       </ol>

@@ -31,6 +31,9 @@ enum Cmd {
     Profile(profile_cmd::ProfileCmd),
     /// Analyse and send files or folders to a profile.
     Send(send_cmd::SendArgs),
+    /// Check the names already in a destination folder and fix them there ("Repair
+    /// destination"). Files are only renamed, never changed or deleted
+    Repair(send_cmd::RepairArgs),
     /// Name issues of a job (pending ones unless --all).
     Issues {
         job: String,
@@ -119,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.cmd {
         Cmd::Profile(cmd) => profile_cmd::run(g, cmd).await,
         Cmd::Send(args) => send_cmd::send(g, args).await,
+        Cmd::Repair(args) => send_cmd::repair(g, args).await,
         Cmd::Issues { job, rule, all } => send_cmd::issues(g, &job, rule, all).await,
         Cmd::Decide {
             job,

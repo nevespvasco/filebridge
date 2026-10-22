@@ -75,6 +75,9 @@ macro_rules! for_each_operation {
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
             /// Folders and files sent before, newest first, for "Recently sent from".
             RecentSources recent_sources(limit: u32) -> Vec<$crate::RecentSource>;
+            /// A draft "Repair destination" job for a folder of a profile (`None` = its root):
+            /// `analyse`, the decisions and `start` then work on it like on a send.
+            CreateRepairJob create_repair_job(profile_id: String, dir: Option<String>) -> String;
             /// What each chosen source is and what is wrong with it, without reading contents.
             InspectSources inspect_sources(paths: Vec<String>) -> Vec<$crate::SourceInfo>;
             /// One page of a job's files, filtered and sorted (at most 500).

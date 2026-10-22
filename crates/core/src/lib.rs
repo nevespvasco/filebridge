@@ -15,6 +15,7 @@ mod lifecycle;
 mod profile;
 mod reclaim;
 mod registry;
+mod repair;
 pub mod report;
 mod run;
 mod settings;
@@ -35,6 +36,7 @@ pub use filebridge_model::{
     UnknownValue, job_operations,
 };
 pub use registry::Registry;
+pub use repair::MAX_REPAIR_ENTRIES;
 pub use settings::LocalClock;
 
 pub use filebridge_store::{Store, StoreError};

@@ -483,27 +483,33 @@ impl Engine {
         let profile = self.get_profile(&row.profile_id).await?;
         let names = self.registry.name_plan(&profile)?;
         let sources = self.job_sources(row).await;
+        let options: SendOptions = serde_json::from_value(row.options.clone()).unwrap_or_default();
 
         self.store.clear_issues(&job_id).await?;
         self.store.clear_manifest(&job_id).await?;
 
-        let events = self.events.clone();
-        let jid = job_id.clone();
-        let analysis = tokio::task::spawn_blocking(move || {
-            let (mut files, mut bytes) = (0, 0);
-            analyse::analyse_sources(&sources, &names, |src, f, b| {
-                files += f;
-                bytes += b;
-                let _ = events.send(Event::ScanProgress {
-                    job_id: jid.clone(),
-                    files,
-                    bytes,
-                    current: Some(src.display().to_string()),
-                });
+        let analysis = if JobKind::parse(&row.kind)? == JobKind::Repair {
+            self.scan_destination(&job_id, &profile, options.target_dir.as_deref(), &names)
+                .await?
+        } else {
+            let events = self.events.clone();
+            let jid = job_id.clone();
+            tokio::task::spawn_blocking(move || {
+                let (mut files, mut bytes) = (0, 0);
+                analyse::analyse_sources(&sources, &names, |src, f, b| {
+                    files += f;
+                    bytes += b;
+                    let _ = events.send(Event::ScanProgress {
+                        job_id: jid.clone(),
+                        files,
+                        bytes,
+                        current: Some(src.display().to_string()),
+                    });
+                })
             })
-        })
-        .await
-        .map_err(|e| CoreError::Invalid(format!("analysis task failed: {e}")))??;
+            .await
+            .map_err(|e| CoreError::Invalid(format!("analysis task failed: {e}")))??
+        };
 
         let mut entries = analysis.entries;
         while !entries.is_empty() {
@@ -511,7 +517,6 @@ impl Engine {
             self.store.insert_entries(&job_id, entries).await?;
             entries = rest;
         }
-        let options: SendOptions = serde_json::from_value(row.options.clone()).unwrap_or_default();
         let dest_paths = analysis
             .dest_paths
             .into_iter()
