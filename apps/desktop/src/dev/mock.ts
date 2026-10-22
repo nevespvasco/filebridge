@@ -27,6 +27,9 @@ import {
 
 type Args = Record<string, unknown>;
 
+/** A short random id, like the service's (`p-…` for profiles, `j-…` for jobs). */
+const newId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+
 const now = Date.now();
 const profiles: Profile_Serialize[] = [
   {
@@ -242,7 +245,7 @@ const handlers: Handlers = {
   listProfiles: () => profiles,
   saveProfile: (a) => {
     const p = { ...(a.profile as Profile_Serialize) };
-    if (!p.id) p.id = `p-${Math.random().toString(36).slice(2, 8)}`;
+    if (!p.id) p.id = newId("p");
     const i = profiles.findIndex((x) => x.id === p.id);
     if (i >= 0) profiles[i] = p;
     else profiles.push(p);
@@ -289,7 +292,7 @@ const handlers: Handlers = {
     const folder = req.folder.split("/").filter(Boolean).join("/");
     const files = `/srv/ncdata/${req.nextcloud_user}/files`;
     const profile: Profile_Serialize = {
-      id: `p-${Math.random().toString(36).slice(2, 8)}`,
+      id: newId("p"),
       name: req.name,
       destination: {
         transport: "rclone",
@@ -304,7 +307,7 @@ const handlers: Handlers = {
     return { steps, containers: [], profile };
   },
   createJob: (a) => {
-    const id = `j-${Math.random().toString(36).slice(2, 8)}`;
+    const id = newId("j");
     jobs.unshift({
       id,
       kind: "transfer",
