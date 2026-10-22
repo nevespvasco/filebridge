@@ -124,6 +124,11 @@ impl Host {
         let nextcloud = Arc::new(Nextcloud::with_ssh());
         registry.add_integration(nextcloud.clone());
         let mut host = Self::with_registry(opts, access, registry)?;
+        // The rcd starts unlimited: give it the saved bandwidth limit before anything is sent.
+        host.engine
+            .load_settings()
+            .await
+            .context("read the settings")?;
         host._rcd = rcd;
         host.nextcloud = Some(nextcloud);
         host.transport = transport;

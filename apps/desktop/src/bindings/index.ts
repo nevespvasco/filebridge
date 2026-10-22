@@ -27,9 +27,9 @@ export const commands = {
 	 */
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
 	/**  A draft job; nothing is read from the sources yet. */
-	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
+	createJob: (sources: string[], profileId: string, options: SendOptions) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
-	setOptions: (jobId: string, options: SendOptions_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
+	setOptions: (jobId: string, options: SendOptions) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
 	analyse: (jobId: string) => typedError<AnalysisSummary_Serialize, ErrorBody>(__TAURI_INVOKE("analyse", { jobId })),
 	ruleCounts: (jobId: string) => typedError<RuleCount[], ErrorBody>(__TAURI_INVOKE("rule_counts", { jobId })),
 	/**  One page of a job's issues (optionally of one rule), by id after `after_id`. */
@@ -47,6 +47,10 @@ export const commands = {
 	/**  Newest first. */
 	listJobs: (limit: number, offset: number) => typedError<JobSummary_Serialize[], ErrorBody>(__TAURI_INVOKE("list_jobs", { limit, offset })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
+	/**  The app-wide bandwidth limit and send window. */
+	getSettings: () => typedError<AppSettings_Serialize, ErrorBody>(__TAURI_INVOKE("get_settings")),
+	/**  Validates, saves and applies them at once, to running sends too. */
+	saveSettings: (settings: AppSettings_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("save_settings", { settings })),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
 	serviceEndpoint: () => __TAURI_INVOKE<string>("service_endpoint"),
 	/**  Translated tray menu labels; the strings live in the UI's i18n files. */
@@ -60,9 +64,9 @@ export const events = {
 };
 
 /* Constants */
-export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
+export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 3 as const;
+export const PROTOCOL_VERSION = 4 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -91,6 +95,22 @@ export type AnalysisSummary_Serialize = {
 	scan_errors: string[],
 	skipped_symlinks: number,
 	preflight: PreflightView_Serialize[],
+};
+
+export type AppSettings = AppSettings_Serialize | AppSettings_Deserialize;
+
+export type AppSettings_Deserialize = {
+	/**  Bytes per second across all sends at once; `None` = unlimited. */
+	bandwidth_limit?: number | null,
+	/**  When files may be sent, in the service machine's local time; `None` = any time. */
+	send_window?: SendWindow | null,
+};
+
+export type AppSettings_Serialize = {
+	/**  Bytes per second across all sends at once; `None` = unlimited. */
+	bandwidth_limit: number | null,
+	/**  When files may be sent, in the service machine's local time; `None` = any time. */
+	send_window: SendWindow | null,
 };
 
 export type Backend = Backend_Serialize | Backend_Deserialize;
@@ -252,13 +272,17 @@ export type ErrorBody = {
 
 export type Event = Event_Serialize | Event_Deserialize;
 
-export type Event_Deserialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error?: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current?: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs?: number | null } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
+export type Event_Deserialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error?: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current?: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs?: number | null } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
+/**  The transfer waits for the send window; `opens_at` is Unix ms. */
+{ type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current?: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
 waiting?: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path?: string | null } | { type: "job_finished"; job_id: string; state: JobState; error?: string | null };
 
-export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
+export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
+/**  The transfer waits for the send window; `opens_at` is Unix ms. */
+{ type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
@@ -311,7 +335,9 @@ export type JobKind = "transfer" |
 /**  "Repair destination" (Phase 2). */
 "repair";
 
-export type JobState = "draft" | "analysing" | "awaiting_approval" | "ready" | "transferring" | "paused" | "retrying" | "verifying" | "integrating" | "completed" | "completed_with_warnings" | "cancelled" | "failed";
+export type JobState = "draft" | "analysing" | "awaiting_approval" | "ready" | "transferring" | "paused" | "retrying" | 
+/**  Transfer held until the send window opens (docs/adr/0010). */
+"waiting" | "verifying" | "integrating" | "completed" | "completed_with_warnings" | "cancelled" | "failed";
 
 export type JobSummary = JobSummary_Serialize | JobSummary_Deserialize;
 
@@ -328,7 +354,7 @@ export type JobSummary_Deserialize = {
 	finished_at?: number | null,
 	/**  Source roots, lossily decoded for display. */
 	sources: string[],
-	options: SendOptions_Deserialize,
+	options: SendOptions,
 	counts: Counts,
 };
 
@@ -345,7 +371,7 @@ export type JobSummary_Serialize = {
 	finished_at: number | null,
 	/**  Source roots, lossily decoded for display. */
 	sources: string[],
-	options: SendOptions_Serialize,
+	options: SendOptions,
 	counts: Counts,
 };
 
@@ -421,26 +447,22 @@ export type RuleCount = {
 };
 
 /**  Per-job choices made in step 4 of the wizard. */
-export type SendOptions = SendOptions_Serialize | SendOptions_Deserialize;
-
-/**  Per-job choices made in step 4 of the wizard. */
-export type SendOptions_Deserialize = {
+export type SendOptions = {
 	/**  Compare SHA-256 of every file at the end (source vs destination). */
 	verify: boolean,
 	/**  Files in flight at once. */
 	concurrency: number,
-	/**  rclone-style bandwidth limit, e.g. `"20M"`. */
-	bwlimit?: string | null,
 };
 
-/**  Per-job choices made in step 4 of the wizard. */
-export type SendOptions_Serialize = {
-	/**  Compare SHA-256 of every file at the end (source vs destination). */
-	verify: boolean,
-	/**  Files in flight at once. */
-	concurrency: number,
-	/**  rclone-style bandwidth limit, e.g. `"20M"`. */
-	bwlimit: string | null,
+/**
+ *  A daily window, `start` included and `end` excluded. `start > end` crosses midnight
+ *  (22:00–07:00).
+ */
+export type SendWindow = {
+	/**  Minutes since local midnight, 0–1439. */
+	start_minute: number,
+	/**  Minutes since local midnight, 0–1439. */
+	end_minute: number,
 };
 
 /**  Every engine event, forwarded as is from `Client::events()`. */

@@ -1,14 +1,18 @@
 <script setup lang="ts">
-// Live progress of one job: bytes and files, speed, ETA, retries, verify and integration stages.
+// Live progress of one job: bytes and files, speed, ETA, retries, the send window, verify and
+// integration stages.
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useFmt } from "@/composables/useFmt";
+import { minutesToTime } from "@/lib/format";
 import { RUNNING, TERMINAL, useJobs } from "@/stores/jobs";
+import { useSettings } from "@/stores/settings";
 import ProgressBar from "./ProgressBar.vue";
 import JobStateBadge from "./JobStateBadge.vue";
 
 const props = defineProps<{ jobId: string }>();
 const jobs = useJobs();
+const settings = useSettings();
 const fmt = useFmt();
 const { t, te } = useI18n();
 
@@ -23,13 +27,21 @@ const bytesDone = computed(() => tr.value?.bytes_done ?? job.value?.counts.bytes
 const bytesTotal = computed(() => tr.value?.bytes_total ?? job.value?.counts.bytes ?? 0);
 const filesDone = computed(() => tr.value?.files_done ?? job.value?.counts.done ?? 0);
 const filesTotal = computed(() => tr.value?.files_total ?? job.value?.counts.files ?? 0);
-const running = computed(() => !!job.value && RUNNING.includes(job.value.state));
+const running = computed(() => !!job.value && RUNNING.includes(job.value.state) && job.value.state !== "waiting");
 const tone = computed(() => {
   const s = job.value?.state;
   if (s === "failed") return "danger";
   if (s === "completed") return "ok";
-  if (s === "completed_with_warnings" || s === "paused" || s === "retrying") return "warn";
+  if (s === "completed_with_warnings" || s === "paused" || s === "retrying" || s === "waiting") return "warn";
   return "accent";
+});
+
+/** When a waiting job goes again: from its event, else from the window in the settings. */
+const windowText = computed(() => {
+  const opens = live.value?.window?.opens_at;
+  if (opens) return t("progress.window", { time: fmt.time(opens) });
+  const w = settings.app.send_window;
+  return w ? t("progress.windowSoon", { start: minutesToTime(w.start_minute), end: minutesToTime(w.end_minute) }) : "";
 });
 
 const integrationLabel = computed(() => {
@@ -69,7 +81,8 @@ const waitingLabel = computed(() => {
     </div>
     <ProgressBar :value="fmt.percent(bytesDone, bytesTotal)" :tone="tone" />
 
-    <p v-if="live?.retry && job.state === 'retrying'" class="small warn-text">
+    <p v-if="job.state === 'waiting' && windowText" class="small warn-text">{{ windowText }}</p>
+    <p v-else-if="live?.retry && job.state === 'retrying'" class="small warn-text">
       {{ $t("progress.retry", { attempt: live.retry.attempt, secs: live.retry.in_secs }) }} — {{ live.retry.error }}
     </p>
     <p v-else-if="job.attempt > 0 && !finished" class="small muted">{{ $t("progress.retries", { n: job.attempt }) }}</p>

@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use filebridge_core::{
-    DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry, SendOptions, Store,
-    TargetSpec,
+    AppSettings, DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry,
+    SendOptions, SendWindow, Store, TargetSpec,
 };
 use filebridge_host::EngineOperations;
 use filebridge_ipc::{Client, Endpoint, Operations, PROTOCOL_VERSION, bind, serve};
@@ -310,4 +310,31 @@ async fn event_streams_close_when_the_service_drops_the_connection() {
         .await
         .expect("a call on a dead connection does not hang");
     assert_eq!(ping.unwrap_err().code, "disconnected");
+}
+
+#[tokio::test]
+async fn settings_over_the_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_endpoint, client, _profile_id) = service(dir.path()).await;
+    assert_eq!(client.get_settings().await.unwrap(), AppSettings::default());
+
+    let settings = AppSettings {
+        bandwidth_limit: Some(5 * 1024 * 1024),
+        send_window: Some(SendWindow {
+            start_minute: 22 * 60,
+            end_minute: 7 * 60,
+        }),
+    };
+    client.save_settings(settings.clone()).await.unwrap();
+    assert_eq!(client.get_settings().await.unwrap(), settings);
+
+    let bad = AppSettings {
+        send_window: Some(SendWindow {
+            start_minute: 60,
+            end_minute: 60,
+        }),
+        ..settings.clone()
+    };
+    assert_eq!(client.save_settings(bad).await.unwrap_err().code, "invalid");
+    assert_eq!(client.get_settings().await.unwrap(), settings, "unchanged");
 }

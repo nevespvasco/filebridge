@@ -42,6 +42,8 @@ pub enum Event {
         in_secs: u64,
         error: String,
     },
+    /// The transfer waits for the send window; `opens_at` is Unix ms.
+    SendWindowWait { job_id: String, opens_at: i64 },
     VerifyProgress {
         job_id: String,
         checked: u64,
@@ -80,6 +82,7 @@ impl Event {
             | Self::TransferProgress { job_id, .. }
             | Self::EntryFailed { job_id, .. }
             | Self::RetryScheduled { job_id, .. }
+            | Self::SendWindowWait { job_id, .. }
             | Self::VerifyProgress { job_id, .. }
             | Self::IntegrationProgress { job_id, .. }
             | Self::IntegrationProblem { job_id, .. }

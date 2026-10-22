@@ -19,7 +19,9 @@ interface.
 
 - [ ] **Personal use only, or for distribution?** Changes the priority of code signing and
       documentation.
-- [ ] **Do scheduled sends and continuous sync enter the scope**, or only one-off sends?
+- [ ] **Do scheduled (recurring) sends and continuous sync enter the scope**, or only one-off
+      sends? A daily window that holds back sends the user started is decided
+      ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
 - [ ] **Final app name** (`filebridge` is provisional).
 - [ ] **xxHash (fast) or SHA-256 (standard) for the manifest?** Note: the manifest can store the
       algorithm per entry, so this can default to one and still allow the other. rclone's SFTP

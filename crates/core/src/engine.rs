@@ -8,9 +8,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use filebridge_integration_api::{JobContext, ProfileView};
+use filebridge_model::AppSettings;
 use filebridge_names::{Choice, Entry, NamePlan, Planned};
 use filebridge_store::{Decision, EntryState, IssueRow, JobRow, ManifestCounts, NewJob, Store};
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, broadcast, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -18,6 +19,7 @@ use crate::analyse::{self, bytes_path, os_bytes};
 use crate::backoff::Backoff;
 use crate::decisions;
 use crate::lifecycle::{JobLock, JobLocks};
+use crate::settings::LocalClock;
 use crate::{
     AnalysisSummary, CoreError, Counts, DecisionInput, Event, IssueView, JobKind, JobState,
     JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
@@ -35,6 +37,8 @@ pub struct EngineOptions {
     pub inhibit_sleep: bool,
     /// Verify → resend rounds before giving up on mismatches.
     pub max_verify_rounds: u32,
+    /// The local time the send window is checked against.
+    pub local_clock: LocalClock,
 }
 
 impl Default for EngineOptions {
@@ -44,6 +48,7 @@ impl Default for EngineOptions {
             batch_size: 500,
             inhibit_sleep: true,
             max_verify_rounds: 3,
+            local_clock: LocalClock::default(),
         }
     }
 }
@@ -76,6 +81,7 @@ pub struct Engine {
     pub(crate) registry: Arc<Registry>,
     pub(crate) events: broadcast::Sender<Event>,
     pub(crate) options: EngineOptions,
+    pub(crate) settings: watch::Sender<AppSettings>,
     running: Mutex<HashMap<String, Running>>,
     generation: AtomicU64,
     pub(crate) locks: JobLocks,
@@ -89,6 +95,7 @@ impl Engine {
             registry: Arc::new(registry),
             events,
             options,
+            settings: watch::Sender::new(AppSettings::default()),
             running: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             locks: JobLocks::default(),

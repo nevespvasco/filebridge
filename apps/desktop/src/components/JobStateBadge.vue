@@ -10,6 +10,7 @@ const tone = computed(() => {
     case "completed_with_warnings":
     case "awaiting_approval":
     case "retrying":
+    case "waiting":
     case "paused":
       return "warn";
     case "failed":

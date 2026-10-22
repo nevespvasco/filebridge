@@ -1,6 +1,6 @@
 // Jobs and their live progress. Subscribes to the service's events once and keeps a normalised
 // map by job id (docs/06). Summaries come from the service; `live` holds what only events carry
-// (speed, ETA, current file, retries, integration step).
+// (speed, ETA, current file, retries, the send window, integration step).
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import type { Event_Serialize, JobState, JobSummary_Serialize } from "@/bindings";
@@ -21,6 +21,8 @@ export type Live = {
   verify?: Of<"verify_progress">;
   integration?: Of<"integration_progress">;
   retry?: Of<"retry_scheduled"> & { at: number };
+  /** When the send window opens, while the job waits for it. */
+  window?: Of<"send_window_wait">;
   failures: Of<"entry_failed">[];
   problems: Of<"integration_problem">[];
   log: LogLine[];
@@ -30,7 +32,7 @@ const MAX_LINES = 500;
 export const PAGE_SIZE = 50;
 
 /** States in which the service is working on the job. */
-export const RUNNING: JobState[] = ["transferring", "retrying", "verifying", "integrating"];
+export const RUNNING: JobState[] = ["transferring", "retrying", "waiting", "verifying", "integrating"];
 export const TERMINAL: JobState[] = ["completed", "completed_with_warnings", "cancelled", "failed"];
 
 export const useJobs = defineStore("jobs", () => {
@@ -113,6 +115,10 @@ export const useJobs = defineStore("jobs", () => {
         push(l.log, { at: now, kind: "retry", text: t("log.retry", { attempt: ev.attempt, secs: ev.in_secs, error: ev.error }) });
         refreshSoon(id);
         break;
+      case "send_window_wait":
+        l.window = ev;
+        refreshSoon(id);
+        break;
       case "entry_failed":
         push(l.failures, ev);
         push(l.log, { at: now, kind: "failure", text: `${ev.path}: ${ev.error}` });
@@ -130,6 +136,7 @@ export const useJobs = defineStore("jobs", () => {
           text: t("log.state", { from: t(`state.${ev.from}`), to: t(`state.${ev.to}`) }) + (ev.error ? ` — ${ev.error}` : ""),
         });
         if (ev.to !== "retrying") l.retry = undefined;
+        if (ev.to !== "waiting") l.window = undefined;
         refreshSoon(id);
         if (!j) void loadPage(0);
         break;

@@ -45,6 +45,10 @@ macro_rules! for_each_operation {
             /// Newest first.
             ListJobs list_jobs(limit: u32, offset: u32) -> Vec<$crate::JobSummary>;
             Job job(job_id: String) -> $crate::JobSummary;
+            /// The app-wide bandwidth limit and send window.
+            GetSettings get_settings() -> $crate::AppSettings;
+            /// Validates, saves and applies them at once, to running sends too.
+            SaveSettings save_settings(settings: $crate::AppSettings) -> ();
         }
     };
 }

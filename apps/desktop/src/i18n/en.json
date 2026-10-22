@@ -263,7 +263,9 @@
     "guide": "Check that everything is right. When you click “Send”, the copy starts and you can follow it on the next screen.",
     "renamesHelp": "Names adjusted in the copy so the destination accepts them. The original files keep their names.",
     "modeHelp": "How the files reach the destination.",
-    "sendTip": "Starts the copy. Your original files are not changed."
+    "sendTip": "Starts the copy. Your original files are not changed.",
+    "window": "Files are sent only between {start} and {end}. Outside those hours this send waits and continues on its own.",
+    "limit": "Speed limited to {rate} (Settings)."
   },
   "after": {
     "title": "Sending",
@@ -291,7 +293,9 @@
     "retries": "{n} automatic retries",
     "verifying": "Verifying {done} of {total}",
     "mismatches": "{n} differences",
-    "items": "{n} items"
+    "items": "{n} items",
+    "window": "Sending resumes at {time}, when the send window opens.",
+    "windowSoon": "Sending resumes when the send window opens ({start}–{end})."
   },
   "integration": {
     "nextcloud": {
@@ -316,6 +320,7 @@
     "transferring": "Sending",
     "paused": "Paused",
     "retrying": "Retrying",
+    "waiting": "Waiting for window",
     "verifying": "Verifying",
     "integrating": "Integrating",
     "completed": "Completed",
@@ -511,11 +516,24 @@
     },
     "notifications": "Notify when a send ends",
     "notificationsHint": "System notification when a send finishes or fails.",
+    "sending": "Sending",
+    "bandwidthLimit": "Limit the speed",
+    "bandwidthUnit": "Unit",
+    "units": {
+      "mbit": "Mbit/s",
+      "mbyte": "MB/s"
+    },
+    "scheduleOnly": "Send only between",
+    "from": "From",
+    "to": "to",
+    "overnight": "Crosses midnight: from {start} today until {end} the next day.",
+    "sendingHint": "Applies to every send, including the ones already running. Times are this computer's local time; the computer has to be on and awake when the window opens.",
+    "save": "Save",
+    "saved": "Saved",
+    "badLimit": "Enter a speed greater than zero.",
+    "badWindow": "Start and end must be different times.",
     "bandwidth": "Bandwidth limit",
-    "bandwidthHint": "e.g. 20M",
     "schedule": "Send schedule",
-    "scheduleHint": "e.g. 01:00–07:00",
-    "later": "Bandwidth limit and schedule arrive in a later version.",
     "service": "Service (technical information)",
     "state": "State",
     "version": "Version",

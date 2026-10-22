@@ -52,6 +52,8 @@ flowchart TB
 - [x] Engine as a background service (`filebridge-service`, `systemd --user` unit) and sleep
       inhibit.
 - [x] Decide and record the window ↔ service IPC ([ADR 0008](adr/0008-service-ipc.md)).
+- [x] App-wide bandwidth limit and daily send window in Settings and the CLI
+      ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
 
 **Gate:** send three real folders — a large work folder, a code repository and one with a comma in its name — without opening the terminal.
 

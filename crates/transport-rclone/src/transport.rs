@@ -327,9 +327,6 @@ impl Transport for RcloneTransport {
         let group = format!("job-{}", job.id);
         let src_fs = local_fs(&job.source_root)?;
         let dst_fs = dest_fs(dest, "")?;
-        if let Some(rate) = &job.options.bwlimit {
-            rc.call("core/bwlimit", json!({ "rate": rate })).await?;
-        }
         let totals = (
             job.items.len() as u64,
             job.items.iter().map(|i| i.size).sum::<u64>(),
@@ -415,5 +412,35 @@ impl Transport for RcloneTransport {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|_| TransportError::fatal(format!("bad hash {hex:?} for {path}")))?;
         Ok(Digest { algo, bytes })
+    }
+
+    async fn set_bandwidth_limit(&self, bytes_per_sec: Option<u64>) -> Result<()> {
+        // `core/bwlimit` is global to the rcd: it applies to every transfer, running ones too.
+        self.rc()
+            .call(
+                "core/bwlimit",
+                json!({ "rate": bwlimit_rate(bytes_per_sec) }),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+/// rclone's `--bwlimit` form: a plain number is KiB/s, so bytes need the `B` suffix.
+fn bwlimit_rate(bytes_per_sec: Option<u64>) -> String {
+    match bytes_per_sec {
+        Some(n) => format!("{n}B"),
+        None => "off".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bwlimit_rate;
+
+    #[test]
+    fn rate_strings() {
+        assert_eq!(bwlimit_rate(Some(2_500_000)), "2500000B");
+        assert_eq!(bwlimit_rate(None), "off");
     }
 }

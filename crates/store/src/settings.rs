@@ -1,4 +1,4 @@
-//! App settings as key → JSON text (bandwidth limit, schedule, notifications, language).
+//! App settings as key → JSON text (`app`: the bandwidth limit and send window, docs/adr/0010).
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Serialize, de::DeserializeOwned};

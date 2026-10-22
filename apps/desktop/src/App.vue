@@ -19,6 +19,8 @@ onMounted(async () => {
   await jobs.init();
   await conn.init();
   void profiles.load();
+  void settings.loadApp();
+  conn.onReconnect(() => void settings.loadApp());
   void jobs.loadPage(0);
 });
 

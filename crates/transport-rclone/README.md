@@ -15,7 +15,9 @@
   speed validated in Phase 0 — or plan B: `sync/copy` to temp + batch rename + `operations/movefile`).
 - Poll `core/stats` / `job/status` and forward to `ProgressSink`.
 - `hash`: `operations/hashsum` (or SFTP remote `sha256sum`).
-- Partial files hidden until complete; bandwidth limit via `core/bwlimit`.
+- Partial files hidden until complete.
+- `set_bandwidth_limit`: `core/bwlimit` with `"<n>B"` or `"off"`. It is global to the rcd, so it is
+  one app-wide limit that applies to running transfers too (ADR 0010).
 
 ## Capabilities (expected)
 `RESUME`, `HASH_SHA256` (SFTP), `RENAME`, `PARTIAL_HIDDEN`; `CHOWN`/`CHMOD` not available over

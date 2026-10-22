@@ -262,7 +262,6 @@ async fn run_mode(
                 items: p.items.clone(),
                 options: TransferOptions {
                     concurrency: args.concurrency,
-                    bwlimit: None,
                 },
             };
             let res = transport.transfer(dest, &job, sink.clone()).await?;

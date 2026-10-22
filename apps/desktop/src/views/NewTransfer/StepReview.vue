@@ -4,14 +4,21 @@ import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
+import { minutesToTime } from "@/lib/format";
 import { useJobs } from "@/stores/jobs";
 import { profileKind, profileWhere, useProfiles } from "@/stores/profiles";
+import { useSettings } from "@/stores/settings";
 import { useWizard } from "@/stores/wizard";
 
 const wizard = useWizard();
 const jobs = useJobs();
 const profiles = useProfiles();
+const settings = useSettings();
 const fmt = useFmt();
+const sendWindow = computed(() => {
+  const w = settings.app.send_window;
+  return w && { start: minutesToTime(w.start_minute), end: minutesToTime(w.end_minute) };
+});
 
 const profile = computed(() => (wizard.profileId ? profiles.byId[wizard.profileId] : undefined));
 const job = computed(() => (wizard.jobId ? jobs.byId[wizard.jobId] : undefined));
@@ -61,6 +68,10 @@ const details = computed(() =>
       </span>
     </label>
 
+    <p v-if="sendWindow" class="guide small"><span class="guide-icon" aria-hidden="true">🌙</span><span>{{ $t("review.window", sendWindow) }}</span></p>
+    <p v-if="settings.app.bandwidth_limit" class="guide small">
+      <span class="guide-icon" aria-hidden="true">🐢</span><span>{{ $t("review.limit", { rate: fmt.rate(settings.app.bandwidth_limit) }) }}</span>
+    </p>
     <p class="guide ok small"><span class="guide-icon" aria-hidden="true">🔒</span><span>{{ $t("review.safety") }}</span></p>
     <p v-if="wizard.sendError" class="error">{{ wizard.sendError }}</p>
 

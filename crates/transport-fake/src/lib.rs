@@ -35,6 +35,8 @@ pub struct FakeTransport {
     pub calls: AtomicU32,
     /// The destination can't compute hashes.
     pub no_hash: AtomicBool,
+    /// Every bandwidth limit set, in order.
+    pub bandwidth_limits: Mutex<Vec<Option<u64>>>,
 }
 
 impl FakeTransport {
@@ -144,5 +146,10 @@ impl Transport for FakeTransport {
             algo,
             bytes: Sha256::digest(&data).to_vec(),
         })
+    }
+
+    async fn set_bandwidth_limit(&self, bytes_per_sec: Option<u64>) -> Result<()> {
+        self.bandwidth_limits.lock().unwrap().push(bytes_per_sec);
+        Ok(())
     }
 }

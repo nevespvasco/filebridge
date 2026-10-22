@@ -71,9 +71,13 @@ pub fn can_go(from: JobState, to: JobState) -> bool {
         Analysing => matches!(to, AwaitingApproval | Ready | Draft),
         AwaitingApproval => matches!(to, Ready | Analysing),
         Ready => matches!(to, Transferring | Analysing | AwaitingApproval),
-        Transferring => matches!(to, Paused | Retrying | Verifying | Integrating),
+        Transferring => matches!(to, Paused | Retrying | Waiting | Verifying | Integrating),
         Paused => matches!(to, Transferring),
-        Retrying => matches!(to, Transferring | Verifying | Integrating | Paused),
+        Retrying => matches!(
+            to,
+            Transferring | Waiting | Verifying | Integrating | Paused
+        ),
+        Waiting => matches!(to, Transferring | Paused),
         Verifying => matches!(to, Transferring | Integrating | Retrying | Paused),
         Integrating => matches!(to, Completed | CompletedWithWarnings | Retrying | Paused),
         Completed | CompletedWithWarnings | Cancelled | Failed => false,
@@ -92,6 +96,9 @@ mod tests {
         assert!(can_go(Transferring, Retrying));
         assert!(can_go(Retrying, Transferring));
         assert!(can_go(Verifying, Transferring), "mismatches resend");
+        assert!(can_go(Transferring, Waiting), "the send window closed");
+        assert!(can_go(Waiting, Transferring), "the send window opened");
+        assert!(!can_go(Waiting, Verifying), "only the transfer waits");
         assert!(can_go(Integrating, CompletedWithWarnings));
         assert!(can_go(Paused, Cancelled));
         assert!(!can_go(Completed, Cancelled), "terminal is final");
@@ -113,12 +120,12 @@ mod tests {
         assert_eq!(allowed(Op::Start), [Ready, Paused]);
         assert_eq!(
             allowed(Op::Pause),
-            [Transferring, Retrying, Verifying, Integrating]
+            [Transferring, Retrying, Waiting, Verifying, Integrating]
         );
         assert_eq!(allowed(Op::Run), allowed(Op::Pause));
         assert_eq!(
             allowed(Op::Cancel).len(),
-            9,
+            10,
             "every state but the 4 terminal ones"
         );
         // Every operation that changes state only runs where that change is allowed.

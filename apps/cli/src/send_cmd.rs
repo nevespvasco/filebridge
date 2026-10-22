@@ -34,9 +34,6 @@ pub struct SendArgs {
     verify: bool,
     #[arg(long, default_value_t = 8)]
     concurrency: u32,
-    /// Bandwidth limit, e.g. `20M`.
-    #[arg(long)]
-    bwlimit: Option<String>,
     /// Don't ask before sending.
     #[arg(long, short)]
     yes: bool,
@@ -65,7 +62,6 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
             SendOptions {
                 verify: args.verify,
                 concurrency: args.concurrency,
-                bwlimit: args.bwlimit,
             },
         )
         .await?;
@@ -377,6 +373,11 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
                         error.map(|e| format!(": {e}")).unwrap_or_default()))),
                     Event::RetryScheduled { attempt, in_secs, error, .. } =>
                         Some((false, format!("! {error}; retry #{attempt} in {}", human_secs(in_secs)))),
+                    Event::SendWindowWait { opens_at, .. } => {
+                        let secs = (opens_at - filebridge_store::now_ms()).max(0) as u64 / 1000;
+                        Some((false, format!("waiting for the send window; it opens in {} \
+                            (`filebridge settings`)", human_secs(secs))))
+                    }
                     Event::EntryFailed { path, error, retryable: false, .. } =>
                         Some((false, format!("! {path}: {error}"))),
                     Event::IntegrationProblem { code, message, .. } =>

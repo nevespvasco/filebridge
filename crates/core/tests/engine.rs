@@ -9,8 +9,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
-    CoreError, DecisionInput, Engine, EngineOptions, Event, IssueDecision, JobState, Profile,
-    Registry, SendOptions, Store, StoreError, TargetSpec,
+    AppSettings, CoreError, DecisionInput, Engine, EngineOptions, Event, IssueDecision, JobState,
+    LocalClock, Profile, Registry, SendOptions, SendWindow, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -110,8 +110,42 @@ fn engine_with_batch(
             batch_size,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            local_clock: LocalClock::fixed(|| NOON),
         },
     )
+}
+
+/// The tests' local time: send windows are set around it.
+const NOON: u32 = 12 * 3600;
+
+fn window(start_hour: u16, end_hour: u16) -> AppSettings {
+    AppSettings {
+        bandwidth_limit: None,
+        send_window: Some(SendWindow {
+            start_minute: start_hour * 60,
+            end_minute: end_hour * 60,
+        }),
+    }
+}
+
+/// A window that is closed at noon.
+fn closed_window() -> AppSettings {
+    window(22, 7)
+}
+
+async fn wait_for_state(engine: &Engine, job: &str, want: JobState) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let state = engine.job(job).await.unwrap().state;
+        if state == want {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "job is {state:?}, never {want:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 async fn setup() -> Setup {
@@ -501,7 +535,6 @@ async fn options_change_until_the_job_is_sent() {
     let verify = SendOptions {
         verify: true,
         concurrency: 2,
-        bwlimit: Some("20M".into()),
     };
     // Draft.
     s.engine.set_options(&job, verify.clone()).await.unwrap();
@@ -839,4 +872,208 @@ async fn a_file_missing_at_the_destination_is_sent_again() {
         "one more call for the missing file"
     );
     assert_eq!(s.engine.job(&job).await.unwrap().counts.verified_ok, 3);
+}
+
+// ---- settings and the send window ----------------------------------------------------------
+
+#[tokio::test]
+async fn settings_are_validated_saved_and_applied() {
+    let s = setup().await;
+    assert_eq!(s.engine.get_settings(), AppSettings::default());
+    let bad = AppSettings {
+        send_window: Some(SendWindow {
+            start_minute: 60,
+            end_minute: 60,
+        }),
+        ..Default::default()
+    };
+    assert!(matches!(
+        s.engine.save_settings(bad).await,
+        Err(CoreError::Invalid(_))
+    ));
+    let limited = AppSettings {
+        bandwidth_limit: Some(2_500_000),
+        ..window(22, 7)
+    };
+    s.engine.save_settings(limited.clone()).await.unwrap();
+    s.engine.save_settings(window(22, 7)).await.unwrap();
+    assert_eq!(
+        *s.transport.bandwidth_limits.lock().unwrap(),
+        [Some(2_500_000), None]
+    );
+
+    // A restart reads them back and applies the limit to the fresh transport.
+    s.engine.save_settings(limited.clone()).await.unwrap();
+    let transport = Arc::new(FakeTransport::default());
+    let engine = engine_with(s.store.clone(), transport.clone(), s.integration.clone());
+    assert_eq!(engine.load_settings().await.unwrap(), limited);
+    assert_eq!(engine.get_settings(), limited);
+    assert_eq!(
+        *transport.bandwidth_limits.lock().unwrap(),
+        [Some(2_500_000)]
+    );
+}
+
+#[tokio::test]
+async fn a_closed_window_holds_the_transfer_until_it_opens() {
+    let s = setup().await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    let mut events = s.engine.subscribe();
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.engine.start(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    let opens_at = loop {
+        if let Event::SendWindowWait { opens_at, .. } = events.recv().await.unwrap() {
+            break opens_at;
+        }
+    };
+    // 22:00 is 10 hours after the tests' noon.
+    let expected = filebridge_store::now_ms() + 10 * 3600 * 1000;
+    assert!(
+        (opens_at - expected).abs() < 60_000,
+        "{opens_at} vs {expected}"
+    );
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst), 0);
+    assert!(dest_files(&s.dest).is_empty());
+
+    // Opening the window (here: a window that includes noon) lets it go at once.
+    s.engine.save_settings(window(11, 13)).await.unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+}
+
+#[tokio::test]
+async fn a_window_closing_mid_transfer_keeps_what_arrived() {
+    let s = setup().await;
+    for i in 0..12 {
+        std::fs::write(s.src.join(format!("f{i:02}.txt")), b"x").unwrap();
+    }
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(30);
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.engine.start(&job).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    let held = s.engine.job(&job).await.unwrap();
+    assert!(
+        held.counts.done > 0 && held.counts.done < 15,
+        "{:?}",
+        held.counts
+    );
+    assert_eq!(held.counts.pending, held.counts.files - held.counts.done);
+
+    *s.transport.per_file.lock().unwrap() = Duration::ZERO;
+    s.engine
+        .save_settings(AppSettings::default())
+        .await
+        .unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 15);
+}
+
+#[tokio::test]
+async fn a_waiting_job_can_be_paused_resumed_and_cancelled() {
+    let s = setup().await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.engine.start(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    s.engine.pause(&job).await.unwrap();
+    assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Paused);
+    s.engine.resume(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    s.engine.cancel(&job).await.unwrap();
+    assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Cancelled);
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn a_waiting_job_keeps_waiting_after_a_restart() {
+    let s = setup().await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.engine.start(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    // The app stops while the job waits.
+    s.engine.pause(&job).await.unwrap();
+    s.store
+        .change_job_state(
+            &job,
+            filebridge_store::StateChange {
+                from: "paused".into(),
+                to: "waiting".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+    let engine = engine_with(s.store.clone(), s.transport.clone(), s.integration.clone());
+    engine.load_settings().await.unwrap();
+    assert_eq!(engine.resume_unfinished().await.unwrap(), vec![job.clone()]);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(engine.job(&job).await.unwrap().state, JobState::Waiting);
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst), 0);
+
+    engine.save_settings(AppSettings::default()).await.unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+}
+
+#[tokio::test]
+async fn verification_and_integration_run_outside_the_window() {
+    let s = setup().await;
+    s.integration.hang.store(true, Ordering::SeqCst);
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..Default::default()
+        },
+    )
+    .await;
+    s.engine.start(&job).await.unwrap();
+    wait_for_state(&s.engine, &job, JobState::Integrating).await;
+    // Stopped after the transfer; restarted in verification with the window closed.
+    s.engine.pause(&job).await.unwrap();
+    s.store
+        .change_job_state(
+            &job,
+            filebridge_store::StateChange {
+                from: "paused".into(),
+                to: "verifying".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    s.integration.hang.store(false, Ordering::SeqCst);
+    let calls = s.transport.calls.load(Ordering::SeqCst);
+
+    let engine = engine_with(s.store.clone(), s.transport.clone(), s.integration.clone());
+    engine.save_settings(closed_window()).await.unwrap();
+    engine.resume_unfinished().await.unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    assert_eq!(
+        s.transport.calls.load(Ordering::SeqCst),
+        calls,
+        "nothing resent"
+    );
+    assert_eq!(engine.job(&job).await.unwrap().counts.verified_ok, 3);
 }

@@ -8,7 +8,7 @@ import type {
   DecisionInput,
   JobSummary_Serialize,
   RuleCount,
-  SendOptions_Serialize,
+  SendOptions,
 } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 import { useJobs } from "./jobs";
@@ -16,22 +16,22 @@ import { useProfiles } from "./profiles";
 
 export type Step = 1 | 2 | 3 | 4 | 5;
 
-function defaultOptions(): SendOptions_Serialize {
+function defaultOptions(): SendOptions {
   // Verifying by checksum is the safe default for a one-off migration.
-  return { verify: true, concurrency: 8, bwlimit: null };
+  return { verify: true, concurrency: 8 };
 }
 
 export const useWizard = defineStore("wizard", () => {
   const step = ref<Step>(1);
   const sources = ref<string[]>([]);
   const profileId = ref<string | null>(null);
-  const options = ref<SendOptions_Serialize>(defaultOptions());
+  const options = ref<SendOptions>(defaultOptions());
 
   const jobId = ref<string | null>(null);
   /** The sources and destination `jobId` was created from; a change means a new job and a new analysis. */
   const jobKey = ref<string | null>(null);
   /** The options the service has for `jobId`. Step 4 changes them in place (`setOptions`). */
-  const jobOptions = ref<SendOptions_Serialize | null>(null);
+  const jobOptions = ref<SendOptions | null>(null);
   const analysis = ref<AnalysisSummary_Serialize | null>(null);
   const analysing = ref(false);
   const analyseError = ref<string | null>(null);

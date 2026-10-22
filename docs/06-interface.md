@@ -26,7 +26,7 @@ whoever wants to can see the equivalent commands in a "Details" panel.
 | Destinations | Saved profiles, connection test, Nextcloud mode |
 | Integrations | Active plugins and their settings |
 | Repair destination | Analyse and fix names in an existing remote folder |
-| Settings | Bandwidth limit, send schedule, notifications, language (pt and en) |
+| Settings | Bandwidth limit and send window (kept by the service, ADR 0010), notifications, language (pt and en) |
 
 ## Principles
 
@@ -69,5 +69,5 @@ apps/desktop/src/
 | `start_job(job_id, options)` / `pause_job` / `resume_job` / `cancel_job` / `verify_job` | Lifecycle |
 | `list_jobs()` / `get_job(job_id)` / `get_job_log(job_id, page)` | Jobs screens |
 | `start_repair(profile_id, remote_path)` | Repair destination |
-| `get_settings()` / `save_settings(s)` | Settings |
+| `get_settings()` / `save_settings(settings)` | Settings: app-wide bandwidth limit and send window (implemented) |
 | `remove_access(profile_id)` | "Remove access" wizard |

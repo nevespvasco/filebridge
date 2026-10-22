@@ -11,6 +11,7 @@ export function useFmt() {
     rate: (n: number | null | undefined) => f.formatRate(n, tag()),
     count: (n: number | null | undefined) => f.formatCount(n, tag()),
     date: (ms: number | null | undefined) => f.formatDate(ms, tag()),
+    time: (ms: number) => f.formatTime(ms, tag()),
     duration: f.formatDuration,
     percent: f.percent,
   };

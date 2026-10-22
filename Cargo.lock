@@ -1558,6 +1558,7 @@ name = "filebridge-core"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "chrono",
  "filebridge-integration-api",
  "filebridge-model",
  "filebridge-names",

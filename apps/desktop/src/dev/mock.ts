@@ -13,6 +13,7 @@ import {
   JOB_OPERATIONS,
   PROTOCOL_VERSION,
   type AnalysisSummary_Serialize,
+  type AppSettings_Serialize,
   type commands,
   type DecisionInput,
   type ErrorBody,
@@ -68,7 +69,7 @@ const jobs: JobSummary_Serialize[] = [
     updated_at: now - 80_000_000,
     finished_at: now - 80_000_000,
     sources: ["/home/demo/Documentos"],
-    options: { verify: true, concurrency: 8, bwlimit: null },
+    options: { verify: true, concurrency: 8 },
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
   },
 ];
@@ -158,6 +159,31 @@ function setState(job: JobSummary_Serialize, to: JobState, error: string | null 
   if (["completed", "completed_with_warnings", "cancelled", "failed"].includes(to)) {
     job.finished_at = Date.now();
     send({ type: "job_finished", job_id: job.id, state: to, error });
+  }
+}
+
+let settings: AppSettings_Serialize = { bandwidth_limit: null, send_window: null };
+
+/** Ms until the send window opens; 0 when it's open or there is none (the engine's rule). */
+function windowOpensIn(): number {
+  const w = settings.send_window;
+  if (!w) return 0;
+  const d = new Date();
+  const now = d.getHours() * 60 + d.getMinutes();
+  const { start_minute: s, end_minute: e } = w;
+  const open = s < e ? now >= s && now < e : now >= s || now < e;
+  if (open) return 0;
+  return (((s - now + 1440) % 1440) * 60 - d.getSeconds()) * 1000;
+}
+
+/** Sends now, or waits for the window like the engine does. */
+function sendOrWait(job: JobSummary_Serialize) {
+  const wait = windowOpensIn();
+  if (wait > 0) {
+    setState(job, "waiting");
+    send({ type: "send_window_wait", job_id: job.id, opens_at: Date.now() + wait });
+  } else {
+    runTransfer(job);
   }
 }
 
@@ -407,7 +433,7 @@ const handlers: Handlers = {
     const job = find(a.jobId);
     allow("start", job);
     setState(job, "transferring");
-    runTransfer(job);
+    sendOrWait(job);
     return null;
   },
   resume: (a) => handlers.start(a),
@@ -427,6 +453,25 @@ const handlers: Handlers = {
   },
   listJobs: (a) => jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number)),
   job: (a) => find(a.jobId),
+  getSettings: () => settings,
+  saveSettings: (a) => {
+    const s = a.settings as AppSettings_Serialize;
+    const w = s.send_window;
+    if (w && w.start_minute === w.end_minute) throw fail("invalid", "a send window must start and end at different times");
+    if (s.bandwidth_limit != null && s.bandwidth_limit < 1024) throw fail("invalid", "the bandwidth limit must be at least 1024 bytes per second");
+    settings = { bandwidth_limit: s.bandwidth_limit ?? null, send_window: w ?? null };
+    // Like the engine: waiting jobs go when the window opens, running ones wait when it closes.
+    for (const job of jobs) {
+      if (job.state === "waiting" && windowOpensIn() === 0) {
+        setState(job, "transferring");
+        runTransfer(job);
+      } else if (job.state === "transferring" && windowOpensIn() > 0) {
+        clearInterval(timers.get(job.id));
+        sendOrWait(job);
+      }
+    }
+    return null;
+  },
 };
 
 /** `list_profiles` (what Tauri invokes) → `listProfiles` (the bindings' name). */

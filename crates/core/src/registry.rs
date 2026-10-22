@@ -32,6 +32,10 @@ impl Registry {
         self
     }
 
+    pub(crate) fn transports(&self) -> impl Iterator<Item = &Arc<dyn Transport>> {
+        self.transports.values()
+    }
+
     pub fn transport(&self, id: &str) -> Result<Arc<dyn Transport>> {
         self.transports
             .get(id)

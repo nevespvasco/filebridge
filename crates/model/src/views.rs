@@ -12,8 +12,6 @@ pub struct SendOptions {
     pub verify: bool,
     /// Files in flight at once.
     pub concurrency: u32,
-    /// rclone-style bandwidth limit, e.g. `"20M"`.
-    pub bwlimit: Option<String>,
 }
 
 impl Default for SendOptions {
@@ -21,7 +19,6 @@ impl Default for SendOptions {
         Self {
             verify: false,
             concurrency: 8,
-            bwlimit: None,
         }
     }
 }

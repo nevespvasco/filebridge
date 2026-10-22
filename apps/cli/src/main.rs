@@ -1,6 +1,6 @@
 //! filebridge CLI: the same engine as the app, without a UI (servers, scripts).
 //!
-//! Engine commands (`profile`, `send`, `jobs`, …) run `core` in-process. The Phase 0
+//! Engine commands (`profile`, `send`, `settings`, `jobs`, …) run `core` in-process. The Phase 0
 //! commands (`scan`, `fixture`, `bench`) stay for benchmarking rename-in-transit.
 
 mod app;
@@ -9,6 +9,7 @@ mod fixture;
 mod prepare;
 mod profile_cmd;
 mod send_cmd;
+mod settings_cmd;
 
 use std::path::PathBuf;
 
@@ -63,6 +64,11 @@ enum Cmd {
     Resume { job: Option<String> },
     /// Stop a job for good. Nothing is deleted.
     Cancel { job: String },
+    /// The app-wide bandwidth limit and send window (default: show them).
+    Settings {
+        #[command(subcommand)]
+        cmd: Option<settings_cmd::SettingsCmd>,
+    },
     /// Recent jobs.
     Jobs {
         #[arg(long, default_value_t = 20)]
@@ -113,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Start { job } => send_cmd::start(g, &job).await,
         Cmd::Resume { job } => send_cmd::resume(g, job).await,
         Cmd::Cancel { job } => send_cmd::cancel(g, &job).await,
+        Cmd::Settings { cmd } => settings_cmd::run(g, cmd).await,
         Cmd::Jobs { limit } => send_cmd::jobs(g, limit).await,
         Cmd::Job { job } => send_cmd::show(g, &job).await,
         Cmd::Scan { source, show } => prepare::print_scan(&source, show),

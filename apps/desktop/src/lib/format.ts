@@ -56,3 +56,21 @@ export function baseName(path: string): string {
   const i = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   return i >= 0 ? trimmed.slice(i + 1) : trimmed;
 }
+
+/** Minutes since midnight → `HH:MM` (the value of an `<input type="time">`). */
+export function minutesToTime(m: number): string {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+/** `HH:MM` → minutes since midnight; `null` if it isn't a time. */
+export function timeToMinutes(t: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
+  if (!m) return null;
+  const [h, min] = [Number(m[1]), Number(m[2])];
+  return h < 24 && min < 60 ? h * 60 + min : null;
+}
+
+/** A Unix-ms instant as a local time of day, e.g. `22:00`. */
+export function formatTime(ms: number, locale: string): string {
+  return new Date(ms).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+}

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
+import type { JobState } from "@/bindings";
 import { useRouter } from "vue-router";
 import HelpTip from "@/components/HelpTip.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
@@ -13,6 +14,8 @@ const jobs = useJobs();
 const profiles = useProfiles();
 const router = useRouter();
 const fmt = useFmt();
+/** Speed and ETA mean something only while files are moving. */
+const sending = (state: JobState) => RUNNING.includes(state) && state !== "waiting";
 
 onMounted(() => {
   void jobs.loadPage(0);
@@ -79,8 +82,8 @@ function sourcesLabel(sources: string[]) {
                   {{ fmt.bytes(jobs.live[id]?.transfer?.bytes_done ?? jobs.byId[id].counts.bytes_done) }} / {{ fmt.bytes(jobs.byId[id].counts.bytes) }}
                 </span>
               </td>
-              <td class="nowrap">{{ RUNNING.includes(jobs.byId[id].state) ? fmt.rate(jobs.live[id]?.transfer?.bytes_per_sec) : "—" }}</td>
-              <td class="nowrap">{{ RUNNING.includes(jobs.byId[id].state) ? fmt.duration(jobs.live[id]?.transfer?.eta_secs) : "—" }}</td>
+              <td class="nowrap">{{ sending(jobs.byId[id].state) ? fmt.rate(jobs.live[id]?.transfer?.bytes_per_sec) : "—" }}</td>
+              <td class="nowrap">{{ sending(jobs.byId[id].state) ? fmt.duration(jobs.live[id]?.transfer?.eta_secs) : "—" }}</td>
               <td>{{ jobs.byId[id].attempt || "—" }}</td>
             </template>
           </tr>

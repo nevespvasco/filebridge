@@ -31,6 +31,8 @@ enum StageEnd<T> {
     /// A retryable failure: back off, then run the stage again.
     Retry(String),
     Cancelled,
+    /// Transfer only: the send window closed; wait for it to open again.
+    Held,
 }
 
 struct Ctx {
@@ -41,14 +43,12 @@ struct Ctx {
     cancel: CancellationToken,
     /// Warnings of the stage running now; saved with the transition that ends it.
     warnings: Vec<String>,
+    /// Keeps the computer awake while the job runs; let go while it waits for the window.
+    awake: Option<SleepGuard>,
 }
 
 impl Engine {
     pub(crate) async fn run(self: &Arc<Self>, job_id: &str, cancel: &CancellationToken) {
-        let _guard: Option<SleepGuard> = self
-            .options
-            .inhibit_sleep
-            .then(|| inhibit("filebridge is sending files"));
         if let Err(e) = self.run_inner(job_id, cancel).await {
             if cancel.is_cancelled() {
                 return;
@@ -73,6 +73,7 @@ impl Engine {
             sources: self.job_sources(&row).await,
             cancel: cancel.clone(),
             warnings: Vec::new(),
+            awake: None,
         };
         let mut state = JobState::parse(&row.state)?;
         loop {
@@ -80,14 +81,27 @@ impl Engine {
                 return Ok(());
             }
             let current = state;
+            if current == JobState::Waiting {
+                ctx.awake = None;
+            } else {
+                self.keep_awake(&mut ctx);
+            }
             let mut outcome = Outcome::default();
             let next = match current {
                 JobState::Retrying => JobState::Transferring,
+                JobState::Waiting => {
+                    if !self.window_opens(job_id, cancel).await {
+                        return Ok(());
+                    }
+                    JobState::Transferring
+                }
+                JobState::Transferring if self.window_closed() => JobState::Waiting,
                 JobState::Transferring => match self.transfer_stage(&mut ctx).await? {
                     StageEnd::Done(()) if ctx.options.verify => JobState::Verifying,
                     StageEnd::Done(()) => JobState::Integrating,
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
+                    StageEnd::Held => JobState::Waiting,
                 },
                 JobState::Verifying => match self.verify_stage(&mut ctx).await? {
                     StageEnd::Done(mismatched) if mismatched.is_empty() => JobState::Integrating,
@@ -127,6 +141,7 @@ impl Engine {
                     }
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
+                    StageEnd::Held => unreachable!("only the transfer waits for the window"),
                 },
                 JobState::Integrating => match self.integrate_stage(&mut ctx).await? {
                     StageEnd::Done(()) => {
@@ -141,6 +156,7 @@ impl Engine {
                     }
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
+                    StageEnd::Held => unreachable!("only the transfer waits for the window"),
                 },
                 other => {
                     return Err(CoreError::Invalid(format!(
@@ -153,6 +169,12 @@ impl Engine {
             let mut job = self.begin(job_id, Op::Run).await?;
             job.go_with(next, None, outcome).await?;
             state = job.state();
+        }
+    }
+
+    fn keep_awake(&self, ctx: &mut Ctx) {
+        if ctx.awake.is_none() && self.options.inhibit_sleep {
+            ctx.awake = Some(inhibit("filebridge is sending files"));
         }
     }
 
@@ -261,7 +283,6 @@ impl Engine {
                     items,
                     options: TransferOptions {
                         concurrency: ctx.options.concurrency.max(1) as usize,
-                        bwlimit: ctx.options.bwlimit.clone(),
                     },
                 };
                 self.store
@@ -325,13 +346,19 @@ impl Engine {
                         let _ = store.set_transfer_states(&job_id, finished).await;
                     }
                 });
-                let result = tokio::select! {
-                    r = transport.transfer(&ctx.profile.destination, &tj, sink) => r,
-                    _ = ctx.cancel.cancelled() => {
+                let stopped = tokio::select! {
+                    r = transport.transfer(&ctx.profile.destination, &tj, sink) => Ok(r),
+                    _ = ctx.cancel.cancelled() => Err(StageEnd::Cancelled),
+                    _ = self.window_closes() => Err(StageEnd::Held),
+                };
+                let result = match stopped {
+                    Ok(r) => r,
+                    Err(end) => {
                         // Dropping the transfer drops its sink; let the forwarder save what
-                        // finished before stopping.
+                        // finished before stopping. Files still in flight stay Partial and go
+                        // again next time.
                         let _ = tokio::time::timeout(Duration::from_secs(2), forward).await;
-                        return Ok(StageEnd::Cancelled);
+                        return Ok(end);
                     }
                 };
                 // The transport dropped its sink, so the forwarder ends once it has drained.

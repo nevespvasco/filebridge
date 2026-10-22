@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use filebridge_core::{Event, JobState, Profile, SendOptions, TargetSpec};
+use filebridge_core::{AppSettings, Event, JobState, Profile, SendOptions, TargetSpec};
 use filebridge_ipc::{Client, Endpoint, Operations, PROTOCOL_VERSION};
 use filebridge_transport_api::{Backend, Destination};
 
@@ -186,12 +186,19 @@ async fn a_killed_service_resumes_its_jobs_on_restart() {
     let src = fixture(env.dir.path(), 20, 100_000);
     let dest = env.dir.path().join("dest");
     let profile = local_profile(&env, &client, &dest).await;
+    // Slow enough to be killed mid-send.
+    client
+        .save_settings(AppSettings {
+            bandwidth_limit: Some(400 * 1024),
+            send_window: None,
+        })
+        .await
+        .unwrap();
     let job = client
         .create_job(
             vec![src.to_string_lossy().into_owned()],
             profile.id,
             SendOptions {
-                bwlimit: Some("400k".into()),
                 concurrency: 2,
                 ..SendOptions::default()
             },

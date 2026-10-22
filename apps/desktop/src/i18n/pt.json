@@ -263,7 +263,9 @@
     "guide": "Confirme que está tudo certo. Ao carregar em “Enviar”, a cópia começa e pode acompanhá-la no ecrã seguinte.",
     "renamesHelp": "Nomes ajustados na cópia para o destino os aceitar. Os ficheiros originais mantêm os nomes.",
     "modeHelp": "Como os ficheiros chegam ao destino.",
-    "sendTip": "Começa a cópia. Os ficheiros originais não são alterados."
+    "sendTip": "Começa a cópia. Os ficheiros originais não são alterados.",
+    "window": "Os ficheiros só são enviados entre as {start} e as {end}. Fora dessas horas este envio espera e continua sozinho.",
+    "limit": "Velocidade limitada a {rate} (Definições)."
   },
   "after": {
     "title": "A enviar",
@@ -291,7 +293,9 @@
     "retries": "{n} novas tentativas automáticas",
     "verifying": "A verificar {done} de {total}",
     "mismatches": "{n} diferenças",
-    "items": "{n} itens"
+    "items": "{n} itens",
+    "window": "O envio continua às {time}, quando começa o horário de envio.",
+    "windowSoon": "O envio continua quando começa o horário de envio ({start}–{end})."
   },
   "integration": {
     "nextcloud": {
@@ -316,6 +320,7 @@
     "transferring": "A enviar",
     "paused": "Em pausa",
     "retrying": "A tentar de novo",
+    "waiting": "À espera do horário",
     "verifying": "A verificar",
     "integrating": "A integrar",
     "completed": "Concluído",
@@ -511,11 +516,24 @@
     },
     "notifications": "Avisar quando um envio acaba",
     "notificationsHint": "Notificação do sistema quando um envio termina ou falha.",
+    "sending": "Envios",
+    "bandwidthLimit": "Limitar a velocidade",
+    "bandwidthUnit": "Unidade",
+    "units": {
+      "mbit": "Mbit/s",
+      "mbyte": "MB/s"
+    },
+    "scheduleOnly": "Enviar só entre",
+    "from": "Das",
+    "to": "às",
+    "overnight": "Passa da meia-noite: das {start} de hoje até às {end} do dia seguinte.",
+    "sendingHint": "Aplica-se a todos os envios, incluindo os que já estão a correr. As horas são as deste computador; o computador tem de estar ligado e acordado quando o horário começa.",
+    "save": "Guardar",
+    "saved": "Guardado",
+    "badLimit": "Indique uma velocidade maior que zero.",
+    "badWindow": "O início e o fim têm de ser horas diferentes.",
     "bandwidth": "Limite de largura de banda",
-    "bandwidthHint": "p. ex. 20M",
     "schedule": "Horário de envio",
-    "scheduleHint": "p. ex. 01:00–07:00",
-    "later": "O limite de largura de banda e o horário chegam numa versão futura.",
     "service": "Serviço (informação técnica)",
     "state": "Estado",
     "version": "Versão",

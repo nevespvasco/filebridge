@@ -220,16 +220,11 @@ pub struct TransferItem {
 pub struct TransferOptions {
     /// Files in flight at once.
     pub concurrency: usize,
-    /// rclone-style limit, e.g. `"20M"`.
-    pub bwlimit: Option<String>,
 }
 
 impl Default for TransferOptions {
     fn default() -> Self {
-        Self {
-            concurrency: 4,
-            bwlimit: None,
-        }
+        Self { concurrency: 4 }
     }
 }
 
@@ -329,6 +324,11 @@ pub trait Transport: Send + Sync {
     /// The file's hash at the destination. `NotFound` if it isn't there; `Unsupported` if the
     /// destination can't produce this kind of hash.
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
+    /// The most this transport may use, in bytes per second across all its transfers at once,
+    /// including ones already running; `None` lifts the limit. Default: no limit to apply.
+    async fn set_bandwidth_limit(&self, _bytes_per_sec: Option<u64>) -> Result<()> {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "contract")]

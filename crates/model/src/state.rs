@@ -40,6 +40,8 @@ pub enum JobState {
     Transferring,
     Paused,
     Retrying,
+    /// Transfer held until the send window opens (docs/adr/0010).
+    Waiting,
     Verifying,
     Integrating,
     Completed,
@@ -49,7 +51,7 @@ pub enum JobState {
 }
 
 impl JobState {
-    pub const ALL: [JobState; 13] = [
+    pub const ALL: [JobState; 14] = [
         Self::Draft,
         Self::Analysing,
         Self::AwaitingApproval,
@@ -57,6 +59,7 @@ impl JobState {
         Self::Transferring,
         Self::Paused,
         Self::Retrying,
+        Self::Waiting,
         Self::Verifying,
         Self::Integrating,
         Self::Completed,
@@ -74,6 +77,7 @@ impl JobState {
             Self::Transferring => "transferring",
             Self::Paused => "paused",
             Self::Retrying => "retrying",
+            Self::Waiting => "waiting",
             Self::Verifying => "verifying",
             Self::Integrating => "integrating",
             Self::Completed => "completed",
@@ -102,7 +106,11 @@ impl JobState {
     pub fn is_running(self) -> bool {
         matches!(
             self,
-            Self::Transferring | Self::Retrying | Self::Verifying | Self::Integrating
+            Self::Transferring
+                | Self::Retrying
+                | Self::Waiting
+                | Self::Verifying
+                | Self::Integrating
         )
     }
 }

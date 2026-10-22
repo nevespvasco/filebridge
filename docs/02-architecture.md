@@ -61,6 +61,9 @@ stateDiagram-v2
     Paused --> Transferring: resume
     Transferring --> Retrying: network error
     Retrying --> Transferring: backoff elapsed
+    Transferring --> Waiting: send window closed
+    Waiting --> Transferring: send window open
+    Waiting --> Paused: user pause
     Transferring --> Verifying: all entries done
     Verifying --> Transferring: mismatches (only those entries)
     Verifying --> Integrating: zero differences (or verify skipped)
@@ -84,6 +87,9 @@ Rules:
   persisted stage. Entry-level state means a resumed transfer skips completed files.
 - `Retrying` uses exponential backoff 30 s → 1 min → 2 min → … capped at 15 min, **unlimited
   retries** until the user cancels ([07](07-security-reliability.md#reliability)).
+- `Waiting` holds the transfer outside the daily send window; verification and integration are
+  not held ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)). It is a running state:
+  it can be paused or cancelled and is resumed on startup, still waiting.
 - `Failed` is reserved for non-retryable errors (auth revoked, destination missing); the UI shows
   the cause and an action.
 
@@ -125,7 +131,7 @@ Rules:
 | `manifest_entries` | One row per file: source path (raw bytes), size, mtime, hash, algo, destination name, transfer state, verify state |
 | `issues` | Name issues per entry: rule id, severity, proposal, decision |
 | `events` | Append-only log of job events for the detail screen |
-| `settings` | Bandwidth limit, schedule, notifications, language |
+| `settings` | App-wide bandwidth limit and send window (key `app`, ADR 0010); notifications and language stay in the window |
 
 Schema migrations are embedded in the binary and run at startup. The manifest is what makes
 verification independent of the final name: it stores **source hash + destination name**, so a
