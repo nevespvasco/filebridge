@@ -5,6 +5,7 @@
 //! only the hosts wire implementations into the `Registry`).
 
 mod nextcloud;
+mod operations;
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -13,9 +14,12 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_nextcloud::Nextcloud;
+use filebridge_transport_fake::FakeTransport;
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
 
-pub use nextcloud::{NextcloudExtensions, detect_nextcloud};
+pub use operations::EngineOperations;
+
+use nextcloud::NextcloudWizard;
 
 pub const DB_FILE: &str = "filebridge.db";
 pub const LOCK_FILE: &str = "filebridge.lock";
@@ -26,6 +30,20 @@ pub struct HostOptions {
     pub data_dir: Option<PathBuf>,
     /// Default: `rclone` on PATH, else `~/.local/bin/rclone`.
     pub rclone: Option<PathBuf>,
+    /// The transport jobs use.
+    pub transport: TransportChoice,
+}
+
+/// Which transport the engine gets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TransportChoice {
+    /// rclone, started as a sidecar: what the app ships.
+    #[default]
+    Rclone,
+    /// None: for commands that never touch a destination. Starts nothing.
+    None,
+    /// The local-disk fake (`transport` id `fake`): for tests and the UI's dev mode, no rclone.
+    Fake,
 }
 
 /// What the caller will do with the engine.
@@ -68,13 +86,80 @@ pub fn lock_data_dir(dir: &Path) -> Result<DataLock> {
 pub struct Host {
     pub engine: Arc<Engine>,
     pub data_dir: PathBuf,
+    /// The Nextcloud plugin registered in the engine, for its profile wizard.
+    nextcloud: Option<Arc<Nextcloud>>,
+    /// Id of the transport registered in the engine, for profiles the wizards save.
+    transport: Option<&'static str>,
     _rcd: Option<Arc<Rcd>>,
     _lock: Option<DataLock>,
 }
 
 impl Host {
-    /// `with_transport: false` skips starting rclone (commands that never touch a destination).
-    pub async fn open(opts: &HostOptions, access: Access, with_transport: bool) -> Result<Self> {
+    /// Opens the data directory with the built-in plugins and `opts.transport`.
+    pub async fn open(opts: &HostOptions, access: Access) -> Result<Self> {
+        let mut registry = Registry::new();
+        let mut transport = None;
+        let rcd = match opts.transport {
+            TransportChoice::Rclone => {
+                let bin = find_rclone(opts.rclone.as_deref())?;
+                let rcd = Arc::new(
+                    Rcd::start(&bin)
+                        .await
+                        .with_context(|| format!("start {}", bin.display()))?,
+                );
+                registry.add_transport(Arc::new(RcloneTransport::new(
+                    rcd.clone(),
+                    Strategy::PerFile,
+                )));
+                transport = Some(RcloneTransport::ID);
+                Some(rcd)
+            }
+            TransportChoice::Fake => {
+                registry.add_transport(Arc::new(FakeTransport::default()));
+                transport = Some(FakeTransport::ID);
+                None
+            }
+            TransportChoice::None => None,
+        };
+        let nextcloud = Arc::new(Nextcloud::with_ssh());
+        registry.add_integration(nextcloud.clone());
+        let mut host = Self::with_registry(opts, access, registry)?;
+        host._rcd = rcd;
+        host.nextcloud = Some(nextcloud);
+        host.transport = transport;
+        Ok(host)
+    }
+
+    /// The Nextcloud profile wizard, run here: detects over SSH and saves the profile. `modes`
+    /// overrides the default `750`/`640`.
+    pub async fn detect_nextcloud(
+        &self,
+        req: filebridge_ipc::DetectNextcloudRequest,
+        modes: Option<(String, String)>,
+    ) -> Result<filebridge_ipc::DetectNextcloudResponse, filebridge_ipc::ErrorBody> {
+        let wizard = self
+            .nextcloud_wizard()
+            .ok_or_else(|| filebridge_ipc::ErrorBody {
+                code: "unsupported".into(),
+                message: "this host has no Nextcloud plugin or no transport".into(),
+            })?;
+        wizard.run(&self.engine, req, modes).await
+    }
+
+    /// Every ipc operation against this host's engine and plugins, for `filebridge-service`.
+    pub fn operations(&self) -> EngineOperations {
+        EngineOperations::with_nextcloud(self.engine.clone(), self.nextcloud_wizard())
+    }
+
+    fn nextcloud_wizard(&self) -> Option<NextcloudWizard> {
+        Some(NextcloudWizard {
+            nextcloud: self.nextcloud.clone()?,
+            transport: self.transport?,
+        })
+    }
+
+    /// Opens the data directory with the plugins in `registry` (tests bring their own).
+    pub fn with_registry(opts: &HostOptions, access: Access, registry: Registry) -> Result<Self> {
         let dir = match &opts.data_dir {
             Some(d) => d.clone(),
             None => default_data_dir()?,
@@ -86,28 +171,13 @@ impl Host {
         };
         let store = Store::open(&dir.join(DB_FILE))
             .with_context(|| format!("open the database in {}", dir.display()))?;
-        let mut registry = Registry::new();
-        let rcd = if with_transport {
-            let bin = find_rclone(opts.rclone.as_deref())?;
-            let rcd = Arc::new(
-                Rcd::start(&bin)
-                    .await
-                    .with_context(|| format!("start {}", bin.display()))?,
-            );
-            registry.add_transport(Arc::new(RcloneTransport::new(
-                rcd.clone(),
-                Strategy::PerFile,
-            )));
-            Some(rcd)
-        } else {
-            None
-        };
-        registry.add_integration(Arc::new(Nextcloud::with_ssh()));
         let engine = Engine::new(store, registry, EngineOptions::default());
         Ok(Self {
             engine,
             data_dir: dir,
-            _rcd: rcd,
+            nextcloud: None,
+            transport: None,
+            _rcd: None,
             _lock: lock,
         })
     }

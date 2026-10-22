@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use filebridge_integration_api::{JobContext, ProfileView};
-use filebridge_store::{Decision, EntryState, JobRow, ManifestCounts, NewJob, Store};
+use filebridge_names::{Choice, Entry, NamePlan, Planned};
+use filebridge_store::{Decision, EntryState, IssueRow, JobRow, ManifestCounts, NewJob, Store};
 use filebridge_transport_api::{CheckStatus, PreflightReport};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, broadcast};
@@ -17,7 +18,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::analyse::{self, bytes_path, os_bytes};
 use crate::backoff::Backoff;
-use crate::paths::{self, Node, Planned};
+use crate::decisions;
+use crate::lifecycle::{JobLock, JobLocks, Op};
 use crate::{CoreError, Event, JobKind, JobState, Profile, Registry, Result};
 
 const INSERT_BATCH: usize = 10_000;
@@ -142,15 +144,19 @@ impl PreflightView {
                 .into_iter()
                 .map(|c| CheckView {
                     id: c.id,
-                    status: match c.status {
-                        CheckStatus::Ok => "ok",
-                        CheckStatus::Warn => "warn",
-                        CheckStatus::Fail => "fail",
-                    }
-                    .into(),
+                    status: Self::status_text(c.status).into(),
                     message: c.message,
                 })
                 .collect(),
+        }
+    }
+
+    /// `ok`, `warn` or `fail`: how a check's status travels to the UI.
+    pub fn status_text(status: CheckStatus) -> &'static str {
+        match status {
+            CheckStatus::Ok => "ok",
+            CheckStatus::Warn => "warn",
+            CheckStatus::Fail => "fail",
         }
     }
 
@@ -200,16 +206,45 @@ pub struct IssueView {
     /// Source path relative to the source's parent, lossily decoded.
     pub path: String,
     pub rule: String,
-    /// `auto` or `needs_decision`.
-    pub severity: String,
+    pub severity: IssueSeverity,
     pub message_key: String,
     pub before: Vec<u8>,
     pub after: Vec<u8>,
     pub before_text: String,
     pub after_text: String,
-    /// `pending`, `accepted`, `edited`, `rejected` or `skipped`.
-    pub decision: String,
+    pub decision: IssueDecision,
     pub custom_name: Option<String>,
+}
+
+/// Whether an issue's fix is applied unless overridden, or waits for the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum IssueSeverity {
+    Auto,
+    NeedsDecision,
+}
+
+/// Where the decision on an issue stands, as the UI shows it. `rejected`: keep the original name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum IssueDecision {
+    Pending,
+    Accepted,
+    Edited,
+    Rejected,
+    Skipped,
+}
+
+impl IssueDecision {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Accepted => "accepted",
+            Self::Edited => "edited",
+            Self::Rejected => "rejected",
+            Self::Skipped => "skipped",
+        }
+    }
 }
 
 /// What the user decides about one issue.
@@ -241,6 +276,7 @@ pub struct Engine {
     pub(crate) options: EngineOptions,
     running: Mutex<HashMap<String, Running>>,
     generation: AtomicU64,
+    pub(crate) locks: JobLocks,
 }
 
 impl Engine {
@@ -253,6 +289,7 @@ impl Engine {
             options,
             running: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
+            locks: JobLocks::default(),
         })
     }
 
@@ -384,16 +421,7 @@ impl Engine {
     /// Replaces a job's send options (step 4 of the wizard). Allowed until the job is sent:
     /// in Draft, AwaitingApproval and Ready. The analysis and the decisions are kept.
     pub async fn set_options(&self, job_id: &str, options: SendOptions) -> Result<()> {
-        let state = JobState::parse(&self.store.get_job(job_id).await?.state)?;
-        if !matches!(
-            state,
-            JobState::Draft | JobState::AwaitingApproval | JobState::Ready
-        ) {
-            return Err(CoreError::Invalid(format!(
-                "options can't change while the job is {}",
-                state.as_str()
-            )));
-        }
+        let _job = self.begin(job_id, Op::SetOptions).await?;
         let options = serde_json::to_value(&options)?;
         self.store.set_job_options(job_id, options.clone()).await?;
         self.store
@@ -443,85 +471,28 @@ impl Engine {
         row.sources.iter().map(|s| bytes_path(s)).collect()
     }
 
-    /// Records a state change (validated), persists it and tells subscribers.
-    pub(crate) async fn transition(
-        &self,
-        job_id: &str,
-        to: JobState,
-        error: Option<String>,
-    ) -> Result<JobState> {
-        let from = JobState::parse(&self.store.get_job(job_id).await?.state)?;
-        if from == to {
-            return Ok(from);
-        }
-        if !from.can_go_to(to) {
-            return Err(CoreError::InvalidTransition { from, to });
-        }
-        if to.is_terminal() {
-            self.store
-                .finish_job(job_id, to.as_str(), error.clone())
-                .await?;
-        } else {
-            self.store
-                .set_job_state(job_id, to.as_str(), error.clone())
-                .await?;
-        }
-        self.store
-            .append_event(
-                Some(job_id),
-                "state",
-                serde_json::json!({ "from": from, "to": to, "error": error }),
-            )
-            .await?;
-        self.emit(Event::JobStateChanged {
-            job_id: job_id.to_owned(),
-            from,
-            to,
-            error: error.clone(),
-        });
-        if to.is_terminal() {
-            self.emit(Event::JobFinished {
-                job_id: job_id.to_owned(),
-                state: to,
-                error,
-            });
-        }
-        Ok(from)
-    }
-
     // ---- stages 2–3: analysis and decisions ---------------------------------------------
 
     /// Scans the sources, runs the name rules and the preflight checks. Re-running replaces
     /// the previous analysis and its decisions.
     pub async fn analyse(&self, job_id: &str) -> Result<AnalysisSummary> {
+        let mut job = self.begin(job_id, Op::Analyse).await?;
         let row = self.store.get_job(job_id).await?;
-        let state = JobState::parse(&row.state)?;
-        if !matches!(
-            state,
-            JobState::Draft | JobState::AwaitingApproval | JobState::Ready
-        ) {
-            return Err(CoreError::InvalidTransition {
-                from: state,
-                to: JobState::Analysing,
-            });
-        }
-        self.transition(job_id, JobState::Analysing, None).await?;
-        match self.analyse_inner(&row).await {
+        job.go(JobState::Analysing, None).await?;
+        match self.analyse_inner(&mut job, &row).await {
             Ok(summary) => Ok(summary),
             Err(e) => {
-                self.transition(job_id, JobState::Draft, Some(e.to_string()))
-                    .await?;
+                job.go(JobState::Draft, Some(e.to_string())).await?;
                 Err(e)
             }
         }
     }
 
-    async fn analyse_inner(&self, row: &JobRow) -> Result<AnalysisSummary> {
+    async fn analyse_inner(&self, job: &mut JobLock<'_>, row: &JobRow) -> Result<AnalysisSummary> {
         let job_id = row.id.clone();
         let profile = self.get_profile(&row.profile_id).await?;
-        let rules = self.registry.rule_set(&profile)?;
+        let names = self.registry.name_plan(&profile)?;
         let sources = self.job_sources(row).await;
-        let case_sensitive = profile.target.case_sensitive;
 
         self.store.clear_issues(&job_id).await?;
         self.store.clear_manifest(&job_id).await?;
@@ -530,7 +501,7 @@ impl Engine {
         let jid = job_id.clone();
         let analysis = tokio::task::spawn_blocking(move || {
             let (mut files, mut bytes) = (0, 0);
-            analyse::analyse_sources(&sources, &rules, case_sensitive, |src, f, b| {
+            analyse::analyse_sources(&sources, &names, |src, f, b| {
                 files += f;
                 bytes += b;
                 let _ = events.send(Event::ScanProgress {
@@ -574,7 +545,7 @@ impl Engine {
                 }),
             )
             .await?;
-        self.transition(&job_id, next, None).await?;
+        job.go(next, None).await?;
         Ok(AnalysisSummary {
             job_id: job_id.clone(),
             state: next,
@@ -632,112 +603,105 @@ impl Engine {
                 before_text: String::from_utf8_lossy(&r.issue.before).into_owned(),
                 after_text: String::from_utf8_lossy(&r.issue.after).into_owned(),
                 rule: r.issue.rule,
-                severity: r.issue.severity,
+                severity: decisions::severity(&r.issue.severity),
                 message_key: r.issue.message_key,
                 before: r.issue.before,
                 after: r.issue.after,
-                decision: r.issue.decision.as_str().into(),
+                decision: decisions::view(r.issue.decision),
                 custom_name: r.custom_name,
             });
         }
         Ok(out)
     }
 
-    /// Records a decision; the job becomes Ready once nothing is pending.
+    /// Records a decision; the job becomes Ready once nothing is pending. A decision the Name
+    /// plan can't honour (accepting an undecodable name, keeping or typing a name a rule would
+    /// still change) is refused here, not at Send.
     pub async fn decide_issue(
         &self,
         job_id: &str,
         issue_id: i64,
         input: DecisionInput,
     ) -> Result<()> {
-        let state = self.deciding_state(job_id).await?;
-        let (decision, name) = match input {
-            DecisionInput::Accept => (Decision::Accepted, None),
-            DecisionInput::Edit(n) => (Decision::Edited, Some(n)),
-            DecisionInput::KeepOriginal => (Decision::Rejected, None),
-            DecisionInput::Skip => (Decision::Skipped, None),
-        };
-        self.store.decide_issue(issue_id, decision, name).await?;
-        self.ready_if_decided(job_id, state).await
+        let mut job = self.begin(job_id, Op::Decide).await?;
+        let row = self.store.issue(job_id, issue_id).await?;
+        let choice = Choice::from(input);
+        let names = self.job_name_plan(job_id).await?;
+        let entry = self.entry(job_id, row.issue.entry_idx).await?;
+        names.check(&entry, &row.issue.rule, &choice)?;
+        let (decision, name) = decisions::stored(choice);
+        self.store
+            .decide_issue(job_id, issue_id, decision, name)
+            .await?;
+        self.ready_if_decided(&mut job).await
     }
 
     /// Applies one decision to every pending issue of a job, or of one `rule`, in one store
     /// transaction. Issues already decided keep their decision. `Edit` is refused: a custom
-    /// name belongs to one file. Returns how many issues changed.
+    /// name belongs to one file. Refused as a whole if the decision can't be honoured for one
+    /// of the issues. Returns how many issues changed.
     pub async fn decide_all(
         &self,
         job_id: &str,
         rule: Option<String>,
         input: DecisionInput,
     ) -> Result<u64> {
-        let decision = match input {
-            DecisionInput::Accept => Decision::Accepted,
-            DecisionInput::KeepOriginal => Decision::Rejected,
-            DecisionInput::Skip => Decision::Skipped,
-            DecisionInput::Edit(_) => {
-                return Err(CoreError::Invalid(
-                    "an edited name applies to one issue, not to many".into(),
-                ));
+        let choice = Choice::from(input);
+        if matches!(choice, Choice::Edit(_)) {
+            return Err(CoreError::Invalid(
+                "an edited name applies to one issue, not to many".into(),
+            ));
+        }
+        let mut job = self.begin(job_id, Op::Decide).await?;
+        if choice != Choice::Skip {
+            let names = self.job_name_plan(job_id).await?;
+            let entries = self.entries(job_id).await?;
+            let pending = self
+                .all_issues(job_id, rule.clone())
+                .await?
+                .into_iter()
+                .filter(|r| r.issue.decision == Decision::Pending);
+            let mut refused = pending.filter_map(|r| {
+                let entry = entries.get(r.issue.entry_idx as usize)?;
+                names.check(entry, &r.issue.rule, &choice).err()
+            });
+            if let Some(first) = refused.next() {
+                return Err(CoreError::Invalid(format!(
+                    "{} of these issues can't take that decision; decide them one by one. \
+                     First: {first}",
+                    1 + refused.count()
+                )));
             }
-        };
-        let state = self.deciding_state(job_id).await?;
+        }
+        let (decision, _) = decisions::stored(choice);
         let n = self
             .store
             .decide_pending_issues(job_id, rule, decision)
             .await?;
-        self.ready_if_decided(job_id, state).await?;
+        self.ready_if_decided(&mut job).await?;
         Ok(n)
     }
 
-    /// The job's state, if decisions may change in it.
-    async fn deciding_state(&self, job_id: &str) -> Result<JobState> {
-        let state = JobState::parse(&self.store.get_job(job_id).await?.state)?;
-        if !matches!(state, JobState::AwaitingApproval | JobState::Ready) {
-            return Err(CoreError::Invalid(format!(
-                "decisions can't change while the job is {}",
-                state.as_str()
-            )));
-        }
-        Ok(state)
-    }
-
-    async fn ready_if_decided(&self, job_id: &str, state: JobState) -> Result<()> {
-        if state == JobState::AwaitingApproval && self.store.pending_issue_count(job_id).await? == 0
+    async fn ready_if_decided(&self, job: &mut JobLock<'_>) -> Result<()> {
+        if job.state() == JobState::AwaitingApproval
+            && self.store.pending_issue_count(job.id()).await? == 0
         {
-            self.transition(job_id, JobState::Ready, None).await?;
+            job.go(JobState::Ready, None).await?;
         }
         Ok(())
     }
 
     /// Applies the decisions to the manifest: final destination paths and skipped entries.
-    async fn plan_destinations(&self, job_id: &str, case_sensitive: bool) -> Result<()> {
-        let mut nodes = Vec::new();
-        let mut after = None;
-        loop {
-            let page = self.store.entries_page(job_id, after, PAGE).await?;
-            let Some(last) = page.last() else { break };
-            after = Some(last.entry.idx);
-            for e in page {
-                if e.entry.idx != nodes.len() as u64 {
-                    return Err(CoreError::Invalid("manifest has gaps".into()));
-                }
-                nodes.push(Node {
-                    parent: e.entry.parent_idx,
-                    raw_path: e.entry.raw_path,
-                    dest_path: e.dest_path,
-                });
-            }
-        }
-        let mut issues = Vec::new();
-        let mut after = None;
-        loop {
-            let page = self.store.issues_page(job_id, None, after, PAGE).await?;
-            let Some(last) = page.last() else { break };
-            after = Some(last.id);
-            issues.extend(page);
-        }
-        let overrides = paths::overrides(&nodes, &issues)?;
-        let planned = paths::plan(&nodes, &overrides, case_sensitive)?;
+    async fn plan_destinations(&self, job_id: &str, profile: &Profile) -> Result<()> {
+        let names = self.registry.name_plan(profile)?;
+        let entries = self.entries(job_id).await?;
+        let decided: Vec<_> = self
+            .all_issues(job_id, None)
+            .await?
+            .into_iter()
+            .map(decisions::decided)
+            .collect();
+        let planned = names.resolve(&entries, &decided)?;
         let mut dest = Vec::new();
         let mut skipped = Vec::new();
         for (i, p) in planned.into_iter().enumerate() {
@@ -751,35 +715,71 @@ impl Engine {
         Ok(())
     }
 
+    async fn job_name_plan(&self, job_id: &str) -> Result<NamePlan> {
+        let row = self.store.get_job(job_id).await?;
+        let profile = self.get_profile(&row.profile_id).await?;
+        self.registry.name_plan(&profile)
+    }
+
+    /// Every manifest entry of a job, in scanner order, as the name rules see it.
+    async fn entries(&self, job_id: &str) -> Result<Vec<Entry>> {
+        let mut out = Vec::new();
+        let mut after = None;
+        loop {
+            let page = self.store.entries_page(job_id, after, PAGE).await?;
+            let Some(last) = page.last() else { break };
+            after = Some(last.entry.idx);
+            for e in &page {
+                if e.entry.idx != out.len() as u64 {
+                    return Err(CoreError::Invalid("manifest has gaps".into()));
+                }
+                out.push(decisions::entry(e));
+            }
+        }
+        Ok(out)
+    }
+
+    async fn entry(&self, job_id: &str, idx: u64) -> Result<Entry> {
+        let page = self
+            .store
+            .entries_page(job_id, idx.checked_sub(1), 1)
+            .await?;
+        match page.first() {
+            Some(e) if e.entry.idx == idx => Ok(decisions::entry(e)),
+            _ => Err(CoreError::Invalid(format!(
+                "entry {idx} is not in the manifest"
+            ))),
+        }
+    }
+
+    async fn all_issues(&self, job_id: &str, rule: Option<String>) -> Result<Vec<IssueRow>> {
+        let mut out = Vec::new();
+        let mut after = None;
+        loop {
+            let page = self
+                .store
+                .issues_page(job_id, rule.clone(), after, PAGE)
+                .await?;
+            let Some(last) = page.last() else { break };
+            after = Some(last.id);
+            out.extend(page);
+        }
+        Ok(out)
+    }
+
     // ---- lifecycle -----------------------------------------------------------------------
 
     /// Sends a Ready job (or resumes a Paused one) in the background.
     pub async fn start(self: &Arc<Self>, job_id: &str) -> Result<()> {
-        let row = self.store.get_job(job_id).await?;
-        match JobState::parse(&row.state)? {
-            JobState::Ready => {
+        {
+            let mut job = self.begin(job_id, Op::Start).await?;
+            if job.state() == JobState::Ready {
+                let row = self.store.get_job(job_id).await?;
                 let profile = self.get_profile(&row.profile_id).await?;
-                self.plan_destinations(job_id, profile.target.case_sensitive)
-                    .await?;
+                self.plan_destinations(job_id, &profile).await?;
             }
-            JobState::Paused => {
-                self.store
-                    .reset_transfer_states(job_id, &[EntryState::Partial], EntryState::Pending)
-                    .await?;
-            }
-            JobState::AwaitingApproval => {
-                let n = self.store.pending_issue_count(job_id).await?;
-                return Err(CoreError::PendingDecisions(n));
-            }
-            other => {
-                return Err(CoreError::InvalidTransition {
-                    from: other,
-                    to: JobState::Transferring,
-                });
-            }
+            job.go(JobState::Transferring, None).await?;
         }
-        self.transition(job_id, JobState::Transferring, None)
-            .await?;
         self.spawn_run(job_id).await;
         Ok(())
     }
@@ -791,45 +791,34 @@ impl Engine {
 
     /// Stops the runner; the job keeps its progress and can be resumed.
     pub async fn pause(&self, job_id: &str) -> Result<()> {
+        // The runner takes the job's lock to record its own transitions: stop it first.
         self.stop_runner(job_id).await;
-        let state = JobState::parse(&self.store.get_job(job_id).await?.state)?;
-        if !state.is_running() {
-            return Err(CoreError::InvalidTransition {
-                from: state,
-                to: JobState::Paused,
-            });
-        }
-        self.store
-            .reset_transfer_states(job_id, &[EntryState::Partial], EntryState::Pending)
-            .await?;
-        self.transition(job_id, JobState::Paused, None).await?;
-        Ok(())
+        let mut job = self.begin(job_id, Op::Pause).await?;
+        job.go(JobState::Paused, None).await
     }
 
     /// Stops the job for good. Nothing at the source or destination is deleted.
     pub async fn cancel(&self, job_id: &str) -> Result<()> {
         self.stop_runner(job_id).await;
-        self.transition(job_id, JobState::Cancelled, None).await?;
-        Ok(())
+        let mut job = self.begin(job_id, Op::Cancel).await?;
+        job.go(JobState::Cancelled, None).await
     }
 
     /// On startup: restarts every job that was running when the app stopped. Returns their ids.
     pub async fn resume_unfinished(self: &Arc<Self>) -> Result<Vec<String>> {
         let mut resumed = Vec::new();
         for row in self.store.list_unfinished_jobs().await? {
-            match JobState::parse(&row.state)? {
+            let mut job = self.begin(&row.id, Op::Recover).await?;
+            match job.state() {
                 JobState::Analysing => {
-                    self.transition(
-                        &row.id,
+                    job.go(
                         JobState::Draft,
                         Some("the analysis was interrupted; run it again".into()),
                     )
                     .await?;
                 }
                 st if st.is_running() => {
-                    self.store
-                        .reset_transfer_states(&row.id, &[EntryState::Partial], EntryState::Pending)
-                        .await?;
+                    drop(job);
                     self.spawn_run(&row.id).await;
                     resumed.push(row.id);
                 }

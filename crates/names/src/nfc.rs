@@ -10,6 +10,15 @@ pub struct Nfc;
 
 impl Nfc {
     pub const ID: &'static str = "nfc";
+
+    /// The corrected name, if this rule would change it.
+    pub fn propose(&self, entry: &Entry) -> Option<String> {
+        let name = entry.name.as_deref()?;
+        if is_nfc(name) {
+            return None;
+        }
+        Some(name.nfc().collect())
+    }
 }
 
 impl NameRule for Nfc {
@@ -31,14 +40,6 @@ impl NameRule for Nfc {
             before: entry.raw_name.clone(),
             after: after.into_bytes(),
         })
-    }
-
-    fn propose(&self, entry: &Entry) -> Option<String> {
-        let name = entry.name.as_deref()?;
-        if is_nfc(name) {
-            return None;
-        }
-        Some(name.nfc().collect())
     }
 }
 

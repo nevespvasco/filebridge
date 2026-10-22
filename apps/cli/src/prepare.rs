@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use filebridge_names::{Mapped, Nfc, RuleSet, TargetProfile};
+use filebridge_names::{Mapped, NamePlan, Nfc, RuleSet, TargetProfile};
 use filebridge_scanner::Scan;
 use filebridge_transport_api::{RemotePath, TransferItem};
 
@@ -41,8 +41,12 @@ impl Prepared {
 pub fn prepare(source: &Path) -> Result<Prepared> {
     let scan = filebridge_scanner::scan(source)
         .with_context(|| format!("cannot scan {}", source.display()))?;
-    let rules = RuleSet::new(vec![Box::new(Nfc)], &TargetProfile::default());
-    let mapped = rules.apply(&scan.entries);
+    let target = TargetProfile::default();
+    let names = NamePlan::new(
+        RuleSet::new(vec![Box::new(Nfc)], &target),
+        target.case_sensitive,
+    );
+    let mapped = names.propose(&scan.entries);
     let mut items = Vec::new();
     let mut unmappable = Vec::new();
     let mut renamed_files = 0;

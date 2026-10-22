@@ -13,3 +13,8 @@ serde.workspace = true
 specta = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+sha2 = { workspace = true, optional = true }
+
+[features]
+# The shared test suite every Transport adapter runs (`contract::check`).
+contract = ["dep:sha2", "tokio/fs"]

@@ -13,6 +13,7 @@ members = [
     "crates/scanner",
     "crates/store",
     "crates/transport-api",
+    "crates/transport-fake",
     "crates/transport-rclone",
 ]
 
@@ -33,6 +34,7 @@ filebridge-names = { path = "crates/names" }
 filebridge-scanner = { path = "crates/scanner" }
 filebridge-store = { path = "crates/store" }
 filebridge-transport-api = { path = "crates/transport-api" }
+filebridge-transport-fake = { path = "crates/transport-fake" }
 filebridge-transport-rclone = { path = "crates/transport-rclone" }
 
 # External
@@ -48,6 +50,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 russh = "0.64"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.11"
 # specta and specta-typescript are pinned to what tauri-specta 2.0.0-rc.26 requires.
 specta = "=2.0.0-rc.26"
 specta-typescript = "=0.0.13"

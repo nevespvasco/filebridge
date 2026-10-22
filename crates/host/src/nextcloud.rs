@@ -1,19 +1,14 @@
-//! The Nextcloud direct-mode profile wizard: detect over SSH, then save the profile.
+//! The Nextcloud profile wizard for the hosts: the plugin detects and builds the profile
+//! (`Nextcloud::set_up`); this turns the ipc request into its input and saves the result.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use filebridge_core::{Engine, Profile, TargetSpec};
-use filebridge_integration_api::CheckStatus;
+use filebridge_core::{Engine, PreflightView, Profile, TargetSpec};
 use filebridge_integration_nextcloud::{
-    DetectInput, Detector, INTEGRATION_ID, LxcDetector, NextcloudSettings, ShellConnector,
-    SshConnector, SshTarget,
+    INTEGRATION_ID, Nextcloud, SetupError, SetupRequest, SshTarget,
 };
-use filebridge_ipc::{
-    DetectNextcloudRequest, DetectNextcloudResponse, DetectStepView, ErrorBody, Extensions,
-};
-use filebridge_transport_api::{Backend, Destination};
+use filebridge_ipc::{DetectNextcloudRequest, DetectNextcloudResponse, DetectStepView, ErrorBody};
 
 fn err(code: &str, message: impl Into<String>) -> ErrorBody {
     ErrorBody {
@@ -22,42 +17,45 @@ fn err(code: &str, message: impl Into<String>) -> ErrorBody {
     }
 }
 
-/// Runs the LXC detector and, when every step passes, saves the profile. `modes` overrides
-/// the default `750`/`640` (the CLI exposes it; the app keeps the defaults).
-pub async fn detect_nextcloud(
-    engine: &Arc<Engine>,
+/// Runs the wizard and, when every step passes, saves the profile with `transport`. `modes`
+/// overrides the default `750`/`640` (the CLI exposes it; the app keeps the defaults).
+async fn detect_nextcloud(
+    engine: &Engine,
+    nextcloud: &Nextcloud,
+    transport: &str,
     req: DetectNextcloudRequest,
     modes: Option<(String, String)>,
 ) -> Result<DetectNextcloudResponse, ErrorBody> {
-    let ssh = SshTarget {
-        host: req.host.clone(),
-        port: req.port,
-        user: req.user.clone(),
-        key_file: req.key_file.clone().map(PathBuf::from),
-        known_hosts_file: req.known_hosts_file.clone().map(PathBuf::from),
-    };
-    let shell = SshConnector::new()
-        .connect(&ssh)
+    let setup = nextcloud
+        .set_up(
+            &SetupRequest {
+                ssh: SshTarget {
+                    host: req.host,
+                    port: req.port,
+                    user: req.user,
+                    key_file: req.key_file.map(PathBuf::from),
+                    known_hosts_file: req.known_hosts_file.map(PathBuf::from),
+                },
+                nextcloud_user: req.nextcloud_user,
+                folder: req.folder,
+                ctid: req.ctid,
+                install_dir: req.install_dir,
+                modes,
+            },
+            transport,
+        )
         .await
-        .map_err(|e| err("ssh", e.message))?;
-    let input = DetectInput {
-        ssh: ssh.clone(),
-        nextcloud_user: req.nextcloud_user.clone(),
-        ctid: req.ctid,
-        install_dir: req.install_dir.clone(),
-    };
-    let detection = LxcDetector.detect(shell.as_ref(), &input).await;
-    let steps = detection
+        .map_err(|e| match e {
+            SetupError::Connect(m) => err("ssh", m),
+            SetupError::Invalid(m) => err("invalid", m),
+        })?;
+    let steps = setup
+        .detection
         .steps
         .iter()
         .map(|s| DetectStepView {
             id: s.check.id.clone(),
-            status: match s.check.status {
-                CheckStatus::Ok => "ok",
-                CheckStatus::Warn => "warn",
-                CheckStatus::Fail => "fail",
-            }
-            .into(),
+            status: PreflightView::status_text(s.check.status).into(),
             message: s.check.message.clone(),
             commands: s
                 .commands
@@ -66,71 +64,48 @@ pub async fn detect_nextcloud(
                 .collect(),
         })
         .collect();
-    let containers = detection
+    let containers = setup
+        .detection
         .containers
         .iter()
         .map(|c| format!("{} {} ({})", c.ctid, c.name, c.status))
         .collect();
-
-    let Some(mut nc) = detection.profile else {
-        return Ok(DetectNextcloudResponse {
-            steps,
-            containers,
-            profile: None,
-        });
+    let profile = match setup.profile {
+        None => None,
+        Some(parts) => Some(
+            engine
+                .save_profile(Profile {
+                    id: String::new(),
+                    name: req.name,
+                    destination: parts.destination,
+                    integration: Some(INTEGRATION_ID.into()),
+                    integration_settings: parts.settings,
+                    target: TargetSpec::default(),
+                })
+                .await
+                .map_err(|e| err("invalid", e.to_string()))?,
+        ),
     };
-    if let Some((dir_mode, file_mode)) = modes {
-        nc.dir_mode = dir_mode;
-        nc.file_mode = file_mode;
-    }
-    nc.validate().map_err(|e| err("invalid", e.message))?;
-    let folder = req.folder.trim_matches('/');
-    let root = if folder.is_empty() {
-        nc.host_files_dir()
-    } else {
-        format!("{}/{folder}", nc.host_files_dir())
-    };
-    let settings = serde_json::to_value(NextcloudSettings::Direct(nc))
-        .map_err(|e| err("internal", e.to_string()))?;
-    let profile = engine
-        .save_profile(Profile {
-            id: String::new(),
-            name: req.name,
-            destination: Destination {
-                transport: "rclone".into(),
-                backend: Backend::Sftp {
-                    host: ssh.host,
-                    port: Some(ssh.port),
-                    user: Some(ssh.user),
-                    key_file: ssh.key_file,
-                    known_hosts_file: ssh.known_hosts_file,
-                    password: None,
-                },
-                root,
-            },
-            integration: Some(INTEGRATION_ID.into()),
-            integration_settings: settings,
-            target: TargetSpec::default(),
-        })
-        .await
-        .map_err(|e| err("invalid", e.to_string()))?;
     Ok(DetectNextcloudResponse {
         steps,
         containers,
-        profile: Some(profile),
+        profile,
     })
 }
 
-/// [`Extensions`] for `filebridge-service`: the requests that need the Nextcloud plugin.
-pub struct NextcloudExtensions;
+/// The Nextcloud plugin this host registered, and the transport its profiles use.
+pub(crate) struct NextcloudWizard {
+    pub(crate) nextcloud: Arc<Nextcloud>,
+    pub(crate) transport: &'static str,
+}
 
-#[async_trait]
-impl Extensions for NextcloudExtensions {
-    async fn detect_nextcloud(
+impl NextcloudWizard {
+    pub(crate) async fn run(
         &self,
-        engine: &Arc<Engine>,
+        engine: &Engine,
         req: DetectNextcloudRequest,
+        modes: Option<(String, String)>,
     ) -> Result<DetectNextcloudResponse, ErrorBody> {
-        detect_nextcloud(engine, req, None).await
+        detect_nextcloud(engine, &self.nextcloud, self.transport, req, modes).await
     }
 }

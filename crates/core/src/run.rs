@@ -1,6 +1,7 @@
 //! The job runner: stages 4 (transfer), 5 (verify) and 6 (update the tool), with retries.
-//! Every state change is persisted before the next stage starts, so a crash resumes at the
-//! stage it was in; per-entry states mean finished files are never sent again.
+//! Every state change is persisted, with what the finished stage produced, before the next stage
+//! starts, so a crash resumes at the stage it was in; per-entry states mean finished files are
+//! never sent again.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -11,14 +12,15 @@ use std::time::Duration;
 use filebridge_integration_api::{IntegrationEvent, IntegrationSink};
 use filebridge_store::{EntryState, ManifestEntry, now_ms};
 use filebridge_transport_api::{
-    HashAlgo, ItemOutcome, ProgressEvent, ProgressSink, RemotePath, TransferItem, TransferJob,
-    TransferOptions, TransportCaps,
+    ErrorKind, HashAlgo, ItemOutcome, ProgressEvent, ProgressSink, RemotePath, TransferItem,
+    TransferJob, TransferOptions, TransportCaps,
 };
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::analyse::{bytes_path, source_parent};
 use crate::inhibit::{SleepGuard, inhibit};
+use crate::lifecycle::{Op, Outcome};
 use crate::{CoreError, Engine, Event, JobState, Profile, Result, SendOptions};
 
 const PAGE: u32 = 2_000;
@@ -36,6 +38,7 @@ struct Ctx {
     options: SendOptions,
     sources: Vec<PathBuf>,
     cancel: CancellationToken,
+    /// Warnings of the stage running now; saved with the transition that ends it.
     warnings: Vec<String>,
 }
 
@@ -50,10 +53,11 @@ impl Engine {
                 return;
             }
             tracing::error!(job = job_id, "job failed: {e}");
-            if let Err(e2) = self
-                .transition(job_id, JobState::Failed, Some(e.to_string()))
-                .await
-            {
+            let failed = async {
+                let mut job = self.begin(job_id, Op::Run).await?;
+                job.go(JobState::Failed, Some(e.to_string())).await
+            };
+            if let Err(e2) = failed.await {
                 tracing::error!(job = job_id, "cannot record the failure: {e2}");
             }
         }
@@ -70,32 +74,27 @@ impl Engine {
             warnings: Vec::new(),
         };
         let mut state = JobState::parse(&row.state)?;
-        let mut verify_rounds = 0;
         loop {
             if cancel.is_cancelled() {
                 return Ok(());
             }
-            // Set when a stage backs off: the job is then stored as Retrying.
-            let mut retried = false;
             let current = state;
+            let mut outcome = Outcome::default();
             let next = match current {
                 JobState::Retrying => JobState::Transferring,
                 JobState::Transferring => match self.transfer_stage(&mut ctx).await? {
                     StageEnd::Done(()) if ctx.options.verify => JobState::Verifying,
                     StageEnd::Done(()) => JobState::Integrating,
-                    StageEnd::Retry(e) => {
-                        retried = true;
-                        self.back_off(&ctx, current, e).await?
-                    }
+                    StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
                 },
                 JobState::Verifying => match self.verify_stage(&mut ctx).await? {
                     StageEnd::Done(mismatched) if mismatched.is_empty() => JobState::Integrating,
                     StageEnd::Done(mismatched) => {
-                        verify_rounds += 1;
-                        if verify_rounds >= self.options.max_verify_rounds {
+                        let rounds = 1 + self.begin(job_id, Op::Run).await?.verify_rounds();
+                        if rounds >= self.options.max_verify_rounds {
                             ctx.warnings.push(format!(
-                                "{} files still differ after {verify_rounds} verification rounds",
+                                "{} files still differ after {rounds} verification rounds",
                                 mismatched.len()
                             ));
                             JobState::Integrating
@@ -121,13 +120,11 @@ impl Engine {
                                 )
                                 .await?;
                             tracing::warn!(job = job_id, "{n} files differ; sending them again");
+                            outcome.verify_round = true;
                             JobState::Transferring
                         }
                     }
-                    StageEnd::Retry(e) => {
-                        retried = true;
-                        self.back_off(&ctx, current, e).await?
-                    }
+                    StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
                 },
                 JobState::Integrating => match self.integrate_stage(&mut ctx).await? {
@@ -137,21 +134,11 @@ impl Engine {
                             ctx.warnings
                                 .push(format!("{failed} files could not be sent"));
                         }
-                        let (end, error) = if ctx.warnings.is_empty() {
-                            (JobState::Completed, None)
-                        } else {
-                            (
-                                JobState::CompletedWithWarnings,
-                                Some(ctx.warnings.join("; ")),
-                            )
-                        };
-                        self.transition(job_id, end, error).await?;
-                        return Ok(());
+                        outcome.warnings = std::mem::take(&mut ctx.warnings);
+                        let mut job = self.begin(job_id, Op::Run).await?;
+                        return job.complete(outcome).await;
                     }
-                    StageEnd::Retry(e) => {
-                        retried = true;
-                        self.back_off(&ctx, current, e).await?
-                    }
+                    StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
                 },
                 other => {
@@ -161,18 +148,17 @@ impl Engine {
                     )));
                 }
             };
-            if retried {
-                state = JobState::Retrying;
-            }
-            if next != state {
-                self.transition(job_id, next, None).await?;
-                state = next;
-            }
+            outcome.warnings = std::mem::take(&mut ctx.warnings);
+            let mut job = self.begin(job_id, Op::Run).await?;
+            job.go_with(next, None, outcome).await?;
+            state = job.state();
         }
     }
 
-    /// Records the failure, waits the backoff delay, and returns the stage to run again.
-    async fn back_off(&self, ctx: &Ctx, stage: JobState, error: String) -> Result<JobState> {
+    /// Records the failure, waits the backoff delay, and returns the stage to run again. The
+    /// failed stage's warnings are dropped: it runs again from the start.
+    async fn back_off(&self, ctx: &mut Ctx, stage: JobState, error: String) -> Result<JobState> {
+        ctx.warnings.clear();
         let attempt = self.store.get_job(&ctx.job_id).await?.attempt + 1;
         let delay = self.options.backoff.delay(attempt);
         self.store
@@ -182,7 +168,9 @@ impl Engine {
                 Some(now_ms() + delay.as_millis() as i64),
             )
             .await?;
-        self.transition(&ctx.job_id, JobState::Retrying, Some(error.clone()))
+        self.begin(&ctx.job_id, Op::Run)
+            .await?
+            .go(JobState::Retrying, Some(error.clone()))
             .await?;
         self.emit(Event::RetryScheduled {
             job_id: ctx.job_id.clone(),
@@ -194,9 +182,6 @@ impl Engine {
             _ = tokio::time::sleep(delay) => {}
             _ = ctx.cancel.cancelled() => return Ok(JobState::Retrying),
         }
-        self.store
-            .reset_transfer_states(&ctx.job_id, &[EntryState::Partial], EntryState::Pending)
-            .await?;
         Ok(stage)
     }
 
@@ -206,6 +191,11 @@ impl Engine {
         let transport = self
             .registry
             .transport(&ctx.profile.destination.transport)?;
+        // Files left in flight by a pause, a backoff or a crash go again; nothing else is
+        // sending them now.
+        self.store
+            .reset_transfer_states(&ctx.job_id, &[EntryState::Partial], EntryState::Pending)
+            .await?;
         let counts = self.store.manifest_counts(&ctx.job_id).await?;
         let files_total = counts.files - counts.skipped;
         let bytes_total = counts.bytes;
@@ -348,7 +338,7 @@ impl Engine {
 
                 let result = match result {
                     Ok(r) => r,
-                    Err(e) if e.retryable => return Ok(StageEnd::Retry(e.message)),
+                    Err(e) if e.is_retryable() => return Ok(StageEnd::Retry(e.message)),
                     Err(e) => return Err(e.into()),
                 };
                 let mut any_done = false;
@@ -366,9 +356,9 @@ impl Engine {
                                 job_id: ctx.job_id.clone(),
                                 path,
                                 error: err.message.clone(),
-                                retryable: err.retryable,
+                                retryable: err.is_retryable(),
                             });
-                            if err.retryable {
+                            if err.is_retryable() {
                                 retry.get_or_insert_with(|| err.message.clone());
                                 updates.push((e.entry.idx, EntryState::Partial, Some(err.message)));
                             } else {
@@ -451,12 +441,12 @@ impl Engine {
                         mismatched.push(e.entry.idx);
                         EntryState::Mismatch
                     }
-                    Err(err) if err.retryable => {
+                    Err(err) if err.is_retryable() => {
                         self.store.set_verify_states(&ctx.job_id, updates).await?;
                         return Ok(StageEnd::Retry(err.message));
                     }
                     // Gone from the destination: send it again.
-                    Err(err) if err.message.contains("not found") => {
+                    Err(err) if err.kind == ErrorKind::NotFound => {
                         mismatched.push(e.entry.idx);
                         EntryState::Missing
                     }

@@ -8,6 +8,7 @@ use filebridge_core::{Family, PreflightView, Profile, TargetSpec};
 use filebridge_integration_nextcloud::NextcloudDirectProfile;
 use filebridge_ipc::DetectNextcloudRequest;
 use filebridge_transport_api::{Backend, Destination};
+use filebridge_transport_rclone::RcloneTransport;
 
 use crate::app::{App, Global};
 use filebridge_host::Access;
@@ -129,7 +130,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                     id: String::new(),
                     name,
                     destination: Destination {
-                        transport: "rclone".into(),
+                        transport: RcloneTransport::ID.into(),
                         backend: Backend::Local,
                         root: root.to_string_lossy().into_owned(),
                     },
@@ -156,7 +157,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                     id: String::new(),
                     name,
                     destination: Destination {
-                        transport: "rclone".into(),
+                        transport: RcloneTransport::ID.into(),
                         backend: ssh.backend(),
                         root,
                     },
@@ -198,10 +199,11 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 ctid,
                 install_dir,
             };
-            let res =
-                filebridge_host::detect_nextcloud(&app.engine, req, Some((dir_mode, file_mode)))
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+            let res = app
+                .host
+                .detect_nextcloud(req, Some((dir_mode, file_mode)))
+                .await
+                .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
             for step in &res.steps {
                 let mark = match step.status.as_str() {
                     "ok" => "✓",

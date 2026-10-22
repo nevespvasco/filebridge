@@ -72,7 +72,13 @@ stateDiagram-v2
 ```
 
 Rules:
-- Each transition is written to SQLite **before** the next stage starts work.
+- Each transition is written to SQLite **before** the next stage starts work, in one transaction
+  with what the finished stage produced (its warnings, a verify round) and the `state` event, so a
+  job resumed after a crash ends with the warnings it had before.
+- One module owns these rules (`crates/core/src/lifecycle.rs`): the transition table above, and
+  which operation (set options, analyse, decide, start, pause, cancel) may run in which state.
+  Every operation locks its job first, so checking the state and acting on it can't be split by a
+  concurrent request.
 - On app/service start, `core` loads every job not in a terminal state and resumes it at its
   persisted stage. Entry-level state means a resumed transfer skips completed files.
 - `Retrying` uses exponential backoff 30 s → 1 min → 2 min → … capped at 15 min, **unlimited

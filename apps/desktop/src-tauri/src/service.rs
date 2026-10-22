@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use filebridge_ipc::{Client, Endpoint, ErrorBody, PROTOCOL_VERSION};
+use filebridge_ipc::{Client, Endpoint, ErrorBody, Operations, PROTOCOL_VERSION};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_specta::Event as _;

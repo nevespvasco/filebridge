@@ -19,4 +19,6 @@ tracing.workspace = true
 libc = "0.2"
 
 [dev-dependencies]
+filebridge-transport-api = { workspace = true, features = ["contract"] }
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

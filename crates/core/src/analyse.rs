@@ -5,17 +5,13 @@
 //! destination and the root's own name goes through the rules too. Paths in the manifest are
 //! relative to the source's parent directory.
 
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use filebridge_names::{Entry, RuleSet, Severity};
+use filebridge_names::{Entry, NamePlan, Severity};
 use filebridge_store::{Decision, NewEntry, NewIssue};
 
 use crate::{CoreError, Result};
-
-pub const RULE_COLLISION: &str = "collision";
-pub const RULE_UNDECODABLE: &str = "encoding";
 
 pub(crate) struct Analysis {
     pub entries: Vec<NewEntry>,
@@ -61,8 +57,7 @@ pub(crate) fn source_parent(source: &Path) -> PathBuf {
 
 pub(crate) fn analyse_sources(
     sources: &[PathBuf],
-    rules: &RuleSet,
-    case_sensitive: bool,
+    names: &NamePlan,
     mut on_source: impl FnMut(&Path, u64, u64),
 ) -> Result<Analysis> {
     let mut entries: Vec<Entry> = Vec::new();
@@ -117,22 +112,14 @@ pub(crate) fn analyse_sources(
         on_source(source, files, bytes);
     }
 
-    let mapped = rules.apply(&entries);
+    let mapped = names.propose(&entries);
 
     let mut issues = Vec::new();
-    let mut taken: HashMap<String, u64> = HashMap::new();
-    let key = |p: &str| {
-        if case_sensitive {
-            p.to_owned()
-        } else {
-            p.to_lowercase()
-        }
-    };
     let (mut files, mut dirs, mut bytes) = (0, 0, 0);
     let mut out_entries = Vec::with_capacity(entries.len());
     let mut dest_paths = Vec::with_capacity(entries.len());
 
-    for (i, (entry, m)) in entries.iter().zip(&mapped).enumerate() {
+    for (i, (entry, m)) in entries.iter().zip(mapped).enumerate() {
         let idx = i as u64;
         if entry.is_dir {
             dirs += 1;
@@ -140,58 +127,21 @@ pub(crate) fn analyse_sources(
             files += 1;
             bytes += entry.size;
         }
-        for issue in &m.issues {
+        for issue in m.issues {
             let auto = issue.severity == Severity::Auto;
             issues.push(NewIssue {
                 entry_idx: idx,
                 rule: issue.rule.to_owned(),
                 severity: if auto { "auto" } else { "needs_decision" }.into(),
                 message_key: issue.message_key.to_owned(),
-                before: issue.before.clone(),
-                after: issue.after.clone(),
+                before: issue.before,
+                after: issue.after,
                 decision: if auto {
                     Decision::Accepted
                 } else {
                     Decision::Pending
                 },
             });
-        }
-        match (&m.dest_path, &m.dest_name) {
-            (_, None) => issues.push(NewIssue {
-                entry_idx: idx,
-                rule: RULE_UNDECODABLE.into(),
-                severity: "needs_decision".into(),
-                message_key: "names.encoding.undecodable".into(),
-                before: entry.raw_name.clone(),
-                after: entry.raw_name.clone(),
-                decision: Decision::Pending,
-            }),
-            (Some(path), Some(name)) => {
-                if taken.contains_key(&key(path)) {
-                    let parent = path.rsplit_once('/').map(|(p, _)| p);
-                    let proposal = (2..)
-                        .map(|n| with_suffix(name, n))
-                        .find(|cand| {
-                            let p = parent.map_or(cand.clone(), |pp| format!("{pp}/{cand}"));
-                            !taken.contains_key(&key(&p))
-                        })
-                        .expect("an unused suffix exists");
-                    let p = parent.map_or(proposal.clone(), |pp| format!("{pp}/{proposal}"));
-                    taken.insert(key(&p), idx);
-                    issues.push(NewIssue {
-                        entry_idx: idx,
-                        rule: RULE_COLLISION.into(),
-                        severity: "needs_decision".into(),
-                        message_key: "names.collision".into(),
-                        before: name.as_bytes().to_vec(),
-                        after: proposal.into_bytes(),
-                        decision: Decision::Pending,
-                    });
-                } else {
-                    taken.insert(key(path), idx);
-                }
-            }
-            (None, Some(_)) => {} // an ancestor is undecodable; its issue covers this entry
         }
         out_entries.push(NewEntry {
             idx,
@@ -204,7 +154,7 @@ pub(crate) fn analyse_sources(
             hash: None,
             hash_algo: None,
         });
-        dest_paths.push((idx, m.dest_path.clone()));
+        dest_paths.push((idx, m.dest_path));
     }
 
     Ok(Analysis {
@@ -219,28 +169,16 @@ pub(crate) fn analyse_sources(
     })
 }
 
-/// `photo.jpg` → `photo (2).jpg`; `.bashrc` and `README` get the suffix at the end.
-pub(crate) fn with_suffix(name: &str, n: u32) -> String {
-    match name.rfind('.') {
-        Some(dot) if dot > 0 => format!("{} ({n}){}", &name[..dot], &name[dot..]),
-        _ => format!("{name} ({n})"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use filebridge_names::{Nfc, TargetProfile};
+    use filebridge_names::{Nfc, RULE_COLLISION, RULE_ENCODING, RuleSet, TargetProfile};
 
-    fn nfc_rules() -> RuleSet {
-        RuleSet::new(vec![Box::new(Nfc)], &TargetProfile::default())
-    }
-
-    #[test]
-    fn suffixes() {
-        assert_eq!(with_suffix("photo.jpg", 2), "photo (2).jpg");
-        assert_eq!(with_suffix(".bashrc", 2), ".bashrc (2)");
-        assert_eq!(with_suffix("README", 3), "README (3)");
+    fn nfc_plan() -> NamePlan {
+        NamePlan::new(
+            RuleSet::new(vec![Box::new(Nfc)], &TargetProfile::default()),
+            true,
+        )
     }
 
     #[test]
@@ -254,7 +192,7 @@ mod tests {
         std::fs::write(src.join("Vera\u{303}o.txt"), b"22").unwrap();
 
         let mut seen = Vec::new();
-        let a = analyse_sources(std::slice::from_ref(&src), &nfc_rules(), true, |p, f, b| {
+        let a = analyse_sources(std::slice::from_ref(&src), &nfc_plan(), |p, f, b| {
             seen.push((p.to_path_buf(), f, b))
         })
         .unwrap();
@@ -267,8 +205,7 @@ mod tests {
         assert!(paths.contains(&"Acme/sub/a.txt".to_owned()));
         assert_eq!(paths.iter().filter(|p| *p == "Acme/Verão.txt").count(), 2);
 
-        let nfc = a.issues.iter().filter(|i| i.rule == "nfc").count();
-        assert_eq!(nfc, 1);
+        assert_eq!(a.issues.iter().filter(|i| i.rule == "nfc").count(), 1);
         let collision: Vec<_> = a
             .issues
             .iter()
@@ -279,28 +216,6 @@ mod tests {
         assert_eq!(collision[0].decision, Decision::Pending);
     }
 
-    #[test]
-    fn case_insensitive_targets_collide_on_case() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("d");
-        std::fs::create_dir(&src).unwrap();
-        std::fs::write(src.join("A.txt"), b"").unwrap();
-        std::fs::write(src.join("a.txt"), b"").unwrap();
-        let a = analyse_sources(
-            std::slice::from_ref(&src),
-            &nfc_rules(),
-            false,
-            |_, _, _| {},
-        )
-        .unwrap();
-        assert_eq!(
-            a.issues.iter().filter(|i| i.rule == RULE_COLLISION).count(),
-            1
-        );
-        let a = analyse_sources(&[src], &nfc_rules(), true, |_, _, _| {}).unwrap();
-        assert!(a.issues.is_empty());
-    }
-
     #[cfg(target_os = "linux")]
     #[test]
     fn undecodable_names_need_a_decision() {
@@ -309,14 +224,15 @@ mod tests {
         let src = dir.path().join("d");
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join(OsStr::from_bytes(b"Patol\xf3gica.pdf")), b"x").unwrap();
-        let a = analyse_sources(&[src], &nfc_rules(), true, |_, _, _| {}).unwrap();
+        let a = analyse_sources(&[src], &nfc_plan(), |_, _, _| {}).unwrap();
         let undecodable: Vec<_> = a
             .issues
             .iter()
-            .filter(|i| i.rule == RULE_UNDECODABLE)
+            .filter(|i| i.rule == RULE_ENCODING)
             .collect();
         assert_eq!(undecodable.len(), 1);
         assert_eq!(undecodable[0].before, b"Patol\xf3gica.pdf");
+        assert_eq!(undecodable[0].severity, "needs_decision");
         assert_eq!(a.dest_paths[1].1, None);
     }
 }

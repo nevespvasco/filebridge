@@ -1,58 +1,22 @@
-//! A real socket, a real engine (with a local-copy fake transport), and the client.
+//! A real socket, the engine behind `EngineOperations` (with the shared local-disk fake
+//! transport), and the client.
 #![cfg(unix)]
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use filebridge_core::{
     DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry, SendOptions, Store,
     TargetSpec,
 };
-use filebridge_ipc::{Client, Endpoint, PROTOCOL_VERSION, bind, serve};
-use filebridge_transport_api::{
-    Backend, Destination, Digest, HashAlgo, ItemOutcome, PreflightReport, ProgressEvent,
-    ProgressSink, RemotePath, Result, TransferJob, TransferResult, Transport, TransportCaps,
-    TransportError,
-};
+use filebridge_host::EngineOperations;
+use filebridge_ipc::{Client, Endpoint, Operations, PROTOCOL_VERSION, bind, serve};
+use filebridge_transport_api::{Backend, Destination};
+use filebridge_transport_fake::FakeTransport;
 use interprocess::local_socket::tokio::prelude::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast::error::RecvError;
-
-struct CopyTransport;
-
-#[async_trait]
-impl Transport for CopyTransport {
-    fn id(&self) -> &str {
-        "copy"
-    }
-    fn capabilities(&self) -> TransportCaps {
-        TransportCaps::RESUME
-    }
-    async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
-        Ok(PreflightReport::default())
-    }
-    async fn transfer(
-        &self,
-        dest: &Destination,
-        job: &TransferJob,
-        progress: ProgressSink,
-    ) -> Result<TransferResult> {
-        let mut items = Vec::new();
-        for (i, item) in job.items.iter().enumerate() {
-            let to = Path::new(&dest.root).join(item.dest.as_str());
-            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-            std::fs::copy(job.source_root.join(&item.source), &to).unwrap();
-            progress.send(ProgressEvent::ItemDone { index: i, ok: true });
-            items.push(ItemOutcome::Done);
-        }
-        Ok(TransferResult { items, bytes: 0 })
-    }
-    async fn hash(&self, _: &Destination, _: &RemotePath, _: HashAlgo) -> Result<Digest> {
-        Err(TransportError::fatal("no hashes"))
-    }
-}
 
 #[tokio::test]
 async fn client_drives_a_job_over_the_socket() {
@@ -65,7 +29,7 @@ async fn client_drives_a_job_over_the_socket() {
     std::fs::write(src.join("Ver\u{e3}o.jpg"), b"y").unwrap(); // collides after NFC
 
     let mut registry = Registry::new();
-    registry.add_transport(Arc::new(CopyTransport));
+    registry.add_transport(Arc::new(FakeTransport::default()));
     let engine = Engine::new(
         Store::open_in_memory().unwrap(),
         registry,
@@ -76,7 +40,7 @@ async fn client_drives_a_job_over_the_socket() {
     );
     let endpoint = Endpoint::Path(dir.path().join("run/filebridge/service.sock"));
     let listener = bind(&endpoint).unwrap();
-    tokio::spawn(serve(listener, engine, None));
+    tokio::spawn(serve(listener, Arc::new(EngineOperations::new(engine))));
 
     {
         use std::os::unix::fs::PermissionsExt;
@@ -96,7 +60,7 @@ async fn client_drives_a_job_over_the_socket() {
             id: String::new(),
             name: "dest".into(),
             destination: Destination {
-                transport: "copy".into(),
+                transport: FakeTransport::ID.into(),
                 backend: Backend::Local,
                 root: dest.to_string_lossy().into_owned(),
             },
@@ -171,7 +135,7 @@ async fn client_drives_a_job_over_the_socket() {
 /// A service on a fresh socket, with the copy transport and a profile writing to `dest`.
 async fn service(dir: &Path) -> (Endpoint, Client, String) {
     let mut registry = Registry::new();
-    registry.add_transport(Arc::new(CopyTransport));
+    registry.add_transport(Arc::new(FakeTransport::default()));
     let engine = Engine::new(
         Store::open_in_memory().unwrap(),
         registry,
@@ -181,7 +145,10 @@ async fn service(dir: &Path) -> (Endpoint, Client, String) {
         },
     );
     let endpoint = Endpoint::Path(dir.join("run/service.sock"));
-    tokio::spawn(serve(bind(&endpoint).unwrap(), engine, None));
+    tokio::spawn(serve(
+        bind(&endpoint).unwrap(),
+        Arc::new(EngineOperations::new(engine)),
+    ));
     let client = Client::connect(&endpoint).await.unwrap();
     let dest = dir.join("dest");
     std::fs::create_dir_all(&dest).unwrap();
@@ -190,7 +157,7 @@ async fn service(dir: &Path) -> (Endpoint, Client, String) {
             id: String::new(),
             name: "dest".into(),
             destination: Destination {
-                transport: "copy".into(),
+                transport: FakeTransport::ID.into(),
                 backend: Backend::Local,
                 root: dest.to_string_lossy().into_owned(),
             },
@@ -271,8 +238,12 @@ async fn set_options_and_decide_all_over_the_socket() {
     })
     .await
     .expect("the job finishes");
-    // Verify was switched on after creation; this transport can't hash, hence the warnings.
-    assert_eq!(done.state, JobState::CompletedWithWarnings);
+    // Verify was switched on after creation, and it ran.
+    assert_eq!(done.state, JobState::Completed);
+    assert_eq!(
+        done.counts.verified_ok,
+        done.counts.files - done.counts.skipped
+    );
     let sent = client
         .set_options(job.clone(), SendOptions::default())
         .await

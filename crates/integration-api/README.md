@@ -20,7 +20,8 @@ The `Integration` trait and its types. **Lands in:** Phase 1.
   `RemotePath`, `TransportError` from `transport-api` and `NameRule` from `names`.
 
 ## Rules
-- An integration declares its own name rules (`name_rules()`).
+- An integration declares its own name rules, per profile (`name_rules(settings)`): a rule may
+  depend on how that server is set up (Nextcloud's Windows compatibility, say).
 - `after_transfer` receives the **exact list of changed paths**.
 - `required_caps()` is checked against the transport when a profile is created.
 - Problems that don't stop the step (an `incompatible encoding` entry) go in the report; `Err`

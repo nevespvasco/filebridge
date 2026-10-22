@@ -1,0 +1,18 @@
+[package]
+name = "filebridge-transport-fake"
+description = "A Transport adapter that copies to a local directory, with fault injection, for tests and the UI's dev mode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+filebridge-transport-api.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+filebridge-transport-api = { workspace = true, features = ["contract"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }

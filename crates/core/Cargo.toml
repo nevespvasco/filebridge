@@ -15,7 +15,7 @@ filebridge-transport-api.workspace = true
 getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.11"
+sha2.workspace = true
 specta = { workspace = true, features = ["derive", "serde_json"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros", "fs", "process"] }
@@ -28,5 +28,6 @@ windows-sys = { version = "0.61", features = ["Win32_System_Power"] }
 
 [dev-dependencies]
 async-trait.workspace = true
+filebridge-transport-fake.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

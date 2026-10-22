@@ -23,6 +23,7 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | `parse` | `pct list`, `pct config`, `config.php`, `id`, `stat`, `df`, `occ status`, `occ files:scan` output |
 | `direct` | preflight, owner/mode fix, minimal folder set, scan with progress |
 | `rules` | `NextcloudNfc`, `NextcloudReserved` |
+| `setup` | The profile wizard, `Nextcloud::set_up(req, transport)`: connect with the integration's own `ShellConnector`, run each detector, build the destination (SFTP to the SSH host, rooted at the user's files folder) and settings. `check_direct` is what every saved profile must pass (valid settings, same host for SFTP and SSH, root inside the files folder); `Integration::check_profile` runs it on every save |
 
 ## Direct mode
 **Commands.** The SSH host is the Proxmox node. Host commands run as the SSH user, or through

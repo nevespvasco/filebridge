@@ -3,7 +3,7 @@
 // `after_id`, so a rule with hundreds of thousands of issues never loads at once (docs/06).
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { DecisionInput, IssueView_Serialize, RuleCount } from "@/bindings";
+import type { DecisionInput, IssueDecision, IssueView_Serialize, RuleCount } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 import { useFmt } from "@/composables/useFmt";
 import { useWizard } from "@/stores/wizard";
@@ -37,6 +37,8 @@ const explain = computed(() => {
   return te(key) ? t(key) : "";
 });
 const showsBytes = computed(() => props.rule.rule.includes("nfc"));
+/** An undecodable name has nothing to accept or keep: it can only be edited or skipped. */
+const hasProposal = computed(() => props.rule.rule !== "encoding");
 const pageNo = computed(() => cursors.value.length);
 
 async function load() {
@@ -72,7 +74,7 @@ function prev() {
   void load();
 }
 
-const DECIDED: Record<DecisionInput["kind"], string> = {
+const DECIDED: Record<DecisionInput["kind"], IssueDecision> = {
   accept: "accepted",
   edit: "edited",
   keep_original: "rejected",
@@ -146,8 +148,10 @@ function decisionLabel(row: IssueView_Serialize) {
         <span v-if="bulk" class="small">{{ $t("issues.bulkProgress") }}</span>
         <template v-else>
           <span class="small muted">{{ $t("issues.bulkLabel", { n: fmt.count(rule.pending) }) }}</span>
-          <button class="btn btn-small" @click="decideAllPending({ kind: 'accept' })">{{ $t("issues.acceptAll") }}</button>
-          <button class="btn btn-small" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
+          <template v-if="hasProposal">
+            <button class="btn btn-small" @click="decideAllPending({ kind: 'accept' })">{{ $t("issues.acceptAll") }}</button>
+            <button class="btn btn-small" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
+          </template>
           <button class="btn btn-small" @click="decideAllPending({ kind: 'skip' })">{{ $t("issues.skipAll") }}</button>
         </template>
       </div>
@@ -172,8 +176,10 @@ function decisionLabel(row: IssueView_Serialize) {
             <span class="chip" :class="`chip-${row.decision}`">{{ decisionLabel(row) }}</span>
           </div>
           <div v-if="!readonly" class="actions">
-            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
-            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
+            <template v-if="hasProposal">
+              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
+              <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
+            </template>
             <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'skipped'" @click="decide(row, { kind: 'skip' })">{{ $t("issues.skip") }}</button>
             <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'edited'" @click="startEdit(row)">{{ $t("issues.edit") }}</button>
           </div>

@@ -65,17 +65,7 @@ impl RuleSet {
     pub fn apply(&self, entries: &[Entry]) -> Vec<Mapped> {
         let mut out: Vec<Mapped> = Vec::with_capacity(entries.len());
         for entry in entries {
-            let mut current = entry.clone();
-            let mut issues = Vec::new();
-            for rule in &self.rules {
-                if let Some(issue) = rule.check(&current) {
-                    let after = issue.after.clone();
-                    issues.push(issue);
-                    current.name = String::from_utf8(after.clone()).ok();
-                    current.raw_name = after;
-                }
-            }
-            let dest_name = current.name;
+            let (dest_name, issues) = self.run(entry, &[]);
             let dest_path = match (entry.parent, &dest_name) {
                 (_, None) => None,
                 (None, Some(name)) => Some(name.clone()),
@@ -91,6 +81,22 @@ impl RuleSet {
             });
         }
         out
+    }
+
+    /// Runs the chain on one entry's own name, leaving out the rules in `skip`. Returns the
+    /// final name (`None` if it is not valid UTF-8) and what each rule changed.
+    pub(crate) fn run(&self, entry: &Entry, skip: &[&str]) -> (Option<String>, Vec<Issue>) {
+        let mut current = entry.clone();
+        let mut issues = Vec::new();
+        for rule in self.rules.iter().filter(|r| !skip.contains(&r.id())) {
+            if let Some(issue) = rule.check(&current) {
+                let after = issue.after.clone();
+                issues.push(issue);
+                current.name = String::from_utf8(after.clone()).ok();
+                current.raw_name = after;
+            }
+        }
+        (current.name, issues)
     }
 }
 
@@ -134,9 +140,6 @@ mod tests {
             true
         }
         fn check(&self, _entry: &Entry) -> Option<Issue> {
-            None
-        }
-        fn propose(&self, _entry: &Entry) -> Option<String> {
             None
         }
     }

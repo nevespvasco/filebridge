@@ -24,10 +24,11 @@ src/
 ├── views/              NewTransfer/ (Step*.vue), Jobs, JobDetail, Destinations, Settings
 ├── components/         IssueGroup, BytesDiff, FileDropZone, JobProgress, PreflightList, DetailsPanel, …
 ├── i18n/               pt.json, en.json (same keys)
-└── dev/mock.ts         fake service for `VITE_MOCK=1` (never bundled)
+└── dev/mock.ts         fake service for `VITE_MOCK=1` (never bundled); one typed handler per
+                        command in the bindings, state rules from `JOB_OPERATIONS`
 src-tauri/src/
 ├── lib.rs              builder, tray, close → hide, bindings export
-├── commands.rs         one command per `filebridge_ipc::Client` method
+├── commands.rs         one command per operation in the ipc catalogue (generated), plus the window's own
 ├── service.rs          connect / start the service / forward events / reconnect
 └── tray.rs
 ```
@@ -77,7 +78,9 @@ src-tauri/src/
 ```bash
 pnpm install
 pnpm tauri dev          # needs the Tauri system libraries (Linux: webkit2gtk-4.1 and friends)
-VITE_MOCK=1 pnpm dev    # UI only, in a plain browser, against src/dev/mock.ts
+FILEBRIDGE_FAKE_TRANSPORT=1 pnpm tauri dev   # the real service and engine, no rclone: profiles
+                                             # use transport "fake" and a local root
+VITE_MOCK=1 pnpm dev    # UI only, in a plain browser, against src/dev/mock.ts (visual work)
 pnpm build              # vue-tsc + vite build
 pnpm bindings           # regenerate src/bindings/index.ts
 ```

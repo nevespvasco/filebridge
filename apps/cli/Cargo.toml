@@ -19,6 +19,7 @@ filebridge-integration-nextcloud.workspace = true
 filebridge-ipc.workspace = true
 filebridge-names.workspace = true
 filebridge-scanner.workspace = true
+filebridge-store.workspace = true
 filebridge-transport-api.workspace = true
 filebridge-transport-rclone.workspace = true
 serde.workspace = true

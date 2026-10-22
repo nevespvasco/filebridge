@@ -1,4 +1,6 @@
-//! Phase 0 benchmark: baseline `sync/copy` vs plan A vs plan B on the same source.
+//! Phase 0 benchmark: baseline `sync/copy` vs plan A vs plan B on the same source, plus plan A
+//! sent the way the app sends it (`engine`: the Engine with its SQLite manifest, batches and
+//! per-file state saving), so the gate measures the pipeline that ships.
 //!
 //! Each mode writes to its own new folder `<dest-root>/filebridge-bench-<unix time>/<mode>`.
 //! The source is only ever read. Nothing at the destination is deleted.
@@ -10,8 +12,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
+use filebridge_core::{
+    DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry, SendOptions, Store,
+    TargetSpec,
+};
+use filebridge_store::EntryState;
 use filebridge_transport_api::{
-    Backend, Destination, ProgressEvent, ProgressSink, TransferJob, TransferOptions, Transport,
+    Backend, Destination, ProgressEvent, ProgressSink, StatsSnapshot, TransferJob, TransferOptions,
+    Transport,
 };
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy, fs, stats};
 use serde::Serialize;
@@ -44,7 +52,7 @@ pub struct Args {
         long,
         value_enum,
         value_delimiter = ',',
-        default_value = "baseline,plan-a,plan-b"
+        default_value = "baseline,plan-a,plan-b,engine"
     )]
     modes: Vec<Mode>,
     /// Files in flight (rclone --transfers for sync/copy, parallel copyfile calls for plan A).
@@ -66,6 +74,8 @@ enum Mode {
     PlanA,
     /// sync/copy to a temp folder, batch rename there, move into place.
     PlanB,
+    /// Plan A through the Engine, as the app sends: analysis, SQLite manifest, batches.
+    Engine,
 }
 
 impl Mode {
@@ -74,6 +84,7 @@ impl Mode {
             Mode::Baseline => "baseline",
             Mode::PlanA => "plan-a",
             Mode::PlanB => "plan-b",
+            Mode::Engine => "engine",
         }
     }
 }
@@ -128,7 +139,7 @@ pub async fn run(args: Args) -> Result<()> {
     };
     let bench_root = fs::join(&args.dest_root, &format!("filebridge-bench-{stamp}"));
     let bench = Destination {
-        transport: "rclone".into(),
+        transport: RcloneTransport::ID.into(),
         backend,
         root: bench_root.clone(),
     };
@@ -258,6 +269,7 @@ async fn run_mode(
             let expected = p.items.iter().map(|i| i.dest.as_str().to_owned()).collect();
             (p.items.len(), res.bytes, res.failed(), expected)
         }
+        Mode::Engine => through_engine(rcd, dest, args, stamp, &sink).await?,
     };
     let seconds = started.elapsed().as_secs_f64();
     drop(sink);
@@ -311,6 +323,112 @@ async fn run_mode(
         missing,
         unexpected,
     })
+}
+
+/// Sends the source with a fresh Engine (its database in the temp directory, removed after) and
+/// reports progress into `sink`. Name decisions that would block the send are skipped.
+async fn through_engine(
+    rcd: &Arc<Rcd>,
+    dest: &Destination,
+    args: &Args,
+    stamp: u64,
+    sink: &ProgressSink,
+) -> Result<(usize, u64, usize, BTreeSet<String>)> {
+    let db = std::env::temp_dir().join(format!("filebridge-bench-{stamp}.db"));
+    let store = Store::open(&db).context("open the bench database")?;
+    let mut registry = Registry::new();
+    registry.add_transport(Arc::new(RcloneTransport::new(
+        rcd.clone(),
+        Strategy::PerFile,
+    )));
+    let engine = Engine::new(
+        store.clone(),
+        registry,
+        EngineOptions {
+            inhibit_sleep: false,
+            ..EngineOptions::default()
+        },
+    );
+    let profile = engine
+        .save_profile(Profile {
+            id: String::new(),
+            name: "bench".into(),
+            destination: dest.clone(),
+            integration: None,
+            integration_settings: serde_json::Value::Null,
+            target: TargetSpec::default(),
+        })
+        .await?;
+    let options = SendOptions {
+        concurrency: args.concurrency as u32,
+        ..SendOptions::default()
+    };
+    let job = engine
+        .create_job(vec![args.source.clone()], &profile.id, options)
+        .await?;
+    sink.send(ProgressEvent::Stage("analyse".into()));
+    if engine.analyse(&job).await?.state == JobState::AwaitingApproval {
+        engine.decide_all(&job, None, DecisionInput::Skip).await?;
+    }
+
+    let mut events = engine.subscribe();
+    let progress = sink.clone();
+    let started = Instant::now();
+    let forward = tokio::spawn(async move {
+        while let Ok(event) = events.recv().await {
+            if let Event::TransferProgress {
+                bytes_done,
+                bytes_total,
+                files_done,
+                files_total,
+                bytes_per_sec,
+                ..
+            } = event
+            {
+                progress.send(ProgressEvent::Stats(StatsSnapshot {
+                    bytes: bytes_done,
+                    total_bytes: bytes_total,
+                    files_done,
+                    total_files: files_total,
+                    bytes_per_sec,
+                    elapsed_secs: started.elapsed().as_secs_f64(),
+                    ..StatsSnapshot::default()
+                }));
+            }
+        }
+    });
+    sink.send(ProgressEvent::Stage("send".into()));
+    engine.start(&job).await?;
+    let state = engine.wait(&job).await?;
+    forward.abort();
+    if !state.is_terminal() {
+        bail!("the engine stopped in state {}", state.as_str());
+    }
+
+    let summary = engine.job(&job).await?;
+    let mut expected = BTreeSet::new();
+    let mut after = None;
+    loop {
+        let page = store.entries_page(&job, after, 5_000).await?;
+        let Some(last) = page.last() else { break };
+        after = Some(last.entry.idx);
+        for e in page {
+            if !e.entry.is_dir
+                && e.transfer_state == EntryState::Done
+                && let Some(path) = e.dest_path
+            {
+                expected.insert(path);
+            }
+        }
+    }
+    drop(engine);
+    let _ = std::fs::remove_file(&db);
+    Ok((
+        summary.counts.files as usize,
+        summary.counts.bytes_done,
+        summary.counts.failed as usize,
+        expected,
+    ))
 }
 
 /// Prints a one-line progress display; returns when every sink is dropped, with stage starts.

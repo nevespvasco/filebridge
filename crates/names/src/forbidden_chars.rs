@@ -20,6 +20,25 @@ impl ForbiddenChars {
     fn is_forbidden(c: char) -> bool {
         matches!(c, '<' | '>' | ':' | '"' | '\\' | '|' | '?' | '*') || c.is_ascii_control()
     }
+
+    /// The corrected name, if this rule would change it.
+    pub fn propose(&self, entry: &Entry) -> Option<String> {
+        let name = entry.name.as_deref()?;
+        if !name.chars().any(Self::is_forbidden) {
+            return None;
+        }
+        Some(
+            name.chars()
+                .map(|c| {
+                    if Self::is_forbidden(c) {
+                        Self::REPLACEMENT
+                    } else {
+                        c
+                    }
+                })
+                .collect(),
+        )
+    }
 }
 
 impl Default for ForbiddenChars {
@@ -47,24 +66,6 @@ impl NameRule for ForbiddenChars {
             before: entry.raw_name.clone(),
             after: after.into_bytes(),
         })
-    }
-
-    fn propose(&self, entry: &Entry) -> Option<String> {
-        let name = entry.name.as_deref()?;
-        if !name.chars().any(Self::is_forbidden) {
-            return None;
-        }
-        Some(
-            name.chars()
-                .map(|c| {
-                    if Self::is_forbidden(c) {
-                        Self::REPLACEMENT
-                    } else {
-                        c
-                    }
-                })
-                .collect(),
-        )
     }
 }
 

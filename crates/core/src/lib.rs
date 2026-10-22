@@ -6,21 +6,22 @@
 
 mod analyse;
 pub mod backoff;
+mod decisions;
 mod engine;
 mod event;
 pub mod inhibit;
-mod paths;
+mod lifecycle;
 mod profile;
 mod registry;
 mod run;
 mod state;
 
-pub use analyse::{RULE_COLLISION, RULE_UNDECODABLE};
 pub use engine::{
-    AnalysisSummary, CheckView, Counts, DecisionInput, Engine, EngineOptions, IssueView,
-    JobSummary, PreflightView, ProfileTest, RuleCount, SendOptions,
+    AnalysisSummary, CheckView, Counts, DecisionInput, Engine, EngineOptions, IssueDecision,
+    IssueSeverity, IssueView, JobSummary, PreflightView, ProfileTest, RuleCount, SendOptions,
 };
 pub use event::Event;
+pub use lifecycle::job_operations;
 pub use profile::{Family, Profile, TargetSpec};
 pub use registry::Registry;
 pub use state::{JobKind, JobState};

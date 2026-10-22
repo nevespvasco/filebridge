@@ -12,27 +12,61 @@ use tokio::sync::mpsc;
 
 pub type Result<T, E = TransportError> = std::result::Result<T, E>;
 
-/// Every transport error says whether retrying could help, so `core` picks backoff or failure.
+/// What went wrong, as far as the caller needs to act on it. Each adapter maps its own errors
+/// (rclone's messages and HTTP codes, say) to these; callers never read the message to decide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorKind {
+    /// Network or server trouble; trying again later may work. The only retryable kind.
+    Transient,
+    /// The path is not at the destination (or the source file is gone).
+    NotFound,
+    /// The destination can't do what was asked (a hash type, an operation).
+    Unsupported,
+    /// Credentials were refused or are missing.
+    Auth,
+    /// Anything else that trying again won't fix.
+    #[default]
+    Other,
+}
+
+/// Every transport error has a kind; only `Transient` ones are worth retrying, so `core` picks
+/// backoff or failure from it.
 #[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]
 #[error("{message}")]
 pub struct TransportError {
+    pub kind: ErrorKind,
     pub message: String,
-    pub retryable: bool,
 }
 
 impl TransportError {
-    pub fn retryable(message: impl Into<String>) -> Self {
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
+            kind,
             message: message.into(),
-            retryable: true,
         }
     }
 
+    /// A `Transient` error.
+    pub fn retryable(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Transient, message)
+    }
+
+    /// An `Other` error: retrying won't help.
     pub fn fatal(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            retryable: false,
-        }
+        Self::new(ErrorKind::Other, message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::NotFound, message)
+    }
+
+    pub fn unsupported(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Unsupported, message)
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        self.kind == ErrorKind::Transient
     }
 }
 
@@ -275,20 +309,30 @@ impl ProgressSink {
     }
 }
 
+/// Moves files to a destination. The contract every adapter keeps is checked by the shared
+/// suite in [`contract`] (feature `contract`), run against each adapter.
 #[async_trait]
 pub trait Transport: Send + Sync {
     fn id(&self) -> &str;
     fn capabilities(&self) -> TransportCaps;
     /// Space, permissions, connectivity.
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport>;
+    /// Sends every item to its `dest` name, creating parent directories. An error for the whole
+    /// call means nothing can be said per item; otherwise each item has its own outcome, in
+    /// order, and a missing source file is `NotFound`. `ItemDone` is sent as each file arrives.
     async fn transfer(
         &self,
         dest: &Destination,
         job: &TransferJob,
         progress: ProgressSink,
     ) -> Result<TransferResult>;
+    /// The file's hash at the destination. `NotFound` if it isn't there; `Unsupported` if the
+    /// destination can't produce this kind of hash.
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
 }
+
+#[cfg(feature = "contract")]
+pub mod contract;
 
 #[cfg(test)]
 mod tests {

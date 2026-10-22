@@ -13,8 +13,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use filebridge_core::JobState;
-use filebridge_host::{Access, Host, HostOptions, NextcloudExtensions};
-use filebridge_ipc::{Client, Endpoint};
+use filebridge_host::{Access, Host, HostOptions, TransportChoice};
+use filebridge_ipc::{Client, Endpoint, Operations};
 
 #[derive(Parser)]
 #[command(name = "filebridge-service", version, about)]
@@ -29,6 +29,10 @@ struct Cli {
     /// Windows).
     #[arg(long, global = true, env = "FILEBRIDGE_SOCKET")]
     socket: Option<PathBuf>,
+    /// Development and tests: send with the local-disk fake transport (id `fake`) instead of
+    /// rclone. Profiles must use `transport: "fake"` and a local root.
+    #[arg(long, global = true, env = "FILEBRIDGE_FAKE_TRANSPORT", hide = true)]
+    fake_transport: bool,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -78,16 +82,22 @@ async fn main() -> Result<()> {
 
 async fn run(cli: &Cli) -> Result<()> {
     // The lock comes first: it is what makes replacing a stale socket safe.
+    let transport = if cli.fake_transport {
+        TransportChoice::Fake
+    } else {
+        TransportChoice::Rclone
+    };
     let host = Host::open(
         &HostOptions {
             data_dir: cli.data_dir.clone(),
             rclone: cli.rclone.clone(),
+            transport,
         },
         Access::Exclusive,
-        true,
     )
     .await?;
     let engine = host.engine.clone();
+    let operations = Arc::new(host.operations());
     let endpoint = endpoint(cli);
     let listener = filebridge_ipc::bind(&endpoint)
         .with_context(|| format!("listen on {}", endpoint.display()))?;
@@ -102,7 +112,7 @@ async fn run(cli: &Cli) -> Result<()> {
         tracing::info!("resumed {} interrupted jobs", resumed.len());
     }
     tokio::select! {
-        r = filebridge_ipc::serve(listener, engine, Some(Arc::new(NextcloudExtensions))) => {
+        r = filebridge_ipc::serve(listener, operations) => {
             r.context("serving ipc")?;
         }
         _ = shutdown_signal() => tracing::info!("stopping; running jobs resume on the next start"),

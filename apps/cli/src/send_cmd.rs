@@ -10,7 +10,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
-use filebridge_core::{AnalysisSummary, DecisionInput, Engine, Event, JobState, SendOptions};
+use filebridge_core::{
+    AnalysisSummary, DecisionInput, Engine, Event, IssueDecision, JobState, SendOptions,
+};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::app::{App, Global};
@@ -142,14 +144,14 @@ pub async fn issues(g: &Global, job: &str, rule: Option<String>, all: bool) -> R
         let Some(last) = page.last() else { break };
         after = Some(last.id);
         for i in page {
-            if !all && i.decision != "pending" {
+            if !all && i.decision != IssueDecision::Pending {
                 continue;
             }
             println!(
                 "#{:<6} {:<10} {:<9} {}\n         {} → {}{}",
                 i.id,
                 i.rule,
-                i.decision,
+                i.decision.as_str(),
                 i.path,
                 i.before_text,
                 i.after_text,

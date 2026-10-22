@@ -17,8 +17,3 @@ specta = { workspace = true, features = ["derive", "serde_json"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "macros", "time", "fs"] }
 tracing.workspace = true
-
-[dev-dependencies]
-filebridge-integration-api.workspace = true
-tempfile.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

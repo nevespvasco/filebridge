@@ -9,6 +9,7 @@
 //! (`$XDG_RUNTIME_DIR/filebridge/service.sock`), or a per-user named pipe on Windows.
 
 mod client;
+mod operations;
 mod server;
 
 use std::path::PathBuf;
@@ -17,91 +18,23 @@ use interprocess::local_socket::{GenericFilePath, GenericNamespaced, Name, ToFsN
 use serde::{Deserialize, Serialize};
 
 pub use client::Client;
-pub use server::{Extensions, bind, serve};
+pub use operations::{Operations, Request};
+pub use server::{Handler, bind, serve};
 
 /// The core and transport types requests, responses and events carry, so clients need only
 /// this crate (ADR 0008: the window reaches `core` only through `ipc`).
 pub use filebridge_core::{
-    AnalysisSummary, CheckView, Counts, DecisionInput, Event, Family, IssueView, JobKind, JobState,
-    JobSummary, PreflightView, Profile, ProfileTest, RuleCount, SendOptions, TargetSpec,
+    AnalysisSummary, CheckView, Counts, DecisionInput, Event, Family, IssueDecision, IssueSeverity,
+    IssueView, JobKind, JobState, JobSummary, PreflightView, Profile, ProfileTest, RuleCount,
+    SendOptions, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
 /// Bumped on incompatible protocol changes; `ping` returns it.
 /// 2: `set_options` and `decide_all`.
-pub const PROTOCOL_VERSION: u32 = 2;
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Request {
-    Ping,
-    ListProfiles,
-    SaveProfile {
-        profile: Profile,
-    },
-    DeleteProfile {
-        id: String,
-    },
-    TestProfile {
-        id: String,
-    },
-    DetectNextcloud(DetectNextcloudRequest),
-    CreateJob {
-        sources: Vec<String>,
-        profile_id: String,
-        options: SendOptions,
-    },
-    /// Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready).
-    SetOptions {
-        job_id: String,
-        options: SendOptions,
-    },
-    Analyse {
-        job_id: String,
-    },
-    RuleCounts {
-        job_id: String,
-    },
-    Issues {
-        job_id: String,
-        rule: Option<String>,
-        after_id: Option<i64>,
-        limit: u32,
-    },
-    Decide {
-        job_id: String,
-        issue_id: i64,
-        decision: DecisionInput,
-    },
-    /// One decision for every pending issue of the job (or of `rule`). Not `edit`. Answers
-    /// with the number of issues changed.
-    DecideAll {
-        job_id: String,
-        rule: Option<String>,
-        decision: DecisionInput,
-    },
-    Start {
-        job_id: String,
-    },
-    Pause {
-        job_id: String,
-    },
-    Resume {
-        job_id: String,
-    },
-    Cancel {
-        job_id: String,
-    },
-    ListJobs {
-        limit: u32,
-        offset: u32,
-    },
-    Job {
-        job_id: String,
-    },
-    /// From now on, this connection also receives every engine [`Event`].
-    Subscribe,
-}
+/// 3: requests generated from the operation catalogue (`detect_nextcloud` takes `req`); an
+///    issue's `decision` and `severity` are enums.
+pub const PROTOCOL_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

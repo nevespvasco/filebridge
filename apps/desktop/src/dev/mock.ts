@@ -1,17 +1,27 @@
 // Development only: `VITE_MOCK=1 pnpm dev` runs the UI in a plain browser against this in-memory
-// fake of filebridge-service (through Tauri's `mockIPC`). It is never bundled into the app: main.ts
-// imports it only when VITE_MOCK is set. Data shapes come from the generated bindings.
+// fake of filebridge-service (through Tauri's `mockIPC`), for visual work. It is never bundled into
+// the app: main.ts imports it only when VITE_MOCK is set. For real behaviour without rclone, run
+// the app against `filebridge-service --fake-transport` instead (see README).
+//
+// It can't drift from the service: every command in the generated bindings needs a handler here
+// with the command's own answer type (`Handlers`), and which operation is allowed in which job
+// state comes from the engine's table (`JOB_OPERATIONS`), not from a copy.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import type {
-  AnalysisSummary_Serialize,
-  DecisionInput,
-  Event_Serialize,
-  IssueView_Serialize,
-  JobState,
-  JobSummary_Serialize,
-  Profile_Serialize,
-  RuleCount,
+import {
+  JOB_OPERATIONS,
+  PROTOCOL_VERSION,
+  type AnalysisSummary_Serialize,
+  type commands,
+  type DecisionInput,
+  type ErrorBody,
+  type Event_Serialize,
+  type IssueDecision,
+  type IssueView_Serialize,
+  type JobState,
+  type JobSummary_Serialize,
+  type Profile_Serialize,
+  type RuleCount,
 } from "@/bindings";
 
 type Args = Record<string, unknown>;
@@ -62,7 +72,7 @@ const jobs: JobSummary_Serialize[] = [
 // Issues are generated on demand, so a rule can have hundreds of thousands of them.
 type RuleDef = { rule: string; total: number; auto: boolean; base: number };
 const rulesByJob = new Map<string, RuleDef[]>();
-const decisions = new Map<number, { decision: string; custom_name: string | null }>();
+const decisions = new Map<number, { decision: IssueDecision; custom_name: string | null }>();
 
 function rulesFor(jobId: string): RuleDef[] {
   let r = rulesByJob.get(jobId);
@@ -179,177 +189,213 @@ function runTransfer(job: JobSummary_Serialize) {
 
 function find(id: unknown): JobSummary_Serialize {
   const j = jobs.find((x) => x.id === id);
-  if (!j) throw { code: "not_found", message: `job ${String(id)} not found` };
+  if (!j) throw fail("not_found", `job ${String(id)} not found`);
   return j;
 }
 
+function fail(code: string, message: string): ErrorBody {
+  return { code, message };
+}
+
+/** Refuses `op` where the engine would, with the engine's error codes. */
+function allow(op: keyof typeof JOB_OPERATIONS, job: JobSummary_Serialize) {
+  if ((JOB_OPERATIONS[op] as readonly JobState[]).includes(job.state)) return;
+  if (op === "start" && job.state === "awaiting_approval") throw fail("pending_decisions", "name decisions are still pending");
+  if (op === "set_options" || op === "decide" || op === "decide_all") throw fail("invalid", `${op === "set_options" ? "options" : "decisions"} can't change while the job is ${job.state}`);
+  throw fail("invalid_transition", `cannot ${op} a job that is ${job.state}`);
+}
+
+const DECIDED: Record<DecisionInput["kind"], IssueDecision> = {
+  accept: "accepted",
+  edit: "edited",
+  keep_original: "rejected",
+  skip: "skipped",
+};
+
+function readyIfDecided(job: JobSummary_Serialize) {
+  if (job.state === "awaiting_approval" && ruleCounts(job.id).every((r) => r.pending === 0)) setState(job, "ready");
+}
+
+type Commands = typeof commands;
+/** What a command answers: the `data` of its result, or its plain return value. */
+type Answer<K extends keyof Commands> = Awaited<ReturnType<Commands[K]>> extends infer R
+  ? R extends { status: "ok"; data: infer D }
+    ? D
+    : R extends { status: "error" }
+      ? never
+      : R
+  : never;
+/** One handler per command in the bindings, answering that command's type. */
+type Handlers = { [K in keyof Commands]: (a: Args) => Answer<K> | Promise<Answer<K>> };
+
+const handlers: Handlers = {
+  serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
+  setTrayLabels: () => null,
+  ping: () => ({ protocol: PROTOCOL_VERSION, version: "0.0.1-mock" }),
+  listProfiles: () => profiles,
+  saveProfile: (a) => {
+    const p = { ...(a.profile as Profile_Serialize) };
+    if (!p.id) p.id = `p-${Math.random().toString(36).slice(2, 8)}`;
+    const i = profiles.findIndex((x) => x.id === p.id);
+    if (i >= 0) profiles[i] = p;
+    else profiles.push(p);
+    return p;
+  },
+  deleteProfile: (a) => {
+    const i = profiles.findIndex((x) => x.id === a.id);
+    if (i >= 0) profiles.splice(i, 1);
+    return null;
+  },
+  testProfile: async (a) => {
+    await sleep(600);
+    const p = profiles.find((x) => x.id === a.id);
+    const nc = p?.integration === "nextcloud";
+    return {
+      transport: { source: "transport", free_bytes: nc ? 812_000_000_000 : 1_900_000_000_000, writable: true, checks: [{ id: "connect", status: "ok", message: "connected" }, { id: "writable", status: "ok", message: "test file written and removed" }] },
+      integration: nc ? { source: "integration", free_bytes: null, writable: true, checks: [{ id: "nextcloud.occ", status: "ok", message: "occ 30.0.2 answers" }, { id: "nextcloud.owner", status: "warn", message: "files will be chowned to www-data (33:33)" }] } : null,
+    };
+  },
+  detectNextcloud: async (a) => {
+    await sleep(1200);
+    const req = a.req as { name: string; ctid: number | null };
+    const steps = [
+      { id: "ssh", status: "ok", message: "connected as root", commands: ["ssh -p 22 root@pve.example.lan true"] },
+      { id: "pct-list", status: req.ctid == null ? "warn" : "ok", message: req.ctid == null ? "2 containers look like Nextcloud" : `container ${req.ctid}`, commands: ["pct list"] },
+    ];
+    if (req.ctid == null) return { steps, containers: ["105 nextcloud", "112 nextcloud-test"], profile: null };
+    steps.push(
+      { id: "datadirectory", status: "ok", message: "/mnt/ncdata", commands: [`pct exec ${req.ctid} -- sudo -u www-data php /var/www/nextcloud/occ config:system:get datadirectory`] },
+      { id: "data-path", status: "ok", message: "/srv/ncdata exists", commands: [`pct config ${req.ctid}`] },
+      { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data", commands: [] },
+      { id: "owner", status: "ok", message: "100033:100033", commands: ["stat -c %u:%g /srv/ncdata/demo/files"] },
+    );
+    const profile: Profile_Serialize = { ...profiles[0], id: `p-${Math.random().toString(36).slice(2, 8)}`, name: req.name };
+    profiles.push(profile);
+    return { steps, containers: [], profile };
+  },
+  createJob: (a) => {
+    const id = `j-${Math.random().toString(36).slice(2, 8)}`;
+    jobs.unshift({
+      id,
+      kind: "transfer",
+      profile_id: a.profileId as string,
+      state: "draft",
+      error: null,
+      attempt: 0,
+      next_retry_at: null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+      finished_at: null,
+      sources: a.sources as string[],
+      options: a.options as JobSummary_Serialize["options"],
+      counts: counts(0, 0, 0),
+    });
+    return id;
+  },
+  setOptions: (a) => {
+    const job = find(a.jobId);
+    allow("set_options", job);
+    job.options = a.options as JobSummary_Serialize["options"];
+    return null;
+  },
+  analyse: async (a) => {
+    const job = find(a.jobId);
+    allow("analyse", job);
+    setState(job, "analysing");
+    const files = 48_211;
+    const bytes = 412_000_000_000;
+    for (let s = 1; s <= 10; s++) {
+      await sleep(250);
+      send({ type: "scan_progress", job_id: job.id, files: Math.floor((files * s) / 10), bytes: Math.floor((bytes * s) / 10), current: `${job.sources[0]}/${2010 + s}` });
+    }
+    job.counts = counts(files, bytes, 0);
+    const rules = ruleCounts(job.id);
+    const pending = rules.reduce((n, r) => n + r.pending, 0);
+    setState(job, pending ? "awaiting_approval" : "ready");
+    const summary: AnalysisSummary_Serialize = {
+      job_id: job.id,
+      state: job.state,
+      files,
+      dirs: 1_204,
+      bytes,
+      rules,
+      pending_decisions: pending,
+      scan_errors: ["/home/demo/Fotos/privado: permission denied"],
+      skipped_symlinks: 2,
+      preflight: [{ source: "transport", free_bytes: 812_000_000_000, writable: true, checks: [{ id: "writable", status: "ok", message: "test file written and removed" }] }],
+    };
+    return summary;
+  },
+  ruleCounts: (a) => ruleCounts(a.jobId as string),
+  issues: (a) => {
+    const defs = rulesFor(a.jobId as string).filter((d) => !a.rule || d.rule === a.rule);
+    const after = (a.afterId as number | null) ?? 0;
+    const out: IssueView_Serialize[] = [];
+    for (const d of defs) {
+      const start = Math.max(0, after - d.base + 1);
+      for (let i = start; i < d.total && out.length < (a.limit as number); i++) out.push(issue(d, i));
+    }
+    return out;
+  },
+  decide: (a) => {
+    const job = find(a.jobId);
+    allow("decide", job);
+    const d = a.decision as DecisionInput;
+    decisions.set(a.issueId as number, { decision: DECIDED[d.kind], custom_name: d.kind === "edit" ? d.name : null });
+    readyIfDecided(job);
+    return null;
+  },
+  decideAll: (a) => {
+    const d = a.decision as DecisionInput;
+    if (d.kind === "edit") throw fail("invalid", "an edited name applies to one issue, not to many");
+    const job = find(a.jobId);
+    allow("decide_all", job);
+    let n = 0;
+    for (const def of rulesFor(job.id)) {
+      if (def.auto || (a.rule && def.rule !== a.rule)) continue;
+      for (let i = 0; i < def.total; i++) {
+        if ((decisions.get(def.base + i)?.decision ?? "pending") !== "pending") continue;
+        decisions.set(def.base + i, { decision: DECIDED[d.kind], custom_name: null });
+        n++;
+      }
+    }
+    readyIfDecided(job);
+    return n;
+  },
+  start: (a) => {
+    const job = find(a.jobId);
+    allow("start", job);
+    setState(job, "transferring");
+    runTransfer(job);
+    return null;
+  },
+  resume: (a) => handlers.start(a),
+  pause: (a) => {
+    const job = find(a.jobId);
+    allow("pause", job);
+    clearInterval(timers.get(job.id));
+    setState(job, "paused");
+    return null;
+  },
+  cancel: (a) => {
+    const job = find(a.jobId);
+    allow("cancel", job);
+    clearInterval(timers.get(job.id));
+    setState(job, "cancelled");
+    return null;
+  },
+  listJobs: (a) => jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number)),
+  job: (a) => find(a.jobId),
+};
+
+/** `list_profiles` (what Tauri invokes) → `listProfiles` (the bindings' name). */
+const camel = (cmd: string) => cmd.replace(/_(.)/g, (_, c: string) => c.toUpperCase());
+
 async function handle(cmd: string, a: Args): Promise<unknown> {
-  switch (cmd) {
-    case "service_endpoint":
-      return "/run/user/1000/filebridge/service.sock (mock)";
-    case "set_tray_labels":
-      return null;
-    case "ping":
-      return { protocol: 2, version: "0.0.1-mock" };
-    case "list_profiles":
-      return profiles;
-    case "save_profile": {
-      const p = { ...(a.profile as Profile_Serialize) };
-      if (!p.id) p.id = `p-${Math.random().toString(36).slice(2, 8)}`;
-      const i = profiles.findIndex((x) => x.id === p.id);
-      if (i >= 0) profiles[i] = p;
-      else profiles.push(p);
-      return p;
-    }
-    case "delete_profile": {
-      const i = profiles.findIndex((x) => x.id === a.id);
-      if (i >= 0) profiles.splice(i, 1);
-      return null;
-    }
-    case "test_profile": {
-      await sleep(600);
-      const p = profiles.find((x) => x.id === a.id);
-      const nc = p?.integration === "nextcloud";
-      return {
-        transport: { source: "transport", free_bytes: nc ? 812_000_000_000 : 1_900_000_000_000, writable: true, checks: [{ id: "connect", status: "ok", message: "connected" }, { id: "writable", status: "ok", message: "test file written and removed" }] },
-        integration: nc ? { source: "integration", free_bytes: null, writable: true, checks: [{ id: "nextcloud.occ", status: "ok", message: "occ 30.0.2 answers" }, { id: "nextcloud.owner", status: "warn", message: "files will be chowned to www-data (33:33)" }] } : null,
-      };
-    }
-    case "detect_nextcloud": {
-      await sleep(1200);
-      const req = a.req as { name: string; ctid: number | null };
-      const steps = [
-        { id: "ssh", status: "ok", message: "connected as root", commands: ["ssh -p 22 root@pve.example.lan true"] },
-        { id: "pct-list", status: req.ctid == null ? "warn" : "ok", message: req.ctid == null ? "2 containers look like Nextcloud" : `container ${req.ctid}`, commands: ["pct list"] },
-      ];
-      if (req.ctid == null) return { steps, containers: ["105 nextcloud", "112 nextcloud-test"], profile: null };
-      steps.push(
-        { id: "datadirectory", status: "ok", message: "/mnt/ncdata", commands: [`pct exec ${req.ctid} -- sudo -u www-data php /var/www/nextcloud/occ config:system:get datadirectory`] },
-        { id: "data-path", status: "ok", message: "/srv/ncdata exists", commands: [`pct config ${req.ctid}`] },
-        { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data", commands: [] },
-        { id: "owner", status: "ok", message: "100033:100033", commands: ["stat -c %u:%g /srv/ncdata/demo/files"] },
-      );
-      const profile: Profile_Serialize = { ...profiles[0], id: `p-${Math.random().toString(36).slice(2, 8)}`, name: req.name };
-      profiles.push(profile);
-      return { steps, containers: [], profile };
-    }
-    case "create_job": {
-      const id = `j-${Math.random().toString(36).slice(2, 8)}`;
-      jobs.unshift({
-        id,
-        kind: "transfer",
-        profile_id: a.profileId as string,
-        state: "draft",
-        error: null,
-        attempt: 0,
-        next_retry_at: null,
-        created_at: Date.now(),
-        updated_at: Date.now(),
-        finished_at: null,
-        sources: a.sources as string[],
-        options: a.options as JobSummary_Serialize["options"],
-        counts: counts(0, 0, 0),
-      });
-      return id;
-    }
-    case "set_options": {
-      const job = find(a.jobId);
-      if (!["draft", "awaiting_approval", "ready"].includes(job.state)) throw { code: "invalid", message: `options can't change while the job is ${job.state}` };
-      job.options = a.options as JobSummary_Serialize["options"];
-      return null;
-    }
-    case "analyse": {
-      const job = find(a.jobId);
-      setState(job, "analysing");
-      const files = 48_211;
-      const bytes = 412_000_000_000;
-      for (let s = 1; s <= 10; s++) {
-        await sleep(250);
-        send({ type: "scan_progress", job_id: job.id, files: Math.floor((files * s) / 10), bytes: Math.floor((bytes * s) / 10), current: `${job.sources[0]}/${2010 + s}` });
-      }
-      job.counts = counts(files, bytes, 0);
-      const rules = ruleCounts(job.id);
-      const pending = rules.reduce((n, r) => n + r.pending, 0);
-      setState(job, pending ? "awaiting_approval" : "ready");
-      const summary: AnalysisSummary_Serialize = {
-        job_id: job.id,
-        state: job.state,
-        files,
-        dirs: 1_204,
-        bytes,
-        rules,
-        pending_decisions: pending,
-        scan_errors: ["/home/demo/Fotos/privado: permission denied"],
-        skipped_symlinks: 2,
-        preflight: [{ source: "transport", free_bytes: 812_000_000_000, writable: true, checks: [{ id: "writable", status: "ok", message: "test file written and removed" }] }],
-      };
-      return summary;
-    }
-    case "rule_counts":
-      return ruleCounts(a.jobId as string);
-    case "issues": {
-      const defs = rulesFor(a.jobId as string).filter((d) => !a.rule || d.rule === a.rule);
-      const after = (a.afterId as number | null) ?? 0;
-      const out: IssueView_Serialize[] = [];
-      for (const d of defs) {
-        const start = Math.max(0, after - d.base + 1);
-        for (let i = start; i < d.total && out.length < (a.limit as number); i++) out.push(issue(d, i));
-      }
-      return out;
-    }
-    case "decide": {
-      const d = a.decision as DecisionInput;
-      const map = { accept: "accepted", edit: "edited", keep_original: "rejected", skip: "skipped" } as const;
-      decisions.set(a.issueId as number, { decision: map[d.kind], custom_name: d.kind === "edit" ? d.name : null });
-      const job = find(a.jobId);
-      if (job.state === "awaiting_approval" && ruleCounts(job.id).every((r) => r.pending === 0)) setState(job, "ready");
-      return null;
-    }
-    case "decide_all": {
-      const d = a.decision as DecisionInput;
-      if (d.kind === "edit") throw { code: "invalid", message: "an edited name applies to one issue, not to many" };
-      const map = { accept: "accepted", keep_original: "rejected", skip: "skipped" } as const;
-      const job = find(a.jobId);
-      let n = 0;
-      for (const def of rulesFor(job.id)) {
-        if (def.auto || (a.rule && def.rule !== a.rule)) continue;
-        for (let i = 0; i < def.total; i++) {
-          if (decisions.has(def.base + i)) continue;
-          decisions.set(def.base + i, { decision: map[d.kind], custom_name: null });
-          n++;
-        }
-      }
-      if (job.state === "awaiting_approval" && ruleCounts(job.id).every((r) => r.pending === 0)) setState(job, "ready");
-      return n;
-    }
-    case "start":
-    case "resume": {
-      const job = find(a.jobId);
-      if (job.state === "awaiting_approval") throw { code: "pending_decisions", message: "name decisions are still pending" };
-      setState(job, "transferring");
-      runTransfer(job);
-      return null;
-    }
-    case "pause": {
-      const job = find(a.jobId);
-      clearInterval(timers.get(job.id));
-      setState(job, "paused");
-      return null;
-    }
-    case "cancel": {
-      const job = find(a.jobId);
-      clearInterval(timers.get(job.id));
-      setState(job, "cancelled");
-      return null;
-    }
-    case "list_jobs":
-      return jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number));
-    case "job":
-      return find(a.jobId);
-    default:
-      if (cmd.startsWith("plugin:")) return null;
-      throw { code: "unsupported", message: `mock: ${cmd}` };
-  }
+  const handler = (handlers as Record<string, ((a: Args) => unknown) | undefined>)[camel(cmd)];
+  if (handler) return handler(a);
+  if (cmd.startsWith("plugin:")) return null;
+  throw fail("unsupported", `mock: ${cmd}`);
 }
 
 export function installMock() {

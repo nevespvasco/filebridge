@@ -30,12 +30,36 @@ pub struct JobRow {
     /// Set once the job reaches a terminal state; unfinished jobs resume on startup.
     pub finished_at: Option<i64>,
     pub sources: Vec<Vec<u8>>,
+    /// Warnings of the stages finished so far.
+    pub warnings: Vec<String>,
+    /// Verify rounds that found differences and sent files again.
+    pub verify_rounds: u32,
+}
+
+/// A job's move to a new state, written in one transaction with what the stage that just
+/// ended produced, and logged as a `state` event.
+#[derive(Debug, Clone, Default)]
+pub struct StateChange {
+    /// The state the caller saw. The change is refused if the job is no longer in it.
+    pub from: String,
+    pub to: String,
+    /// Replaces the previous error (`None` clears it).
+    pub error: Option<String>,
+    /// A terminal state: the job is finished and never resumed.
+    pub finished: bool,
+    /// Warnings of the stage that just ended, added to the job's.
+    pub warnings: Vec<String>,
+    /// The stage that just ended was a verify round that sends files again.
+    pub verify_round: bool,
 }
 
 const COLUMNS: &str = "id, kind, profile_id, state, options, error, attempt, next_retry_at, \
-                       created_at, updated_at, finished_at";
+                       created_at, updated_at, finished_at, warnings, verify_rounds";
 
-fn from_row(row: &Row<'_>) -> rusqlite::Result<(JobRow, String)> {
+/// A row, plus its options and warnings as JSON text.
+type RawJob = (JobRow, String, String);
+
+fn from_row(row: &Row<'_>) -> rusqlite::Result<RawJob> {
     Ok((
         JobRow {
             id: row.get(0)?,
@@ -50,14 +74,18 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<(JobRow, String)> {
             updated_at: row.get(9)?,
             finished_at: row.get(10)?,
             sources: Vec::new(),
+            warnings: Vec::new(),
+            verify_rounds: row.get(12)?,
         },
         row.get(4)?,
+        row.get(11)?,
     ))
 }
 
-fn load(c: &Connection, pair: (JobRow, String)) -> Result<JobRow> {
-    let (mut job, options) = pair;
+fn load(c: &Connection, raw: RawJob) -> Result<JobRow> {
+    let (mut job, options, warnings) = raw;
     job.options = serde_json::from_str(&options)?;
+    job.warnings = serde_json::from_str(&warnings)?;
     let mut stmt =
         c.prepare_cached("SELECT path FROM job_sources WHERE job_id = ?1 ORDER BY position")?;
     job.sources = stmt
@@ -68,10 +96,10 @@ fn load(c: &Connection, pair: (JobRow, String)) -> Result<JobRow> {
 
 fn query_jobs(c: &Connection, sql: &str, params: impl rusqlite::Params) -> Result<Vec<JobRow>> {
     let mut stmt = c.prepare(sql)?;
-    let pairs = stmt
+    let raws = stmt
         .query_map(params, from_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    pairs.into_iter().map(|p| load(c, p)).collect()
+    raws.into_iter().map(|r| load(c, r)).collect()
 }
 
 fn expect_one(n: usize, id: &str) -> Result<()> {
@@ -110,7 +138,7 @@ impl Store {
     pub async fn get_job(&self, id: &str) -> Result<JobRow> {
         let id = id.to_owned();
         self.call(move |c| {
-            let pair = c
+            let raw = c
                 .query_row(
                     &format!("SELECT {COLUMNS} FROM jobs WHERE id = ?1"),
                     [&id],
@@ -118,7 +146,7 @@ impl Store {
                 )
                 .optional()?
                 .ok_or_else(|| StoreError::NotFound(format!("job {id}")))?;
-            load(c, pair)
+            load(c, raw)
         })
         .await
     }
@@ -151,15 +179,56 @@ impl Store {
         .await
     }
 
-    /// Records a state transition. `error` replaces the previous one (`None` clears it).
-    pub async fn set_job_state(&self, id: &str, state: &str, error: Option<String>) -> Result<()> {
-        let (id, state) = (id.to_owned(), state.to_owned());
+    /// Records a state change, the stage outcome and its `state` event, in one transaction.
+    /// `Invalid` if the job is no longer in `change.from` (someone else moved it).
+    pub async fn change_job_state(&self, id: &str, change: StateChange) -> Result<()> {
+        let id = id.to_owned();
+        let event = serde_json::to_string(&serde_json::json!({
+            "from": change.from, "to": change.to, "error": change.error,
+        }))?;
         self.call(move |c| {
-            let n = c.execute(
-                "UPDATE jobs SET state = ?2, error = ?3, updated_at = ?4 WHERE id = ?1",
-                params![id, state, error, now_ms()],
+            let now = now_ms();
+            let tx = c.transaction()?;
+            let current: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT state, warnings FROM jobs WHERE id = ?1",
+                    [&id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let Some((state, warnings)) = current else {
+                return Err(StoreError::NotFound(format!("job {id}")));
+            };
+            if state != change.from {
+                return Err(StoreError::Invalid(format!(
+                    "job {id} is {state}, not {}",
+                    change.from
+                )));
+            }
+            let mut all: Vec<String> = serde_json::from_str(&warnings)?;
+            all.extend(change.warnings);
+            tx.execute(
+                "UPDATE jobs SET state = ?2, error = ?3, updated_at = ?4,
+                     finished_at = CASE WHEN ?5 THEN ?4 ELSE finished_at END,
+                     next_retry_at = CASE WHEN ?5 THEN NULL ELSE next_retry_at END,
+                     warnings = ?6, verify_rounds = verify_rounds + ?7
+                 WHERE id = ?1",
+                params![
+                    id,
+                    change.to,
+                    change.error,
+                    now,
+                    change.finished,
+                    serde_json::to_string(&all)?,
+                    u32::from(change.verify_round)
+                ],
             )?;
-            expect_one(n, &id)
+            tx.execute(
+                "INSERT INTO events (job_id, at, kind, data) VALUES (?1, ?2, 'state', ?3)",
+                params![id, now, event],
+            )?;
+            tx.commit()?;
+            Ok(())
         })
         .await
     }
@@ -194,28 +263,22 @@ impl Store {
         })
         .await
     }
-
-    /// Moves the job to a terminal state; it will no longer be resumed.
-    pub async fn finish_job(&self, id: &str, state: &str, error: Option<String>) -> Result<()> {
-        let (id, state) = (id.to_owned(), state.to_owned());
-        self.call(move |c| {
-            let now = now_ms();
-            let n = c.execute(
-                "UPDATE jobs SET state = ?2, error = ?3, updated_at = ?4, finished_at = ?4,
-                     next_retry_at = NULL
-                 WHERE id = ?1",
-                params![id, state, error, now],
-            )?;
-            expect_one(n, &id)
-        })
-        .await
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::StateChange;
     use crate::StoreError;
     use crate::test_util::store_with_job;
+
+    fn change(from: &str, to: &str, error: Option<&str>) -> StateChange {
+        StateChange {
+            from: from.into(),
+            to: to.into(),
+            error: error.map(str::to_owned),
+            ..StateChange::default()
+        }
+    }
 
     #[tokio::test]
     async fn lifecycle_and_resume_list() {
@@ -226,7 +289,7 @@ mod tests {
         assert_eq!(job.finished_at, None);
 
         store
-            .set_job_state(&id, "retrying", Some("connection reset".into()))
+            .change_job_state(&id, change("draft", "retrying", Some("connection reset")))
             .await
             .unwrap();
         store.set_job_retry(&id, 3, Some(123)).await.unwrap();
@@ -237,10 +300,21 @@ mod tests {
         );
         assert_eq!(store.list_unfinished_jobs().await.unwrap().len(), 1);
 
-        store.finish_job(&id, "completed", None).await.unwrap();
+        let done = StateChange {
+            finished: true,
+            warnings: vec!["2 files could not be verified".into()],
+            verify_round: true,
+            ..change("retrying", "completed_with_warnings", None)
+        };
+        store.change_job_state(&id, done).await.unwrap();
         let job = store.get_job(&id).await.unwrap();
         assert!(job.finished_at.is_some());
         assert_eq!(job.next_retry_at, None);
+        assert_eq!(job.warnings, ["2 files could not be verified"]);
+        assert_eq!(job.verify_rounds, 1);
+        let events = store.events_page(&id, None, 10).await.unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1].data["to"], "completed_with_warnings");
         assert!(store.list_unfinished_jobs().await.unwrap().is_empty());
         assert_eq!(store.list_jobs(10, 0).await.unwrap().len(), 1);
     }
@@ -268,8 +342,23 @@ mod tests {
     async fn unknown_job_is_not_found() {
         let (store, _) = store_with_job().await;
         assert!(matches!(
-            store.set_job_state("nope", "x", None).await,
+            store
+                .change_job_state("nope", change("draft", "x", None))
+                .await,
             Err(StoreError::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_state_change_from_a_stale_state_is_refused() {
+        let (store, id) = store_with_job().await;
+        assert!(matches!(
+            store
+                .change_job_state(&id, change("ready", "transferring", None))
+                .await,
+            Err(StoreError::Invalid(_))
+        ));
+        assert_eq!(store.get_job(&id).await.unwrap().state, "draft");
+        assert!(store.events_page(&id, None, 10).await.unwrap().is_empty());
     }
 }

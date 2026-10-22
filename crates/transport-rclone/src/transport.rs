@@ -3,9 +3,9 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use filebridge_transport_api::{
-    Check, CheckStatus, Destination, Digest, HashAlgo, ItemOutcome, PreflightReport, ProgressEvent,
-    ProgressSink, RemotePath, Result, TransferJob, TransferResult, Transport, TransportCaps,
-    TransportError,
+    Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome, PreflightReport,
+    ProgressEvent, ProgressSink, RemotePath, Result, TransferJob, TransferResult, Transport,
+    TransportCaps, TransportError,
 };
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
@@ -27,6 +27,8 @@ pub struct RcloneTransport {
 }
 
 impl RcloneTransport {
+    pub const ID: &'static str = "rclone";
+
     pub fn new(rcd: Arc<Rcd>, strategy: Strategy) -> Self {
         Self { rcd, strategy }
     }
@@ -269,7 +271,7 @@ async fn run_all(
 #[async_trait]
 impl Transport for RcloneTransport {
     fn id(&self) -> &str {
-        "rclone"
+        Self::ID
     }
 
     fn capabilities(&self) -> TransportCaps {
@@ -374,7 +376,9 @@ impl Transport for RcloneTransport {
         let hash_type = match algo {
             HashAlgo::Sha256 => "sha256",
             HashAlgo::Xxh3_128 => {
-                return Err(TransportError::fatal("xxh3-128 is not supported by rclone"));
+                return Err(TransportError::unsupported(
+                    "xxh3-128 is not supported by rclone",
+                ));
             }
         };
         let fs = dest_fs(dest, path.as_str())?;
@@ -393,7 +397,7 @@ impl Transport for RcloneTransport {
         let line = match self.rc().call("operations/hashsum", params(false)).await {
             Ok(v) if first_line(&v).is_some() => first_line(&v),
             Ok(_) => None,
-            Err(e) if e.message.contains("hash unsupported") => None,
+            Err(e) if e.kind == ErrorKind::Unsupported => None,
             Err(e) => return Err(e),
         };
         let line = match line {

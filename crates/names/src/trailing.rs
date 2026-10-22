@@ -20,6 +20,19 @@ impl Trailing {
     pub fn new(active_for: ActiveFor) -> Self {
         Self { active_for }
     }
+
+    /// The corrected name, if this rule would change it.
+    pub fn propose(&self, entry: &Entry) -> Option<String> {
+        let name = entry.name.as_deref()?;
+        let trimmed = name.trim_end_matches([' ', '.']);
+        if trimmed.len() == name.len() {
+            return None;
+        }
+        if trimmed.is_empty() {
+            return Some(Self::EMPTY_REPLACEMENT.to_owned());
+        }
+        Some(trimmed.to_owned())
+    }
 }
 
 impl Default for Trailing {
@@ -47,18 +60,6 @@ impl NameRule for Trailing {
             before: entry.raw_name.clone(),
             after: after.into_bytes(),
         })
-    }
-
-    fn propose(&self, entry: &Entry) -> Option<String> {
-        let name = entry.name.as_deref()?;
-        let trimmed = name.trim_end_matches([' ', '.']);
-        if trimmed.len() == name.len() {
-            return None;
-        }
-        if trimmed.is_empty() {
-            return Some(Self::EMPTY_REPLACEMENT.to_owned());
-        }
-        Some(trimmed.to_owned())
     }
 }
 

@@ -15,6 +15,11 @@ pub struct NextcloudNfc;
 
 impl NextcloudNfc {
     pub const ID: &'static str = "nextcloud-nfc";
+
+    /// The corrected name, if this rule would change it.
+    pub fn propose(&self, entry: &Entry) -> Option<String> {
+        Nfc.propose(entry)
+    }
 }
 
 impl NameRule for NextcloudNfc {
@@ -34,10 +39,6 @@ impl NameRule for NextcloudNfc {
             ..issue
         })
     }
-
-    fn propose(&self, entry: &Entry) -> Option<String> {
-        Nfc.propose(entry)
-    }
 }
 
 /// Names the Nextcloud server refuses: `.htaccess` (any case), and the `.part` / `.filepart`
@@ -50,6 +51,18 @@ impl NextcloudReserved {
     pub const ID: &'static str = "nextcloud-reserved";
     pub const NAMES: &'static [&'static str] = &[".htaccess"];
     pub const SUFFIXES: &'static [&'static str] = &[".part", ".filepart"];
+
+    /// The corrected name, if this rule would change it.
+    pub fn propose(&self, entry: &Entry) -> Option<String> {
+        let name = entry.name.as_deref()?;
+        let lower = name.to_ascii_lowercase();
+        if Self::NAMES.contains(&lower.as_str()) {
+            return Some(format!("_{name}"));
+        }
+        let suffix = Self::SUFFIXES.iter().find(|s| lower.ends_with(*s))?;
+        let dot = name.len() - suffix.len();
+        Some(format!("{}_{}", &name[..dot], &name[dot + 1..]))
+    }
 }
 
 impl NameRule for NextcloudReserved {
@@ -70,17 +83,6 @@ impl NameRule for NextcloudReserved {
             before: entry.raw_name.clone(),
             after: after.into_bytes(),
         })
-    }
-
-    fn propose(&self, entry: &Entry) -> Option<String> {
-        let name = entry.name.as_deref()?;
-        let lower = name.to_ascii_lowercase();
-        if Self::NAMES.contains(&lower.as_str()) {
-            return Some(format!("_{name}"));
-        }
-        let suffix = Self::SUFFIXES.iter().find(|s| lower.ends_with(*s))?;
-        let dot = name.len() - suffix.len();
-        Some(format!("{}_{}", &name[..dot], &name[dot + 1..]))
     }
 }
 

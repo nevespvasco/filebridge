@@ -1,4 +1,4 @@
-//! Job kinds, states and the transitions between them (docs/02, "Job state machine").
+//! Job kinds and states. Which state may follow which is the Job lifecycle's (`lifecycle.rs`).
 
 use serde::{Deserialize, Serialize};
 
@@ -104,29 +104,6 @@ impl JobState {
             Self::Transferring | Self::Retrying | Self::Verifying | Self::Integrating
         )
     }
-
-    /// Whether `self → next` is allowed.
-    pub fn can_go_to(self, next: JobState) -> bool {
-        use JobState::*;
-        if self.is_terminal() {
-            return false;
-        }
-        if matches!(next, Cancelled | Failed) {
-            return true;
-        }
-        match self {
-            Draft => matches!(next, Analysing),
-            Analysing => matches!(next, AwaitingApproval | Ready | Draft),
-            AwaitingApproval => matches!(next, Ready | Analysing),
-            Ready => matches!(next, Transferring | Analysing | AwaitingApproval),
-            Transferring => matches!(next, Paused | Retrying | Verifying | Integrating),
-            Paused => matches!(next, Transferring),
-            Retrying => matches!(next, Transferring | Verifying | Integrating | Paused),
-            Verifying => matches!(next, Transferring | Integrating | Retrying | Paused),
-            Integrating => matches!(next, Completed | CompletedWithWarnings | Retrying | Paused),
-            Completed | CompletedWithWarnings | Cancelled | Failed => false,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -140,19 +117,5 @@ mod tests {
         }
         assert!(JobState::parse("nope").is_err());
         assert_eq!(JobKind::parse("transfer").unwrap(), JobKind::Transfer);
-    }
-
-    #[test]
-    fn transitions() {
-        use JobState::*;
-        assert!(Draft.can_go_to(Analysing));
-        assert!(!Draft.can_go_to(Transferring));
-        assert!(Transferring.can_go_to(Retrying));
-        assert!(Retrying.can_go_to(Transferring));
-        assert!(Verifying.can_go_to(Transferring), "mismatches resend");
-        assert!(Integrating.can_go_to(CompletedWithWarnings));
-        assert!(Paused.can_go_to(Cancelled));
-        assert!(!Completed.can_go_to(Cancelled), "terminal is final");
-        assert!(!Failed.can_go_to(Transferring));
     }
 }

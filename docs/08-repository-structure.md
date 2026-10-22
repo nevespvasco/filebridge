@@ -20,6 +20,7 @@ filebridge/
 │   ├── store/                   # SQLite: jobs, manifests, profiles
 │   ├── secrets/                 # OS keyring
 │   ├── transport-api/           # Transport trait + types
+│   ├── transport-fake/          # local-disk Transport with fault injection (tests, dev mode)
 │   ├── transport-rclone/        # implementation over rclone's rc API
 │   ├── integration-api/         # Integration trait + types
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules

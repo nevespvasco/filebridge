@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, bail};
 use filebridge_core::{Engine, JobSummary, Profile};
-use filebridge_host::{Access, Host, HostOptions};
+use filebridge_host::{Access, Host, HostOptions, TransportChoice};
 
 /// Options shared by every engine command.
 #[derive(clap::Args, Clone)]
@@ -20,7 +20,7 @@ pub struct Global {
 
 pub struct App {
     pub engine: Arc<Engine>,
-    _host: Host,
+    pub host: Host,
 }
 
 impl App {
@@ -28,18 +28,23 @@ impl App {
     /// directory's lock (refused while `filebridge-service` runs), and those that reach a
     /// destination also start rclone.
     pub async fn open(g: &Global, access: Access, with_transport: bool) -> Result<Self> {
+        let transport = if with_transport {
+            TransportChoice::Rclone
+        } else {
+            TransportChoice::None
+        };
         let host = Host::open(
             &HostOptions {
                 data_dir: g.data_dir.clone(),
                 rclone: g.rclone.clone(),
+                transport,
             },
             access,
-            with_transport,
         )
         .await?;
         Ok(Self {
             engine: host.engine.clone(),
-            _host: host,
+            host,
         })
     }
 

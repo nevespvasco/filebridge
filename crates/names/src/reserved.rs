@@ -79,6 +79,15 @@ impl Reserved {
             .iter()
             .any(|r| r.eq_ignore_ascii_case(name) || r.eq_ignore_ascii_case(stem))
     }
+
+    /// The corrected name, if this rule would change it.
+    pub fn propose(&self, entry: &Entry) -> Option<String> {
+        let name = entry.name.as_deref()?;
+        if !self.is_reserved(name) {
+            return None;
+        }
+        Some(format!("{}{name}", Self::PREFIX))
+    }
 }
 
 impl NameRule for Reserved {
@@ -99,14 +108,6 @@ impl NameRule for Reserved {
             before: entry.raw_name.clone(),
             after: after.into_bytes(),
         })
-    }
-
-    fn propose(&self, entry: &Entry) -> Option<String> {
-        let name = entry.name.as_deref()?;
-        if !self.is_reserved(name) {
-            return None;
-        }
-        Some(format!("{}{name}", Self::PREFIX))
     }
 }
 
