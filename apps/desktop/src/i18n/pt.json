@@ -29,7 +29,7 @@
       "disconnected": "Sem ligação"
     },
     "retry": "Tentar de novo",
-    "tip": "O motor de cópia é a parte do filebridge que copia os ficheiros, em segundo plano, mesmo com esta janela fechada. Isto só diz que a janela consegue falar com ele; não diz nada sobre os seus destinos, que são verificados quando os usa.",
+    "tip": "O motor de cópia copia os seus ficheiros em segundo plano, mesmo com esta janela fechada. Isto mostra se a janela o consegue contactar.",
     "problem": {
       "version": {
         "title": "O motor de cópia é de outra versão do filebridge.",
