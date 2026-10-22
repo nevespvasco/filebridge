@@ -178,6 +178,9 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
                 params.push(("host_key_algorithms", algos));
             }
             params.push(("known_hosts_file", known_hosts));
+            // A symbolic link at the destination is listed as what it points to otherwise, so
+            // "Repair destination" would rename (and Nextcloud scan) things outside the folder.
+            params.push(("skip_links", "true".into()));
             Ok(format!(":sftp,{}:{path}", connection(params)))
         }
         Backend::Webdav {
@@ -365,7 +368,7 @@ mod tests {
         assert_eq!(
             dest_fs(&dest, &Creds::default(), "Backup").unwrap(),
             ":sftp,host=\"nas.lan\",port=\"2222\",user=\"ana\",key_file=\"/k/id,ed25519\",\
-             known_hosts_file=\"/k/known_hosts\":/srv/files/Backup"
+             known_hosts_file=\"/k/known_hosts\",skip_links=\"true\":/srv/files/Backup"
         );
     }
 

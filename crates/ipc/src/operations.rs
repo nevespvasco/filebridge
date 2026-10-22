@@ -92,6 +92,9 @@ macro_rules! for_each_operation {
             /// A draft "Repair destination" job for a folder of a profile (`None` = its root):
             /// `analyse`, the decisions and `start` then work on it like on a send.
             CreateRepairJob create_repair_job(profile_id: String, dir: Option<String>) -> String;
+            /// How many entries a Repair job would rename with its decisions as they are: what
+            /// the confirmation counts. Refused while a decision is pending.
+            PlannedRenames planned_renames(job_id: String) -> u64;
             /// What each chosen source is and what is wrong with it, without reading contents.
             InspectSources inspect_sources(paths: Vec<String>) -> Vec<$crate::SourceInfo>;
             /// One page of a job's files, filtered and sorted (at most 500).

@@ -35,7 +35,9 @@ const confirming = ref(false);
 const starting = ref(false);
 
 const pending = computed(() => rules.value.reduce((n, r) => n + r.pending, 0));
-const changes = computed(() => rules.value.reduce((n, r) => n + r.total, 0));
+/** Entries that will really change with the decisions as they are (not issues: a name can have
+ *  several, and a kept or skipped one changes nothing). */
+const changes = ref(0);
 const deciding = computed(() => job.value?.state === "awaiting_approval" || job.value?.state === "ready");
 
 async function refreshRules() {
@@ -96,6 +98,16 @@ const consequences = computed(() => [
   ...(profile.value?.integration === "nextcloud" ? [t("repair.confirm.nextcloud")] : []),
 ]);
 
+async function openConfirm() {
+  error.value = null;
+  try {
+    changes.value = await api.plannedRenames(props.id);
+    confirming.value = true;
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
 async function rename() {
   starting.value = true;
   error.value = null;
@@ -155,7 +167,7 @@ async function rename() {
       <RouterLink class="btn" :to="{ name: 'destinations' }"><AppIcon name="back" /> {{ $t("nav.destinations") }}</RouterLink>
       <span class="grow" />
       <span v-if="pending" class="why-disabled">{{ $t("repair.pending", { n: fmt.count(pending) }, pending) }}</span>
-      <button class="btn btn-primary" :disabled="analysing || !deciding || pending > 0 || !rules.length" @click="confirming = true">
+      <button class="btn btn-primary" :disabled="analysing || !deciding || pending > 0 || !rules.length" @click="openConfirm">
         <AppIcon name="renamed" /> {{ $t("repair.rename") }}
       </button>
     </div>

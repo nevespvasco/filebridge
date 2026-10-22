@@ -9,7 +9,7 @@ and no risk of a later sync recreating the old name. See [ADR 0005](adr/0005-fix
 | Rule (`id`) | Detects | Correction | Automatic? |
 |---|---|---|---|
 | NFC normalisation (`nfc`) | Decomposed accents (`c` + separate cedilla), typical of macOS, iOS and some backups | Convert to NFC; the visible name doesn't change | Yes |
-| Invalid encoding (`encoding`) | Bytes that are not UTF-8 (Latin-1, CP1252) | Decode as CP1252; a name with one of the five bytes CP1252 leaves undefined is read as Latin-1 | CP1252: yes, with the bytes shown. Latin-1 guess: no, a decision |
+| Invalid encoding (`encoding`) | Bytes that are not UTF-8 (Latin-1, CP1252, or another code page) | Decode as CP1252; the five bytes CP1252 leaves undefined become `_` (never a control character) | Yes, with the bytes shown, only when the reading looks like a Latin-script name (see below). Otherwise a decision, with that reading as the proposal |
 | Mojibake (`mojibake`) | `Ã³`, `Ã§`, `Ã£` (UTF-8 read as Latin-1) | Reverse the double encoding (the `ftfy` approach) | No: suggestion to approve |
 | Forbidden characters (`forbidden-chars`) | `< > : " / \ \| ? *` and control characters (forbidden on Windows and SMB) | Replace with `_` or a Unicode look-alike | Yes |
 | Trailing spaces and dots (`trailing`) | Name ending in a space or `.` | Remove | Yes |
@@ -56,16 +56,37 @@ destination path.
 Decisions are persisted per issue, so a resumed job never asks twice.
 
 What each decision means, and when it is checked (the Name plan in `crates/names`):
-- **Accept**: use the rule's proposal. Refused on an undecodable name (`encoding`): there is no
-  proposal, so it can only be edited or skipped.
+- **Accept**: use the rule's proposal. Refused where there is none — an undecodable name
+  (`encoding` off), or a path no cut can fit (`length`) — so it can only be edited or skipped.
+  "Accept all" is offered only when no pending issue of the rule lacks a proposal
+  (`RuleCount.no_proposal`), whatever page of the list is loaded.
 - **Keep original**: don't apply *this* rule to this name; the other rules still apply. Refused if
   another rule would then change the name instead (Nextcloud's own NFC rule takes over when the
   general `nfc` is kept out).
-- **Edit**: the user's name must pass every active rule (no `CON`, `x.part`, NFD on Nextcloud…).
+- **Edit**: the user's name must pass every active rule (no `CON`, `x.part`, NFD on Nextcloud…)
+  and be no longer than a name may be.
 - **Skip**: the entry and everything under it stay out of the send.
 
 All of these are checked **when the user decides**, one by one or in bulk, and once more at Send
-(two entries on one path is only known then). A decision always belongs to its own job.
+(two entries on one path, or a path made too long by a decision on a folder above, is only known
+then). A decision always belongs to its own job.
+
+At Send each name is **worked out again from its decisions**, never taken from what the analysis
+stored: the rules not kept out (a rule that waits for a decision applies only where it was
+accepted, so a rule added after the analysis changes nothing), then the length cut if accepted,
+measured under the parent's final path, then the accepted collision suffix (its number, from the
+proposal). So keeping, say, the `mojibake` original under an accepted cut sends the kept spelling
+cut, not the repaired one. A name or path still too long is refused unless the user kept its
+length (or a folder's above it).
+
+### Encoding: when the CP1252 reading is applied by itself
+
+A name that isn't UTF-8 is read as CP1252. That reading is applied without asking only if every
+non-ASCII character is a Latin-1 letter (not `× ÷ Ð ð Þ þ`), a CP1252 letter (`Œ š Ž`…) or
+common punctuation (`’ “ ” – — … € « » ° ª º ©`…), with at most two of them in a row, and no byte
+is undefined. Bytes from other code pages rarely look like that once read as CP1252 — CP1251
+Cyrillic gives runs like `Ïðèâåò`, Shift-JIS and GBK give runs of symbols and accents, CP850
+gives `‡` or `‚` — so those wait for a decision (accept the reading, edit, or skip).
 
 ## Mojibake detection (approach)
 
@@ -74,26 +95,40 @@ All of these are checked **when the user decides**, one by one or in bulk, and o
 - Fix: encode the string as Latin-1/CP1252 → decode as UTF-8; accept only if the result is valid
   UTF-8 **and** has fewer "weird" characters than the input (the `ftfy` heuristic). Repeat for
   double-mojibake, at most 2 rounds.
+- "Weird" counts C1 controls and lead+continuation pairs (`Ã³`), and also what a wrong reversal
+  lands on: code points that are neither letters, digits, common punctuation nor an accent on a
+  letter (unassigned, private use, stray marks), and letters of a script other than the one most
+  of the name is in (`Ø¨ test` would become Arabic `ب test`). A name garbled from Cyrillic
+  (`ÐŸÑ€Ð¸Ð²ÐµÑ‚` → `Привет`) is still repaired: its letters are all in one script.
 - Always a proposal, never automatic — false positives are possible on legitimate names.
 
 ## Length
 
-- Limits come from the profile's `TargetSpec` (`max_name_bytes`, `max_path_bytes`, in UTF-8 bytes,
-  measured under the destination root). Defaults: names 255; paths 4096, or 260 on Windows
-  targets (`MAX_PATH`).
+- Limits come from the profile's `TargetSpec` (`max_name_bytes`, `max_path_bytes`): UTF-8 bytes,
+  or UTF-16 units on Windows targets (what Windows counts). Paths are measured under the
+  destination root, **including the job's target folder** (or the folder a repair works in).
+  Defaults: names 255; paths 4096, or 260 on Windows targets (`MAX_PATH`). A profile is refused
+  with a name limit below 16 or above 4096, or a path limit shorter than the name limit or above
+  65 536.
 - A name over the limit, or one that makes its path too long, gets a proposal cut in the middle of
   the stem (`Relatório a…tividades.pdf`): the start, the end and an extension of up to 16 bytes are
-  kept, never splitting a character, and no proposal is shorter than 16 bytes.
+  kept, never splitting a character, and no proposal is shorter than 16. Each entry is measured
+  under its parent's **proposed** path, so a cut folder shortens its children's paths; a folder
+  cut for its path leaves 32 free for the names inside it. When even 16 doesn't fit (the folders
+  above already take the room), the issue has no proposal: edit, keep or skip.
 - Always a decision: Accept, keep it (the file will then likely fail at the destination), edit or
   skip.
 
 ## Collision handling
 
 - Key = NFC + case-folded name within the same destination directory (case folding only when the
-  target is case-insensitive). The NFC part matters even with the `nfc` rule kept out: a
-  normalising server would store an NFD and an NFC spelling as one name.
+  target is case-insensitive; full folding, so `Straße` and `STRASSE` clash). The NFC part matters
+  even with the `nfc` rule kept out: a normalising server would store an NFD and an NFC spelling
+  as one name.
 - When two or more source entries map to the same key, all but the first get a proposal with
-  ` (2)`, ` (3)` before the extension; the user must confirm.
+  ` (2)`, ` (3)` before the extension, cut first if the suffix would make it too long; the user
+  must confirm. A kept collision row says it will be sent as is, so Send waits for one of the two
+  to change.
 
 ## "Repair destination" mode
 
@@ -106,17 +141,42 @@ the same preview, renames **on the destination**, then runs the integration upda
 As built (`crates/core/src/repair.rs`):
 - `create_repair_job(profile_id, dir)` needs a transport with `LIST | MOVE`. The folder is kept as
   the job's `target_dir`, so the name plan's paths land under it as a send's land under its
-  target folder; repair jobs never verify and ignore the send window (renames move no data).
-- Stage 2 lists the folder one level at a time, parents first, up to 500 000 entries. Stage 3 is
-  the same name plan and decisions as a send.
+  target folder (and its length counts against the path limit); repair jobs never verify and
+  ignore the send window (renames move no data). The folder and options can't change afterwards
+  (`set_options` is refused): "Continue" and "Send again" on a repair open its own page, never
+  the New transfer wizard, so every rename passes its confirmation. "Send again" checks the same
+  folder again.
+- Stage 2 lists the folder one level at a time, parents first, up to 500 000 entries. A subfolder
+  that can't be read is a scan error (the rest is analysed); not reaching the destination at all
+  stops the analysis. On SFTP, symbolic links are skipped (`skip_links`): a link is not renamed
+  and nothing outside the folder is reached through it. Stage 3 is the same name plan and
+  decisions as a send.
+- **Limitation — names that aren't UTF-8 at the destination.** rclone hands them over with the bad
+  bytes replaced (U+FFFD), and that spelling can't be asked for again, so such an entry is
+  reported as a scan error ("rename it by hand") and left as it is. Reading them as bytes needs
+  rclone's `InvalidUtf8` encoding and raw names through `Transport::list`, not done yet.
+- The confirmation counts the entries whose name will really change with the decisions as they
+  are (`planned_renames`), not the issues.
 - Stage 4 renames every entry whose own name changes, **deepest first**, so each rename happens
-  under its parent's old path; each entry's result is saved before the next. `Transport::move_path`
-  goes through an intermediate name (servers that store NFD and NFC, or two cases, as one name)
-  and **never overwrites**: a new name already taken fails that entry alone, reported as a
-  warning. A resumed job counts an entry whose old name is gone and new name is there as done.
+  under its parent's old path; in one folder, an entry whose new name is another's old name goes
+  after that other (a cycle keeps its order: one fails as taken). Each entry's result is saved
+  before the next. `Transport::move_path` (`docs/03`) goes through an intermediate name derived
+  from the job and the entry (`.fb-repair-<job>-<idx>`), so a rename cut short between its hops
+  is finished when the job resumes; it **never overwrites**: a new name that another entry
+  already answers to — exactly, in another normalisation or in another case — fails that entry
+  alone, checked before the first hop and again right before the second, and the result is
+  confirmed by listing. An entry whose old name and intermediate are both gone counts as done
+  only if the new name holds the same entry (kind, size, modification time). A second hop that
+  fails for good puts the entry back; if even that fails, the warning names where it was left.
 - Skip on a folder leaves it and everything inside it as they are.
-- Stage 6 gets the folders that hold renamed entries (the outermost ones), so Nextcloud rescans
-  them and drops the old names.
+- Stage 6 gets the folders that hold renamed entries, where they really are (a folder whose own
+  rename failed keeps its old name), outermost only, so Nextcloud rescans them and drops the old
+  names. The job's warnings count every entry, file or folder, whose rename failed. Progress
+  counts files, like the job's counts.
+- **Limitation — the destination root.** Repairing the whole destination, the renamed entries at
+  its top have no folder to name for stage 6 (`RemotePath` can't be the root), so the
+  integration gets the renamed entries themselves: Nextcloud finds the new names, and the old
+  ones at the top level go at its next full scan.
 - Entry points: Destinations → "Repair names…" (pick a folder), the job log's "Repair these
   names" on an integration problem that asks for it (Nextcloud's incompatible encoding), and
   `filebridge repair --to <profile> [--dir <folder>]`. Renaming waits for a confirmation that

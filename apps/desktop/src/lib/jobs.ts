@@ -1,7 +1,21 @@
-// How a job is named on screen (docs/design/specs/D06, "Label").
+// How a job is named on screen (docs/design/specs/D06, "Label"), and where it is continued.
+import type { Router } from "vue-router";
 import type { JobSummary_Serialize } from "@/bindings";
 import { i18n } from "@/i18n";
+import { useWizard } from "@/stores/wizard";
 import { baseName } from "./format";
+
+/** Opens an unsent job where it is decided and confirmed: a Repair job in its own page (its
+ *  folder can't change, and the renames wait for that page's confirmation), any other in the New
+ *  transfer wizard. */
+export async function continueJob(job: JobSummary_Serialize, router: Router): Promise<void> {
+  if (job.kind === "repair") {
+    await router.push({ name: "repair", params: { id: job.id } });
+    return;
+  }
+  await useWizard().openJob(job);
+  await router.push({ name: "new" });
+}
 
 type Labelled = Pick<JobSummary_Serialize, "label" | "sources"> & Partial<Pick<JobSummary_Serialize, "kind" | "options">>;
 

@@ -17,10 +17,12 @@ pub enum Family {
 pub struct TargetSpec {
     pub family: Family,
     pub case_sensitive: bool,
-    /// Longest name the destination takes, in UTF-8 bytes. Default 255.
+    /// Longest name the destination takes, in UTF-8 bytes (UTF-16 units on Windows). Default
+    /// 255; 16 to 4096.
     #[serde(default)]
     pub max_name_bytes: Option<u32>,
-    /// Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+    /// Longest path under the destination's root, in UTF-8 bytes (UTF-16 units on Windows), no
+    /// shorter than the longest name. Default 260 on Windows (its
     /// classic limit), 4096 elsewhere.
     #[serde(default)]
     pub max_path_bytes: Option<u32>,

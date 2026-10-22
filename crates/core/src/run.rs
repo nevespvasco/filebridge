@@ -106,7 +106,10 @@ impl Engine {
                         .repair_stage(job_id, &ctx.profile, dir.as_deref(), cancel)
                         .await?
                     {
-                        RepairEnd::Done => JobState::Integrating,
+                        RepairEnd::Done(left) => {
+                            ctx.warnings.extend(left);
+                            JobState::Integrating
+                        }
                         RepairEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                         RepairEnd::Cancelled => return Ok(()),
                     }
@@ -161,10 +164,20 @@ impl Engine {
                 },
                 JobState::Integrating => match self.integrate_stage(&mut ctx).await? {
                     StageEnd::Done(()) => {
-                        let failed = self.store.manifest_counts(job_id).await?.failed;
-                        if failed > 0 {
-                            ctx.warnings
-                                .push(format!("{failed} files could not be sent"));
+                        if ctx.kind == JobKind::Repair {
+                            let dir = ctx.options.target_dir.as_deref();
+                            let failed = self.repair_outcome(job_id, dir).await?.failed;
+                            if failed > 0 {
+                                ctx.warnings.push(format!(
+                                    "{failed} names could not be changed; the Files tab says why"
+                                ));
+                            }
+                        } else {
+                            let failed = self.store.manifest_counts(job_id).await?.failed;
+                            if failed > 0 {
+                                ctx.warnings
+                                    .push(format!("{failed} files could not be sent"));
+                            }
                         }
                         outcome.warnings = std::mem::take(&mut ctx.warnings);
                         let mut job = self.begin(job_id, Op::Run).await?;
@@ -622,8 +635,9 @@ impl Engine {
         let job_ctx = self.job_context(&ctx.job_id, &ctx.profile)?;
 
         let changed = if ctx.kind == JobKind::Repair {
-            self.repaired_folders(&ctx.job_id, ctx.options.target_dir.as_deref())
+            self.repair_outcome(&ctx.job_id, ctx.options.target_dir.as_deref())
                 .await?
+                .changed
         } else {
             self.sent_files(&ctx.job_id).await?
         };

@@ -400,67 +400,37 @@ impl Transport for RcloneTransport {
         Ok(report)
     }
 
-    async fn move_path(
+    async fn move_unchecked(
         &self,
         dest: &Destination,
         from: &RemotePath,
         to: &RemotePath,
+        is_dir: bool,
     ) -> Result<()> {
         let creds = self.creds(dest).await?;
-        let parent_of = |p: &RemotePath| p.parent().map(RemotePath::new).transpose();
-        let listed = |dir: Option<RemotePath>| async move {
-            match self.list(dest, dir.as_ref(), false).await {
-                Err(e) if e.kind == ErrorKind::NotFound => Ok(Vec::new()),
-                other => other,
-            }
-        };
-        let source = listed(parent_of(from)?)
-            .await?
-            .into_iter()
-            .find(|e| e.name == from.file_name())
-            .ok_or_else(|| TransportError::not_found(format!("{from} is not there")))?;
-        if from == to {
-            return Ok(());
-        }
-        // Exact names only: on a server that normalises or ignores case, `to` may be `from`
-        // itself under another spelling, and that is not a clash.
-        if listed(parent_of(to)?)
-            .await?
-            .iter()
-            .any(|e| e.name == to.file_name())
-        {
-            return Err(TransportError::fatal(format!("{to} already exists")));
-        }
-        // Through an intermediate name, as in the temp-folder rename: a server that treats the
-        // two spellings as one name would otherwise see "unchanged" and delete the source.
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
-        let mid = join(
-            from.parent().unwrap_or(""),
-            &format!(".fb-move-{}-{nanos}", std::process::id()),
-        );
-        let root = dest_fs(dest, &creds, "")?;
-        for (a, b) in [(from.as_str(), mid.as_str()), (mid.as_str(), to.as_str())] {
-            if source.is_dir {
-                // The target never exists, so rclone does a single server-side DirMove.
-                self.rc()
-                    .call_job(
-                        "sync/move",
-                        json!({
-                            "srcFs": dest_fs(dest, &creds, a)?, "dstFs": dest_fs(dest, &creds, b)?,
-                            "deleteEmptySrcDirs": true,
-                        }),
-                    )
-                    .await?;
-            } else {
-                self.rc()
-                    .call(
-                        "operations/movefile",
-                        json!({ "srcFs": root, "srcRemote": a, "dstFs": root, "dstRemote": b }),
-                    )
-                    .await?;
-            }
+        if is_dir {
+            // `move_path` made sure nothing is at `to`, so rclone does one server-side DirMove.
+            self.rc()
+                .call_job(
+                    "sync/move",
+                    json!({
+                        "srcFs": dest_fs(dest, &creds, from.as_str())?,
+                        "dstFs": dest_fs(dest, &creds, to.as_str())?,
+                        "deleteEmptySrcDirs": true,
+                    }),
+                )
+                .await?;
+        } else {
+            let root = dest_fs(dest, &creds, "")?;
+            self.rc()
+                .call(
+                    "operations/movefile",
+                    json!({
+                        "srcFs": root, "srcRemote": from.as_str(),
+                        "dstFs": root, "dstRemote": to.as_str(),
+                    }),
+                )
+                .await?;
         }
         Ok(())
     }

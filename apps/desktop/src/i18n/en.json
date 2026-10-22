@@ -268,6 +268,7 @@
     "skip": "Skip",
     "edit": "Edit",
     "notSent": "(not sent)",
+    "keptClash": "Sent as “{name}”: the same name as another one, so sending waits until one of them changes.",
     "bulkLabel": "All {n} pending:",
     "acceptAll": "Accept all",
     "keepAll": "Keep all",
@@ -1032,6 +1033,7 @@
   },
   "repair": {
     "title": "Repair names at the destination",
+    "continue": "Continue the repair",
     "lead": "Names already in {folder} on {destination}, checked with the same rules as a send. Nothing is renamed until you confirm.",
     "label": "Repair · {folder}",
     "root": "the whole destination",
@@ -1048,7 +1050,7 @@
     "rename": "Rename at the destination",
     "fromProblems": "Repair these names",
     "confirm": {
-      "title": "Rename up to {n} name? | Rename up to {n} names?",
+      "title": "Rename {n} name? | Rename {n} names?",
       "where": "Names change directly on {destination}, in {folder}.",
       "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this job's report.",
       "taken": "A new name that is already taken is left as it was and reported.",

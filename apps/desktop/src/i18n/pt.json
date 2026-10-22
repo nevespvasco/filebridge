@@ -268,6 +268,7 @@
     "skip": "Saltar",
     "edit": "Editar",
     "notSent": "(não enviado)",
+    "keptClash": "Enviado como “{name}”: o mesmo nome que outro, por isso o envio espera até um deles mudar.",
     "bulkLabel": "Os {n} por decidir:",
     "acceptAll": "Aceitar todos",
     "keepAll": "Manter todos",
@@ -1032,6 +1033,7 @@
   },
   "repair": {
     "title": "Reparar nomes no destino",
+    "continue": "Continuar a reparação",
     "lead": "Nomes que já estão em {folder} em {destination}, verificados com as mesmas regras de um envio. Nada é renomeado até confirmar.",
     "label": "Reparação · {folder}",
     "root": "todo o destino",
@@ -1048,7 +1050,7 @@
     "rename": "Renomear no destino",
     "fromProblems": "Reparar estes nomes",
     "confirm": {
-      "title": "Renomear até {n} nome? | Renomear até {n} nomes?",
+      "title": "Renomear {n} nome? | Renomear {n} nomes?",
       "where": "Os nomes mudam diretamente em {destination}, em {folder}.",
       "onlyNames": "Os ficheiros não são copiados, alterados nem apagados: só renomeados. Os nomes antigos ficam no relatório desta tarefa.",
       "taken": "Um nome novo que já esteja ocupado fica como estava e é reportado.",

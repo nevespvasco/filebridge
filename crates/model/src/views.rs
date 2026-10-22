@@ -138,6 +138,9 @@ pub struct RuleCount {
     pub rule: String,
     pub total: u64,
     pub pending: u64,
+    /// Pending issues with no proposal to accept (an undecodable name, a path no cut fits):
+    /// "Accept all" can't apply while there are any.
+    pub no_proposal: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]

@@ -19,8 +19,8 @@ pub use forbidden_chars::ForbiddenChars;
 pub use mojibake::Mojibake;
 pub use nfc::Nfc;
 pub use plan::{
-    Choice, Decided, NameError, NamePlan, Planned, RULE_COLLISION, RULE_ENCODING, RULE_LENGTH,
-    shorten, with_suffix,
+    Choice, Decided, MIN_NAME_LEN, NameError, NamePlan, Planned, RULE_COLLISION, RULE_ENCODING,
+    RULE_LENGTH, loose_key, shorten, suffix_number, with_suffix,
 };
 pub use reserved::{Reserved, WINDOWS_DEVICE_NAMES};
 pub use rule_set::{Mapped, RULE_ORDER, RuleSet};
@@ -96,7 +96,9 @@ pub enum TargetFamily {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetProfile {
     pub family: TargetFamily,
+    /// Longest name, in UTF-8 bytes; in UTF-16 units on Windows.
     pub max_name_bytes: usize,
+    /// Longest path under the destination root, measured the same way.
     pub max_path_bytes: usize,
     pub case_sensitive: bool,
     pub integration: Option<String>,

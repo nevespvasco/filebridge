@@ -227,7 +227,7 @@ function ruleCounts(jobId: string, query: string | null = null): RuleCount[] {
         total++;
         if (!def.auto && (decisions.get(def.base + i)?.decision ?? "pending") === "pending") pending++;
       }
-      return { rule: def.rule, total, pending };
+      return { rule: def.rule, total, pending, no_proposal: 0 };
     })
     .filter((r) => r.total > 0);
 }
@@ -779,6 +779,7 @@ const handlers: Handlers = {
   setOptions: (a) => {
     const job = find(a.jobId);
     allow("set_options", job);
+    if (job.kind === "repair") throw fail("invalid", "a repair's folder and options can't change; start a new repair instead");
     job.options = a.options as JobSummary_Serialize["options"];
     return null;
   },
@@ -814,6 +815,18 @@ const handlers: Handlers = {
     return summary;
   },
   ruleCounts: (a) => ruleCounts(a.jobId as string, a.query as string | null),
+  plannedRenames: (a) => {
+    const job = find(a.jobId);
+    if (ruleCounts(job.id).some((r) => r.pending > 0)) throw fail("pending_decisions", "name decisions are still pending");
+    let n = 0;
+    for (const def of rulesFor(job.id)) {
+      for (let i = 0; i < def.total; i++) {
+        const d = def.auto ? "accepted" : (decisions.get(def.base + i)?.decision ?? "pending");
+        if (d === "accepted" || d === "edited") n++;
+      }
+    }
+    return n;
+  },
   issues: (a) => {
     const defs = rulesFor(a.jobId as string).filter((d) => !a.rule || d.rule === a.rule);
     const after = (a.afterId as number | null) ?? 0;

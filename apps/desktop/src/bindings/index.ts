@@ -110,6 +110,11 @@ export const commands = {
 	 *  `analyse`, the decisions and `start` then work on it like on a send.
 	 */
 	createRepairJob: (profileId: string, dir: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_repair_job", { profileId, dir })),
+	/**
+	 *  How many entries a Repair job would rename with its decisions as they are: what
+	 *  the confirmation counts. Refused while a decision is pending.
+	 */
+	plannedRenames: (jobId: string) => typedError<number, ErrorBody>(__TAURI_INVOKE("planned_renames", { jobId })),
 	/**  What each chosen source is and what is wrong with it, without reading contents. */
 	inspectSources: (paths: string[]) => typedError<SourceInfo_Serialize[], ErrorBody>(__TAURI_INVOKE("inspect_sources", { paths })),
 	/**  One page of a job's files, filtered and sorted (at most 500). */
@@ -142,7 +147,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 19 as const;
+export const PROTOCOL_VERSION = 20 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -1111,6 +1116,11 @@ export type RuleCount = {
 	rule: string,
 	total: number,
 	pending: number,
+	/**
+	 *  Pending issues with no proposal to accept (an undecodable name, a path no cut fits):
+	 *  "Accept all" can't apply while there are any.
+	 */
+	no_proposal: number,
 };
 
 /**  Per-job choices made in step 4 of the wizard. */
@@ -1317,10 +1327,14 @@ export type TargetSpec = TargetSpec_Serialize | TargetSpec_Deserialize;
 export type TargetSpec_Deserialize = {
 	family: Family,
 	case_sensitive: boolean,
-	/**  Longest name the destination takes, in UTF-8 bytes. Default 255. */
+	/**
+	 *  Longest name the destination takes, in UTF-8 bytes (UTF-16 units on Windows). Default
+	 *  255; 16 to 4096.
+	 */
 	max_name_bytes?: number | null,
 	/**
-	 *  Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+	 *  Longest path under the destination's root, in UTF-8 bytes (UTF-16 units on Windows), no
+	 *  shorter than the longest name. Default 260 on Windows (its
 	 *  classic limit), 4096 elsewhere.
 	 */
 	max_path_bytes?: number | null,
@@ -1329,10 +1343,14 @@ export type TargetSpec_Deserialize = {
 export type TargetSpec_Serialize = {
 	family: Family,
 	case_sensitive: boolean,
-	/**  Longest name the destination takes, in UTF-8 bytes. Default 255. */
+	/**
+	 *  Longest name the destination takes, in UTF-8 bytes (UTF-16 units on Windows). Default
+	 *  255; 16 to 4096.
+	 */
 	max_name_bytes: number | null,
 	/**
-	 *  Longest path under the destination's root, in UTF-8 bytes. Default 260 on Windows (its
+	 *  Longest path under the destination's root, in UTF-8 bytes (UTF-16 units on Windows), no
+	 *  shorter than the longest name. Default 260 on Windows (its
 	 *  classic limit), 4096 elsewhere.
 	 */
 	max_path_bytes: number | null,

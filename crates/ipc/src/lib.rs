@@ -58,7 +58,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 17: `set_profile_password` (SFTP password in the OS keyring).
 /// 18: `add_nextcloud_webdav`; `Backend::Webdav`; Nextcloud settings `mode: "webdav"`.
 /// 19: `install_app_key`, `remove_access`; `Backend::Sftp.key`, `SshTarget.key` (ADR 0012).
-pub const PROTOCOL_VERSION: u32 = 19;
+/// 20: `planned_renames`; `RuleCount.no_proposal`; `set_options` refused for Repair jobs.
+pub const PROTOCOL_VERSION: u32 = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

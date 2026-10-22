@@ -70,9 +70,9 @@ apps/desktop/src/
 | `scan_sources(paths)` | Start stage 2 for a draft job; returns job id |
 | `list_profiles()` / `save_profile(p)` / `test_profile(id)` | Destinations screen & wizard |
 | `get_issues(job_id, rule?, page)` / `decide_issue(issue_id, decision)` / `decide_all(job_id, rule?, decision)` | Analysis step |
-| `set_options(job_id, options)` | Review step: change "verify" etc. without a new analysis |
+| `set_options(job_id, options)` | Review step: change "verify" etc. without a new analysis (refused for a Repair job: its folder is what the user confirms) |
 | `start_job(job_id, options)` / `pause_job` / `resume_job` / `cancel_job` / `verify_job` | Lifecycle |
 | `list_jobs()` / `get_job(job_id)` / `get_job_log(job_id, page)` | Jobs screens (the log is `job_log(job_id, after_id, before_id, limit)`, implemented: design D07) |
-| `create_repair_job(profile_id, dir)` (as built; then `analyse`, the decisions and `start`, like a send) | Repair destination |
+| `create_repair_job(profile_id, dir)` (as built; then `analyse`, the decisions and `start`, like a send), `planned_renames(job_id)` (what the confirmation counts) | Repair destination; "Continue" and "Send again" on a repair open this page, never the New transfer wizard |
 | `get_settings()` / `save_settings(settings)` | Settings: app-wide bandwidth limit and send window (implemented) |
 | `remove_access(profile_id)` | "Remove access" wizard |

@@ -11,7 +11,7 @@ import JobActions from "@/components/JobActions.vue";
 import ReclaimPanel from "@/components/ReclaimPanel.vue";
 import ReportDialog from "@/components/ReportDialog.vue";
 import JobLog from "@/components/JobLog.vue";
-import { defaultLabel, jobLabel } from "@/lib/jobs";
+import { continueJob, defaultLabel, jobLabel } from "@/lib/jobs";
 import JobProgress from "@/components/JobProgress.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
 import { useFmt } from "@/composables/useFmt";
@@ -20,12 +20,10 @@ import { request } from "@/lib/requests";
 import { RUNNING, TERMINAL, useJobs } from "@/stores/jobs";
 import { profileWhere, useProfiles } from "@/stores/profiles";
 import { useHome } from "@/stores/home";
-import { useWizard } from "@/stores/wizard";
 
 const props = defineProps<{ id: string }>();
 const jobs = useJobs();
 const profiles = useProfiles();
-const wizard = useWizard();
 const router = useRouter();
 const route = useRoute();
 const fmt = useFmt();
@@ -102,8 +100,7 @@ async function doCancel() {
 
 async function continueInWizard() {
   if (!job.value) return;
-  await wizard.openJob(job.value);
-  await router.push({ name: "new" });
+  await continueJob(job.value, router);
 }
 
 const cancelConsequences = computed(() => {
@@ -133,7 +130,7 @@ const details = computed(() => [
         <p v-if="job?.label" class="small muted sub">{{ defaultLabel(job.sources) }}</p>
       </div>
       <div class="actions">
-        <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t("jobDetail.continue") }}</button>
+        <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t(job.kind === "repair" ? "repair.continue" : "jobDetail.continue") }}</button>
         <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))"><AppIcon name="pause" /> {{ $t("jobDetail.pause") }}</button>
         <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
         <button v-if="canCancel" class="btn btn-danger" :title="$t('jobDetail.cancelTip')" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>

@@ -444,9 +444,16 @@ impl Engine {
 
     /// Replaces a job's send options (step 4 of the wizard). Allowed until the job is sent:
     /// in Draft, AwaitingApproval and Ready. The analysis and the decisions are kept.
+    /// Refused for a Repair job: its folder is what the user confirmed, and its decisions were
+    /// made for the names in it.
     pub async fn set_options(&self, job_id: &str, options: SendOptions) -> Result<()> {
         let _job = self.begin(job_id, Op::SetOptions).await?;
         let row = self.store.get_job(job_id).await?;
+        if JobKind::parse(&row.kind)? == JobKind::Repair {
+            return Err(CoreError::Invalid(
+                "a repair's folder and options can't change; start a new repair instead".into(),
+            ));
+        }
         let profile = self.get_profile(&row.profile_id).await?;
         self.check_target_dir(&profile, options.target_dir.as_deref())?;
         let old: SendOptions = serde_json::from_value(row.options).unwrap_or_default();
@@ -540,9 +547,12 @@ impl Engine {
     async fn analyse_inner(&self, job: &mut JobLock<'_>, row: &JobRow) -> Result<AnalysisSummary> {
         let job_id = row.id.clone();
         let profile = self.get_profile(&row.profile_id).await?;
-        let names = self.registry.name_plan(&profile)?;
         let sources = self.job_sources(row).await;
         let options: SendOptions = serde_json::from_value(row.options.clone()).unwrap_or_default();
+        let names = self
+            .registry
+            .name_plan(&profile)?
+            .under(options.target_dir.as_deref());
 
         self.store.clear_issues(&job_id).await?;
         self.store.clear_manifest(&job_id).await?;
@@ -655,6 +665,7 @@ impl Engine {
                 rule: s.rule,
                 total: s.total,
                 pending: s.pending,
+                no_proposal: s.no_proposal,
             })
             .collect())
     }
@@ -732,7 +743,7 @@ impl Engine {
         let choice = decisions::choice(input);
         let names = self.job_name_plan(job_id).await?;
         let entry = self.entry(job_id, row.issue.entry_idx).await?;
-        names.check(&entry, &row.issue.rule, &choice)?;
+        names.check(&entry, &decisions::decided(row), &choice)?;
         let (decision, name) = decisions::stored(choice);
         self.store
             .decide_issue(job_id, issue_id, decision, name)
@@ -792,7 +803,7 @@ impl Engine {
                 );
             let mut refused = pending.filter_map(|r| {
                 let entry = entries.get(r.issue.entry_idx as usize)?;
-                names.check(entry, &r.issue.rule, &choice).err()
+                names.check(entry, &decisions::decided(r), &choice).err()
             });
             if let Some(first) = refused.next() {
                 return Err(CoreError::Invalid(format!(
@@ -854,9 +865,9 @@ impl Engine {
                     continue;
                 }
             };
-            let check = entries
-                .get(row.issue.entry_idx as usize)
-                .map(|e| names.check(e, &row.issue.rule, &choice));
+            let idx = row.issue.entry_idx as usize;
+            let issue = decisions::decided(row);
+            let check = entries.get(idx).map(|e| names.check(e, &issue, &choice));
             match check {
                 Some(Ok(())) => ok.push(id),
                 Some(Err(e)) => refused.push(RefusedIssue {
@@ -897,7 +908,7 @@ impl Engine {
         let row = self.store.get_job(job_id).await?;
         let options: SendOptions = serde_json::from_value(row.options).unwrap_or_default();
         let target = options.target_dir;
-        let names = self.registry.name_plan(profile)?;
+        let names = self.registry.name_plan(profile)?.under(target.as_deref());
         let entries = self.entries(job_id).await?;
         let decided: Vec<_> = self
             .all_issues(job_id, None)
@@ -922,10 +933,15 @@ impl Engine {
         Ok(())
     }
 
+    /// The job's Name plan: its profile's rules and limits, under its target folder.
     pub(crate) async fn job_name_plan(&self, job_id: &str) -> Result<NamePlan> {
         let row = self.store.get_job(job_id).await?;
         let profile = self.get_profile(&row.profile_id).await?;
-        self.registry.name_plan(&profile)
+        let options: SendOptions = serde_json::from_value(row.options).unwrap_or_default();
+        Ok(self
+            .registry
+            .name_plan(&profile)?
+            .under(options.target_dir.as_deref()))
     }
 
     /// Every manifest entry of a job, in scanner order, as the name rules see it.

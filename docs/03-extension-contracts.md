@@ -19,6 +19,11 @@ pub trait Transport: Send + Sync {
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport>; // space, permissions, connectivity
     async fn transfer(&self, job: &TransferJob, progress: ProgressSink) -> Result<TransferResult>;
     async fn hash(&self, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
+    async fn list(&self, dir: Option<&RemotePath>, dirs_only: bool) -> Result<Vec<RemoteEntry>>; // LIST
+    // Safe rename at the destination (MOVE, "Repair destination"): the shared `checked_move`
+    // over `list` and the adapter's one-hop `move_unchecked` (see below).
+    async fn move_path(&self, req: &MoveRequest) -> Result<()>;
+    async fn move_unchecked(&self, from: &RemotePath, to: &RemotePath, is_dir: bool) -> Result<()>;
     // App-wide, applied to running transfers too; default no-op (ADR 0010)
     async fn set_bandwidth_limit(&self, bytes_per_sec: Option<u64>) -> Result<()>;
 }
@@ -83,8 +88,19 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
   Only `Transient` is retried; `core` decides on the kind and never reads the message. Each
   adapter maps its own errors to kinds (rclone: `transport-rclone/src/client.rs`, `kind_of`).
   Integration errors still carry a `retryable` flag.
+- **Renames at the destination are one algorithm, not one per adapter.** `move_path` takes a
+  `MoveRequest { from, to, via, is_dir, size, mtime }`; its default (`checked_move` in
+  `transport-api`) lists the folder, refuses a `to` that another entry answers to (exactly, in
+  another normalisation or in another case: `filebridge_names::loose_key`), moves to the
+  caller's deterministic intermediate `via`, lists again right before the second hop, moves to
+  `to`, and lists once more to confirm. A move cut short between the hops is finished by the same
+  request; one already done counts only if `to` is the same entry (kind, size, mtime). A second
+  hop that fails for good puts the entry back under `from`. Adapters only implement the
+  unchecked one-hop `move_unchecked` (rclone: `operations/movefile` or `sync/move`), which may
+  overwrite, so nothing else calls it.
 - **Every `Transport` adapter runs the shared contract suite** (`filebridge_transport_api::
-  contract::check`, feature `contract`): rclone against a real `rclone rcd`, and the local-disk
+  contract::check`, and `check_move` for `MOVE`, feature `contract`): rclone against a real
+  `rclone rcd` (local, SFTP and WebDAV), and the local-disk
   fake (`crates/transport-fake`) that `core`, `ipc` and the service tests use. A new adapter
   adds the same one-function test.
 
