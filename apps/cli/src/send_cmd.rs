@@ -1,4 +1,5 @@
-//! `filebridge send`, `issues`, `decide`, `start`, `resume`, `jobs`, `job`, `cancel`.
+//! `filebridge send`, `issues`, `decide`, `decide-all`, `start`, `resume`, `jobs`, `job`,
+//! `cancel`. Operations go through `filebridge_ipc::Operations`, like the window's.
 //!
 //! The CLI runs the engine in-process: a send stops when the command exits (Ctrl-C pauses it
 //! cleanly) and continues with `filebridge resume`. The background service (ADR 0008) removes
@@ -18,6 +19,7 @@ use tokio::sync::broadcast::error::RecvError;
 use crate::app::{App, Global};
 use crate::profile_cmd::print_preflight;
 use filebridge_host::Access;
+use filebridge_ipc::Operations;
 
 #[derive(clap::Args)]
 pub struct SendArgs {
@@ -69,14 +71,16 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
         .await?;
     eprintln!("job {} → {}", &job[..8], profile.name);
     eprintln!("analysing …");
-    let summary = app.engine.analyse(&job).await?;
+    let summary = app.ops.analyse(job.clone()).await?;
     print_analysis(&summary);
     if summary.state == JobState::AwaitingApproval {
         println!();
         println!(
             "{} names need a decision. See them with `filebridge issues {}` and decide with \
-             `filebridge decide {} <issue> accept|keep|skip|edit`; then `filebridge start {}`.",
+             `filebridge decide {} <issue> accept|keep|skip|edit` (or all at once with \
+             `filebridge decide-all {} accept|keep|skip`); then `filebridge start {}`.",
             summary.pending_decisions,
+            &job[..8],
             &job[..8],
             &job[..8],
             &job[..8]
@@ -96,14 +100,14 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
         );
         return Ok(());
     }
-    app.engine.start(&job).await?;
+    app.ops.start(job.clone()).await?;
     follow(&app.engine, &job).await
 }
 
 pub async fn start(g: &Global, job: &str) -> Result<()> {
     let app = App::open(g, Access::Exclusive, true).await?;
     let job = app.job(job).await?.id;
-    app.engine.start(&job).await?;
+    app.ops.start(job.clone()).await?;
     follow(&app.engine, &job).await
 }
 
@@ -116,7 +120,7 @@ pub async fn resume(g: &Global, job: Option<String>) -> Result<()> {
             if j.state.is_running() {
                 app.engine.resume_unfinished().await?;
             } else {
-                app.engine.resume(&j.id).await?;
+                app.ops.resume(j.id.clone()).await?;
             }
             vec![j.id]
         }
@@ -135,12 +139,15 @@ pub async fn resume(g: &Global, job: Option<String>) -> Result<()> {
 pub async fn issues(g: &Global, job: &str, rule: Option<String>, all: bool) -> Result<()> {
     let app = App::open(g, Access::Read, false).await?;
     let job = app.job(job).await?;
-    for r in app.engine.rule_counts(&job.id).await? {
+    for r in app.ops.rule_counts(job.id.clone()).await? {
         println!("{:<18} {:>7} names, {} pending", r.rule, r.total, r.pending);
     }
     let mut after = None;
     loop {
-        let page = app.engine.issues(&job.id, rule.clone(), after, 500).await?;
+        let page = app
+            .ops
+            .issues(job.id.clone(), rule.clone(), after, 500)
+            .await?;
         let Some(last) = page.last() else { break };
         after = Some(last.id);
         for i in page {
@@ -182,15 +189,40 @@ pub async fn decide(
         (DecisionArg::Edit, Some(n)) => DecisionInput::Edit(n),
         (DecisionArg::Edit, None) => bail!("edit needs --name"),
     };
-    app.engine.decide_issue(&job.id, issue, input).await?;
-    let job = app.engine.job(&job.id).await?;
+    app.ops.decide(job.id.clone(), issue, input).await?;
+    let job = app.ops.job(job.id).await?;
     println!("job {} is {}", &job.id[..8], job.state.as_str());
+    Ok(())
+}
+
+/// One decision for every pending issue of a job, or of one rule.
+pub async fn decide_all(
+    g: &Global,
+    job: &str,
+    rule: Option<String>,
+    decision: DecisionArg,
+) -> Result<()> {
+    let app = App::open(g, Access::Exclusive, false).await?;
+    let job = app.job(job).await?;
+    let input = match decision {
+        DecisionArg::Accept => DecisionInput::Accept,
+        DecisionArg::Keep => DecisionInput::KeepOriginal,
+        DecisionArg::Skip => DecisionInput::Skip,
+        DecisionArg::Edit => bail!("an edited name applies to one issue; use `decide`"),
+    };
+    let n = app.ops.decide_all(job.id.clone(), rule, input).await?;
+    let job = app.ops.job(job.id).await?;
+    println!(
+        "{n} issues decided; job {} is {}",
+        &job.id[..8],
+        job.state.as_str()
+    );
     Ok(())
 }
 
 pub async fn jobs(g: &Global, limit: u32) -> Result<()> {
     let app = App::open(g, Access::Read, false).await?;
-    for j in app.engine.list_jobs(limit, 0).await? {
+    for j in app.ops.list_jobs(limit, 0).await? {
         println!(
             "{}  {:<24} {:>6}/{:<6} files  {:>10}  {}",
             &j.id[..8],
@@ -236,7 +268,7 @@ pub async fn show(g: &Global, job: &str) -> Result<()> {
 pub async fn cancel(g: &Global, job: &str) -> Result<()> {
     let app = App::open(g, Access::Exclusive, false).await?;
     let j = app.job(job).await?;
-    app.engine.cancel(&j.id).await?;
+    app.ops.cancel(j.id.clone()).await?;
     println!("cancelled {} (nothing was deleted)", &j.id[..8]);
     Ok(())
 }

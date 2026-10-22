@@ -12,6 +12,7 @@ use filebridge_transport_rclone::RcloneTransport;
 
 use crate::app::{App, Global};
 use filebridge_host::Access;
+use filebridge_ipc::Operations;
 
 #[derive(clap::Args, Clone)]
 pub struct SshArgs {
@@ -231,7 +232,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
         }
         ProfileCmd::List => {
             let app = App::open(g, Access::Read, false).await?;
-            let profiles = app.engine.list_profiles().await?;
+            let profiles = app.ops.list_profiles().await?;
             if profiles.is_empty() {
                 println!("no profiles yet; add one with `filebridge profile add-…`");
             }
@@ -258,7 +259,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
         ProfileCmd::Test { profile } => {
             let app = App::open(g, Access::Read, true).await?;
             let p = app.profile(&profile).await?;
-            let test = app.engine.test_profile(&p.id).await?;
+            let test = app.ops.test_profile(p.id.clone()).await?;
             print_preflight(&test.transport);
             if let Some(i) = &test.integration {
                 print_preflight(i);
@@ -273,7 +274,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
         ProfileCmd::Remove { profile } => {
             let app = App::open(g, Access::Exclusive, false).await?;
             let p = app.profile(&profile).await?;
-            app.engine.delete_profile(&p.id).await?;
+            app.ops.delete_profile(p.id.clone()).await?;
             println!("removed {}", p.name);
             Ok(())
         }
@@ -281,7 +282,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
 }
 
 async fn save(app: &App, profile: Profile) -> Result<()> {
-    let saved = app.engine.save_profile(profile).await?;
+    let saved = app.ops.save_profile(profile).await?;
     println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
     println!("test it with: filebridge profile test {:?}", saved.name);
     Ok(())

@@ -48,6 +48,15 @@ enum Cmd {
         #[arg(long)]
         name: Option<String>,
     },
+    /// One decision for every pending name issue of a job (or of one rule). Not `edit`.
+    DecideAll {
+        job: String,
+        #[arg(value_enum)]
+        decision: send_cmd::DecisionArg,
+        /// Only the issues of this rule (e.g. `collision`).
+        #[arg(long)]
+        rule: Option<String>,
+    },
     /// Send a job that is ready (after decisions).
     Start { job: String },
     /// Continue a paused or interrupted job; without an id, every interrupted job.
@@ -96,6 +105,11 @@ async fn main() -> anyhow::Result<()> {
             decision,
             name,
         } => send_cmd::decide(g, &job, issue, decision, name).await,
+        Cmd::DecideAll {
+            job,
+            decision,
+            rule,
+        } => send_cmd::decide_all(g, &job, rule, decision).await,
         Cmd::Start { job } => send_cmd::start(g, &job).await,
         Cmd::Resume { job } => send_cmd::resume(g, job).await,
         Cmd::Cancel { job } => send_cmd::cancel(g, &job).await,
