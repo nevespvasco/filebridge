@@ -78,11 +78,12 @@ flowchart TB
 
 **Gate (test):** a new plugin enters without changing `core`.
 
-## Proposed design work (not yet planned)
+## Design work (built on `design/implementation`)
 
-The specs in [design/](design/README.md) suggest where each one would fit. They move into a phase
-above (as a checkbox) only once accepted.
+Everything in [design/](design/README.md) is built: the design system, the navigation, and
+D01–D11. Each spec says, under "As built", where the code differs and what is left for later.
+Two Phase 2 items now have their foundation:
 
-| Would fit | Spec |
-|---|---|
-| Phase 2 | [D05 Files and Entry detail](design/specs/D05-files-and-entry-detail.md) (shows the "Manifest with hash" item); [D09 Report export](design/specs/D09-report-export.md); [D10 Reclaimable source](design/specs/D10-reclaimable-source.md) ([ADR 0011](adr/0011-reclaimable-source-is-shown-never-freed.md)); [D11 Destination browser](design/specs/D11-destination-browser.md) (its `Transport::list` is what Repair destination needs); [D01 Home](design/specs/D01-home.md); [D02](design/specs/D02-source-and-composition.md), [D03](design/specs/D03-destination-storage.md), [D06](design/specs/D06-transfers-list.md), [D08](design/specs/D08-issue-selection.md); Activity in [D07](design/specs/D07-job-log-and-activity.md) |
+- [x] [D05](design/specs/D05-files-and-entry-detail.md): the manifest keeps each file's SHA-256.
+- [ ] Repair destination: `Transport::list` ([D11](design/specs/D11-destination-browser.md))
+      lists a remote folder; the repair job itself isn't built.

@@ -1,6 +1,6 @@
 # 01 — Design system
 
-- Status: Proposed
+- Status: **Built** (see "As built")
 - Phase: 1 (foundation; every spec in [specs/](specs/) builds on it)
 - Inspired by: F (Vault & Vine), A and G (slothUI), B (upload modal), D (empty states)
 - Layers touched: `apps/desktop` only (`src/style.css`, `src/components/`, `package.json`)
@@ -307,6 +307,19 @@ not be technical).
 - No string is built by joining translated fragments; use named parameters
   (`"{files} files to {destination}"`).
 - Category labels live under `category.*` (see [the category table](#file-categories)).
+
+## As built
+
+- Built as specified: tokens (colour, Category, type, spacing, radii, shadow), the theme setting
+  with `public/theme-boot.js`, `AppIcon` over `@phosphor-icons/vue`, tabular numbers, and the
+  components `StorageMeter`, `FilterChips`, `SearchField`, `RowMenu`, `Drawer`, `SelectionBar`,
+  `Breadcrumbs`, `RelativeTime` and `SegmentedControl`.
+- Done differently: there is no generic `DataTable`. The one list that needs virtualisation (the
+  Files tab) has its own `role="grid"` built on `@tanstack/vue-virtual`, and the other tables are
+  short, offset-paged `<table>`s. `CategoryBar`, `Notice`, `StatTile` and `Toast` are inline
+  styles or messages, not components, because each has only one or two uses so far.
+- The sidebar notice slot holds low destination space (D03) and reclaimable space (D10); the
+  "service not installed as a user unit" notice isn't built.
 
 ## Acceptance criteria
 
