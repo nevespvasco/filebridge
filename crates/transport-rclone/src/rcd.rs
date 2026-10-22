@@ -3,16 +3,18 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use filebridge_transport_api::{Result, TransportError};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::process::{Child, Command};
 
-use crate::RcClient;
+use crate::client::{HttpRc, RcCall};
+use crate::fs::Scrubber;
 
-/// A running `rclone rcd` sidecar. Killed when dropped.
+/// A running `rclone rcd` sidecar, reached over HTTP on localhost. Killed when dropped.
 pub struct Rcd {
     _child: Child,
-    client: RcClient,
+    client: HttpRc,
 }
 
 impl Rcd {
@@ -61,7 +63,7 @@ impl Rcd {
                 TransportError::fatal(format!("cannot start {}: {e}", binary.display()))
             })?;
 
-        let client = RcClient::new(port, user, pass);
+        let client = HttpRc::new(port, user, pass);
         if let Some(stderr) = child.stderr.take() {
             // rclone's log lines may repeat a connection string or a secret: scrubbed first.
             let scrubber = client.scrubber().clone();
@@ -92,9 +94,16 @@ impl Rcd {
             client,
         })
     }
+}
 
-    pub fn client(&self) -> &RcClient {
-        &self.client
+#[async_trait]
+impl RcCall for Rcd {
+    async fn call(&self, method: &str, params: Value) -> Result<Value> {
+        self.client.call(method, params).await
+    }
+
+    fn scrubber(&self) -> &Scrubber {
+        self.client.scrubber()
     }
 }
 

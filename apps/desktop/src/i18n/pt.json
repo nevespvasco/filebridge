@@ -20,17 +20,32 @@
     "show": "Abrir filebridge",
     "quit": "Fechar janela (os envios continuam)"
   },
+  "mobile": {
+    "pickLead": "Escolha uma pasta deste telemóvel",
+    "pickFolder": "Escolher pasta",
+    "pickHint": "A câmara, as Transferências, um cartão SD… Junte uma pasta de cada vez.",
+    "addMore": "Juntar outra pasta",
+    "storageDenied": "O filebridge precisa de “Acesso a todos os ficheiros” para ler os ficheiros do telemóvel. Permita-o nas definições do Android e tente outra vez.",
+    "sendingOne": "A enviar 1 transferência",
+    "sendingMany": "A enviar {n} transferências"
+  },
   "conn": {
     "connected": "Motor de cópia a funcionar",
     "connecting": "A iniciar o motor de cópia…",
     "disconnected": "Motor de cópia sem resposta",
+    "replacing": "A atualizar o motor de cópia…",
     "short": {
       "connecting": "A ligar…",
-      "disconnected": "Sem ligação"
+      "disconnected": "Sem ligação",
+      "replacing": "A atualizar…"
     },
     "retry": "Tentar de novo",
     "tip": "O motor de cópia copia os seus ficheiros em segundo plano, mesmo com esta janela fechada. Isto mostra se a janela o consegue contactar.",
     "problem": {
+      "replacing": {
+        "title": "A atualizar o motor de cópia…",
+        "body": "Estava a funcionar um motor de cópia de uma versão anterior do filebridge, que está a ser substituído pelo desta versão. Demora alguns segundos e a janela espera por ele. Os envios em curso continuam no novo."
+      },
       "version": {
         "title": "O motor de cópia é de outra versão do filebridge.",
         "body": "Feche todas as janelas do filebridge e abra-o de novo. Os envios em curso não se perdem: continuam quando o motor voltar a arrancar."
@@ -585,7 +600,7 @@
     "password": "Palavra-passe",
     "passwordHint": "opcional: vazio = chave ou agente SSH",
     "passwordNotSaved": "O destino foi guardado, mas a palavra-passe não chegou ao cofre do sistema: {error}. Tente de novo: o mesmo destino é atualizado, não é criado outro.",
-    "firstConnect": "Antes de usar aqui um servidor pela primeira vez, ligue-se a ele uma vez num terminal (ssh utilizador{'@'}servidor) e aceite-o, para este computador o conhecer."
+    "firstConnect": "Na primeira vez que o filebridge se liga a um servidor, mostra a impressão digital da chave do servidor e pede-lhe que a confirme."
   },
   "nextcloud": {
     "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox (e encontra o contentor do Nextcloud) ou diretamente à máquina onde o Nextcloud corre, e verifica cada passo. Nada é alterado durante a deteção.",
@@ -1131,5 +1146,23 @@
       "proof": "Confirmação"
     },
     "offer": "Terminou os envios para “{name}”? Quando não for enviar mais para lá, remova a chave do filebridge do servidor."
+  },
+  "hostKey": {
+    "title": "Confiar neste servidor?",
+    "intro": "O filebridge ainda não se ligou a {host}. Confirme que é mesmo o seu servidor antes de continuar: alguém na rede pode estar a fazer-se passar por ele.",
+    "server": "Servidor",
+    "type": "Tipo de chave",
+    "fingerprint": "Impressão digital",
+    "howToCheck": "Compare-a com a impressão digital que o servidor mostra: pergunte a quem o gere, ou execute isto no servidor. Confie só se forem iguais.",
+    "savedIn": "Será acrescentada a {file}, e não voltará a ser perguntado por este servidor.",
+    "trust": "Confiar e continuar",
+    "trusting": "A acrescentar…",
+    "changedTitle": "A chave deste servidor mudou",
+    "changed": "{host} apresentou uma chave diferente da guardada em {file} (linha {line}). O filebridge não se vai ligar.",
+    "presented": "Chave apresentada agora",
+    "changedWhat": "Ou o servidor foi reinstalado ou as chaves foram substituídas, ou alguém está a intercetar a ligação. Se quem gere o servidor confirmar a mudança, apague a linha antiga desse ficheiro e tente de novo.",
+    "close": "Fechar",
+    "unreachable": "Não foi possível verificar a chave do servidor: {error}",
+    "checking": "A verificar a chave do servidor…"
   }
 }

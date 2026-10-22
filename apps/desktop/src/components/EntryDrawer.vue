@@ -7,7 +7,7 @@ import type { EntryDetail_Serialize } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { CATEGORY_ICON, categoryColor } from "@/lib/categories";
-import { copyText, revealInFileManager } from "@/lib/platform";
+import { canReveal, copyText, revealInFileManager } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import BytesDiff from "./BytesDiff.vue";
@@ -172,7 +172,7 @@ async function reveal() {
       </section>
 
       <p v-if="copied" class="small ok-text" role="status">{{ $t("entry.copied") }}</p>
-      <button v-if="!remote" class="btn" @click="reveal"><AppIcon name="reveal" /> {{ $t("entry.reveal") }}</button>
+      <button v-if="!remote && canReveal()" class="btn" @click="reveal"><AppIcon name="reveal" /> {{ $t("entry.reveal") }}</button>
     </template>
   </Drawer>
 </template>

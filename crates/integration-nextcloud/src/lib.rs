@@ -6,6 +6,7 @@
 pub mod detect;
 pub mod direct;
 pub mod fake;
+pub mod known_hosts;
 pub mod parse;
 pub mod profile;
 pub mod quote;

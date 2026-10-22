@@ -1,8 +1,10 @@
-//! [`RemoteShell`] over SSH (russh). Host keys are verified against `known_hosts`; there is no
-//! "accept unknown host" path — the user adds the host with `ssh` first, or the profile wizard
-//! will (Phase 2). Authentication: an unencrypted key file, or the SSH agent.
+//! [`RemoteShell`] over SSH (russh). Host keys are verified against `known_hosts`, offering the
+//! server only the key types on record. A connection never accepts an unknown host: the profile
+//! wizards [`scan_host_key`] first and, once the user has confirmed the fingerprint,
+//! [`trust_host_key`] adds it (ADR 0015); a changed key is never accepted. Authentication:
+//! filebridge's own key, an unencrypted key file, or the SSH agent.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,10 +15,11 @@ use russh::ChannelMsg;
 use russh::ChannelWriteHalf;
 use russh::client;
 use russh::keys::agent::AgentIdentity;
-use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
+use russh::keys::{PrivateKey, PrivateKeyWithHashAlg, PublicKey, PublicKeyOrCertificate};
 use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 
+use crate::known_hosts::{self, Standing};
 use crate::shell::{Output, RemoteShell, ShellConnector, SshTarget};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -90,7 +93,19 @@ impl ShellConnector for SshConnector {
             .authenticate_publickey(&target.user, PrivateKeyWithHashAlg::new(key, rsa_hash))
             .await
             .map_err(|e| IntegrationError::retryable(format!("SSH authentication: {e}")))?;
-        Ok(res.success())
+        Ok(key_works(&res))
+    }
+}
+
+/// Whether the server took the key: signed in, or accepted it as one factor and wants another
+/// (`AuthenticationMethods publickey,password` answers "partial success"). For Remove access's
+/// proof the second case still means the key works, so it is never read as "refused".
+fn key_works(res: &client::AuthResult) -> bool {
+    match res {
+        client::AuthResult::Success => true,
+        client::AuthResult::Failure {
+            partial_success, ..
+        } => *partial_success,
     }
 }
 
@@ -136,16 +151,22 @@ pub fn generate_key(comment: &str) -> Result<NewKey> {
 /// Why the host key was rejected, kept by the handler so the error can say it.
 #[derive(Debug, Clone)]
 enum HostKeyProblem {
-    Unknown { fingerprint: String },
-    Changed { line: usize },
+    Unknown {
+        key: PublicKey,
+    },
+    /// `key` is `None` when the server offered none of the key types on record.
+    Changed {
+        line: usize,
+        key: Option<PublicKey>,
+    },
     Certificate,
-    Unreadable(String),
 }
 
+/// Accepts the server's key only when `known_hosts` holds it for the host; remembers the key
+/// it saw and, when rejected, why.
 struct KnownHostsCheck {
-    host: String,
-    port: u16,
-    known_hosts: PathBuf,
+    recorded: Vec<(usize, PublicKey)>,
+    seen: Arc<Mutex<Option<PublicKey>>>,
     problem: Arc<Mutex<Option<HostKeyProblem>>>,
 }
 
@@ -160,21 +181,91 @@ impl client::Handler for KnownHostsCheck {
             *self.problem.lock().unwrap() = Some(HostKeyProblem::Certificate);
             return Ok(false);
         };
-        let problem = match russh::keys::check_known_hosts_path(
-            &self.host,
-            self.port,
-            key,
-            &self.known_hosts,
-        ) {
-            Ok(true) => return Ok(true),
-            Ok(false) => HostKeyProblem::Unknown {
-                fingerprint: key.fingerprint(HashAlg::Sha256).to_string(),
+        *self.seen.lock().unwrap() = Some(key.clone());
+        let problem = match known_hosts::standing(&self.recorded, key) {
+            Standing::Known => return Ok(true),
+            Standing::Unknown => HostKeyProblem::Unknown { key: key.clone() },
+            Standing::Changed { line } => HostKeyProblem::Changed {
+                line,
+                key: Some(key.clone()),
             },
-            Err(russh::keys::Error::KeyChanged { line }) => HostKeyProblem::Changed { line },
-            Err(e) => HostKeyProblem::Unreadable(e.to_string()),
         };
         *self.problem.lock().unwrap() = Some(problem);
         Ok(false)
+    }
+}
+
+/// How far a connection got with the server's host key.
+enum Handshake {
+    /// `known_hosts` holds the key: the connection is open, not signed in yet.
+    Accepted(client::Handle<KnownHostsCheck>, PublicKey),
+    /// The connection was closed because of the host key.
+    Rejected(HostKeyProblem),
+}
+
+/// Connects to `host:port` and checks its host key against `known_hosts`, offering only the key
+/// types on record for the host (so a server with several keys presents the one `ssh` saw).
+/// `Err` when the server couldn't be reached or `known_hosts` couldn't be read.
+async fn handshake(host: &str, port: u16, known_hosts: &Path) -> Result<Handshake> {
+    let recorded = known_hosts::recorded(host, port, known_hosts)?;
+    let mut preferred = russh::Preferred::default();
+    let pinned = known_hosts::host_key_algorithms(&recorded);
+    if !pinned.is_empty() {
+        preferred.key = pinned.into();
+    }
+    let first_line = recorded.first().map(|(line, _)| *line);
+    let seen = Arc::new(Mutex::new(None));
+    let problem = Arc::new(Mutex::new(None));
+    let handler = KnownHostsCheck {
+        recorded,
+        seen: seen.clone(),
+        problem: problem.clone(),
+    };
+    let config = Arc::new(client::Config {
+        // Scans can be silent for minutes on a slow disk: keep the link alive, never time out.
+        inactivity_timeout: None,
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 4,
+        preferred,
+        ..Default::default()
+    });
+    let connected = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        client::connect(config, (host, port), handler),
+    )
+    .await;
+    match connected {
+        Err(_) => Err(IntegrationError::retryable(format!(
+            "SSH connection to {host}:{port} timed out"
+        ))),
+        Ok(Ok(handle)) => {
+            let key = seen.lock().unwrap().clone().ok_or_else(|| {
+                IntegrationError::fatal(format!("{host} accepted without a host key check"))
+            })?;
+            Ok(Handshake::Accepted(handle, key))
+        }
+        Ok(Err(e)) => {
+            if let Some(p) = problem.lock().unwrap().clone() {
+                return Ok(Handshake::Rejected(p));
+            }
+            // Only the recorded types were offered and the server has none of them any more.
+            if let (
+                russh::Error::NoCommonAlgo {
+                    kind: russh::AlgorithmKind::Key,
+                    ..
+                },
+                Some(line),
+            ) = (&e, first_line)
+            {
+                return Ok(Handshake::Rejected(HostKeyProblem::Changed {
+                    line,
+                    key: None,
+                }));
+            }
+            Err(IntegrationError::retryable(format!(
+                "SSH connection to {host}:{port} failed: {e}"
+            )))
+        }
     }
 }
 
@@ -197,72 +288,146 @@ impl SshShell {
 
     /// The connection, the server's host key checked against `known_hosts`, not signed in yet.
     async fn open(target: &SshTarget) -> Result<client::Handle<KnownHostsCheck>> {
-        let known_hosts = match &target.known_hosts_file {
-            Some(p) => p.clone(),
-            None => std::env::home_dir()
-                .map(|h| h.join(".ssh").join("known_hosts"))
-                .ok_or_else(|| IntegrationError::fatal("no home directory for known_hosts"))?,
-        };
-        let problem = Arc::new(Mutex::new(None));
-        let handler = KnownHostsCheck {
-            host: target.host.clone(),
-            port: target.port,
-            known_hosts: known_hosts.clone(),
-            problem: problem.clone(),
-        };
-        let config = Arc::new(client::Config {
-            // Scans can be silent for minutes on a slow disk: keep the link alive, never time out.
-            inactivity_timeout: None,
-            keepalive_interval: Some(Duration::from_secs(30)),
-            keepalive_max: 4,
-            ..Default::default()
-        });
-        let addr = (target.host.as_str(), target.port);
-        let connected =
-            tokio::time::timeout(CONNECT_TIMEOUT, client::connect(config, addr, handler)).await;
-        let handle = match connected {
-            Err(_) => {
-                return Err(IntegrationError::retryable(format!(
-                    "SSH connection to {}:{} timed out",
-                    target.host, target.port
-                )));
-            }
-            Ok(Err(e)) => {
-                let found = problem.lock().unwrap().clone();
-                return Err(match found {
-                    Some(p) => host_key_error(target, &known_hosts, p),
-                    None => IntegrationError::retryable(format!(
-                        "SSH connection to {}:{} failed: {e}",
-                        target.host, target.port
-                    )),
-                });
-            }
-            Ok(Ok(h)) => h,
-        };
-        Ok(handle)
+        let file = known_hosts::resolve(target.known_hosts_file.as_deref())?;
+        match handshake(&target.host, target.port, &file).await? {
+            Handshake::Accepted(handle, _) => Ok(handle),
+            Handshake::Rejected(p) => Err(host_key_error(&target.host, &file, &p)),
+        }
     }
 }
 
-fn host_key_error(
-    target: &SshTarget,
-    known_hosts: &std::path::Path,
-    problem: HostKeyProblem,
-) -> IntegrationError {
-    let host = &target.host;
+fn host_key_error(host: &str, known_hosts: &Path, problem: &HostKeyProblem) -> IntegrationError {
     let file = known_hosts.display();
     IntegrationError::fatal(match problem {
-        HostKeyProblem::Unknown { fingerprint } => format!(
-            "host key of {host} is not in {file} ({fingerprint}); connect once with `ssh` to \
-             check and add it"
+        HostKeyProblem::Unknown { key } => format!(
+            "host key of {host} is not in {file} ({}); check its fingerprint and trust it in the \
+             destination's setup, or connect once with `ssh`",
+            known_hosts::fingerprint(key)
         ),
-        HostKeyProblem::Changed { line } => format!(
-            "host key of {host} does not match {file} line {line}: the server changed or the \
-             connection is being intercepted"
-        ),
+        HostKeyProblem::Changed { line, key } => {
+            let offered = match key {
+                Some(k) => format!("it now presents {}", known_hosts::fingerprint(k)),
+                None => "it no longer offers a key of the type on record".into(),
+            };
+            format!(
+                "host key of {host} does not match {file} line {line} ({offered}): the server \
+                 changed or the connection is being intercepted"
+            )
+        }
         HostKeyProblem::Certificate => {
             format!("{host} offered a host certificate; only plain host keys are supported")
         }
-        HostKeyProblem::Unreadable(e) => format!("could not check {file}: {e}"),
+    })
+}
+
+/// Where a server's host key stands in the `known_hosts` file filebridge uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostKeyScan {
+    /// The file checked, and the one [`trust_host_key`] adds to.
+    pub known_hosts: PathBuf,
+    pub standing: Standing,
+    /// The key the server presented; `None` only when it is [`Standing::Changed`] and the server
+    /// offered none of the key types on record.
+    pub key: Option<PublicKey>,
+}
+
+/// Connects to `host:port` only far enough to see its host key (it never signs in) and says
+/// whether `known_hosts_file` (default `~/.ssh/known_hosts`) holds it, holds nothing for the
+/// host, or holds another key for it. `Err` when the server can't be reached, offers a
+/// certificate, or the file can't be read.
+pub async fn scan_host_key(
+    host: &str,
+    port: u16,
+    known_hosts_file: Option<&Path>,
+) -> Result<HostKeyScan> {
+    let known_hosts = known_hosts::resolve(known_hosts_file)?;
+    let (standing, key) = match handshake(host, port, &known_hosts).await? {
+        Handshake::Accepted(_, key) => (Standing::Known, Some(key)),
+        Handshake::Rejected(HostKeyProblem::Unknown { key }) => (Standing::Unknown, Some(key)),
+        Handshake::Rejected(HostKeyProblem::Changed { line, key }) => {
+            (Standing::Changed { line }, key)
+        }
+        Handshake::Rejected(p @ HostKeyProblem::Certificate) => {
+            return Err(host_key_error(host, &known_hosts, &p));
+        }
+    };
+    Ok(HostKeyScan {
+        known_hosts,
+        standing,
+        key,
+    })
+}
+
+/// Why [`trust_host_key`] added nothing.
+#[derive(Debug, Clone)]
+pub enum TrustError {
+    /// The server's key is not one to trust: another is on record for the host, or the server
+    /// presents another key than the one the user confirmed.
+    Refused(String),
+    /// The server couldn't be reached, or `known_hosts` couldn't be read or written.
+    Failed(IntegrationError),
+}
+
+impl std::fmt::Display for TrustError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(m) => f.write_str(m),
+            Self::Failed(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl From<IntegrationError> for TrustError {
+    fn from(e: IntegrationError) -> Self {
+        Self::Failed(e)
+    }
+}
+
+/// One trust at a time in this process, so two never both see the host as unknown and append.
+static TRUSTING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Adds the key `host:port` presents to `known_hosts_file`, after the user checked that its
+/// fingerprint is `fingerprint` (`SHA256:…`). Only for a host with no key there yet: a host
+/// whose key changed is refused, and so is a server that now presents another key than the one
+/// confirmed. Answers the scan after the change (`Known`).
+pub async fn trust_host_key(
+    host: &str,
+    port: u16,
+    known_hosts_file: Option<&Path>,
+    fingerprint: &str,
+) -> std::result::Result<HostKeyScan, TrustError> {
+    let _one = TRUSTING.lock().await;
+    let scan = scan_host_key(host, port, known_hosts_file).await?;
+    let key = match (&scan.standing, &scan.key) {
+        (Standing::Known, _) => return Ok(scan),
+        (Standing::Changed { line }, key) => {
+            let p = HostKeyProblem::Changed {
+                line: *line,
+                key: key.clone(),
+            };
+            return Err(TrustError::Refused(
+                host_key_error(host, &scan.known_hosts, &p).message,
+            ));
+        }
+        (Standing::Unknown, Some(key)) => key.clone(),
+        (Standing::Unknown, None) => unreachable!("an unknown host was seen with its key"),
+    };
+    let presented = known_hosts::fingerprint(&key);
+    if presented != fingerprint.trim() {
+        return Err(TrustError::Refused(format!(
+            "{host} now presents the key {presented}, not the one you checked ({}); nothing was \
+             trusted: check the server again",
+            fingerprint.trim()
+        )));
+    }
+    let (h, file, k) = (host.to_owned(), scan.known_hosts.clone(), key.clone());
+    tokio::task::spawn_blocking(move || known_hosts::append(&h, port, &k, &file))
+        .await
+        .map_err(|e| IntegrationError::fatal(format!("adding the host key stopped: {e}")))??;
+    Ok(HostKeyScan {
+        standing: Standing::Known,
+        key: Some(key),
+        ..scan
     })
 }
 
@@ -286,6 +451,11 @@ async fn authenticate(
             .map_err(net)?;
         return if res.success() {
             Ok(())
+        } else if key_works(&res) {
+            Err(IntegrationError::fatal(format!(
+                "server took filebridge's own key for user {user} but asks for another sign-in \
+                 step after it (AuthenticationMethods), which filebridge can't answer"
+            )))
         } else {
             Err(IntegrationError::fatal(format!(
                 "server refused filebridge's own key for user {user}; it may have been removed \
@@ -470,6 +640,17 @@ impl RemoteShell for SshShell {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_key_taken_as_a_first_factor_works() {
+        let failure = |partial_success| client::AuthResult::Failure {
+            remaining_methods: russh::MethodSet::empty(),
+            partial_success,
+        };
+        assert!(key_works(&client::AuthResult::Success));
+        assert!(key_works(&failure(true)));
+        assert!(!key_works(&failure(false)));
+    }
 
     #[test]
     fn lines_split_across_chunks() {

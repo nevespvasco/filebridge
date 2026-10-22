@@ -41,6 +41,9 @@ pub struct ServiceEvent(pub filebridge_ipc::Event);
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 pub struct ConnectionChanged {
     pub connected: bool,
+    /// An older service is being stopped and replaced: every command waits until it is done
+    /// (up to [`STOP_TIMEOUT`] plus [`START_TIMEOUT`]).
+    pub replacing: bool,
     /// Socket path or pipe name, for the Details panel.
     pub endpoint: String,
 }
@@ -59,6 +62,8 @@ struct Inner {
     /// Set once a replacement still spoke an older protocol: the binary on disk is old too, so
     /// replacing again would only stop and start it over and over.
     gave_up_replacing: AtomicBool,
+    /// An older service is being replaced right now.
+    replacing: AtomicBool,
 }
 
 fn unavailable(message: String) -> ErrorBody {
@@ -76,11 +81,18 @@ impl Service {
             current: Mutex::new(None),
             generation: Default::default(),
             gave_up_replacing: AtomicBool::new(false),
+            replacing: AtomicBool::new(false),
         }))
     }
 
     pub fn endpoint(&self) -> String {
         self.0.endpoint.display()
+    }
+
+    /// Whether an older service is being replaced now. The window asks once it listens for
+    /// [`ConnectionChanged`]: a replacement can start before it does.
+    pub fn replacing(&self) -> bool {
+        self.0.replacing.load(Ordering::Relaxed)
     }
 
     /// The connected client, connecting (and starting the service) first if needed.
@@ -109,15 +121,26 @@ impl Service {
         }
     }
 
+    /// Says so while an older service is replaced; once it is done, the forwarder's
+    /// `connected: true`, or here `connected: false` when it failed, ends it.
     async fn connect_or_start(&self) -> Result<Client, ErrorBody> {
-        Starter {
+        let on_replace = || {
+            self.0.replacing.store(true, Ordering::Relaxed);
+            self.emit_connection(false);
+        };
+        let result = Starter {
             endpoint: &self.0.endpoint,
             protocol: PROTOCOL_VERSION,
             find_binary: &find_service_binary,
             gave_up: &self.0.gave_up_replacing,
+            on_replace: &on_replace,
         }
         .connect_or_start()
-        .await
+        .await;
+        if self.0.replacing.swap(false, Ordering::Relaxed) && result.is_err() {
+            self.emit_connection(false);
+        }
+        result
     }
 
     /// Forwards events until the connection drops (the event stream then reports `Closed`),
@@ -160,6 +183,7 @@ impl Service {
     fn emit_connection(&self, connected: bool) {
         let event = ConnectionChanged {
             connected,
+            replacing: self.replacing(),
             endpoint: self.endpoint(),
         };
         if let Err(e) = event.emit(&self.0.app) {
@@ -208,6 +232,8 @@ struct Starter<'a> {
     protocol: u32,
     find_binary: &'a (dyn Fn() -> Option<PathBuf> + Send + Sync),
     gave_up: &'a AtomicBool,
+    /// Called once an older service is about to be stopped and replaced.
+    on_replace: &'a (dyn Fn() + Send + Sync),
 }
 
 impl Starter<'_> {
@@ -245,6 +271,7 @@ impl Starter<'_> {
             pong.version,
             pong.protocol
         );
+        (self.on_replace)();
         let launch = match stop_older(endpoint, self.protocol).await {
             Ok(Stopped::Replaced(launch)) => launch,
             // Another window replaced it in the meantime.
@@ -655,15 +682,21 @@ mod tests {
         let (mut child, endpoint) = start_service(&bin, dir.path());
         wait_for(&endpoint).await;
         let gave_up = AtomicBool::new(false);
+        let replaced = AtomicBool::new(false);
         let starter = Starter {
             endpoint: &endpoint,
             protocol: PROTOCOL_VERSION + 1,
             find_binary: &|| None,
             gave_up: &gave_up,
+            on_replace: &|| replaced.store(true, Ordering::Relaxed),
         };
         let err = starter.connect_or_start().await.err().unwrap();
         assert_eq!(err.code, "incompatible_service");
         assert!(err.message.contains("left running"), "{}", err.message);
+        assert!(
+            !replaced.load(Ordering::Relaxed),
+            "no replacement was announced"
+        );
         assert!(child.try_wait().unwrap().is_none(), "still running");
         child.kill().unwrap();
         child.wait().unwrap();
@@ -682,22 +715,36 @@ mod tests {
         let found = bin.clone();
         let find = move || Some(found.clone());
         // The binary on disk speaks the same (here: "old") protocol as the running one.
+        let replacements = AtomicU64::new(0);
         let starter = Starter {
             endpoint: &endpoint,
             protocol: PROTOCOL_VERSION + 1,
             find_binary: &find,
             gave_up: &gave_up,
+            on_replace: &|| {
+                replacements.fetch_add(1, Ordering::Relaxed);
+            },
         };
         let err = starter.connect_or_start().await.err().unwrap();
         assert_eq!(err.code, "incompatible_service", "{}", err.message);
         assert!(child.wait().unwrap().success(), "the first one was stopped");
         assert!(gave_up.load(Ordering::Relaxed));
+        assert_eq!(
+            replacements.load(Ordering::Relaxed),
+            1,
+            "announced before stopping"
+        );
         // Its replacement was started like it, and is left alone from now on.
         assert!(dir.path().join("data").is_dir());
         let replacement = peer(&endpoint).await;
         let err = starter.connect_or_start().await.err().unwrap();
         assert!(err.message.contains("just as old"), "{}", err.message);
         assert_eq!(peer(&endpoint).await, replacement, "not stopped again");
+        assert_eq!(
+            replacements.load(Ordering::Relaxed),
+            1,
+            "nor announced again"
+        );
 
         assert!(matches!(
             stop_older(&endpoint, u32::MAX).await.unwrap(),

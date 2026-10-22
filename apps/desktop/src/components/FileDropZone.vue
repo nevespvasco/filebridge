@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Drop files and folders on the window, or pick them in the file explorer. `compact` is the
-// one-line bar shown once something is chosen.
+// one-line bar shown once something is chosen. On a phone: folders only, picked one at a time.
 import AppIcon from "@/components/AppIcon.vue";
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { pickPaths } from "@/lib/platform";
+import { isMobile, pickPaths } from "@/lib/platform";
 import { errorMessage } from "@/lib/api";
 import { useFileDrop } from "@/composables/useFileDrop";
 import DropOverlay from "./DropOverlay.vue";
@@ -14,6 +14,7 @@ const emit = defineEmits<{ add: [paths: string[]] }>();
 const { t } = useI18n();
 const error = ref<string | null>(null);
 const { over } = useFileDrop((paths) => emit("add", paths));
+const mobile = isMobile();
 
 async function pick(directory: boolean) {
   error.value = null;
@@ -30,20 +31,21 @@ async function pick(directory: boolean) {
   <div class="drop" :class="{ over, compact }">
     <template v-if="compact">
       <AppIcon class="icon" name="drop" :size="22" />
-      <span class="lead">{{ $t("source.dropMore") }}</span>
+      <span class="lead">{{ mobile ? $t("mobile.addMore") : $t("source.dropMore") }}</span>
       <span class="buttons">
         <button class="btn btn-small" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.addFolders") }}</button>
-        <button class="btn btn-small" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.addFiles") }}</button>
+        <button v-if="!mobile" class="btn btn-small" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.addFiles") }}</button>
       </span>
     </template>
     <template v-else>
       <AppIcon class="icon" name="drop" :size="44" />
-      <p class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
+      <p v-if="mobile" class="lead">{{ $t("mobile.pickLead") }}</p>
+      <p v-else class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
       <div class="buttons">
-        <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.pickFolders") }}</button>
-        <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
+        <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ mobile ? $t("mobile.pickFolder") : $t("source.pickFolders") }}</button>
+        <button v-if="!mobile" class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
       </div>
-      <p class="hint small muted">{{ $t("source.hint") }}</p>
+      <p class="hint small muted">{{ mobile ? $t("mobile.pickHint") : $t("source.hint") }}</p>
     </template>
     <p v-if="error" class="error small" role="alert">{{ error }}</p>
     <DropOverlay :show="over" />

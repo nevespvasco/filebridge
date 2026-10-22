@@ -111,8 +111,10 @@ pub trait ShellConnector: Send + Sync {
         )))
     }
 
-    /// Whether `target` accepts `key` (`Ok(false)`: the server refused it). `Err` when the
-    /// server couldn't be reached or its host key is wrong: that says nothing about the key.
+    /// Whether `target` accepts `key` (`Ok(false)`: the server refused it). A key the server
+    /// takes as a first factor ("partial success": it wants a password or another key next) is
+    /// accepted. `Err` when the server couldn't be reached or its host key is wrong: that says
+    /// nothing about the key.
     async fn key_accepted(
         &self,
         target: &SshTarget,

@@ -1,6 +1,6 @@
 # 09 — Roadmap
 
-Four phases, each closed by a concrete test (gate). **Phase 1 already solves the real use case**;
+Five phases, each closed by a concrete test (gate). **Phase 1 already solves the real use case**;
 everything after makes it safer or more general.
 
 No dates: they depend on free time outside work. Phase 0 is deliberately small and must come
@@ -12,9 +12,11 @@ flowchart TB
     P1["Phase 1 · Personal MVP<br/><small>replaces the terminal</small>"]
     P2["Phase 2 · Trust<br/><small>verify and repair</small>"]
     P3["Phase 3 · Scale<br/><small>more destinations and tools</small>"]
+    P4["Phase 4 · Mobile<br/><small>Android, then iOS</small>"]
     P0 -- "Gate: renaming during send is fast enough, or plan B chosen" --> P1
     P1 -- "Gate: send three real folders (work, code repo, comma in the name) without opening the terminal" --> P2
     P2 -- "Gate: verification with no differences and scan with no encoding warnings" --> P3
+    P2 -- "Gate: same as Phase 3's entry" --> P4
 ```
 
 ## Phase 0 — Prototype (validates the biggest risk)
@@ -82,6 +84,42 @@ flowchart TB
 - [ ] Signed installers and automatic updates.
 
 **Gate (test):** a new plugin enters without changing `core`.
+
+## Phase 4 — Mobile
+
+*Proposed* ([ADR 0013](adr/0013-phones-as-a-source-android-first.md),
+[ADR 0014](adr/0014-engine-in-the-app-on-phones.md), plan in [11 — Mobile](11-mobile.md)). Starts
+after the Phase 2 gate and can run alongside Phase 3. The phone is a Source: the same app, with
+the engine in the app process and rclone linked in as librclone.
+
+### Phase 4a — Android
+
+- [x] Seams on desktop: `RcCall` in `transport-rclone`, the data folder from the app,
+      `Host::open_with_secrets`, `Operations` chosen by `cfg(mobile)` in the Tauri app.
+- [x] librclone cross-compiled for `arm64-v8a` and `x86_64` (`sidecars/librclone`); `Librclone`
+      passes the transport contract suite.
+- [x] Tauri Android project and plugin: foreground service, wake and Wi-Fi locks, "All files
+      access", folder picker.
+- [x] Android Keystore store (the app's `SecretVault`, behind `SecretStore`).
+- [x] UI without the desktop-only parts (checked on an emulator at 1080×2400).
+- [ ] Run the gate on a real phone (passed on an Android 15 emulator, see
+      [11](11-mobile.md#as-built-2026-10-22)).
+- [ ] "Trust this host key" for SSH profiles on a phone.
+
+**Gate:** from an Android phone, send a real folder with at least 1,000 photos and videos to
+Nextcloud over WebDAV; turn the screen off and switch apps mid-send; force-stop the app once and
+see the Job resume; the verification has zero differences.
+
+### Phase 4b — iOS
+
+Needs a Mac (Xcode) and an Apple Developer account.
+
+- [ ] librclone as `c-archive` for `aarch64-apple-ios`.
+- [ ] Tauri iOS project; Swift plugin for the folder picker and security-scoped bookmarks.
+- [ ] Keychain through `keyring`'s `apple-native`.
+
+**Gate:** send a folder from the Files app to Nextcloud over WebDAV, leaving the app and coming
+back mid-send; the Job resumes and the verification has zero differences.
 
 ## Design work (built, on `main`)
 

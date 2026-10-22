@@ -1800,6 +1800,45 @@ async fn repair_job(s: &Setup, dir: Option<&str>) -> String {
     job
 }
 
+#[tokio::test]
+async fn a_repair_runs_again_only_on_its_own_destination() {
+    let s = setup().await;
+    std::fs::create_dir_all(s.dest.join("Fotos")).unwrap();
+    std::fs::write(s.dest.join("Fotos/PatolÃ³gica.txt"), b"garbled").unwrap();
+    let job = repair_job(&s, Some("Fotos")).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let other = s
+        .engine
+        .save_profile(Profile {
+            id: String::new(),
+            name: "Other".into(),
+            destination: Destination {
+                transport: "fake".into(),
+                backend: Backend::Local,
+                root: s.src.to_string_lossy().into_owned(),
+            },
+            integration: None,
+            integration_settings: serde_json::json!({}),
+            target: TargetSpec::default(),
+        })
+        .await
+        .unwrap();
+    // The folder belongs to the first destination: another one is refused, not repaired.
+    let err = s
+        .engine
+        .send_again(&job, Some(other.id.clone()))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, CoreError::Invalid(_)), "{err:?}");
+    for profile in [None, Some(s.profile_id.clone())] {
+        let again = s.engine.send_again(&job, profile).await.unwrap();
+        let again = s.engine.job(&again).await.unwrap();
+        assert_eq!(again.kind, JobKind::Repair);
+        assert_eq!(again.profile_id, s.profile_id);
+        assert_eq!(again.options.target_dir.as_deref(), Some("Fotos"));
+    }
+}
+
 /// The warnings a finished job ended with.
 async fn warnings(s: &Setup, job: &str) -> String {
     s.engine.job(job).await.unwrap().error.unwrap_or_default()

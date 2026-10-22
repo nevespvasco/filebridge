@@ -6,11 +6,16 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# rclone linked into the process (`Librclone`), for phones (ADR 0014).
+librclone = ["dep:libloading"]
+
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
 filebridge-transport-api.workspace = true
 getrandom.workspace = true
+libloading = { version = "0.8", optional = true }
 reqwest.workspace = true
 russh.workspace = true
 serde_json.workspace = true

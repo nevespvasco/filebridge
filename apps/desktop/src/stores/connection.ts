@@ -13,6 +13,8 @@ export const useConnection = defineStore("connection", () => {
   /** `incompatible_service`, `service_unavailable`, … (crates/ipc/README.md). */
   const lastCode = ref<string | null>(null);
   const checking = ref(false);
+  /** An older copy engine is being stopped and replaced: commands wait until it is done. */
+  const replacing = ref(false);
   const reconnectHooks: Array<() => void> = [];
   let started = false;
 
@@ -21,6 +23,7 @@ export const useConnection = defineStore("connection", () => {
   function up() {
     const was = connected.value;
     connected.value = true;
+    replacing.value = false;
     lastError.value = null;
     lastCode.value = null;
     if (was === false) reconnectHooks.forEach((fn) => fn());
@@ -34,6 +37,7 @@ export const useConnection = defineStore("connection", () => {
       up();
     } catch (e) {
       connected.value = false;
+      replacing.value = false;
       lastError.value = errorMessage(e);
       lastCode.value = e instanceof ServiceError ? e.code : null;
     } finally {
@@ -52,8 +56,14 @@ export const useConnection = defineStore("connection", () => {
         void check();
       } else {
         connected.value = false;
+        replacing.value = e.payload.replacing;
       }
     });
+    // A replacement can start before this window listens; the event says when it ends.
+    if (await commands.serviceReplacing()) {
+      connected.value = false;
+      replacing.value = true;
+    }
     await check();
   }
 
@@ -61,5 +71,5 @@ export const useConnection = defineStore("connection", () => {
     reconnectHooks.push(fn);
   }
 
-  return { connected, endpoint, version, lastError, lastCode, checking, init, check, onReconnect };
+  return { connected, endpoint, version, lastError, lastCode, checking, replacing, init, check, onReconnect };
 });

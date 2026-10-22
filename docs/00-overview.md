@@ -2,7 +2,8 @@
 
 ## Goal
 
-A desktop app for Linux, Windows and macOS that turns a manual migration into a 5-step wizard:
+A desktop app for Linux, Windows and macOS, and an Android app (iOS planned; Phase 4:
+[11 — Mobile](11-mobile.md)) that turns a manual migration into a 5-step wizard:
 choose files or folders, choose a destination, review problems, send, and update the destination
 tool (today: Nextcloud).
 

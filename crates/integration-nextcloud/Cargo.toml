@@ -22,5 +22,5 @@ url = "2"
 zeroize.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "test-util"] }
 tempfile.workspace = true

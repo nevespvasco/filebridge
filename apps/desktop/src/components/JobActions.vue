@@ -35,7 +35,8 @@ const items = computed<MenuItem[]>(() => {
   out.push({ id: "rename", label: t("jobs.menu.rename"), icon: "renamed" });
   const again = can("send_again");
   out.push({ id: "again", label: t("jobs.menu.again"), icon: "again", disabled: !again, reason: t("jobs.menu.whenFinished") });
-  out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
+  // A repair works on a folder of its own destination: it only runs again there.
+  if (props.job.kind !== "repair") out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
   out.push({ id: "export", label: t("jobs.menu.export"), icon: "export", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
   out.push({ id: "copyId", label: t("jobs.menu.copyId"), icon: "copy" });
   if (can("cancel")) out.push({ id: "cancel", label: t("jobDetail.cancel"), icon: "close", danger: true });

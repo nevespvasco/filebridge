@@ -8,11 +8,12 @@ dist/
 *.local
 .vite/
 
-# Tauri
+# Tauri (gen/android is the Android project and is committed; its own .gitignore files keep
+# build output and the .so libraries out)
 apps/desktop/src-tauri/target/
-apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/gen/schemas/
 
-# Sidecar binaries (downloaded per platform at build time)
+# Sidecar binaries (downloaded per platform at build time) and librclone's build tree
 sidecars/bin/
 
 # Local state

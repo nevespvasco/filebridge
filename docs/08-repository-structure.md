@@ -8,7 +8,9 @@ filebridge/
 ├── apps/
 │   ├── desktop/                 # Tauri 2 + Vue 3 + TS
 │   │   ├── src/                 # interface (views, Pinia stores, components)
-│   │   └── src-tauri/           # Tauri commands — thin IPC client of filebridge-service
+│   │   └── src-tauri/           # Tauri commands — thin IPC client of filebridge-service;
+│   │       │                    #   on phones the engine itself (ADR 0014)
+│   │       └── gen/android/     # Android project: FilebridgePlugin, SendService, SecretVault
 │   ├── cli/                     # same logic, no UI (servers, scripts)
 │   └── service/                 # filebridge-service: hosts the engine, serves ipc (ADR 0008)
 ├── crates/
@@ -25,7 +27,7 @@ filebridge/
 │   ├── transport-rclone/        # implementation over rclone's rc API
 │   ├── integration-api/         # Integration trait + types
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules
-├── sidecars/                    # rclone binaries per platform
+├── sidecars/                    # rclone binaries per platform; librclone/ builds rclone as a library
 └── docs/
 ```
 
@@ -37,6 +39,7 @@ the phase it lands in.
 ```mermaid
 flowchart TB
     desktop["apps/desktop (src-tauri)"] --> ipc
+    desktop -. "phones only" .-> host
     service["apps/service"] --> ipc
     service --> host
     cli["apps/cli"] --> host
@@ -70,9 +73,12 @@ flowchart TB
   never compiles the engine, the store or SQLite.
 - Every `transport-*` and `integration-*` crate is independent: **a new plugin is a new crate plus
   one line in the `Registry`**. Plugins never depend on `core`, `store` or `secrets`.
-- Only the binaries that host the engine (`apps/service`, `apps/cli`) depend on concrete plugins,
-  through `crates/host`, which registers them. The desktop app talks to
-  `filebridge-service` through `crates/ipc` ([ADR 0008](adr/0008-service-ipc.md)).
+- Only the binaries that host the engine (`apps/service`, `apps/cli`, and the app's phone build)
+  depend on concrete plugins, through `crates/host`, which registers them. The desktop app talks
+  to `filebridge-service` through `crates/ipc` ([ADR 0008](adr/0008-service-ipc.md)). On Android
+  and iOS the app depends on `crates/host` itself and its commands call
+  `host::EngineOperations`, the same `ipc::Operations` contract
+  ([ADR 0014](adr/0014-engine-in-the-app-on-phones.md)).
 - The interface talks only through typed Tauri commands and events (generated with `specta`), so
   the TS types come from Rust and never drift.
 

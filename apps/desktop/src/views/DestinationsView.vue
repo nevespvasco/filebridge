@@ -10,11 +10,12 @@ import DestinationSpace from "@/components/DestinationSpace.vue";
 import FolderBrowser from "@/components/FolderBrowser.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
+import HostKeyPrompt from "@/components/HostKeyPrompt.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import ProfileForm from "@/components/ProfileForm.vue";
 import { api, errorMessage } from "@/lib/api";
 import { request } from "@/lib/requests";
-import { profileKind, profileWhere, sshKeyAction, useProfiles } from "@/stores/profiles";
+import { profileKind, profileWhere, sshHosts, sshKeyAction, useProfiles, type TestState } from "@/stores/profiles";
 
 const profiles = useProfiles();
 const { t } = useI18n();
@@ -53,7 +54,62 @@ onMounted(async () => {
 
 function onSaved(p: Profile_Serialize) {
   creating.value = false;
-  void profiles.test(p.id);
+  void test(p);
+}
+
+// SSH servers whose host key isn't in known_hosts (it was cleared, or this is a new device) make
+// every connection fail. After a failed test or space check, and before browsing, each server
+// the destination signs in to is checked: an unknown key is shown to the user to trust (ADR
+// 0015), and what failed is tried again. A changed key only shows the error.
+const hostKey = ref<InstanceType<typeof HostKeyPrompt> | null>(null);
+/** Destinations whose servers' keys are being checked. */
+const checkingKeys = ref<Record<string, boolean>>({});
+/** One check at a time: a second prompt would cancel the first. */
+let keyQueue: Promise<unknown> = Promise.resolve();
+
+/** Checks the key of each SSH server of `p`: `trusted` when one was trusted just now, `refused`
+ *  when the user didn't trust one or its key changed, otherwise `known`. A server that can't be
+ *  reached also gives `known`: what failed (test, check, browser) already says why. */
+function checkKeys(p: Profile_Serialize): Promise<"known" | "trusted" | "refused"> {
+  const run = async () => {
+    let out: "known" | "trusted" | "refused" = "known";
+    checkingKeys.value[p.id] = true;
+    try {
+      for (const h of sshHosts(p)) {
+        const r = await hostKey.value!.check(h.host, h.port, h.knownHostsFile);
+        if (r === "refused") return "refused";
+        if (r === "trusted") out = r;
+      }
+    } catch {
+      // Unreachable.
+    } finally {
+      checkingKeys.value[p.id] = false;
+    }
+    return out;
+  };
+  const next = keyQueue.then(run, run);
+  keyQueue = next;
+  return next;
+}
+
+function failed(s: TestState): boolean {
+  const r = s.result;
+  return !!s.error || (!!r && [r.transport, r.integration].some((v) => v?.checks.some((c) => c.status === "fail")));
+}
+
+async function test(p: Profile_Serialize) {
+  const s = await profiles.test(p.id);
+  if (sshHosts(p).length && failed(s) && (await checkKeys(p)) === "trusted") await profiles.test(p.id);
+}
+
+async function checkSpace(p: Profile_Serialize) {
+  const s = await profiles.loadStorage(p.id, true);
+  if (sshHosts(p).length && s?.last_error && (await checkKeys(p)) === "trusted") await profiles.loadStorage(p.id, true);
+}
+
+/** Browsing needs the servers' keys first, as in the wizard. */
+async function browse(p: Profile_Serialize, open: (p: Profile_Serialize) => void) {
+  if (!sshHosts(p).length || (await checkKeys(p)) !== "refused") open(p);
 }
 
 async function doDelete() {
@@ -123,9 +179,9 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
             <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: $t(`webdav.modeShort.${nextcloudMode(p)}`) }) }}</span>
           </div>
           <div class="actions">
-            <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running" @click="profiles.test(p.id)">{{ $t("dest.test") }}</button>
-            <button class="btn btn-small" :title="$t('destinations.browseTip')" @click="browsing = p"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
-            <button class="btn btn-small" :title="$t('repair.buttonTip')" @click="repairing = p"><AppIcon name="renamed" /> {{ $t("repair.button") }}</button>
+            <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running || checkingKeys[p.id]" @click="test(p)">{{ $t("dest.test") }}</button>
+            <button class="btn btn-small" :title="$t('destinations.browseTip')" :disabled="checkingKeys[p.id]" @click="browse(p, (x) => (browsing = x))"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
+            <button class="btn btn-small" :title="$t('repair.buttonTip')" :disabled="checkingKeys[p.id]" @click="browse(p, (x) => (repairing = x))"><AppIcon name="renamed" /> {{ $t("repair.button") }}</button>
             <button
               v-if="sshKey(p)"
               class="btn btn-small"
@@ -139,7 +195,8 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
         </div>
         <p class="mono small muted ellipsis" :title="profileWhere(p)">{{ profileWhere(p) }}</p>
         <p v-if="sshKey(p) === 'remove'" class="small ok-text"><AppIcon name="key" :size="16" /> {{ $t("access.uses") }}</p>
-        <DestinationSpace :profile-id="p.id" class="space" />
+        <DestinationSpace :profile-id="p.id" class="space" :refresh="() => checkSpace(p)" />
+        <p v-if="checkingKeys[p.id]" class="small muted">{{ $t("hostKey.checking") }}</p>
         <p class="small muted">
           {{ $t(`profile.family.${p.target.family}`) }} · {{ p.target.case_sensitive ? $t("profile.caseSensitive") : $t("profile.caseInsensitive") }}
           <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
@@ -170,6 +227,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       @close="repairing = null"
     />
 
+    <HostKeyPrompt ref="hostKey" />
     <AccessDialog :profile="access?.profile ?? null" :action="access?.action ?? 'install'" @close="access = null" />
 
     <ConfirmDialog
