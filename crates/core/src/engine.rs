@@ -354,6 +354,7 @@ impl Engine {
         }
         let profile = self.get_profile(profile_id).await?;
         self.registry.check_profile(&profile)?;
+        self.check_target_dir(&profile, options.target_dir.as_deref())?;
         let mut roots = Vec::with_capacity(sources.len());
         for s in &sources {
             let abs = std::path::absolute(s)?;
@@ -392,11 +393,20 @@ impl Engine {
     /// in Draft, AwaitingApproval and Ready. The analysis and the decisions are kept.
     pub async fn set_options(&self, job_id: &str, options: SendOptions) -> Result<()> {
         let _job = self.begin(job_id, Op::SetOptions).await?;
+        let row = self.store.get_job(job_id).await?;
+        let profile = self.get_profile(&row.profile_id).await?;
+        self.check_target_dir(&profile, options.target_dir.as_deref())?;
+        let old: SendOptions = serde_json::from_value(row.options).unwrap_or_default();
+        let retarget = old.target_dir != options.target_dir;
         let options = serde_json::to_value(&options)?;
         self.store.set_job_options(job_id, options.clone()).await?;
         self.store
             .append_event(Some(job_id), "options", options)
             .await?;
+        // A new target folder moves the planned destinations (the Files tab shows them).
+        if retarget && !matches!(JobState::parse(&row.state)?, JobState::Draft) {
+            self.plan_destinations(job_id, &profile).await.ok();
+        }
         Ok(())
     }
 
@@ -493,9 +503,18 @@ impl Engine {
             self.store.insert_entries(&job_id, entries).await?;
             entries = rest;
         }
-        self.store
-            .set_dest_paths(&job_id, analysis.dest_paths)
-            .await?;
+        let options: SendOptions = serde_json::from_value(row.options.clone()).unwrap_or_default();
+        let dest_paths = analysis
+            .dest_paths
+            .into_iter()
+            .map(|(i, p)| {
+                (
+                    i,
+                    p.map(|p| crate::browse::under(options.target_dir.as_deref(), p)),
+                )
+            })
+            .collect();
+        self.store.set_dest_paths(&job_id, dest_paths).await?;
         self.store.insert_issues(&job_id, analysis.issues).await?;
         if let Some(from) = &row.again_of {
             self.carry_decisions(&job_id, from).await?;
@@ -803,6 +822,9 @@ impl Engine {
 
     /// Applies the decisions to the manifest: final destination paths and skipped entries.
     async fn plan_destinations(&self, job_id: &str, profile: &Profile) -> Result<()> {
+        let row = self.store.get_job(job_id).await?;
+        let options: SendOptions = serde_json::from_value(row.options).unwrap_or_default();
+        let target = options.target_dir;
         let names = self.registry.name_plan(profile)?;
         let entries = self.entries(job_id).await?;
         let decided: Vec<_> = self
@@ -816,7 +838,10 @@ impl Engine {
         let mut skipped = Vec::new();
         for (i, p) in planned.into_iter().enumerate() {
             match p {
-                Planned::Path(path) => dest.push((i as u64, Some(path))),
+                Planned::Path(path) => dest.push((
+                    i as u64,
+                    Some(crate::browse::under(target.as_deref(), path)),
+                )),
                 Planned::Skipped => skipped.push((i as u64, EntryState::Skipped, None)),
             }
         }

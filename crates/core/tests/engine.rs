@@ -9,10 +9,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
-    AppSettings, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter, EntryStatus, Event,
-    FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock, LogLevel, Profile,
-    ReclaimBlocker, Registry, ReportFormat, ReportRequest, ReportScope, SendOptions, SendWindow,
-    Store, StoreError, TargetSpec,
+    AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
+    EntryStatus, Event, FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock,
+    LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest, ReportScope,
+    SendOptions, SendWindow, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -810,6 +810,87 @@ async fn an_unverified_transfer_is_never_reclaimable() {
 }
 
 #[tokio::test]
+async fn folders_are_browsed_checked_and_sent_into() {
+    let s = setup().await;
+    let target = || BrowseTarget::Profile {
+        id: s.profile_id.clone(),
+    };
+    assert!(
+        s.engine
+            .browse(target(), None, None)
+            .await
+            .unwrap()
+            .folders
+            .is_empty()
+    );
+
+    // A folder name the destination would change is refused, with the fix.
+    let nfd = s
+        .engine
+        .check_folder_name(target(), "Vera\u{303}o".into())
+        .await
+        .unwrap();
+    assert!(!nfd.ok);
+    assert_eq!(nfd.proposed.as_deref(), Some("Ver\u{e3}o"));
+    assert!(
+        s.engine
+            .check_folder_name(target(), "2019".into())
+            .await
+            .unwrap()
+            .ok
+    );
+    let refused = s
+        .engine
+        .create_job(
+            vec![s.src.clone()],
+            &s.profile_id,
+            SendOptions {
+                target_dir: Some("Vera\u{303}o".into()),
+                ..SendOptions::default()
+            },
+        )
+        .await;
+    assert!(
+        refused.is_err(),
+        "a target folder the destination would rename"
+    );
+
+    // Sent into a folder that doesn't exist yet: the send creates it.
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            target_dir: Some("2019/Novas".into()),
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert!(dest_files(&s.dest).contains(&"2019/Novas/Acme/Fotos/Inverno.jpg".to_owned()));
+    let changed = s.integration.changed.lock().unwrap().clone();
+    assert!(
+        changed.iter().all(|p| p.starts_with("2019/Novas/")),
+        "{changed:?}"
+    );
+
+    let root = s.engine.browse(target(), None, None).await.unwrap();
+    assert_eq!(
+        root.folders
+            .iter()
+            .map(|f| f.name.as_str())
+            .collect::<Vec<_>>(),
+        ["2019"]
+    );
+    let inside = s
+        .engine
+        .browse(target(), Some("2019".into()), None)
+        .await
+        .unwrap();
+    assert_eq!(inside.segments, ["2019"]);
+    assert_eq!(inside.folders[0].path, "2019/Novas");
+}
+
+#[tokio::test]
 async fn collisions_wait_for_a_decision() {
     let s = setup().await;
     // Same visible name twice: NFC and NFD.
@@ -1139,6 +1220,7 @@ async fn options_change_until_the_job_is_sent() {
     let verify = SendOptions {
         verify: true,
         concurrency: 2,
+        target_dir: None,
     };
     // Draft.
     s.engine.set_options(&job, verify.clone()).await.unwrap();

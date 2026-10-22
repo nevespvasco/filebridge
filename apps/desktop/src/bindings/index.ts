@@ -24,14 +24,21 @@ export const commands = {
 	/**  A destination's space from its last check; `refresh` checks it first (network). */
 	profileStorage: (id: string, refresh: boolean) => typedError<StorageView_Serialize, ErrorBody>(__TAURI_INVOKE("profile_storage", { id, refresh })),
 	/**
+	 *  Folders inside `dir` of a profile's destination (or one being edited), at most 2000;
+	 *  `prefix` narrows by the start of the name.
+	 */
+	browse: (target: BrowseTarget_Deserialize, dir: string | null, prefix: string | null) => typedError<BrowseResult_Serialize, ErrorBody>(__TAURI_INVOKE("browse", { target, dir, prefix })),
+	/**  Whether a folder name is acceptable at the destination, and the fix if not. */
+	checkFolderName: (target: BrowseTarget_Deserialize, name: string) => typedError<FolderNameCheck_Serialize, ErrorBody>(__TAURI_INVOKE("check_folder_name", { target, name })),
+	/**
 	 *  Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
 	 *  Nextcloud on the SSH host itself). Saves the profile when every step passes.
 	 */
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
 	/**  A draft job; nothing is read from the sources yet. */
-	createJob: (sources: string[], profileId: string, options: SendOptions) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
+	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
-	setOptions: (jobId: string, options: SendOptions) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
+	setOptions: (jobId: string, options: SendOptions_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_options", { jobId, options })),
 	analyse: (jobId: string) => typedError<AnalysisSummary_Serialize, ErrorBody>(__TAURI_INVOKE("analyse", { jobId })),
 	/**  Per-rule counts; with `query`, only issues whose source path contains it. */
 	ruleCounts: (jobId: string, query: string | null) => typedError<RuleCount[], ErrorBody>(__TAURI_INVOKE("rule_counts", { jobId, query })),
@@ -106,7 +113,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 13 as const;
+export const PROTOCOL_VERSION = 14 as const;
 
 /* Types */
 /**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
@@ -211,6 +218,40 @@ export type BlockerView_Serialize = {
 	/**  How many files it concerns, when that is meaningful. */
 	count: number | null,
 };
+
+/**  The folders inside one destination folder (docs/design/specs/D11). */
+export type BrowseResult = BrowseResult_Serialize | BrowseResult_Deserialize;
+
+/**  The folders inside one destination folder (docs/design/specs/D11). */
+export type BrowseResult_Deserialize = {
+	/**  The listed folder, relative to the destination root ("" for the root). */
+	path: string,
+	/**  Its components, for breadcrumbs. */
+	segments: string[],
+	folders: RemoteEntryView_Deserialize[],
+	/**  More folders than were returned (refine with `prefix`). */
+	truncated: boolean,
+};
+
+/**  The folders inside one destination folder (docs/design/specs/D11). */
+export type BrowseResult_Serialize = {
+	/**  The listed folder, relative to the destination root ("" for the root). */
+	path: string,
+	/**  Its components, for breadcrumbs. */
+	segments: string[],
+	folders: RemoteEntryView_Serialize[],
+	/**  More folders than were returned (refine with `prefix`). */
+	truncated: boolean,
+};
+
+/**  What to browse: a saved profile's destination, or one being edited (not saved yet). */
+export type BrowseTarget = BrowseTarget_Serialize | BrowseTarget_Deserialize;
+
+/**  What to browse: a saved profile's destination, or one being edited (not saved yet). */
+export type BrowseTarget_Deserialize = { kind: "profile"; id: string } | { kind: "draft"; profile: Profile_Deserialize };
+
+/**  What to browse: a saved profile's destination, or one being edited (not saved yet). */
+export type BrowseTarget_Serialize = { kind: "profile"; id: string } | { kind: "draft"; profile: Profile_Serialize };
 
 /**  How many files of one Category a job has, and their size (docs/design/specs/D02). */
 export type CategoryCount = {
@@ -564,6 +605,27 @@ export type Family = "unix" | "windows" | "macos";
 
 export type FileCategory = "image" | "video" | "audio" | "document" | "archive" | "code" | "other";
 
+/**  Whether a folder name typed in the browser is acceptable at the destination, and the fix. */
+export type FolderNameCheck = FolderNameCheck_Serialize | FolderNameCheck_Deserialize;
+
+/**  Whether a folder name typed in the browser is acceptable at the destination, and the fix. */
+export type FolderNameCheck_Deserialize = {
+	ok: boolean,
+	/**  The name the destination would accept, when `name` isn't. */
+	proposed?: string | null,
+	/**  i18n key of the first rule that changed it. */
+	message_key?: string | null,
+};
+
+/**  Whether a folder name typed in the browser is acceptable at the destination, and the fix. */
+export type FolderNameCheck_Serialize = {
+	ok: boolean,
+	/**  The name the destination would accept, when `name` isn't. */
+	proposed: string | null,
+	/**  i18n key of the first rule that changed it. */
+	message_key: string | null,
+};
+
 export type HashView = {
 	algo: string,
 	hex: string,
@@ -719,7 +781,7 @@ export type JobSummary_Deserialize = {
 	finished_at?: number | null,
 	/**  Source roots, lossily decoded for display. */
 	sources: string[],
-	options: SendOptions,
+	options: SendOptions_Deserialize,
 	counts: Counts,
 	/**  The user's name for the job. */
 	label?: string | null,
@@ -740,7 +802,7 @@ export type JobSummary_Serialize = {
 	finished_at: number | null,
 	/**  Source roots, lossily decoded for display. */
 	sources: string[],
-	options: SendOptions,
+	options: SendOptions_Serialize,
 	counts: Counts,
 	/**  The user's name for the job. */
 	label: string | null,
@@ -900,6 +962,25 @@ export type RefusedIssue = {
 	reason: string,
 };
 
+/**  One folder at the destination. */
+export type RemoteEntryView = RemoteEntryView_Serialize | RemoteEntryView_Deserialize;
+
+/**  One folder at the destination. */
+export type RemoteEntryView_Deserialize = {
+	name: string,
+	/**  Relative to the destination root, `/`-separated. */
+	path: string,
+	mtime?: number | null,
+};
+
+/**  One folder at the destination. */
+export type RemoteEntryView_Serialize = {
+	name: string,
+	/**  Relative to the destination root, `/`-separated. */
+	path: string,
+	mtime: number | null,
+};
+
 export type ReportFormat = "csv" | "json";
 
 /**  What to write in a job's report, and where (docs/design/specs/D09). */
@@ -920,11 +1001,32 @@ export type RuleCount = {
 };
 
 /**  Per-job choices made in step 4 of the wizard. */
-export type SendOptions = {
+export type SendOptions = SendOptions_Serialize | SendOptions_Deserialize;
+
+/**  Per-job choices made in step 4 of the wizard. */
+export type SendOptions_Deserialize = {
 	/**  Compare SHA-256 of every file at the end (source vs destination). */
 	verify: boolean,
 	/**  Files in flight at once. */
 	concurrency: number,
+	/**
+	 *  Folder under the profile root this transfer goes into; `None` = the root
+	 *  (docs/design/specs/D11). Absent from options saved before it existed.
+	 */
+	target_dir?: string | null,
+};
+
+/**  Per-job choices made in step 4 of the wizard. */
+export type SendOptions_Serialize = {
+	/**  Compare SHA-256 of every file at the end (source vs destination). */
+	verify: boolean,
+	/**  Files in flight at once. */
+	concurrency: number,
+	/**
+	 *  Folder under the profile root this transfer goes into; `None` = the root
+	 *  (docs/design/specs/D11). Absent from options saved before it existed.
+	 */
+	target_dir: string | null,
 };
 
 /**

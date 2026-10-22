@@ -34,6 +34,9 @@ pub struct SendArgs {
     verify: bool,
     #[arg(long, default_value_t = 8)]
     concurrency: u32,
+    /// A folder under the destination's root to send into (created by the send).
+    #[arg(long)]
+    into: Option<String>,
     /// Don't ask before sending.
     #[arg(long, short)]
     yes: bool,
@@ -62,6 +65,7 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
             SendOptions {
                 verify: args.verify,
                 concurrency: args.concurrency,
+                target_dir: args.into,
             },
         )
         .await?;

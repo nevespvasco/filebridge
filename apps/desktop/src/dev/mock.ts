@@ -83,7 +83,7 @@ const jobs: JobSummary_Serialize[] = [
     updated_at: now - 80_000_000,
     finished_at: now - 80_000_000,
     sources: ["/home/demo/Documentos"],
-    options: { verify: true, concurrency: 8 },
+    options: { verify: true, concurrency: 8, target_dir: null },
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
     label: "Documentos do escritório",
     again_of: null,
@@ -309,6 +309,24 @@ function matchingEntries(job: JobSummary_Serialize, filter: EntryFilter) {
   if (filter.sort === "problems_first") out.sort((a, b) => rank(a) - rank(b) || a.idx - b.idx);
   return { out, rank };
 }
+
+/** A destination's folders, for the browser (docs/design/specs/D11). */
+const FOLDERS: Record<string, string[]> = {
+  "": ["Backup", "Documentos", "Fotos 2", "Fotos 10", "Fotos 2019", "Música"],
+  Backup: ["2018", "2019", "2020"],
+  "Backup/2018": [],
+  "Backup/2019": ["Verão", "Natal"],
+  "Backup/2019/Verão": [],
+  "Backup/2019/Natal": [],
+  "Backup/2020": [],
+  Documentos: ["Contratos", "Recibos"],
+  "Documentos/Contratos": [],
+  "Documentos/Recibos": [],
+  "Fotos 2": [],
+  "Fotos 10": [],
+  "Fotos 2019": [],
+  Música: [],
+};
 
 /** The job groups, as the engine defines them (docs/design/specs/D06). */
 const GROUPS: Record<JobGroup, JobState[]> = {
@@ -737,6 +755,21 @@ const handlers: Handlers = {
       error: view.status === "failed" ? "permission denied" : null,
     };
     return detail;
+  },
+  browse: async (a) => {
+    await sleep(250);
+    const dir = ((a.dir as string | null) ?? "").replace(/^\/+|\/+$/g, "");
+    if (!(dir in FOLDERS)) throw fail("not_found", `${dir} not found`);
+    const prefix = ((a.prefix as string | null) ?? "").toLowerCase();
+    const folders = FOLDERS[dir]
+      .filter((n) => !prefix || n.toLowerCase().startsWith(prefix))
+      .map((name, i) => ({ name, path: dir ? `${dir}/${name}` : name, mtime: now - (i + 1) * 86_400_000 * 3 }));
+    return { path: dir, segments: dir ? dir.split("/") : [], folders, truncated: false };
+  },
+  checkFolderName: (a) => {
+    const name = a.name as string;
+    const fixed = name.normalize("NFC").replace(/[<>:"\\|?*]/g, "_").replace(/[ .]+$/, "");
+    return fixed === name && name ? { ok: true, proposed: null, message_key: null } : { ok: false, proposed: fixed || null, message_key: "names.forbidden-chars" };
   },
   profileStorage: async (a) => {
     if (a.refresh) {

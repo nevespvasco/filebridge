@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use filebridge_transport_api::{
     Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome, PreflightReport,
-    ProgressEvent, ProgressSink, RemotePath, Result, TransferJob, TransferResult, Transport,
-    TransportCaps, TransportError,
+    ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, TransferJob, TransferResult,
+    Transport, TransportCaps, TransportError,
 };
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
@@ -281,6 +281,7 @@ impl Transport for RcloneTransport {
             | TransportCaps::HASH_SHA256
             | TransportCaps::RENAME
             | TransportCaps::PARTIAL_HIDDEN
+            | TransportCaps::LIST
     }
 
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport> {
@@ -317,6 +318,49 @@ impl Transport for RcloneTransport {
             message: "write permission is not probed yet (Phase 1)".into(),
         });
         Ok(report)
+    }
+
+    async fn list(
+        &self,
+        dest: &Destination,
+        dir: Option<&RemotePath>,
+        dirs_only: bool,
+    ) -> Result<Vec<RemoteEntry>> {
+        let v = self
+            .rc()
+            .call(
+                "operations/list",
+                json!({
+                    "fs": dest_fs(dest, "")?,
+                    "remote": dir.map_or("", RemotePath::as_str),
+                    "opt": { "dirsOnly": dirs_only },
+                }),
+            )
+            .await?;
+        let mut out: Vec<RemoteEntry> = v
+            .get("list")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| {
+                Some(RemoteEntry {
+                    name: e.get("Name")?.as_str()?.to_owned(),
+                    is_dir: e.get("IsDir").and_then(Value::as_bool).unwrap_or(false),
+                    size: e
+                        .get("Size")
+                        .and_then(Value::as_i64)
+                        .and_then(|s| u64::try_from(s).ok()),
+                    mtime: e
+                        .get("ModTime")
+                        .and_then(Value::as_str)
+                        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                        .map(|t| t.timestamp_millis()),
+                })
+            })
+            .filter(|e| !dirs_only || e.is_dir)
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
     }
 
     async fn transfer(

@@ -13,8 +13,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_transport_api::{
     Destination, Digest, HashAlgo, InFlight, ItemOutcome, PreflightReport, ProgressEvent,
-    ProgressSink, RemotePath, Result, StatsSnapshot, TransferJob, TransferResult, Transport,
-    TransportCaps, TransportError,
+    ProgressSink, RemoteEntry, RemotePath, Result, StatsSnapshot, TransferJob, TransferResult,
+    Transport, TransportCaps, TransportError,
 };
 use sha2::{Digest as _, Sha256};
 
@@ -58,7 +58,10 @@ impl Transport for FakeTransport {
     }
 
     fn capabilities(&self) -> TransportCaps {
-        TransportCaps::RESUME | TransportCaps::HASH_SHA256 | TransportCaps::RENAME
+        TransportCaps::RESUME
+            | TransportCaps::HASH_SHA256
+            | TransportCaps::RENAME
+            | TransportCaps::LIST
     }
 
     async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
@@ -160,6 +163,44 @@ impl Transport for FakeTransport {
             algo,
             bytes: Sha256::digest(&data).to_vec(),
         })
+    }
+
+    async fn list(
+        &self,
+        dest: &Destination,
+        dir: Option<&RemotePath>,
+        dirs_only: bool,
+    ) -> Result<Vec<RemoteEntry>> {
+        let path = match dir {
+            Some(d) => Path::new(&dest.root).join(d.as_str()),
+            None => Path::new(&dest.root).to_path_buf(),
+        };
+        let read = std::fs::read_dir(&path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                TransportError::not_found(format!("{}: {e}", path.display()))
+            }
+            _ => io_error("list", e),
+        })?;
+        let mut out = Vec::new();
+        for item in read {
+            let item = item.map_err(|e| io_error("list", e))?;
+            let meta = item.metadata().map_err(|e| io_error("list", e))?;
+            if dirs_only && !meta.is_dir() {
+                continue;
+            }
+            out.push(RemoteEntry {
+                name: item.file_name().to_string_lossy().into_owned(),
+                is_dir: meta.is_dir(),
+                size: meta.is_file().then_some(meta.len()),
+                mtime: meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_millis() as i64),
+            });
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(out)
     }
 
     async fn set_bandwidth_limit(&self, bytes_per_sec: Option<u64>) -> Result<()> {

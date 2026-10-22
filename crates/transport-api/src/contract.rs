@@ -102,6 +102,38 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
     done.sort_unstable();
     assert_eq!(done, [0, 1, 2], "ItemDone for every file that arrived");
 
+    // Listing, for adapters that say they can: what was sent is there, folders only on request,
+    // and a folder that isn't there is NotFound.
+    if transport.capabilities().contains(TransportCaps::LIST) {
+        let top = transport.list(dest, None, false).await.unwrap();
+        for name in ["a.txt", "deep", "Fotos"] {
+            assert!(
+                top.iter().any(|e| e.name == name),
+                "{name} at the root: {top:?}"
+            );
+        }
+        let dirs = transport.list(dest, None, true).await.unwrap();
+        assert!(dirs.iter().all(|e| e.is_dir), "folders only: {dirs:?}");
+        assert!(dirs.iter().any(|e| e.name == "deep"));
+        let inside = transport
+            .list(dest, Some(&RemotePath::new("deep/er").unwrap()), false)
+            .await
+            .unwrap();
+        assert_eq!(
+            inside.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            ["b.bin"]
+        );
+        let missing = transport
+            .list(
+                dest,
+                Some(&RemotePath::new("no-such-folder").unwrap()),
+                false,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(missing.kind, ErrorKind::NotFound, "{missing:?}");
+    }
+
     let caps = transport.capabilities();
     if caps.contains(TransportCaps::HASH_SHA256) {
         for (_, data, to) in files {

@@ -46,7 +46,8 @@
     "optional": "opcional",
     "clear": "Limpar",
     "close": "Fechar",
-    "dismiss": "Dispensar"
+    "dismiss": "Dispensar",
+    "add": "Adicionar"
   },
   "status": {
     "ok": "OK",
@@ -458,7 +459,9 @@
     "deleteJobs": "Os envios que o usaram mantêm o histórico, mas não podem ser retomados sem ele.",
     "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada nova transferência.",
     "emptyHint": "Crie o seu primeiro destino: um disco externo, um servidor (SFTP) ou o Nextcloud.",
-    "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado."
+    "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado.",
+    "browse": "Explorar",
+    "browseTip": "Ver as pastas deste destino (nada é alterado)"
   },
   "profile": {
     "kind": "Tipo de destino",
@@ -519,7 +522,9 @@
       "remoteFolder": "Caminho completo no servidor, p. ex. /volume1/backup",
       "keyFile": "Vazio = o agente SSH deste computador (o caso habitual)",
       "knownHosts": "Vazio = ~/.ssh/known_hosts",
-      "target": "Na dúvida, mantenha a sugestão: Windows e macOS desligam “distingue maiúsculas” sozinhos."
+      "target": "Na dúvida, mantenha a sugestão: Windows e macOS desligam “distingue maiúsculas” sozinhos.",
+      "browseServer": "Ver as pastas do servidor e escolher uma",
+      "browseNeedsHost": "Preencha primeiro o servidor"
     }
   },
   "nextcloud": {
@@ -863,6 +868,31 @@
       "changed": "{n} ficheiro mudou na origem depois da transferência. | {n} ficheiros são novos ou mudaram na origem depois da transferência.",
       "stale_check": "A última verificação da origem tem mais de um dia.",
       "source_unavailable": "A origem não está disponível. Ligue o disco para a verificar."
+    }
+  },
+  "browse": {
+    "title": "Escolher uma pasta em {destination}",
+    "root": "Raiz",
+    "where": "Pasta",
+    "folders": "Pastas",
+    "count": "{n} pasta | {n} pastas",
+    "filter": "Filtrar pastas…",
+    "truncated": "A mostrar as primeiras {n}. Escreva o início de um nome e prima Enter para encontrar as outras.",
+    "empty": "Não há pastas aqui.",
+    "open": "Abrir {name}",
+    "newFolder": "Nova pasta…",
+    "newName": "Nome da nova pasta",
+    "willCreate": "(será criada)",
+    "badName": "O destino não aceita \"{name}\".",
+    "useProposal": "Usar \"{name}\"",
+    "into": "Os ficheiros vão para:",
+    "choose": "Escolher esta pasta"
+  },
+  "step": {
+    "dest": {
+      "sendInto": "Enviar para:",
+      "change": "Mudar…",
+      "root": "Usar a raiz"
     }
   }
 }

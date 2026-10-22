@@ -2,7 +2,8 @@
 // New destination: a local folder, an SFTP server, or Nextcloud in direct mode.
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref } from "vue";
-import type { Backend_Deserialize, Family, Profile_Serialize } from "@/bindings";
+import type { Backend_Deserialize, Family, Profile_Deserialize, Profile_Serialize } from "@/bindings";
+import FolderBrowser from "./FolderBrowser.vue";
 import { errorMessage } from "@/lib/api";
 import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
@@ -53,11 +54,9 @@ async function pick(field: "root" | "key_file") {
   if (p) form[field] = p;
 }
 
-async function save() {
-  saving.value = true;
-  error.value = null;
-  try {
-    const backend: Backend_Deserialize =
+/** The profile the form describes (not saved). */
+function build(root: string): Profile_Deserialize {
+  const backend: Backend_Deserialize =
       kind.value === "sftp"
         ? {
             kind: "sftp",
@@ -69,14 +68,29 @@ async function save() {
             password: null,
           }
         : { kind: "local" };
-    const saved = await profiles.save({
-      id: "",
-      name: form.name.trim(),
-      destination: { transport: "rclone", backend, root: form.root.trim() },
-      integration: null,
-      integration_settings: null,
-      target: { family: form.family, case_sensitive: form.case_sensitive },
-    });
+  return {
+    id: "",
+    name: form.name.trim(),
+    destination: { transport: "rclone", backend, root },
+    integration: null,
+    integration_settings: null,
+    target: { family: form.family, case_sensitive: form.case_sensitive },
+  };
+}
+
+// Browse the server for the root, before the profile exists (docs/design/specs/D11).
+const browsing = ref(false);
+const canBrowse = computed(() => kind.value === "sftp" && !!form.host.trim());
+function chooseRoot(path: string) {
+  form.root = `/${path}`;
+  browsing.value = false;
+}
+
+async function save() {
+  saving.value = true;
+  error.value = null;
+  try {
+    const saved = await profiles.save(build(form.root.trim()));
     emit("saved", saved);
   } catch (e) {
     error.value = errorMessage(e);
@@ -149,6 +163,7 @@ async function save() {
           <span class="with-button">
             <input v-model="form.root" required spellcheck="false" :placeholder="kind === 'local' ? '/media/disco/Backup' : '/srv/backup'" />
             <button v-if="kind === 'local'" type="button" class="btn btn-small" :title="$t('profile.hint.browse')" @click="pick('root')"><AppIcon name="folder" /> {{ $t("common.browse") }}</button>
+            <button v-else-if="kind === 'sftp'" type="button" class="btn btn-small" :disabled="!canBrowse" :title="canBrowse ? $t('profile.hint.browseServer') : $t('profile.hint.browseNeedsHost')" @click="browsing = true"><AppIcon name="folder" /> {{ $t("common.browse") }}</button>
           </span>
           <span v-if="rootNotAbsolute" class="hint error">{{ $t("profile.slashRule") }}</span>
           <span v-else class="hint">{{ kind === "local" ? $t("profile.hint.folder") : $t("profile.hint.remoteFolder") }}</span>
@@ -200,6 +215,14 @@ async function save() {
         <button type="submit" class="btn btn-primary" :disabled="!valid || saving">{{ $t("profile.save") }}</button>
       </div>
     </form>
+    <FolderBrowser
+      :target="browsing ? { kind: 'draft', profile: build('/') } : null"
+      :title="$t('browse.title', { destination: form.host })"
+      :start="form.root.replace(/^\/+/, '')"
+      :choose-label="$t('browse.choose')"
+      @choose="chooseRoot"
+      @close="browsing = false"
+    />
   </div>
 </template>
 

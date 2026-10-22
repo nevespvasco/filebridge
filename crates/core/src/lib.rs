@@ -6,6 +6,7 @@
 
 mod analyse;
 pub mod backoff;
+mod browse;
 mod decisions;
 mod engine;
 mod files;
@@ -23,13 +24,13 @@ mod transfers;
 pub use engine::{Engine, EngineOptions};
 /// The shared types and rules, so `core`'s callers keep their paths.
 pub use filebridge_model::{
-    AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, DoneView,
-    EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
-    EntryView, Event, ExportResult, Family, FileCategory, InFlightView, IssueDecision,
-    IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary,
-    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker,
-    ReclaimStatus, ReportFormat, ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow,
-    StorageView, TargetSpec, UnknownValue, job_operations,
+    AnalysisSummary, AppSettings, BrowseResult, BrowseTarget, CategoryCount, CheckView, Counts,
+    DecisionInput, DoneView, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
+    EntrySort, EntryStatus, EntryView, Event, ExportResult, Family, FileCategory, FolderNameCheck,
+    InFlightView, IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage,
+    JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile, ProfileTest,
+    RecentSource, ReclaimBlocker, ReclaimStatus, ReportFormat, ReportRequest, ReportScope,
+    RuleCount, SendOptions, SendWindow, StorageView, TargetSpec, UnknownValue, job_operations,
 };
 pub use registry::Registry;
 pub use settings::LocalClock;

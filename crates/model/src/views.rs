@@ -12,6 +12,10 @@ pub struct SendOptions {
     pub verify: bool,
     /// Files in flight at once.
     pub concurrency: u32,
+    /// Folder under the profile root this transfer goes into; `None` = the root
+    /// (docs/design/specs/D11). Absent from options saved before it existed.
+    #[serde(default)]
+    pub target_dir: Option<String>,
 }
 
 impl Default for SendOptions {
@@ -19,6 +23,7 @@ impl Default for SendOptions {
         Self {
             verify: false,
             concurrency: 8,
+            target_dir: None,
         }
     }
 }
@@ -412,3 +417,42 @@ pub struct ReclaimStatus {
 
 /// A re-check of a job's sources is good for this long.
 pub const RECLAIM_CHECK_FRESH_MS: i64 = 24 * 3_600_000;
+
+/// What to browse: a saved profile's destination, or one being edited (not saved yet).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowseTarget {
+    Profile { id: String },
+    Draft { profile: Box<crate::Profile> },
+}
+
+/// One folder at the destination.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RemoteEntryView {
+    pub name: String,
+    /// Relative to the destination root, `/`-separated.
+    pub path: String,
+    pub mtime: Option<i64>,
+}
+
+/// The folders inside one destination folder (docs/design/specs/D11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct BrowseResult {
+    /// The listed folder, relative to the destination root ("" for the root).
+    pub path: String,
+    /// Its components, for breadcrumbs.
+    pub segments: Vec<String>,
+    pub folders: Vec<RemoteEntryView>,
+    /// More folders than were returned (refine with `prefix`).
+    pub truncated: bool,
+}
+
+/// Whether a folder name typed in the browser is acceptable at the destination, and the fix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct FolderNameCheck {
+    pub ok: bool,
+    /// The name the destination would accept, when `name` isn't.
+    pub proposed: Option<String>,
+    /// i18n key of the first rule that changed it.
+    pub message_key: Option<String>,
+}

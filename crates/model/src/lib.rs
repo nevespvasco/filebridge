@@ -27,10 +27,11 @@ pub use rules::{JobGroup, Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use state::{JobKind, JobState};
 pub use views::{
-    AnalysisSummary, BlockerView, CategoryCount, CheckView, Counts, DecideManyResult,
-    DecisionInput, DoneView, InFlightView, IssueDecision, IssueSeverity, IssueView, JobFilter,
-    JobPage, JobSort, JobSummary, LOW_SPACE_BYTES, LOW_SPACE_RATIO, PreflightView, ProfileTest,
-    RECLAIM_CHECK_FRESH_MS, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue, RuleCount,
+    AnalysisSummary, BlockerView, BrowseResult, BrowseTarget, CategoryCount, CheckView, Counts,
+    DecideManyResult, DecisionInput, DoneView, FolderNameCheck, InFlightView, IssueDecision,
+    IssueSeverity, IssueView, JobFilter, JobPage, JobSort, JobSummary, LOW_SPACE_BYTES,
+    LOW_SPACE_RATIO, PreflightView, ProfileTest, RECLAIM_CHECK_FRESH_MS, RecentSource,
+    ReclaimBlocker, ReclaimStatus, RefusedIssue, RemoteEntryView, RuleCount,
     STORAGE_STALE_AFTER_MS, SendOptions, SourceReclaim, SpaceView, StorageView,
 };
 

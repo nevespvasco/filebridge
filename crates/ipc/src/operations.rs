@@ -25,6 +25,11 @@ macro_rules! for_each_operation {
             TestProfile test_profile(id: String) -> $crate::ProfileTest;
             /// A destination's space from its last check; `refresh` checks it first (network).
             ProfileStorage profile_storage(id: String, refresh: bool) -> $crate::StorageView;
+            /// Folders inside `dir` of a profile's destination (or one being edited), at most 2000;
+            /// `prefix` narrows by the start of the name.
+            Browse browse(target: $crate::BrowseTarget, dir: Option<String>, prefix: Option<String>) -> $crate::BrowseResult;
+            /// Whether a folder name is acceptable at the destination, and the fix if not.
+            CheckFolderName check_folder_name(target: $crate::BrowseTarget, name: String) -> $crate::FolderNameCheck;
             /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
             /// Nextcloud on the SSH host itself). Saves the profile when every step passes.
             DetectNextcloud detect_nextcloud(req: $crate::DetectNextcloudRequest) -> $crate::DetectNextcloudResponse;

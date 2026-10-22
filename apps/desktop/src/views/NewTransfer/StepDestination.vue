@@ -2,6 +2,7 @@
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref } from "vue";
 import type { Profile_Serialize } from "@/bindings";
+import FolderBrowser from "@/components/FolderBrowser.vue";
 import ProfileForm from "@/components/ProfileForm.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
@@ -23,6 +24,8 @@ onMounted(async () => {
 });
 
 function choose(p: Profile_Serialize) {
+  // A folder of another destination means nothing here.
+  if (wizard.profileId !== p.id) wizard.options = { ...wizard.options, target_dir: null };
   wizard.profileId = p.id;
   if (!profiles.tests[p.id]) void profiles.test(p.id);
 }
@@ -32,6 +35,13 @@ function onSaved(p: Profile_Serialize) {
   choose(p);
 }
 
+// Where in the destination this transfer goes (docs/design/specs/D11): the root, or a folder under it.
+const browsing = ref(false);
+const selectedProfile = computed(() => (wizard.profileId ? profiles.byId[wizard.profileId] : undefined));
+function chooseFolder(path: string) {
+  wizard.options = { ...wizard.options, target_dir: path || null };
+  browsing.value = false;
+}
 const selectedTest = computed(() => (wizard.profileId ? profiles.tests[wizard.profileId] : undefined));
 const failing = computed(() =>
   [selectedTest.value?.result?.transport, selectedTest.value?.result?.integration].some((v) => v?.checks.some((c) => c.status === "fail")),
@@ -89,6 +99,21 @@ const details = computed(() => [
 
     <ProfileForm v-if="creating" class="form" @saved="onSaved" @cancel="creating = false" />
 
+    <div v-if="selectedProfile && !creating" class="card into">
+      <span class="small muted">{{ $t("step.dest.sendInto") }}</span>
+      <span class="path">{{ selectedProfile.destination.root.replace(/\/+$/, "") }}/{{ wizard.options.target_dir ?? "" }}</span>
+      <button class="btn btn-small" @click="browsing = true"><AppIcon name="reveal" /> {{ $t("step.dest.change") }}</button>
+      <button v-if="wizard.options.target_dir" class="btn btn-small" @click="chooseFolder('')">{{ $t("step.dest.root") }}</button>
+    </div>
+    <FolderBrowser
+      :target="browsing && selectedProfile ? { kind: 'profile', id: selectedProfile.id } : null"
+      :title="$t('browse.title', { destination: selectedProfile?.name ?? '' })"
+      :start="wizard.options.target_dir"
+      :choose-label="$t('browse.choose')"
+      @choose="chooseFolder"
+      @close="browsing = false"
+    />
+
     <div v-if="selectedTest && !creating" class="card test">
       <div class="test-head">
         <strong>{{ $t("dest.test") }}<HelpTip :text="$t('dest.testTip')" :label="$t('dest.test')" /></strong>
@@ -114,6 +139,8 @@ const details = computed(() => [
 </template>
 
 <style scoped>
+.into { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+.into .path { flex: 1; min-width: 0; }
 .profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
 .profile {
   all: unset;

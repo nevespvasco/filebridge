@@ -1,6 +1,6 @@
 # D11 — Destination folder browser
 
-- ID: D11 · Status: Proposed · Phase: 2 (the listing contract is also what Repair destination
+- ID: D11 · Status: **Built** · Phase: 2 (the listing contract is also what Repair destination
   needs in Phase 2)
 - Inspired by: F9 (Vault & Vine breadcrumbs INTERNAL › DOCUMENTS › WORK and an item count),
   D5 (folder cards), A3 (back navigation)
@@ -88,6 +88,18 @@ Files will go into:  demo/Backup/2019/Fotos-novas   (will be created)
     plan.
 - The window never builds paths by string concatenation. The service returns the canonical
   `path` of every listed folder.
+
+### As built
+
+- `BrowseTarget::Draft` carries a whole `Profile` (not only a `Destination`), so a draft
+  Nextcloud or SFTP profile browses with its own name rules and transport.
+- The target folder prefixes destination paths both at analysis (the Files tab shows them) and
+  at Send (`plan_destinations`); changing it on an analysed job re-plans them. It is checked on
+  `create_job` and `set_options`: a relative path whose every folder name the destination accepts
+  as it is.
+- The CLI's `send` gets `--into <folder>`.
+- Real rclone passes the listing part of the contract suite (`operations/list`, `dirsOnly`;
+  "directory not found" → `NotFound`).
 
 ## States
 

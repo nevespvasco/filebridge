@@ -18,7 +18,7 @@ export type Step = 1 | 2 | 3 | 4 | 5;
 
 function defaultOptions(): SendOptions {
   // Verifying by checksum is the safe default for a one-off migration.
-  return { verify: true, concurrency: 8 };
+  return { verify: true, concurrency: 8, target_dir: null };
 }
 
 export const useWizard = defineStore("wizard", () => {

@@ -46,7 +46,8 @@
     "optional": "optional",
     "clear": "Clear",
     "close": "Close",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "add": "Add"
   },
   "status": {
     "ok": "OK",
@@ -458,7 +459,9 @@
     "deleteJobs": "Transfers that used it keep their history, but can't be resumed without it.",
     "intro": "The places you send files to. Save each one once, then pick it in every new transfer.",
     "emptyHint": "Create your first destination: an external disk, a server (SFTP) or Nextcloud.",
-    "deleteTip": "Forget this destination. No files are deleted."
+    "deleteTip": "Forget this destination. No files are deleted.",
+    "browse": "Browse",
+    "browseTip": "See the folders at this destination (nothing is changed)"
   },
   "profile": {
     "kind": "Kind of destination",
@@ -519,7 +522,9 @@
       "remoteFolder": "Full path on the server, e.g. /volume1/backup",
       "keyFile": "Empty = the SSH agent of this computer (the usual case)",
       "knownHosts": "Empty = ~/.ssh/known_hosts",
-      "target": "If unsure, keep the suggestion: Windows and macOS turn off “case-sensitive” by themselves."
+      "target": "If unsure, keep the suggestion: Windows and macOS turn off “case-sensitive” by themselves.",
+      "browseServer": "Look at the server's folders and pick one",
+      "browseNeedsHost": "Fill in the server first"
     }
   },
   "nextcloud": {
@@ -863,6 +868,31 @@
       "changed": "{n} file changed at the source after the transfer. | {n} files are new or changed at the source after the transfer.",
       "stale_check": "The last check of the source is more than a day old.",
       "source_unavailable": "The source isn't there now. Connect the disk to check it."
+    }
+  },
+  "browse": {
+    "title": "Choose a folder on {destination}",
+    "root": "Root",
+    "where": "Folder",
+    "folders": "Folders",
+    "count": "{n} folder | {n} folders",
+    "filter": "Filter folders…",
+    "truncated": "Showing the first {n}. Type the start of a name and press Enter to find the rest.",
+    "empty": "No folders here.",
+    "open": "Open {name}",
+    "newFolder": "New folder…",
+    "newName": "Name of the new folder",
+    "willCreate": "(will be created)",
+    "badName": "The destination can't store \"{name}\".",
+    "useProposal": "Use \"{name}\"",
+    "into": "Files will go into:",
+    "choose": "Choose this folder"
+  },
+  "step": {
+    "dest": {
+      "sendInto": "Send into:",
+      "change": "Change…",
+      "root": "Use the root"
     }
   }
 }

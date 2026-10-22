@@ -8,11 +8,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_ipc::{
-    ActivityItem, AnalysisSummary, AppSettings, CategoryCount, DecideManyResult, DecisionInput,
-    DetectNextcloudRequest, DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets,
-    EntryFilter, EntryPage, ErrorBody, ExportResult, Handler, IssueView, JobFilter, JobPage,
-    JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource,
-    ReclaimStatus, ReportRequest, RuleCount, SendOptions, StorageView,
+    ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget, CategoryCount,
+    DecideManyResult, DecisionInput, DetectNextcloudRequest, DetectNextcloudResponse, EntryCursor,
+    EntryDetail, EntryFacets, EntryFilter, EntryPage, ErrorBody, ExportResult, FolderNameCheck,
+    Handler, IssueView, JobFilter, JobPage, JobSummary, LogEntry, Operations, PROTOCOL_VERSION,
+    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
+    StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -206,6 +207,25 @@ impl Operations for EngineOperations {
 
     async fn job(&self, job_id: String) -> Res<JobSummary> {
         self.engine.job(&job_id).await.map_err(to_error)
+    }
+
+    async fn browse(
+        &self,
+        target: BrowseTarget,
+        dir: Option<String>,
+        prefix: Option<String>,
+    ) -> Res<BrowseResult> {
+        self.engine
+            .browse(target, dir, prefix)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn check_folder_name(&self, target: BrowseTarget, name: String) -> Res<FolderNameCheck> {
+        self.engine
+            .check_folder_name(target, name)
+            .await
+            .map_err(to_error)
     }
 
     async fn profile_storage(&self, id: String, refresh: bool) -> Res<StorageView> {

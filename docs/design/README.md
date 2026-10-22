@@ -31,7 +31,7 @@ ADR that records it.
 | D08 | [Issue selection](specs/D08-issue-selection.md) — **Built** | 2 | UI, `store`, `ipc` |
 | D09 | [Report export](specs/D09-report-export.md) — **Built** | 2 | UI, `core`, `store`, `ipc` |
 | D10 | [Reclaimable source](specs/D10-reclaimable-source.md) — **Built** | 2 | UI, `core`, `store` (migration), `ipc` — [ADR 0011](../adr/0011-reclaimable-source-is-shown-never-freed.md) |
-| D11 | [Destination folder browser](specs/D11-destination-browser.md) | 2 | UI, `transport-api` (new method), `transport-rclone`, `transport-fake`, `core`, `ipc` |
+| D11 | [Destination folder browser](specs/D11-destination-browser.md) — **Built** | 2 | UI, `transport-api` (new method), `transport-rclone`, `transport-fake`, `core`, `ipc` |
 
 The design-system foundation ([01](01-design-system.md)) and the navigation
 ([02](02-information-architecture.md)) go first, in Phase 1, because every spec builds on them.

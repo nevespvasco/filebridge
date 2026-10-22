@@ -80,6 +80,8 @@ bitflags::bitflags! {
         const CHMOD = 1 << 4;
         const RENAME = 1 << 5;
         const PARTIAL_HIDDEN = 1 << 6;
+        /// `Transport::list` works (docs/design/specs/D11).
+        const LIST = 1 << 7;
     }
 }
 
@@ -274,6 +276,18 @@ pub struct InFlight {
     pub eta_secs: Option<u64>,
 }
 
+/// One entry of a destination folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteEntry {
+    /// One path component, as the destination stores it.
+    pub name: String,
+    pub is_dir: bool,
+    /// Files only.
+    pub size: Option<u64>,
+    /// Unix ms, when known.
+    pub mtime: Option<i64>,
+}
+
 /// Point-in-time transfer statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StatsSnapshot {
@@ -342,6 +356,19 @@ pub trait Transport: Send + Sync {
     /// The file's hash at the destination. `NotFound` if it isn't there; `Unsupported` if the
     /// destination can't produce this kind of hash.
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
+    /// The entries directly inside `dir` (the destination root when `None`); only folders with
+    /// `dirs_only`. `NotFound` if `dir` isn't there. Adapters that implement it advertise
+    /// [`TransportCaps::LIST`]; the default answers `Unsupported`.
+    async fn list(
+        &self,
+        _dest: &Destination,
+        _dir: Option<&RemotePath>,
+        _dirs_only: bool,
+    ) -> Result<Vec<RemoteEntry>> {
+        Err(TransportError::unsupported(
+            "listing folders is not supported by this transport",
+        ))
+    }
     /// The most this transport may use, in bytes per second across all its transfers at once,
     /// including ones already running; `None` lifts the limit. Default: no limit to apply.
     async fn set_bandwidth_limit(&self, _bytes_per_sec: Option<u64>) -> Result<()> {

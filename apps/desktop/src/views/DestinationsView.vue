@@ -5,6 +5,7 @@ import { useI18n } from "vue-i18n";
 import type { Profile_Serialize } from "@/bindings";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
+import FolderBrowser from "@/components/FolderBrowser.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import PreflightList from "@/components/PreflightList.vue";
@@ -16,6 +17,8 @@ import { profileKind, profileWhere, useProfiles } from "@/stores/profiles";
 const profiles = useProfiles();
 const { t } = useI18n();
 const creating = ref(false);
+/** The destination being browsed (look only). */
+const browsing = ref<Profile_Serialize | null>(null);
 const deleting = ref<Profile_Serialize | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
@@ -91,6 +94,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
           </div>
           <div class="actions">
             <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running" @click="profiles.test(p.id)">{{ $t("dest.test") }}</button>
+            <button class="btn btn-small" :title="$t('destinations.browseTip')" @click="browsing = p"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
             <button class="btn btn-small btn-danger" :title="$t('destinations.deleteTip')" @click="deleting = p">{{ $t("common.delete") }}</button>
           </div>
         </div>
@@ -112,6 +116,11 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
     </div>
 
     <DetailsPanel :lines="details" />
+    <FolderBrowser
+      :target="browsing ? { kind: 'profile', id: browsing.id } : null"
+      :title="$t('browse.title', { destination: browsing?.name ?? '' })"
+      @close="browsing = null"
+    />
 
     <ConfirmDialog
       :open="!!deleting"
