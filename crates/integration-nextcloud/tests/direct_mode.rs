@@ -89,7 +89,7 @@ fn drain(rx: &mut UnboundedReceiver<IntegrationEvent>) -> Vec<IntegrationEvent> 
 }
 
 fn scan_cmd(path: &str) -> String {
-    profile().occ_cmd(&["files:scan", "-v", &format!("--path={path}")])
+    profile().occ_cmd_stop_on_eof(&["files:scan", "-v", &format!("--path={path}")])
 }
 
 #[tokio::test]
@@ -212,8 +212,12 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
     let find = format!(
         "find {targets} -maxdepth 0 -type d -exec chmod 750 '{{}}' + -o -type f -exec chmod 640 '{{}}' +"
     );
-    let scan = "pct exec 105 -- su -s /bin/bash www-data -c \
-        'php /var/www/nextcloud/occ files:scan -v --path=alice/files/Fotos'";
+    // `occ` runs in the background; a watcher on the SSH channel (stdin) stops it on EOF.
+    let scan = "pct exec 105 -- su -s /bin/bash www-data -c 'exec 3<&0; \
+        php /var/www/nextcloud/occ files:scan -v --path=alice/files/Fotos </dev/null & p=$!; w=; \
+        if [ -p /dev/stdin ] || [ -S /dev/stdin ]; then \
+        (while read -r l; do :; done <&3; kill -TERM $p) >/dev/null 2>&1 & w=$!; fi; \
+        wait $p; s=$?; [ -z \"$w\" ] || kill $w 2>/dev/null; exit $s'";
     assert_eq!(scan, scan_cmd("alice/files/Fotos"));
     shell
         .on(chown.clone(), Output::ok(""))

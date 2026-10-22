@@ -523,9 +523,9 @@ impl Scan<'_> {
         };
         let scan_path = rel_join(&format!("{}/files", self.profile.user), folder);
         self.sink.send(progress(self.items, &scan_path));
-        let cmd = self
-            .profile
-            .occ_cmd(&["files:scan", "-v", &format!("--path={scan_path}")]);
+        let cmd =
+            self.profile
+                .occ_cmd_stop_on_eof(&["files:scan", "-v", &format!("--path={scan_path}")]);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let run = shell.run_lines(&cmd, tx);

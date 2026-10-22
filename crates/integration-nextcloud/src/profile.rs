@@ -166,6 +166,21 @@ impl NextcloudDirectProfile {
             &self.php,
             &self.occ_path(),
             args,
+            false,
+        )
+    }
+
+    /// Like [`Self::occ_cmd`], but `occ` gets SIGTERM when the SSH channel closes (see
+    /// [`stop_on_eof`]). For long commands (`files:scan`), so a service restart or a cancelled job
+    /// leaves no `occ` running on the server.
+    pub fn occ_cmd_stop_on_eof<S: AsRef<str>>(&self, args: &[S]) -> String {
+        self.exec().occ(
+            self.run_as,
+            &self.web_user,
+            &self.php,
+            &self.occ_path(),
+            args,
+            true,
         )
     }
 }
@@ -202,6 +217,9 @@ impl Exec {
         }
     }
 
+    /// `stop_on_eof` wraps `php occ …` in [`stop_on_eof`], run as the web user right next to
+    /// `php`: no `sudo`, `su` or `pct exec` in between has to relay the signal, and the web user
+    /// may always signal its own process.
     pub fn occ<S: AsRef<str>>(
         &self,
         run_as: RunAs,
@@ -209,22 +227,55 @@ impl Exec {
         php: &str,
         occ: &str,
         args: &[S],
+        stop_on_eof: bool,
     ) -> String {
         let mut occ_argv: Vec<&str> = vec![php, occ];
         occ_argv.extend(args.iter().map(AsRef::as_ref));
+        let line = || {
+            if stop_on_eof {
+                self::stop_on_eof(&occ_argv)
+            } else {
+                join(&occ_argv)
+            }
+        };
         match run_as {
+            RunAs::Sudo if stop_on_eof => {
+                self.container(&["sudo", "-n", "-u", web_user, "sh", "-c", &line()])
+            }
             RunAs::Sudo => {
                 let mut argv = vec!["sudo", "-n", "-u", web_user];
-                argv.extend(occ_argv);
+                argv.extend(&occ_argv);
                 self.container(&argv)
             }
             RunAs::Su => {
                 // `su -c` hands the string to bash: quote it as a command line, then as one word.
-                let inner = join(&occ_argv);
-                self.container(&["su", "-s", "/bin/bash", web_user, "-c", &inner])
+                self.container(&["su", "-s", "/bin/bash", web_user, "-c", &line()])
             }
         }
     }
+}
+
+/// An `sh` line that runs `argv` and sends it SIGTERM once the line's stdin reaches EOF.
+///
+/// Over SSH, stdin is the channel, which filebridge never writes to nor closes: EOF comes only
+/// when sshd closes it, because the channel or the whole connection is gone (job cancelled,
+/// service killed or restarted). Without this the remote command outlives the connection: sshd
+/// signals nothing, and PHP ignores SIGPIPE, so not even writing to the dead channel stops it.
+/// `occ` traps SIGTERM when PHP has `pcntl` (`files:scan` then stops at the next file);
+/// otherwise PHP just exits.
+///
+/// The watcher only starts when stdin is a pipe or socket (what sshd gives a command without a
+/// PTY); with any other stdin (`/dev/null`, a terminal) EOF would mean nothing and `argv` simply
+/// runs to the end. `argv` itself reads `/dev/null`, and the watcher holds no copy of stdout or
+/// stderr, so sshd sees the output end as soon as `argv` exits.
+pub(crate) fn stop_on_eof<S: AsRef<str>>(argv: &[S]) -> String {
+    format!(
+        "exec 3<&0; {} </dev/null & p=$!; w=; \
+         if [ -p /dev/stdin ] || [ -S /dev/stdin ]; then \
+         (while read -r l; do :; done <&3; kill -TERM $p) >/dev/null 2>&1 & w=$!; fi; \
+         wait $p; s=$?; [ -z \"$w\" ] || kill $w 2>/dev/null; exit $s",
+        join(argv)
+    )
 }
 
 /// Joins two `/` paths without doubling or dropping the separator. `b` empty returns `a`.
@@ -310,6 +361,60 @@ pub(crate) mod tests {
             "sudo -n pct exec 105 -- sudo -n -u www-data php /var/www/nextcloud/occ status --output=json"
         );
         assert_eq!(p.host_cmd(&["df", "-Pk", "/a b"]), "sudo -n df -Pk '/a b'");
+    }
+
+    #[test]
+    fn stop_on_eof_wraps_php_as_the_web_user() {
+        use crate::quote::tests::split;
+        let path = "--path=alice/files/O'Neil $HOME";
+        let php = ["php", "/var/www/nextcloud/occ", "files:scan", path];
+        let line = stop_on_eof(&php);
+        assert!(line.contains(&format!("; {} </dev/null & p=$!;", join(&php))));
+
+        let mut p = sample();
+        let words = split(&p.occ_cmd_stop_on_eof(&["files:scan", path]));
+        assert_eq!(
+            words[..9],
+            [
+                "pct",
+                "exec",
+                "105",
+                "--",
+                "su",
+                "-s",
+                "/bin/bash",
+                "www-data",
+                "-c"
+            ]
+        );
+        assert_eq!(words[9..], [line.clone()]);
+
+        p.run_as = RunAs::Sudo;
+        p.host_sudo = true;
+        let words = split(&p.occ_cmd_stop_on_eof(&["files:scan", path]));
+        assert_eq!(
+            words,
+            [
+                "sudo", "-n", "pct", "exec", "105", "--", "sudo", "-n", "-u", "www-data", "sh",
+                "-c", &line
+            ]
+        );
+
+        let mut h = sample_host();
+        assert_eq!(
+            split(&h.occ_cmd_stop_on_eof(&["files:scan", path])),
+            ["su", "-s", "/bin/bash", "www-data", "-c", &line]
+        );
+        h.run_as = RunAs::Sudo;
+        assert_eq!(
+            split(&h.occ_cmd_stop_on_eof(&["files:scan", path])),
+            ["sudo", "-n", "-u", "www-data", "sh", "-c", &line]
+        );
+        // Short commands stay as they were.
+        assert_eq!(
+            h.occ_cmd(&["status"]),
+            "sudo -n -u www-data php /var/www/nextcloud/occ status"
+        );
     }
 
     pub fn sample_host() -> NextcloudDirectProfile {

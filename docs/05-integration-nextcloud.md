@@ -93,7 +93,10 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
      — only on changed paths.
   2. Compute the minimal set of folders covering `changed` (deduplicate parents).
   3. Run `occ files:scan --path="<user>/files/<folder>"` for each, **showing progress** parsed from
-     `occ` output ("Indexing in Nextcloud: 3 folders", files scanned).
+     `occ` output ("Indexing in Nextcloud: 3 folders", files scanned). The scan **dies with the SSH
+     connection**: if the job is cancelled or the service is killed or restarted, `occ` gets
+     SIGTERM instead of scanning on as an orphan (which also kept a resumed job's new scan from
+     hitting "Another process is already scanning").
   4. Treat `incompatible encoding` warnings as **visible errors** with a "Repair destination"
      button, instead of leaving them lost in the terminal.
   5. On slow HDDs show "waiting for disk" instead of looking stuck.
