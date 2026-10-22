@@ -2,7 +2,8 @@
 //! destination path and per-entry transfer and verify state. Verification works from here, so it
 //! does not depend on the final name (ADR 0005).
 
-use rusqlite::{Row, params};
+use rusqlite::types::Value;
+use rusqlite::{OptionalExtension, Row, params};
 
 use crate::{Result, Store, StoreError};
 
@@ -93,6 +94,76 @@ pub struct ManifestCounts {
     pub verified_ok: u64,
     pub mismatch: u64,
     pub missing: u64,
+}
+
+/// What [`Store::entries_filtered`] returns: entries matching all of these.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntryQuery {
+    /// Any of these `(transfer_state, verify_state)` pairs; `None` = any verify state. Empty =
+    /// any state.
+    pub states: Vec<(String, Option<String>)>,
+    /// Any of these Categories; empty = any.
+    pub categories: Vec<String>,
+    /// Only entries a Name rule renamed (`Some(true)`), only the others (`Some(false)`).
+    pub renamed: Option<bool>,
+    pub include_dirs: bool,
+    /// Substring of the destination or source path (ASCII case-insensitive).
+    pub text: Option<String>,
+    pub order: EntryOrder,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EntryOrder {
+    /// Scanner order: folders read as a tree.
+    #[default]
+    Scan,
+    LargestFirst,
+    /// Failed, different, missing and unverifiable entries first, then scanner order.
+    ProblemsFirst,
+}
+
+/// Where a page of [`Store::entries_filtered`] ended, to continue after it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct EntryKey {
+    pub idx: u64,
+    pub size: u64,
+    pub rank: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntryRow {
+    pub entry: ManifestEntry,
+    /// A Name rule changed this entry's own name (an accepted or edited issue).
+    pub renamed: bool,
+    /// 0 for a problem (see [`EntryOrder::ProblemsFirst`]), 1 otherwise.
+    pub rank: u8,
+}
+
+impl EntryRow {
+    pub fn key(&self) -> EntryKey {
+        EntryKey {
+            idx: self.entry.entry.idx,
+            size: self.entry.entry.size,
+            rank: self.rank,
+        }
+    }
+}
+
+const RENAMED: &str = "EXISTS (SELECT 1 FROM issues i WHERE i.job_id = m.job_id \
+                       AND i.entry_idx = m.idx AND i.decision IN ('accepted', 'edited'))";
+const RANK: &str = "(CASE WHEN transfer_state = 'failed' OR (transfer_state = 'done' \
+                    AND verify_state IN ('mismatch', 'missing', 'failed')) THEN 0 ELSE 1 END)";
+
+/// `%`, `_` and `\` taken literally in a `LIKE … ESCAPE '\'` pattern.
+fn like_escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if matches!(ch, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 const COLUMNS: &str = "idx, source, raw_path, parent_idx, is_dir, size, mtime, hash, hash_algo, \
@@ -261,6 +332,181 @@ impl Store {
         .await
     }
 
+    /// Verification results with the source file's digest (`algo`, e.g. `sha256`), kept so
+    /// the Entry can show it later (docs/design/specs/D05). A `None` digest keeps the stored one.
+    pub async fn set_verify_results(
+        &self,
+        job_id: &str,
+        algo: &str,
+        updates: Vec<(u64, EntryState, Option<Vec<u8>>)>,
+    ) -> Result<()> {
+        let (job_id, algo) = (job_id.to_owned(), algo.to_owned());
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE manifest_entries SET verify_state = ?3,
+                         hash = COALESCE(?4, hash),
+                         hash_algo = CASE WHEN ?4 IS NULL THEN hash_algo ELSE ?5 END
+                     WHERE job_id = ?1 AND idx = ?2",
+                )?;
+                for (idx, state, hash) in &updates {
+                    stmt.execute(params![job_id, idx, state.as_str(), hash, algo])?;
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// One entry of a job.
+    pub async fn get_entry(&self, job_id: &str, idx: u64) -> Result<ManifestEntry> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let found = c
+                .query_row(
+                    &format!(
+                        "SELECT {COLUMNS} FROM manifest_entries WHERE job_id = ?1 AND idx = ?2"
+                    ),
+                    params![job_id, idx],
+                    from_row,
+                )
+                .optional()?;
+            match found {
+                Some(t) => parse(t),
+                None => Err(StoreError::NotFound(format!("entry {idx}"))),
+            }
+        })
+        .await
+    }
+
+    /// A page of a job's entries, filtered and ordered (the Files tab, docs/design/specs/D05).
+    /// Keyset pagination: pass the last row's [`EntryKey`] as `after`.
+    pub async fn entries_filtered(
+        &self,
+        job_id: &str,
+        query: EntryQuery,
+        after: Option<EntryKey>,
+        limit: u32,
+    ) -> Result<Vec<EntryRow>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut clauses = vec!["job_id = ?".to_owned()];
+            let mut args: Vec<Value> = vec![Value::Text(job_id)];
+            if !query.include_dirs {
+                clauses.push("is_dir = 0".into());
+            }
+            if !query.states.is_empty() {
+                let mut any = Vec::new();
+                for (transfer, verify) in &query.states {
+                    args.push(Value::Text(transfer.clone()));
+                    match verify {
+                        Some(v) => {
+                            args.push(Value::Text(v.clone()));
+                            any.push("(transfer_state = ? AND verify_state = ?)");
+                        }
+                        None => any.push("(transfer_state = ?)"),
+                    }
+                }
+                clauses.push(format!("({})", any.join(" OR ")));
+            }
+            if !query.categories.is_empty() {
+                clauses.push(format!(
+                    "category IN ({})",
+                    vec!["?"; query.categories.len()].join(", ")
+                ));
+                args.extend(query.categories.iter().cloned().map(Value::Text));
+            }
+            match query.renamed {
+                Some(true) => clauses.push(RENAMED.into()),
+                Some(false) => clauses.push(format!("NOT {RENAMED}")),
+                None => {}
+            }
+            if let Some(text) = query.text.as_deref().filter(|t| !t.is_empty()) {
+                let pattern = format!("%{}%", like_escape(text));
+                clauses.push(
+                    "(dest_path LIKE ? ESCAPE '\\' OR CAST(raw_path AS TEXT) LIKE ? ESCAPE '\\')"
+                        .into(),
+                );
+                args.push(Value::Text(pattern.clone()));
+                args.push(Value::Text(pattern));
+            }
+            if let Some(k) = after {
+                match query.order {
+                    EntryOrder::Scan => {
+                        clauses.push("idx > ?".into());
+                        args.push(Value::Integer(k.idx as i64));
+                    }
+                    EntryOrder::LargestFirst => {
+                        clauses.push("(size < ? OR (size = ? AND idx > ?))".into());
+                        args.extend(
+                            [k.size as i64, k.size as i64, k.idx as i64].map(Value::Integer),
+                        );
+                    }
+                    EntryOrder::ProblemsFirst => {
+                        clauses.push(format!("({RANK} > ? OR ({RANK} = ? AND idx > ?))"));
+                        args.extend(
+                            [i64::from(k.rank), i64::from(k.rank), k.idx as i64]
+                                .map(Value::Integer),
+                        );
+                    }
+                }
+            }
+            let order = match query.order {
+                EntryOrder::Scan => "idx",
+                EntryOrder::LargestFirst => "size DESC, idx",
+                EntryOrder::ProblemsFirst => "rank, idx",
+            };
+            args.push(Value::Integer(i64::from(limit)));
+            let sql = format!(
+                "SELECT {COLUMNS}, {RENAMED} AS renamed, {RANK} AS rank
+                 FROM manifest_entries m WHERE {} ORDER BY {order} LIMIT ?",
+                clauses.join(" AND ")
+            );
+            let mut stmt = c.prepare_cached(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(args), |r| {
+                Ok((from_row(r)?, r.get::<_, bool>(14)?, r.get::<_, u8>(15)?))
+            })?;
+            rows.map(|r| {
+                let (t, renamed, rank) = r?;
+                Ok(EntryRow {
+                    entry: parse(t)?,
+                    renamed,
+                    rank,
+                })
+            })
+            .collect()
+        })
+        .await
+    }
+
+    /// Files (not directories) per `(transfer_state, verify_state)`, and how many were renamed.
+    pub async fn entry_state_counts(
+        &self,
+        job_id: &str,
+    ) -> Result<(Vec<(String, String, u64)>, u64)> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT transfer_state, verify_state, COUNT(*) FROM manifest_entries
+                 WHERE job_id = ?1 AND is_dir = 0 GROUP BY transfer_state, verify_state",
+            )?;
+            let states = stmt
+                .query_map([&job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let renamed: u64 = c.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM manifest_entries m WHERE job_id = ?1 AND is_dir = 0 AND {RENAMED}"
+                ),
+                [&job_id],
+                |r| r.get(0),
+            )?;
+            Ok((states, renamed))
+        })
+        .await
+    }
+
     /// Entries in scanner order, after `after_idx` (keyset pagination).
     pub async fn entries_page(
         &self,
@@ -394,6 +640,222 @@ mod tests {
             category: "other".into(),
             ..file(idx, path, 0)
         }
+    }
+
+    #[tokio::test]
+    async fn the_files_tab_filters_orders_and_pages() {
+        use crate::{Decision, NewIssue};
+        let (store, job) = store_with_job().await;
+        store
+            .insert_entries(
+                &job,
+                vec![
+                    dir(0, b"Fotos"),
+                    file(1, b"Fotos/a.jpg", 10),
+                    file(2, b"Fotos/Vera\xcc\x83o.jpg", 30),
+                    file(3, b"notes", 5),
+                    file(4, b"big.iso", 90),
+                    file(5, b"100%_done.txt", 1),
+                ],
+            )
+            .await
+            .unwrap();
+        store
+            .set_dest_paths(
+                &job,
+                (0..6u64)
+                    .map(|i| {
+                        (
+                            i,
+                            Some(
+                                [
+                                    "Fotos",
+                                    "Fotos/a.jpg",
+                                    "Fotos/Ver\u{e3}o.jpg",
+                                    "notes",
+                                    "big.iso",
+                                    "100%_done.txt",
+                                ][i as usize]
+                                    .to_owned(),
+                            ),
+                        )
+                    })
+                    .collect(),
+            )
+            .await
+            .unwrap();
+        store
+            .set_transfer_states(
+                &job,
+                vec![
+                    (1, EntryState::Done, None),
+                    (2, EntryState::Done, None),
+                    (3, EntryState::Failed, Some("permission denied".into())),
+                    (4, EntryState::Done, None),
+                ],
+            )
+            .await
+            .unwrap();
+        store
+            .set_verify_results(
+                &job,
+                "sha256",
+                vec![
+                    (1, EntryState::Done, Some(vec![1, 2])),
+                    (2, EntryState::Mismatch, Some(vec![3])),
+                ],
+            )
+            .await
+            .unwrap();
+        store
+            .insert_issues(
+                &job,
+                vec![NewIssue {
+                    entry_idx: 2,
+                    rule: "nfc".into(),
+                    severity: "auto".into(),
+                    message_key: "rules.nfc".into(),
+                    before: b"Vera\xcc\x83o.jpg".to_vec(),
+                    after: "Ver\u{e3}o.jpg".into(),
+                    decision: Decision::Accepted,
+                }],
+            )
+            .await
+            .unwrap();
+        let idxs = |rows: &[EntryRow]| rows.iter().map(|r| r.entry.entry.idx).collect::<Vec<_>>();
+        let q = |f: fn(&mut EntryQuery)| {
+            let mut q = EntryQuery::default();
+            f(&mut q);
+            q
+        };
+
+        let all = store
+            .entries_filtered(&job, EntryQuery::default(), None, 100)
+            .await
+            .unwrap();
+        assert_eq!(idxs(&all), [1, 2, 3, 4, 5], "directories only on request");
+        assert_eq!(all[0].entry.entry.hash, Some(vec![1, 2]));
+        assert_eq!(all[0].entry.entry.hash_algo.as_deref(), Some("sha256"));
+
+        let problems = q(|q| {
+            q.states = vec![
+                ("failed".into(), None),
+                ("done".into(), Some("mismatch".into())),
+            ]
+        });
+        assert_eq!(
+            idxs(
+                &store
+                    .entries_filtered(&job, problems, None, 100)
+                    .await
+                    .unwrap()
+            ),
+            [2, 3]
+        );
+        let photos = q(|q| q.categories = vec!["image".into()]);
+        assert_eq!(
+            idxs(
+                &store
+                    .entries_filtered(&job, photos, None, 100)
+                    .await
+                    .unwrap()
+            ),
+            [1, 2]
+        );
+        let renamed = q(|q| q.renamed = Some(true));
+        let r = store
+            .entries_filtered(&job, renamed, None, 100)
+            .await
+            .unwrap();
+        assert_eq!(idxs(&r), [2]);
+        assert!(r[0].renamed);
+        let search = q(|q| q.text = Some("ver\u{e3}o".into()));
+        assert_eq!(
+            idxs(
+                &store
+                    .entries_filtered(&job, search, None, 100)
+                    .await
+                    .unwrap()
+            ),
+            [2],
+            "the NFC destination name"
+        );
+        let literal = q(|q| q.text = Some("100%".into()));
+        assert_eq!(
+            idxs(
+                &store
+                    .entries_filtered(&job, literal, None, 100)
+                    .await
+                    .unwrap()
+            ),
+            [5],
+            "% is literal"
+        );
+
+        // Keyset pages give the same order as one big page.
+        for order in [
+            EntryOrder::Scan,
+            EntryOrder::LargestFirst,
+            EntryOrder::ProblemsFirst,
+        ] {
+            let whole = EntryQuery {
+                order,
+                ..EntryQuery::default()
+            };
+            let one = idxs(
+                &store
+                    .entries_filtered(&job, whole.clone(), None, 100)
+                    .await
+                    .unwrap(),
+            );
+            let mut paged = Vec::new();
+            let mut after = None;
+            loop {
+                let page = store
+                    .entries_filtered(&job, whole.clone(), after, 2)
+                    .await
+                    .unwrap();
+                let Some(last) = page.last() else { break };
+                after = Some(last.key());
+                paged.extend(idxs(&page));
+            }
+            assert_eq!(paged, one, "{order:?}");
+        }
+        let largest = EntryQuery {
+            order: EntryOrder::LargestFirst,
+            ..EntryQuery::default()
+        };
+        assert_eq!(
+            idxs(
+                &store
+                    .entries_filtered(&job, largest, None, 2)
+                    .await
+                    .unwrap()
+            ),
+            [4, 2]
+        );
+        let problems_first = EntryQuery {
+            order: EntryOrder::ProblemsFirst,
+            ..EntryQuery::default()
+        };
+        assert_eq!(
+            idxs(
+                &store
+                    .entries_filtered(&job, problems_first, None, 2)
+                    .await
+                    .unwrap()
+            ),
+            [2, 3]
+        );
+
+        let (states, renamed) = store.entry_state_counts(&job).await.unwrap();
+        assert_eq!(renamed, 1);
+        assert_eq!(states.iter().map(|s| s.2).sum::<u64>(), 5);
+        assert_eq!(
+            store.get_entry(&job, 3).await.unwrap().error.as_deref(),
+            Some("permission denied")
+        );
+        assert_eq!(store.issues_for_entry(&job, 2).await.unwrap().len(), 1);
     }
 
     #[tokio::test]

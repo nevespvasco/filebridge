@@ -25,6 +25,10 @@ import {
   type IssueView_Serialize,
   type JobState,
   type CategoryCount,
+  type EntryDetail_Serialize,
+  type EntryFilter,
+  type EntryStatus,
+  type EntryView_Serialize as EntryView,
   type JobSummary_Serialize,
   type LogEntry,
   type RecentSource,
@@ -248,6 +252,39 @@ function queueAt(job: JobSummary_Serialize, n: number) {
     return { idx: n * 100 + k, name: f.name(n - 1 + k), category: f.category };
   });
   return { in_flight, entries };
+}
+
+/** A job's manifest, made up on demand from the entry's index so any size works. */
+function entryAt(job: JobSummary_Serialize, idx: number): EntryView & { renamed: boolean } {
+  const f = QUEUE_FILES[idx % QUEUE_FILES.length];
+  const n = Math.floor(idx / QUEUE_FILES.length);
+  const renamed = !!f.renamed && n % 3 === 0;
+  const sent = idx < job.counts.done || ["completed", "completed_with_warnings"].includes(job.state);
+  let status: EntryStatus = sent ? (job.counts.verified_ok ? "verified" : "sent") : "not_sent";
+  if (sent && idx % 997 === 3) status = "failed";
+  else if (sent && job.counts.verified_ok && idx % 1499 === 5) status = "different";
+  else if (idx % 1777 === 11) status = "skipped";
+  const size = Math.max(1_000, Math.round(f.size * (0.4 + ((idx * 7919) % 100) / 80)));
+  return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, renamed };
+}
+
+const PROBLEMS: EntryStatus[] = ["different", "missing", "unverifiable", "failed"];
+
+function matchingEntries(job: JobSummary_Serialize, filter: EntryFilter) {
+  const q = filter.query?.trim().toLowerCase();
+  const out: (EntryView & { renamed: boolean })[] = [];
+  for (let i = 1; i <= Math.min(job.counts.files, 60_000); i++) {
+    const e = entryAt(job, i);
+    if (filter.statuses.length && !filter.statuses.includes(e.status)) continue;
+    if (filter.categories.length && !filter.categories.includes(e.category)) continue;
+    if (filter.renamed != null && e.renamed !== filter.renamed) continue;
+    if (q && !`${e.dir}/${e.name}`.toLowerCase().includes(q)) continue;
+    out.push(e);
+  }
+  const rank = (e: EntryView) => (PROBLEMS.includes(e.status) ? 0 : 1);
+  if (filter.sort === "largest_first") out.sort((a, b) => b.size - a.size || a.idx - b.idx);
+  if (filter.sort === "problems_first") out.sort((a, b) => rank(a) - rank(b) || a.idx - b.idx);
+  return { out, rank };
 }
 
 function runTransfer(job: JobSummary_Serialize) {
@@ -522,6 +559,57 @@ const handlers: Handlers = {
   },
   listJobs: (a) => jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number)),
   job: (a) => find(a.jobId),
+  entries: (a) => {
+    const job = find(a.jobId);
+    const filter = a.filter as EntryFilter;
+    const { out, rank } = matchingEntries(job, filter);
+    const after = a.after as { idx: number } | null;
+    const start = after ? out.findIndex((e) => e.idx === after.idx) + 1 : 0;
+    const limit = Math.min(a.limit as number, 500);
+    const items = out.slice(start, start + limit);
+    const last = items.at(-1);
+    return {
+      items: items.map(({ renamed: _r, ...e }) => e),
+      next: items.length === limit && last ? { idx: last.idx, size: last.size, rank: rank(last) } : null,
+    };
+  },
+  entryFacets: (a) => {
+    const job = find(a.jobId);
+    const { out } = matchingEntries(job, { statuses: [], categories: [], renamed: null, include_dirs: false, query: null, sort: "folder_order" });
+    const by = new Map<EntryStatus, number>();
+    const cats = new Map<string, { files: number; bytes: number }>();
+    let renamed = 0;
+    for (const e of out) {
+      by.set(e.status, (by.get(e.status) ?? 0) + 1);
+      const c = cats.get(e.category) ?? { files: 0, bytes: 0 };
+      c.files++;
+      c.bytes += e.size;
+      cats.set(e.category, c);
+      if (e.renamed) renamed++;
+    }
+    return {
+      by_status: [...by].map(([status, files]) => ({ status, files })),
+      by_category: [...cats].map(([category, c]) => ({ category: category as CategoryCount["category"], ...c })).sort((x, y) => y.bytes - x.bytes),
+      renamed,
+      problems: [...by].filter(([s]) => PROBLEMS.includes(s)).reduce((n, [, v]) => n + v, 0),
+    };
+  },
+  entry: (a) => {
+    const job = find(a.jobId);
+    const { renamed, ...view } = entryAt(job, a.idx as number);
+    const source = `${job.sources[0]}/${view.dir}/${view.source_name ?? view.name}`;
+    const detail: EntryDetail_Serialize = {
+      view,
+      source_path: source,
+      source_path_hex: null,
+      dest_path: view.status === "not_sent" ? null : `/media/disco/Backup/${view.dir}/${view.name}`,
+      mtime: 1_690_000_000 + (a.idx as number) * 37,
+      hash: view.status === "verified" || view.status === "different" ? { algo: "sha256", hex: Array.from({ length: 32 }, (_, i) => (((a.idx as number) * 31 + i * 17) % 256).toString(16).padStart(2, "0")).join("") } : null,
+      issues: renamed ? [issue(rulesFor(job.id)[0], a.idx as number)] : [],
+      error: view.status === "failed" ? "permission denied" : null,
+    };
+    return detail;
+  },
   jobCategories: (a) => {
     const job = find(a.jobId);
     const { files, bytes } = job.counts;

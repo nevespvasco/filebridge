@@ -9,9 +9,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
-    AppSettings, CoreError, DecisionInput, Engine, EngineOptions, Event, FileCategory,
-    IssueDecision, JobState, LocalClock, LogLevel, Profile, Registry, SendOptions, SendWindow,
-    Store, StoreError, TargetSpec,
+    AppSettings, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter, EntryStatus, Event,
+    FileCategory, IssueDecision, JobState, LocalClock, LogLevel, Profile, Registry, SendOptions,
+    SendWindow, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -341,6 +341,91 @@ async fn a_job_says_what_it_contains_and_where_it_came_from() {
 
     std::fs::rename(&s.src, s.src.with_file_name("Renamed")).unwrap();
     assert!(!s.engine.recent_sources(10).await.unwrap()[0].exists);
+}
+
+#[tokio::test]
+async fn the_files_of_a_transfer_prove_what_arrived() {
+    use sha2::{Digest as _, Sha256};
+    let s = setup().await;
+    s.transport
+        .fatal_names
+        .lock()
+        .unwrap()
+        .insert("Inverno.jpg".into());
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::CompletedWithWarnings);
+
+    let all = s
+        .engine
+        .files_page(&job, EntryFilter::default(), None, 100)
+        .await
+        .unwrap();
+    assert_eq!(all.items.len(), 3, "files only by default");
+    assert!(all.next.is_none());
+    let summer = all
+        .items
+        .iter()
+        .find(|e| e.name == "Ver\u{e3}o.jpg")
+        .unwrap();
+    assert_eq!(summer.status, EntryStatus::Verified);
+    assert_eq!(summer.dir, "Acme/Fotos");
+    assert_eq!(summer.source_name.as_deref(), Some("Vera\u{303}o.jpg"));
+    assert_eq!(summer.category, FileCategory::Image);
+
+    let problems = s
+        .engine
+        .files_page(
+            &job,
+            EntryFilter {
+                statuses: EntryStatus::ALL
+                    .into_iter()
+                    .filter(|s| s.is_problem())
+                    .collect(),
+                ..EntryFilter::default()
+            },
+            None,
+            100,
+        )
+        .await
+        .unwrap();
+    assert_eq!(problems.items.len(), 1);
+    assert_eq!(problems.items[0].name, "Inverno.jpg");
+    assert_eq!(problems.items[0].status, EntryStatus::Failed);
+
+    let facets = s.engine.entry_facets(&job).await.unwrap();
+    assert_eq!((facets.problems, facets.renamed), (1, 2));
+
+    // The detail keeps the source's SHA-256, as verification computed it.
+    let detail = s.engine.entry_detail(&job, summer.idx).await.unwrap();
+    let expected: String = Sha256::digest(b"summer")
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let hash = detail.hash.expect("hash kept by verify");
+    assert_eq!((hash.algo.as_str(), hash.hex), ("sha256", expected));
+    assert!(detail.source_path.ends_with("Acme/Fotos/Vera\u{303}o.jpg"));
+    assert!(
+        detail
+            .dest_path
+            .unwrap()
+            .ends_with("/Acme/Fotos/Ver\u{e3}o.jpg")
+    );
+    assert_eq!(detail.issues.len(), 1);
+    assert_eq!(detail.issues[0].rule, "nfc");
+    let failed = s
+        .engine
+        .entry_detail(&job, problems.items[0].idx)
+        .await
+        .unwrap();
+    assert_eq!(failed.error.as_deref(), Some("permission denied"));
+    assert!(failed.hash.is_none(), "never verified");
 }
 
 #[tokio::test]

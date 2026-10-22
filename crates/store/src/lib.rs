@@ -25,7 +25,9 @@ use tokio::sync::oneshot;
 pub use events::EventRow;
 pub use issues::{Decision, IssueRow, NewIssue, RuleSummary};
 pub use jobs::{JobRow, NewJob, RecentSourceRow, StateChange};
-pub use manifest::{EntryState, ManifestCounts, ManifestEntry, NewEntry};
+pub use manifest::{
+    EntryKey, EntryOrder, EntryQuery, EntryRow, EntryState, ManifestCounts, ManifestEntry, NewEntry,
+};
 pub use profiles::ProfileRow;
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;

@@ -101,6 +101,14 @@ ALTER TABLE jobs ADD COLUMN verify_rounds INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE manifest_entries ADD COLUMN category TEXT NOT NULL DEFAULT 'other';
 CREATE INDEX manifest_category ON manifest_entries(job_id, category);
 "#,
+    // 4: the Files tab's filters and orders, the issues of one entry, and Activity's milestones
+    // (docs/design/specs/D05, D07).
+    r#"
+CREATE INDEX manifest_verify_state ON manifest_entries(job_id, verify_state);
+CREATE INDEX manifest_size ON manifest_entries(job_id, size, idx);
+CREATE INDEX issues_job_entry ON issues(job_id, entry_idx);
+CREATE INDEX events_kind ON events(kind, id);
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

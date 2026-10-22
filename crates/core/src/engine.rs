@@ -503,22 +503,27 @@ impl Engine {
                 .first()
                 .map(|e| String::from_utf8_lossy(&e.entry.raw_path).into_owned())
                 .unwrap_or_default();
-            out.push(IssueView {
-                id: r.id,
-                entry_idx: r.issue.entry_idx,
-                path,
-                before_text: String::from_utf8_lossy(&r.issue.before).into_owned(),
-                after_text: String::from_utf8_lossy(&r.issue.after).into_owned(),
-                rule: r.issue.rule,
-                severity: decisions::severity(&r.issue.severity),
-                message_key: r.issue.message_key,
-                before: r.issue.before,
-                after: r.issue.after,
-                decision: decisions::view(r.issue.decision),
-                custom_name: r.custom_name,
-            });
+            out.push(self.issue_view(r, path));
         }
         Ok(out)
+    }
+
+    /// An issue as the UI shows it; `path` is its entry's source path.
+    pub(crate) fn issue_view(&self, r: IssueRow, path: String) -> IssueView {
+        IssueView {
+            id: r.id,
+            entry_idx: r.issue.entry_idx,
+            path,
+            before_text: String::from_utf8_lossy(&r.issue.before).into_owned(),
+            after_text: String::from_utf8_lossy(&r.issue.after).into_owned(),
+            rule: r.issue.rule,
+            severity: decisions::severity(&r.issue.severity),
+            message_key: r.issue.message_key,
+            before: r.issue.before,
+            after: r.issue.after,
+            decision: decisions::view(r.issue.decision),
+            custom_name: r.custom_name,
+        }
     }
 
     /// Records a decision; the job becomes Ready once nothing is pending. A decision the Name

@@ -63,7 +63,8 @@ flowchart TB
 
 ## Phase 2 — Trust (verify and repair)
 
-- [ ] Manifest with hash and verification independent of names.
+- [x] Manifest with hash and verification independent of names (verify keeps each source
+      SHA-256; shown per file in [D05](design/specs/D05-files-and-entry-detail.md)).
 - [ ] Repair destination; mojibake and collision detection.
 - [ ] Nextcloud over WebDAV; credentials in the keyring; restricted SSH key and "Remove access".
 

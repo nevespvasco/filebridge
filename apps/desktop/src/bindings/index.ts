@@ -51,6 +51,12 @@ export const commands = {
 	jobCategories: (jobId: string) => typedError<CategoryCount[], ErrorBody>(__TAURI_INVOKE("job_categories", { jobId })),
 	/**  Folders and files sent before, newest first, for "Recently sent from". */
 	recentSources: (limit: number) => typedError<RecentSource[], ErrorBody>(__TAURI_INVOKE("recent_sources", { limit })),
+	/**  One page of a job's files, filtered and sorted (at most 500). */
+	entries: (jobId: string, filter: EntryFilter_Deserialize, after: EntryCursor | null, limit: number) => typedError<EntryPage_Serialize, ErrorBody>(__TAURI_INVOKE("entries", { jobId, filter, after, limit })),
+	/**  Counts for the Files tab's filter chips, over the whole job. */
+	entryFacets: (jobId: string) => typedError<EntryFacets, ErrorBody>(__TAURI_INVOKE("entry_facets", { jobId })),
+	/**  Everything about one file of a job. */
+	entry: (jobId: string, idx: number) => typedError<EntryDetail_Serialize, ErrorBody>(__TAURI_INVOKE("entry", { jobId, idx })),
 	/**
 	 *  A job's log: oldest first after `after_id`, otherwise newest first before
 	 *  `before_id` (the newest page when both are absent).
@@ -75,7 +81,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 6 as const;
+export const PROTOCOL_VERSION = 7 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -281,6 +287,142 @@ export type DoneView = {
 	category: FileCategory,
 };
 
+/**  Where a page ended; pass it back to get the next one. */
+export type EntryCursor = {
+	idx: number,
+	size: number,
+	rank: number,
+};
+
+/**  Everything about one entry, for the detail drawer. */
+export type EntryDetail = EntryDetail_Serialize | EntryDetail_Deserialize;
+
+/**  Everything about one entry, for the detail drawer. */
+export type EntryDetail_Deserialize = {
+	view: EntryView_Deserialize,
+	/**  Absolute, lossily decoded. */
+	source_path: string,
+	/**  The raw bytes in hex, when the name isn't valid text (so the lossy text isn't exact). */
+	source_path_hex?: string | null,
+	/**  The profile root joined with the destination path. */
+	dest_path?: string | null,
+	/**  Unix seconds, when the scan recorded it. */
+	mtime?: number | null,
+	/**  The source file's digest, kept by verification. */
+	hash?: HashView | null,
+	/**  The name rules that looked at this entry, with their decisions. */
+	issues: IssueView_Deserialize[],
+	error?: string | null,
+};
+
+/**  Everything about one entry, for the detail drawer. */
+export type EntryDetail_Serialize = {
+	view: EntryView_Serialize,
+	/**  Absolute, lossily decoded. */
+	source_path: string,
+	/**  The raw bytes in hex, when the name isn't valid text (so the lossy text isn't exact). */
+	source_path_hex: string | null,
+	/**  The profile root joined with the destination path. */
+	dest_path: string | null,
+	/**  Unix seconds, when the scan recorded it. */
+	mtime: number | null,
+	/**  The source file's digest, kept by verification. */
+	hash: HashView | null,
+	/**  The name rules that looked at this entry, with their decisions. */
+	issues: IssueView_Serialize[],
+	error: string | null,
+};
+
+/**  Counts for the filter chips: the whole job, whatever the current filter. */
+export type EntryFacets = {
+	by_status: StatusCount[],
+	by_category: CategoryCount[],
+	renamed: number,
+	problems: number,
+};
+
+export type EntryFilter = EntryFilter_Serialize | EntryFilter_Deserialize;
+
+export type EntryFilter_Deserialize = {
+	/**  Any of these; empty = any. */
+	statuses: EntryStatus[],
+	/**  Any of these; empty = any. */
+	categories: FileCategory[],
+	/**  Only renamed entries (`true`), only the others (`false`). */
+	renamed?: boolean | null,
+	include_dirs: boolean,
+	/**  A substring of the destination or source path. */
+	query?: string | null,
+	sort: EntrySort,
+};
+
+export type EntryFilter_Serialize = {
+	/**  Any of these; empty = any. */
+	statuses: EntryStatus[],
+	/**  Any of these; empty = any. */
+	categories: FileCategory[],
+	/**  Only renamed entries (`true`), only the others (`false`). */
+	renamed: boolean | null,
+	include_dirs: boolean,
+	/**  A substring of the destination or source path. */
+	query: string | null,
+	sort: EntrySort,
+};
+
+export type EntryPage = EntryPage_Serialize | EntryPage_Deserialize;
+
+export type EntryPage_Deserialize = {
+	items: EntryView_Deserialize[],
+	/**  `None` when this was the last page. */
+	next?: EntryCursor | null,
+};
+
+export type EntryPage_Serialize = {
+	items: EntryView_Serialize[],
+	/**  `None` when this was the last page. */
+	next: EntryCursor | null,
+};
+
+export type EntrySort = 
+/**  Scanner order: folders read as a tree. */
+"folder_order" | "largest_first" | "problems_first";
+
+/**  Where an entry stands, merging its transfer and verify states into one word. */
+export type EntryStatus = "not_sent" | "sending" | "sent" | "verified" | "different" | "missing" | "unverifiable" | "failed" | "skipped";
+
+/**  One row of the Files tab. */
+export type EntryView = EntryView_Serialize | EntryView_Deserialize;
+
+/**  One row of the Files tab. */
+export type EntryView_Deserialize = {
+	idx: number,
+	is_dir: boolean,
+	/**  Destination name (the source name when it has none yet). */
+	name: string,
+	/**  Destination folder, relative to the profile root ("" at the root). */
+	dir: string,
+	/**  The source name, when a name rule changed it. */
+	source_name?: string | null,
+	size: number,
+	category: FileCategory,
+	status: EntryStatus,
+};
+
+/**  One row of the Files tab. */
+export type EntryView_Serialize = {
+	idx: number,
+	is_dir: boolean,
+	/**  Destination name (the source name when it has none yet). */
+	name: string,
+	/**  Destination folder, relative to the profile root ("" at the root). */
+	dir: string,
+	/**  The source name, when a name rule changed it. */
+	source_name: string | null,
+	size: number,
+	category: FileCategory,
+	status: EntryStatus,
+};
+
 /**
  *  An error the service returns. `code` is stable (for the UI to branch on); `message` is
  *  for people.
@@ -330,6 +472,11 @@ waiting: string | null } | { type: "integration_problem"; job_id: string; code: 
 export type Family = "unix" | "windows" | "macos";
 
 export type FileCategory = "image" | "video" | "audio" | "document" | "archive" | "code" | "other";
+
+export type HashView = {
+	algo: string,
+	hex: string,
+};
 
 /**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */
 export type InFlightView = InFlightView_Serialize | InFlightView_Deserialize;
@@ -579,6 +726,11 @@ export type ServiceEvent_Deserialize = Event_Deserialize;
 
 /**  Every engine event, forwarded as is from `Client::events()`. */
 export type ServiceEvent_Serialize = Event_Serialize;
+
+export type StatusCount = {
+	status: EntryStatus,
+	files: number,
+};
 
 export type TargetSpec = {
 	family: Family,

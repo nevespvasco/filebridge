@@ -485,7 +485,9 @@ impl Engine {
                     continue;
                 }
                 if ctx.cancel.is_cancelled() {
-                    self.store.set_verify_states(&ctx.job_id, updates).await?;
+                    self.store
+                        .set_verify_results(&ctx.job_id, "sha256", updates)
+                        .await?;
                     return Ok(StageEnd::Cancelled);
                 }
                 let root = ctx
@@ -516,7 +518,9 @@ impl Engine {
                         EntryState::Mismatch
                     }
                     Err(err) if err.is_retryable() => {
-                        self.store.set_verify_states(&ctx.job_id, updates).await?;
+                        self.store
+                            .set_verify_results(&ctx.job_id, "sha256", updates)
+                            .await?;
                         return Ok(StageEnd::Retry(err.message));
                     }
                     // Gone from the destination: send it again.
@@ -532,7 +536,7 @@ impl Engine {
                         EntryState::Failed
                     }
                 };
-                updates.push((e.entry.idx, state));
+                updates.push((e.entry.idx, state, Some(local)));
                 self.emit(Event::VerifyProgress {
                     job_id: ctx.job_id.clone(),
                     checked,
@@ -540,7 +544,9 @@ impl Engine {
                     mismatches: mismatched.len() as u64,
                 });
             }
-            self.store.set_verify_states(&ctx.job_id, updates).await?;
+            self.store
+                .set_verify_results(&ctx.job_id, "sha256", updates)
+                .await?;
         }
         self.log(
             Some(&ctx.job_id),

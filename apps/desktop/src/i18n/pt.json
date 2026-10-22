@@ -43,7 +43,9 @@
     "yes": "Sim",
     "no": "Não",
     "recommended": "recomendado",
-    "optional": "opcional"
+    "optional": "opcional",
+    "clear": "Limpar",
+    "close": "Fechar"
   },
   "status": {
     "ok": "OK",
@@ -389,7 +391,8 @@
     "tabs": "Secções da transferência",
     "tab": {
       "overview": "Resumo",
-      "log": "Registo"
+      "log": "Registo",
+      "files": "Ficheiros"
     }
   },
   "destinations": {
@@ -629,5 +632,90 @@
     "archive": "Arquivos comprimidos",
     "code": "Código",
     "other": "Outros"
+  },
+  "files": {
+    "title": "Ficheiros",
+    "search": "Procurar nomes…",
+    "sort": "Ordenar",
+    "sortBy": {
+      "folder_order": "Ordem das pastas",
+      "largest_first": "Maiores primeiro",
+      "problems_first": "Problemas primeiro"
+    },
+    "show": "Mostrar",
+    "kinds": "Tipos de ficheiro",
+    "chip": {
+      "all": "Todos",
+      "problems": "Problemas",
+      "verified": "Verificados",
+      "sent": "Enviados",
+      "renamed": "Renomeados",
+      "skipped": "Ignorados",
+      "notSent": "Por enviar"
+    },
+    "col": {
+      "name": "Nome",
+      "folder": "Pasta",
+      "size": "Tamanho",
+      "status": "Estado"
+    },
+    "noMatch": "Nenhum ficheiro desta transferência corresponde a estes filtros.",
+    "empty": "Esta transferência não tem ficheiros.",
+    "clear": "Limpar filtros",
+    "notAnalysed": "Os ficheiros aparecem depois da análise.",
+    "problemsBadge": "{n} problema | {n} problemas"
+  },
+  "entryStatus": {
+    "not_sent": "Por enviar",
+    "sending": "A enviar",
+    "sent": "Enviado",
+    "verified": "Verificado",
+    "different": "Diferente",
+    "missing": "Em falta no destino",
+    "unverifiable": "Não foi possível verificar",
+    "failed": "Falhou",
+    "skipped": "Ignorado"
+  },
+  "entry": {
+    "title": "Ficheiro",
+    "name": "Nome",
+    "atSource": "Na origem",
+    "atDestination": "No destino",
+    "changedBy": "Alterado por",
+    "where": "Onde",
+    "source": "Origem",
+    "destination": "Destino",
+    "parameters": "Detalhes",
+    "size": "Tamanho",
+    "bytes": "{n} bytes",
+    "modified": "Modificado",
+    "category": "Tipo",
+    "verification": "Verificação",
+    "error": "Erro",
+    "verify": {
+      "same": "Igual nos dois lados",
+      "different": "Diferente no destino",
+      "missing": "Não encontrado no destino",
+      "unverifiable": "O destino não conseguiu calcular o checksum",
+      "notYet": "Não verificado"
+    },
+    "hashNoVerify": "Não calculado: esta transferência correu sem verificação",
+    "hashNotYet": "Ainda não calculado",
+    "lossy": "O nome não é texto válido: mostrado aproximadamente",
+    "copySource": "Copiar caminho da origem",
+    "copyDestination": "Copiar caminho do destino",
+    "copyHash": "Copiar checksum",
+    "copied": "Copiado",
+    "reveal": "Mostrar a origem no gestor de ficheiros"
+  },
+  "ruleName": {
+    "nfc": "Acentos compostos (NFC)",
+    "nextcloud-nfc": "Acentos compostos para o Nextcloud",
+    "forbidden-chars": "Caracteres que o destino recusa",
+    "trailing": "Espaços ou pontos no fim",
+    "reserved": "Nome reservado",
+    "nextcloud-reserved": "Nome reservado pelo Nextcloud",
+    "collision": "Choque com outro nome",
+    "encoding": "Nome que não é texto válido"
   }
 }

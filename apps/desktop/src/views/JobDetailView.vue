@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
+import FilesTab from "@/components/FilesTab.vue";
 import JobLog from "@/components/JobLog.vue";
 import JobProgress from "@/components/JobProgress.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
@@ -32,12 +33,13 @@ const confirmCancel = ref(false);
 const notFound = ref(false);
 
 /** Tabs of Transfer detail (docs/design/02, "Transfer detail: tabs"); kept in `?tab=`. */
-const TABS = ["overview", "log"] as const;
+const TABS = ["overview", "files", "log"] as const;
 type Tab = (typeof TABS)[number];
 const tab = computed<Tab>(() => (TABS as readonly string[]).includes(route.query.tab as string) ? (route.query.tab as Tab) : "overview");
 function selectTab(next: Tab) {
   // Replace, not push: Back from a tab goes back to Transfers.
-  void router.replace({ query: { ...route.query, tab: next === "overview" ? undefined : next } });
+  // The Files tab's filters and drawer belong to it alone.
+  void router.replace({ query: { tab: next === "overview" ? undefined : next } });
 }
 function onTabKey(e: KeyboardEvent) {
   const i = TABS.indexOf(tab.value);
@@ -61,6 +63,8 @@ const state = computed(() => job.value?.state);
 const canPause = computed(() => !!state.value && RUNNING.includes(state.value));
 const canResume = computed(() => state.value === "paused");
 const canCancel = computed(() => !!state.value && !TERMINAL.includes(state.value));
+/** Files that need a look, for the Files tab's badge. */
+const problems = computed(() => (job.value ? job.value.counts.failed + job.value.counts.mismatch : 0));
 const unsent = computed(() => state.value === "draft" || state.value === "awaiting_approval" || state.value === "ready");
 
 async function act(fn: () => Promise<void>) {
@@ -136,6 +140,7 @@ const details = computed(() => [
           @click="selectTab(t)"
         >
           {{ $t(`jobDetail.tab.${t}`) }}
+          <span v-if="t === 'files' && problems" class="badge badge-danger num" :aria-label="$t('files.problemsBadge', { n: problems }, problems)">{{ fmt.count(problems) }}</span>
         </button>
       </div>
 
@@ -179,6 +184,10 @@ const details = computed(() => [
 
       </div>
 
+      <div v-else-if="tab === 'files'" id="panel-files" role="tabpanel" aria-labelledby="tab-files">
+        <p v-if="job.state === 'draft' || job.state === 'analysing'" class="card small muted">{{ $t("files.notAnalysed") }}</p>
+        <FilesTab v-else :job-id="id" />
+      </div>
       <div v-else id="panel-log" role="tabpanel" aria-labelledby="tab-log">
         <JobLog :job-id="id" />
       </div>
@@ -213,7 +222,7 @@ dd { margin: 0; min-width: 0; }
 .link { all: unset; cursor: pointer; color: var(--accent); display: inline-flex; gap: 0.3rem; align-items: center; }
 .link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin: 0 0 1rem; }
-.tab { font: inherit; background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; margin-bottom: -1px; color: var(--text-2); cursor: pointer; }
+.tab { display: inline-flex; gap: 0.4rem; align-items: center; font: inherit; background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.5rem 0.9rem; margin-bottom: -1px; color: var(--text-2); cursor: pointer; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }

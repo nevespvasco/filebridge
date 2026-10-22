@@ -1,6 +1,6 @@
 # D05 — Files of a transfer and Entry detail
 
-- ID: D05 · Status: Proposed · Phase: 2 (it is the visible half of the roadmap item "Manifest with
+- ID: D05 · Status: **Built** · Phase: 2 (it is the visible half of the roadmap item "Manifest with
   hash and verification independent of names")
 - Inspired by: A6, A7, A8 (slothUI table, count badge, search and filter), D6, D7, D9 (UpLink type
   pills, context menu, filter panel), F12 (Vault & Vine File detail with checksum), F15 (type
@@ -245,9 +245,16 @@ Performance target: on a job of 300 000 entries, the first page of any filter re
 150 ms and `entry_facets` in under 300 ms on an SSD (bench in `crates/store/benches` or a
 `#[ignore]` test with a generated manifest).
 
+*As built:* the store takes an `EntryQuery` of plain strings (states as `(transfer, verify)`
+pairs, Categories as text), so `store` still doesn't depend on `model`; `core/src/files.rs` maps
+`EntryFilter` onto it. The engine methods are `files_page`, `entry_facets` and `entry_detail`.
+The virtualised list is a `role="grid"` of rows (not a `<table>`), because rows are absolutely
+positioned; `J`/`K`/arrows move and `Enter` opens.
+
 ### Core: persist the hash (the roadmap's Phase 2 item)
 
-- `run.rs`, verify stage: `set_verify_states` takes `(idx, state, Option<Vec<u8>>)`. The source
+- `run.rs`, verify stage: the new `set_verify_results(job, "sha256", (idx, state, Option<digest>))`
+  (built; `set_verify_states` stays for the resets that carry no digest). The source
   digest is written to `hash` with `hash_algo = 'sha256'` for **every** checked entry: Done,
   Mismatch and Missing alike (the source side is known in all three).
 - The store's `set_verify_states` updates `hash`/`hash_algo` only when a digest is given (`COALESCE`),

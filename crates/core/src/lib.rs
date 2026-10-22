@@ -8,6 +8,7 @@ mod analyse;
 pub mod backoff;
 mod decisions;
 mod engine;
+mod files;
 pub mod inhibit;
 mod lifecycle;
 mod profile;
@@ -18,10 +19,11 @@ mod settings;
 pub use engine::{Engine, EngineOptions};
 /// The shared types and rules, so `core`'s callers keep their paths.
 pub use filebridge_model::{
-    AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, DoneView, Event,
-    Family, FileCategory, InFlightView, IssueDecision, IssueSeverity, IssueView, JobKind, JobState,
-    JobSummary, LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RuleCount, SendOptions,
-    SendWindow, TargetSpec, UnknownValue, job_operations,
+    AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, DoneView,
+    EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
+    EntryView, Event, Family, FileCategory, InFlightView, IssueDecision, IssueSeverity, IssueView,
+    JobKind, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile, ProfileTest,
+    RuleCount, SendOptions, SendWindow, TargetSpec, UnknownValue, job_operations,
 };
 pub use registry::Registry;
 pub use settings::LocalClock;

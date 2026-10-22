@@ -25,7 +25,7 @@ ADR that records it.
 | D02 | [Source step and transfer composition](specs/D02-source-and-composition.md) — **Built** | 2 | UI, `model`, `store` (migration), `ipc` |
 | D03 | [Destination storage](specs/D03-destination-storage.md) | 2 | UI, `transport-api` (additive), `transport-rclone`, `store` (migration), `ipc` |
 | D04 | [Transfer queue](specs/D04-transfer-queue.md) — **Built** | 1 | UI, `transport-api` (additive), `transport-rclone`, `model` event, `core` |
-| D05 | [Files of a transfer and Entry detail](specs/D05-files-and-entry-detail.md) | 2 | UI, `model`, `store`, `core` (persist hash), `ipc` |
+| D05 | [Files of a transfer and Entry detail](specs/D05-files-and-entry-detail.md) — **Built** | 2 | UI, `model`, `store`, `core` (persist hash), `ipc` |
 | D06 | [Transfers list](specs/D06-transfers-list.md) | 2 | UI, `model` rules, `store` (migration), `ipc` |
 | D07 | [Job log and Activity](specs/D07-job-log-and-activity.md) — **log Built**, Activity proposed | 1 (log) / 2 (Activity) | UI, `core`, `store`, `ipc` |
 | D08 | [Issue selection](specs/D08-issue-selection.md) | 2 | UI, `store`, `ipc` |

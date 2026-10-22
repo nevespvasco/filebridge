@@ -43,7 +43,9 @@
     "yes": "Yes",
     "no": "No",
     "recommended": "recommended",
-    "optional": "optional"
+    "optional": "optional",
+    "clear": "Clear",
+    "close": "Close"
   },
   "status": {
     "ok": "OK",
@@ -389,7 +391,8 @@
     "tabs": "Transfer sections",
     "tab": {
       "overview": "Overview",
-      "log": "Log"
+      "log": "Log",
+      "files": "Files"
     }
   },
   "destinations": {
@@ -629,5 +632,90 @@
     "archive": "Archives",
     "code": "Code",
     "other": "Other"
+  },
+  "files": {
+    "title": "Files",
+    "search": "Search names…",
+    "sort": "Sort",
+    "sortBy": {
+      "folder_order": "Folder order",
+      "largest_first": "Largest first",
+      "problems_first": "Problems first"
+    },
+    "show": "Show",
+    "kinds": "Kinds of file",
+    "chip": {
+      "all": "All",
+      "problems": "Problems",
+      "verified": "Verified",
+      "sent": "Sent",
+      "renamed": "Renamed",
+      "skipped": "Skipped",
+      "notSent": "Not yet sent"
+    },
+    "col": {
+      "name": "Name",
+      "folder": "Folder",
+      "size": "Size",
+      "status": "Status"
+    },
+    "noMatch": "No file of this transfer matches these filters.",
+    "empty": "This transfer has no files.",
+    "clear": "Clear filters",
+    "notAnalysed": "Files are listed once the analysis has run.",
+    "problemsBadge": "{n} problem | {n} problems"
+  },
+  "entryStatus": {
+    "not_sent": "Not yet sent",
+    "sending": "Sending",
+    "sent": "Sent",
+    "verified": "Verified",
+    "different": "Different",
+    "missing": "Missing at destination",
+    "unverifiable": "Couldn't verify",
+    "failed": "Failed",
+    "skipped": "Skipped"
+  },
+  "entry": {
+    "title": "File",
+    "name": "Name",
+    "atSource": "At the source",
+    "atDestination": "At destination",
+    "changedBy": "Changed by",
+    "where": "Where",
+    "source": "Source",
+    "destination": "Destination",
+    "parameters": "Details",
+    "size": "Size",
+    "bytes": "{n} bytes",
+    "modified": "Modified",
+    "category": "Kind",
+    "verification": "Verification",
+    "error": "Error",
+    "verify": {
+      "same": "Same at both ends",
+      "different": "Different at the destination",
+      "missing": "Not found at the destination",
+      "unverifiable": "The destination couldn't compute a checksum",
+      "notYet": "Not verified"
+    },
+    "hashNoVerify": "Not computed: this transfer ran without verification",
+    "hashNotYet": "Not computed yet",
+    "lossy": "Name isn't valid text: shown approximately",
+    "copySource": "Copy source path",
+    "copyDestination": "Copy destination path",
+    "copyHash": "Copy checksum",
+    "copied": "Copied",
+    "reveal": "Show source in file manager"
+  },
+  "ruleName": {
+    "nfc": "Accents composed (NFC)",
+    "nextcloud-nfc": "Accents composed for Nextcloud",
+    "forbidden-chars": "Characters the destination refuses",
+    "trailing": "Spaces or dots at the end",
+    "reserved": "Reserved name",
+    "nextcloud-reserved": "Name Nextcloud reserves",
+    "collision": "Clash with another name",
+    "encoding": "Name that isn't valid text"
   }
 }

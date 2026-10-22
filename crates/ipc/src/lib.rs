@@ -25,10 +25,11 @@ pub use server::{Handler, bind, serve};
 /// carry, so clients need only this crate. It doesn't depend on `core`: a client never compiles
 /// the engine (ADR 0008: the window reaches `core` only through `ipc`).
 pub use filebridge_model::{
-    AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, Event, Family,
-    IssueDecision, IssueSeverity, IssueView, JobKind, JobState, JobSummary, LogEntry, LogLevel,
-    PreflightView, Profile, ProfileTest, RecentSource, RuleCount, SendOptions, SendWindow,
-    TargetSpec, job_operations,
+    AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, EntryCursor,
+    EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event,
+    Family, HashView, IssueDecision, IssueSeverity, IssueView, JobKind, JobState, JobSummary,
+    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, RuleCount, SendOptions,
+    SendWindow, StatusCount, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -40,7 +41,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///    `SendOptions` has no `bwlimit` (the limit is app-wide).
 /// 5: `transfer_progress` lists the files in flight; the `entries_done` event; `job_log`.
 /// 6: `job_categories`, `recent_sources`.
-pub const PROTOCOL_VERSION: u32 = 6;
+/// 7: `entries`, `entry_facets`, `entry`.
+pub const PROTOCOL_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

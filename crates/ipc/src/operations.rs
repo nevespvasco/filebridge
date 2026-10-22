@@ -49,6 +49,12 @@ macro_rules! for_each_operation {
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
             /// Folders and files sent before, newest first, for "Recently sent from".
             RecentSources recent_sources(limit: u32) -> Vec<$crate::RecentSource>;
+            /// One page of a job's files, filtered and sorted (at most 500).
+            Entries entries(job_id: String, filter: $crate::EntryFilter, after: Option<$crate::EntryCursor>, limit: u32) -> $crate::EntryPage;
+            /// Counts for the Files tab's filter chips, over the whole job.
+            EntryFacets entry_facets(job_id: String) -> $crate::EntryFacets;
+            /// Everything about one file of a job.
+            Entry entry(job_id: String, idx: u64) -> $crate::EntryDetail;
             /// A job's log: oldest first after `after_id`, otherwise newest first before
             /// `before_id` (the newest page when both are absent).
             JobLog job_log(job_id: String, after_id: Option<i64>, before_id: Option<i64>, limit: u32) -> Vec<$crate::LogEntry>;

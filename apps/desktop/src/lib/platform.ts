@@ -7,6 +7,7 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
 
@@ -56,4 +57,18 @@ export async function notify(title: string, body: string): Promise<void> {
     if (!permission) permission = (await requestPermission()) === "granted";
   }
   if (permission) sendNotification({ title, body });
+}
+
+/** Opens the OS file manager with `path` selected. Reads only: nothing is opened or changed. */
+export async function revealInFileManager(path: string): Promise<void> {
+  if (isMock) {
+    console.info(`[reveal] ${path}`);
+    return;
+  }
+  await revealItemInDir(path);
+}
+
+/** Copies text to the clipboard. */
+export async function copyText(text: string): Promise<void> {
+  await navigator.clipboard.writeText(text);
 }
