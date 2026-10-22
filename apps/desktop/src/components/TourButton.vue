@@ -5,11 +5,11 @@ import { useTour } from "@/stores/tour";
 import AppIcon from "./AppIcon.vue";
 
 const props = defineProps<{ tour: TourId }>();
-const tour = useTour();
+const guides = useTour();
 </script>
 
 <template>
-  <button class="tour-btn" type="button" :title="$t('tour.replay')" :aria-label="$t('tour.replay')" @click="tour.start(props.tour)">
+  <button class="tour-btn" type="button" :title="$t('tour.replay')" :aria-label="$t('tour.replay')" @click="guides.start(props.tour)">
     <AppIcon name="help" :size="18" />
   </button>
 </template>

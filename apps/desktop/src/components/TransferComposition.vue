@@ -46,12 +46,12 @@ const composition = computed<Segment[]>(() =>
 );
 
 /** The tighter of what is known: total = used + free when only those two are. */
-const total = computed(() => props.total ?? (props.used != null && props.free != null ? props.used + props.free : null));
+const knownTotal = computed(() => props.total ?? (props.used != null && props.free != null ? props.used + props.free : null));
 const fits = computed(() => (props.free == null ? null : bytes.value <= props.free));
 const freeAfter = computed(() => (props.free == null ? null : props.free - bytes.value));
 const tight = computed(() => {
   if (freeAfter.value == null || freeAfter.value < 0) return false;
-  return freeAfter.value < 10e9 || (total.value != null && freeAfter.value < total.value * 0.05);
+  return freeAfter.value < 10e9 || (knownTotal.value != null && freeAfter.value < knownTotal.value * 0.05);
 });
 const fit = computed<Segment[]>(() => {
   const out: Segment[] = [];
@@ -60,7 +60,7 @@ const fit = computed<Segment[]>(() => {
   return out;
 });
 /** Without a total, the bar compares the transfer with the free space. */
-const fitWhole = computed(() => total.value ?? (props.free != null ? Math.max(props.free, bytes.value) : null));
+const fitWhole = computed(() => knownTotal.value ?? (props.free != null ? Math.max(props.free, bytes.value) : null));
 </script>
 
 <template>
@@ -85,7 +85,7 @@ const fitWhole = computed(() => total.value ?? (props.free != null ? Math.max(pr
         :caption="$t('composition.fit')"
         :overflow="fits === false"
       />
-      <p v-if="total == null" class="small muted">{{ $t("composition.noTotal") }}</p>
+      <p v-if="knownTotal == null" class="small muted">{{ $t("composition.noTotal") }}</p>
       <p v-if="fits === false" class="small error">{{ $t("analysis.tooBig", { free: fmt.bytes(free), size: fmt.bytes(bytes) }) }}</p>
       <p v-else-if="tight" class="guide warn small">{{ $t("composition.tight", { destination: destination ?? "", free: fmt.bytes(freeAfter) }) }}</p>
     </template>
