@@ -6,8 +6,8 @@ use std::path::Path;
 use sha2::{Digest as _, Sha256};
 
 use crate::{
-    Destination, ErrorKind, HashAlgo, ItemOutcome, ProgressEvent, ProgressSink, RemotePath,
-    TransferItem, TransferJob, TransferOptions, Transport, TransportCaps,
+    Destination, ErrorKind, HashAlgo, ItemOutcome, MoveRequest, ProgressEvent, ProgressSink,
+    RemotePath, TransferItem, TransferJob, TransferOptions, Transport, TransportCaps,
 };
 
 /// Sends a small tree from a source under `scratch` to `dest` and checks what the contract
@@ -160,15 +160,21 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
 
 /// The promise of [`Transport::move_path`], for adapters with [`TransportCaps::MOVE`]: a file
 /// and a folder (with what is inside) are renamed in place, an NFD name becomes its NFC
-/// spelling, an existing name is never overwritten, and a missing source is `NotFound`.
+/// spelling, a name already taken (exactly, in another normalisation or in another case) is
+/// never overwritten, a move cut short between its hops is finished, one already done is
+/// recognised, a leftover intermediate name stops the move, and a missing source is `NotFound`.
 pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: &Path) {
     assert!(transport.capabilities().contains(TransportCaps::MOVE));
     let src = scratch.join("contract-move-src");
-    let seed: [(&str, &str); 4] = [
+    let seed: [(&str, &str); 8] = [
         ("a.txt", "mv/a.txt"),
         ("b.txt", "mv/dir/b.txt"),
         ("t.txt", "mv/taken.txt"),
         ("n.txt", "mv/Vera\u{303}o.txt"),
+        ("e.txt", "mv/Cafe\u{301}.txt"),
+        ("c.txt", "mv/c.txt"),
+        ("d.txt", "mv2/d.txt"),
+        ("x.txt", "mv2/.fb-move-d.txt"),
     ];
     let mut items = Vec::new();
     for (name, to) in seed {
@@ -194,6 +200,22 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
         .await
         .unwrap();
     let p = |s: &str| RemotePath::new(s).unwrap();
+    // The intermediate name a caller would pick: deterministic, in the source's folder.
+    let req = |from: &str, to: &str, is_dir: bool| {
+        let from = p(from);
+        let via = match from.parent() {
+            Some(dir) => format!("{dir}/.fb-move-{}", from.file_name()),
+            None => format!(".fb-move-{}", from.file_name()),
+        };
+        MoveRequest {
+            to: p(to),
+            via: p(&via),
+            from,
+            is_dir,
+            size: None,
+            mtime: None,
+        }
+    };
     let names = |dir: &'static str| async move {
         let mut v: Vec<String> = transport
             .list(dest, Some(&RemotePath::new(dir).unwrap()), false)
@@ -206,18 +228,16 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
         v
     };
 
-    transport
-        .move_path(dest, &p("mv/a.txt"), &p("mv/a2.txt"))
-        .await
-        .unwrap();
-    transport
-        .move_path(dest, &p("mv/dir"), &p("mv/dir2"))
-        .await
-        .unwrap();
-    transport
-        .move_path(dest, &p("mv/Vera\u{303}o.txt"), &p("mv/Ver\u{e3}o.txt"))
-        .await
-        .unwrap();
+    for (from, to, is_dir) in [
+        ("mv/a.txt", "mv/a2.txt", false),
+        ("mv/dir", "mv/dir2", true),
+        ("mv/Vera\u{303}o.txt", "mv/Ver\u{e3}o.txt", false),
+    ] {
+        transport
+            .move_path(dest, &req(from, to, is_dir))
+            .await
+            .unwrap_or_else(|e| panic!("{from} -> {to}: {e}"));
+    }
     let listed = names("mv").await;
     for want in ["a2.txt", "dir2", "taken.txt", "Ver\u{e3}o.txt"] {
         assert!(listed.contains(&want.to_owned()), "{want} in {listed:?}");
@@ -225,22 +245,26 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
     for gone in ["a.txt", "dir", "Vera\u{303}o.txt"] {
         assert!(!listed.contains(&gone.to_owned()), "{gone} in {listed:?}");
     }
-    assert!(
-        listed.iter().all(|n| !n.starts_with(".fb-")),
-        "no intermediate name left: {listed:?}"
-    );
     assert_eq!(names("mv/dir2").await, ["b.txt"]);
 
-    let refused = transport
-        .move_path(dest, &p("mv/a2.txt"), &p("mv/taken.txt"))
-        .await;
-    assert!(refused.is_err(), "an existing name is never overwritten");
+    // Taken exactly, in another case, or in another normalisation: refused, nothing moves.
+    for to in ["mv/taken.txt", "mv/TAKEN.txt", "mv/Caf\u{e9}.txt"] {
+        let refused = transport
+            .move_path(dest, &req("mv/a2.txt", to, false))
+            .await;
+        assert!(
+            refused.is_err(),
+            "{to}: an existing name is never overwritten"
+        );
+    }
     let listed = names("mv").await;
-    assert!(listed.contains(&"a2.txt".to_owned()) && listed.contains(&"taken.txt".to_owned()));
-    let digest = transport
+    for kept in ["a2.txt", "taken.txt", "Cafe\u{301}.txt"] {
+        assert!(listed.contains(&kept.to_owned()), "{kept} in {listed:?}");
+    }
+    if let Ok(d) = transport
         .hash(dest, &p("mv/taken.txt"), HashAlgo::Sha256)
-        .await;
-    if let Ok(d) = digest {
+        .await
+    {
         assert_eq!(
             d.bytes,
             Sha256::digest(b"t.txt").to_vec(),
@@ -248,8 +272,38 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
         );
     }
 
+    // Cut short between the hops: asking again finishes it.
+    let cut = req("mv/c.txt", "mv/c2.txt", false);
+    transport
+        .move_unchecked(dest, &cut.from, &cut.via, false)
+        .await
+        .unwrap();
+    transport.move_path(dest, &cut).await.unwrap();
+    let listed = names("mv").await;
+    assert!(listed.contains(&"c2.txt".to_owned()), "{listed:?}");
+    // Asked again once done: done, if `to` is the entry that was moved.
+    transport.move_path(dest, &cut).await.unwrap();
+    let other = MoveRequest {
+        size: Some(999),
+        ..cut.clone()
+    };
+    let err = transport.move_path(dest, &other).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound, "another file at c2.txt");
+    assert!(
+        names("mv").await.iter().all(|n| !n.starts_with(".fb-")),
+        "no intermediate name left"
+    );
+
+    // A leftover intermediate name stops the move: both stay as they are.
+    let err = transport
+        .move_path(dest, &req("mv2/d.txt", "mv2/d2.txt", false))
+        .await
+        .unwrap_err();
+    assert_ne!(err.kind, ErrorKind::NotFound, "{err:?}");
+    assert_eq!(names("mv2").await, [".fb-move-d.txt", "d.txt"]);
+
     let missing = transport
-        .move_path(dest, &p("mv/nope.txt"), &p("mv/nope2.txt"))
+        .move_path(dest, &req("mv/nope.txt", "mv/nope2.txt", false))
         .await
         .unwrap_err();
     assert_eq!(missing.kind, ErrorKind::NotFound);

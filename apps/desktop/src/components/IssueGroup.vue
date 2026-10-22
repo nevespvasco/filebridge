@@ -54,7 +54,11 @@ const showsBytes = computed(() => props.rule.rule.includes("nfc") || props.rule.
 function rowHasProposal(row: IssueView_Serialize): boolean {
   return row.after.length !== row.before.length || row.after.some((b, i) => b !== row.before[i]);
 }
-const hasProposal = computed(() => props.rule.rule !== "encoding" || rows.value.some(rowHasProposal));
+/** "Accept all" applies to every pending issue of the rule, loaded or not: only when none of them
+ *  lacks a proposal (the service refuses the whole lot otherwise). */
+const canAcceptAll = computed(() => props.rule.no_proposal === 0);
+/** Accepting a selection works for the issues that have a proposal; the others are reported. */
+const hasProposal = computed(() => props.rule.no_proposal < props.rule.pending || rows.value.some(rowHasProposal));
 /** Bytes that aren't UTF-8 can't be kept: the destination takes UTF-8 names only. */
 const canKeep = computed(() => props.rule.rule !== "encoding");
 const pageNo = computed(() => cursors.value.length);
@@ -264,7 +268,7 @@ function decisionLabel(row: IssueView_Serialize) {
         <span v-if="bulk" class="small">{{ $t("issues.bulkProgress") }}</span>
         <template v-else>
           <span class="small muted">{{ $t("issues.bulkLabel", { n: fmt.count(rule.pending) }) }}</span>
-          <button v-if="hasProposal" class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })"><AppIcon name="check" /> {{ $t("issues.acceptAll") }}</button>
+          <button v-if="canAcceptAll" class="btn btn-small btn-primary" :title="$t('issues.acceptAllTip')" @click="decideAllPending({ kind: 'accept' })"><AppIcon name="check" /> {{ $t("issues.acceptAll") }}</button>
           <button v-if="canKeep" class="btn btn-small" :title="$t('issues.keepAllTip')" @click="decideAllPending({ kind: 'keep_original' })">{{ $t("issues.keepAll") }}</button>
           <button class="btn btn-small" :title="$t('issues.skipAllTip')" @click="decideAllPending({ kind: 'skip' })">{{ $t("issues.skipAll") }}</button>
           <span v-if="canKeep" class="small muted">{{ $t("issues.bulkAdvice") }}</span>
@@ -310,6 +314,7 @@ function decisionLabel(row: IssueView_Serialize) {
                 {{ row.decision === "rejected" ? row.before_text : row.decision === "skipped" ? $t("issues.notSent") : (row.custom_name ?? row.after_text) }}
               </span>
             </div>
+            <div v-if="row.rule === 'collision' && row.decision === 'rejected'" class="small warn-text">{{ $t("issues.keptClash", { name: row.before_text }) }}</div>
             <div v-if="showsBytes" class="bytes">
               <BytesDiff :before="row.before" :after="row.after" />
               <HelpTip :text="$t('issues.bytesTip')" :label="$t('issues.bytesLabel')" />

@@ -71,6 +71,8 @@ pub struct RuleSummary {
     pub rule: String,
     pub total: u64,
     pub pending: u64,
+    /// Pending issues with no proposal (`after` equal to `before`): Accept can't apply to them.
+    pub no_proposal: u64,
 }
 
 /// The condition "the issue's entry's source path is LIKE parameter `?n`" (true when NULL).
@@ -210,7 +212,8 @@ impl Store {
         let pattern = like_pattern(query);
         self.call(move |c| {
             let mut stmt = c.prepare_cached(&format!(
-                "SELECT rule, COUNT(*), SUM(decision = 'pending')
+                "SELECT rule, COUNT(*), SUM(decision = 'pending'),
+                        SUM(decision = 'pending' AND before = after)
                  FROM issues WHERE job_id = ?1 AND {} GROUP BY rule ORDER BY rule",
                 matching(2)
             ))?;
@@ -219,6 +222,7 @@ impl Store {
                     rule: r.get(0)?,
                     total: r.get(1)?,
                     pending: r.get(2)?,
+                    no_proposal: r.get(3)?,
                 })
             })?;
             Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -497,7 +501,10 @@ mod tests {
             .map(|i| issue(i, "nfc", Decision::Accepted))
             .collect();
         issues.push(issue(5, "mojibake", Decision::Pending));
-        issues.push(issue(6, "mojibake", Decision::Pending));
+        issues.push(NewIssue {
+            after: b"Vera\xcc\x83o".to_vec(),
+            ..issue(6, "mojibake", Decision::Pending)
+        });
         store.insert_issues(&job, issues).await.unwrap();
 
         let summary = store.issue_summary(&job).await.unwrap();
@@ -507,12 +514,14 @@ mod tests {
                 RuleSummary {
                     rule: "mojibake".into(),
                     total: 2,
-                    pending: 2
+                    pending: 2,
+                    no_proposal: 1,
                 },
                 RuleSummary {
                     rule: "nfc".into(),
                     total: 5,
-                    pending: 0
+                    pending: 0,
+                    no_proposal: 0,
                 },
             ]
         );

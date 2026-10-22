@@ -235,7 +235,9 @@ mod tests {
         assert!(a.entries[1..].iter().all(|e| e.parent_idx.is_some()));
         let paths: Vec<_> = a.dest_paths.iter().filter_map(|(_, p)| p.clone()).collect();
         assert!(paths.contains(&"Acme/sub/a.txt".to_owned()));
-        assert_eq!(paths.iter().filter(|p| *p == "Acme/Verão.txt").count(), 2);
+        // Proposed paths assume the proposals accepted: the second spelling takes the suffix.
+        assert_eq!(paths.iter().filter(|p| *p == "Acme/Verão.txt").count(), 1);
+        assert!(paths.contains(&"Acme/Verão (2).txt".to_owned()));
 
         assert_eq!(a.issues.iter().filter(|i| i.rule == "nfc").count(), 1);
         let collision: Vec<_> = a

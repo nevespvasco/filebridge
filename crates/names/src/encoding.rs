@@ -3,9 +3,13 @@ use crate::{Entry, Issue, NameRule, Severity, TargetProfile};
 /// Decodes names that are not valid UTF-8, the way old Windows and Linux systems wrote them:
 /// as Windows-1252 (CP1252), the superset of Latin-1 those systems used.
 ///
-/// A name with one of the five bytes CP1252 leaves undefined (`81 8d 8f 90 9d`) is read as plain
-/// Latin-1 instead. That guess is weaker, so it waits for a decision; the CP1252 one is applied
-/// (with the bytes shown, `docs/04`).
+/// The CP1252 reading is applied by itself (with the bytes shown, `docs/04`) only when it looks
+/// like a name written in a Latin script: every non-ASCII character a Latin-1 letter or common
+/// punctuation, and never more than two of them in a row. Bytes from another code page (CP850,
+/// CP1251, Shift-JIS, GBK…) read as CP1252 rarely look like that, so any other name waits for a
+/// decision with the CP1252 reading as the proposal. The five bytes CP1252 leaves undefined
+/// (`81 8d 8f 90 9d`) become `_` in it: Latin-1 would read them as control characters, which no
+/// name should carry.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Encoding;
 
@@ -62,20 +66,58 @@ pub(crate) fn cp1252_byte(c: char) -> Option<u8> {
     u8::try_from(u32::from(c)).ok()
 }
 
+/// What an undefined CP1252 byte becomes in the proposal.
+const UNDEFINED: char = '_';
+
+/// Non-ASCII characters a Latin-script name commonly holds, beyond the Latin-1 letters: CP1252's
+/// own letters and the punctuation people type in names.
+const PLAUSIBLE_EXTRA: &str = "ŒœŠšŽžŸ‘’“”–—…€•°«»ªº§©®™¡¿£´·¹²³½¼¾";
+
+/// Whether `c` is a letter or a symbol a Latin-script name would hold. The Latin-1 letters
+/// minus `× ÷` and the Icelandic `Ð ð Þ þ`, which CP1251 Cyrillic lands on most often.
+fn plausible(c: char) -> bool {
+    c.is_ascii()
+        || (('\u{c0}'..='\u{ff}').contains(&c) && !"×÷ÐðÞþ".contains(c))
+        || PLAUSIBLE_EXTRA.contains(c)
+}
+
+/// Whether a CP1252 reading looks like a name in a Latin script: every character plausible, and
+/// at most two non-ASCII ones in a row (`ção` has two; Cyrillic or CJK read as CP1252 has runs).
+fn looks_latin(name: &str) -> bool {
+    let mut run = 0;
+    for c in name.chars() {
+        if !plausible(c) {
+            return false;
+        }
+        run = if c.is_ascii() { 0 } else { run + 1 };
+        if run > 2 {
+            return false;
+        }
+    }
+    true
+}
+
 impl Encoding {
     pub const ID: &'static str = "encoding";
 
-    /// The decoded name and whether it is the sure (CP1252) reading, for a name that is not
-    /// UTF-8.
+    /// The CP1252 reading of a name that is not UTF-8, and whether it is sure enough to apply by
+    /// itself (it looks like a Latin-script name and every byte is defined).
     pub fn decode(raw: &[u8]) -> Option<(String, bool)> {
         if std::str::from_utf8(raw).is_ok() {
             return None;
         }
-        let cp1252: Option<String> = raw.iter().map(|b| cp1252_char(*b)).collect();
-        Some(match cp1252 {
-            Some(name) => (name, true),
-            None => (raw.iter().map(|b| char::from(*b)).collect(), false),
-        })
+        let mut defined = true;
+        let name: String = raw
+            .iter()
+            .map(|b| {
+                cp1252_char(*b).unwrap_or_else(|| {
+                    defined = false;
+                    UNDEFINED
+                })
+            })
+            .collect();
+        let sure = defined && looks_latin(&name);
+        Some((name, sure))
     }
 }
 
@@ -140,11 +182,42 @@ mod tests {
     }
 
     #[test]
-    fn a_byte_cp1252_lacks_waits_for_a_decision() {
+    fn a_byte_cp1252_lacks_waits_for_a_decision_and_never_becomes_a_control() {
         let issue = Encoding.check(&file(b"a\x81b")).unwrap();
         assert_eq!(issue.severity, Severity::NeedsDecision);
         assert_eq!(issue.message_key, "names.encoding.guessed");
-        assert_eq!(String::from_utf8(issue.after).unwrap(), "a\u{81}b");
+        assert_eq!(String::from_utf8(issue.after).unwrap(), "a_b");
+    }
+
+    #[test]
+    fn other_code_pages_wait_for_a_decision() {
+        for (raw, what) in [
+            (&b"\xcf\xf0\xe8\xe2\xe5\xf2.txt"[..], "CP1251 Привет"),
+            (&b"\x93\xfa\x96\x7b.txt"[..], "Shift-JIS 日本"),
+            (&b"\xd6\xd0\xce\xc4.txt"[..], "GBK 中文"),
+            (&b"Ac\x87\xc6o.txt"[..], "CP850 Acção"),
+            (&b"caf\x82.txt"[..], "CP850 café"),
+        ] {
+            let issue = Encoding.check(&file(raw)).unwrap();
+            assert_eq!(issue.severity, Severity::NeedsDecision, "{what}");
+            assert!(
+                std::str::from_utf8(&issue.after).is_ok(),
+                "{what}: still a proposal"
+            );
+        }
+    }
+
+    #[test]
+    fn latin_names_with_accents_and_punctuation_are_sure() {
+        for raw in [
+            &b"Gr\xf6\xdfe.txt"[..],         // Größe
+            &b"\xc9cole \xab test \xbb"[..], // École « test »
+            &b"Jo\x92s"[..],                 // Jo’s
+            &b"na\xefve caf\xe9"[..],        // naïve café
+        ] {
+            let issue = Encoding.check(&file(raw)).unwrap();
+            assert_eq!(issue.severity, Severity::Auto, "{raw:?}");
+        }
     }
 
     #[test]

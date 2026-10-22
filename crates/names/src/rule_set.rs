@@ -86,10 +86,21 @@ impl RuleSet {
     /// Runs the chain on one entry's own name, leaving out the rules in `skip`. Returns the
     /// final name (`None` if it is not valid UTF-8) and what each rule changed.
     pub(crate) fn run(&self, entry: &Entry, skip: &[&str]) -> (Option<String>, Vec<Issue>) {
+        self.run_where(entry, skip, |_| true)
+    }
+
+    /// [`Self::run`], applying only the issues `apply` lets through: the others leave the name
+    /// as it was and are not returned.
+    pub(crate) fn run_where(
+        &self,
+        entry: &Entry,
+        skip: &[&str],
+        apply: impl Fn(&Issue) -> bool,
+    ) -> (Option<String>, Vec<Issue>) {
         let mut current = entry.clone();
         let mut issues = Vec::new();
         for rule in self.rules.iter().filter(|r| !skip.contains(&r.id())) {
-            if let Some(issue) = rule.check(&current) {
+            if let Some(issue) = rule.check(&current).filter(|i| apply(i)) {
                 let after = issue.after.clone();
                 issues.push(issue);
                 current.name = String::from_utf8(after.clone()).ok();

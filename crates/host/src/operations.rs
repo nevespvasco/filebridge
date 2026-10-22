@@ -360,6 +360,10 @@ impl Operations for EngineOperations {
             .map_err(to_error)
     }
 
+    async fn planned_renames(&self, job_id: String) -> Res<u64> {
+        self.engine.planned_renames(&job_id).await.map_err(to_error)
+    }
+
     async fn inspect_sources(&self, paths: Vec<String>) -> Res<Vec<SourceInfo>> {
         if paths.len() > MAX_INSPECT {
             return Err(ErrorBody {

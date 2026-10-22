@@ -47,6 +47,7 @@ pub(crate) fn decided(row: IssueRow) -> Decided {
     Decided {
         entry: row.issue.entry_idx as usize,
         rule: row.issue.rule,
+        before: row.issue.before,
         after: row.issue.after,
         choice,
     }

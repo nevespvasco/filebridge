@@ -15,7 +15,9 @@ const MAX_ROUNDS: usize = 2;
 
 /// How garbled a name looks: C1 control characters, plus each character that is a UTF-8 lead
 /// byte read as Latin-1 (`Ã`, `Â`, `â`…) followed by one that is a continuation byte read the
-/// same way (`³`, `©`, `€`…). A real name almost never has either.
+/// same way (`³`, `©`, `€`…). A real name almost never has either. A reversal can also land on
+/// odd characters (unassigned code points, stray marks) or on a letter of another script amid
+/// Latin ones (`Ø¨` → `ب`); those count too, so such a reversal never looks better.
 fn weirdness(s: &str) -> usize {
     let lead = |c: char| ('\u{c2}'..='\u{f4}').contains(&c);
     let continuation = |c: char| cp1252_byte(c).is_some_and(|b| (0x80..=0xbf).contains(&b));
@@ -28,7 +30,62 @@ fn weirdness(s: &str) -> usize {
         .windows(2)
         .filter(|w| lead(w[0]) && continuation(w[1]))
         .count();
-    controls + pairs
+    let odd = chars
+        .iter()
+        .enumerate()
+        .filter(|(i, c)| odd(**c, i.checked_sub(1).map(|p| chars[p])))
+        .count();
+    controls + pairs + odd + foreign_letters(&chars)
+}
+
+/// A character no name is expected to hold: past Latin-1, neither a letter nor a digit, nor
+/// common punctuation, currency or a letterlike symbol (`’`, `€`, `™`), nor a combining mark on a
+/// letter (an NFD accent). Unassigned and private-use code points fall here.
+fn odd(c: char, before: Option<char>) -> bool {
+    let n = u32::from(c);
+    if n < 0x100 || c.is_alphanumeric() {
+        return false;
+    }
+    let common = (0x2000..=0x206f).contains(&n)
+        || (0x20a0..=0x20cf).contains(&n)
+        || (0x2100..=0x214f).contains(&n);
+    let mark_on_letter = (0x300..=0x36f).contains(&n) && before.is_some_and(char::is_alphabetic);
+    !(common || mark_on_letter)
+}
+
+/// Rough script of a letter: Latin, Greek, Cyrillic, Armenian, Hebrew, Arabic, East Asian, or
+/// other.
+fn script(c: char) -> Option<u8> {
+    if !c.is_alphabetic() {
+        return None;
+    }
+    Some(match u32::from(c) {
+        0..=0x24f | 0x1e00..=0x1eff => 0,
+        0x370..=0x3ff | 0x1f00..=0x1fff => 1,
+        0x400..=0x52f => 2,
+        0x530..=0x58f => 3,
+        0x590..=0x5ff => 4,
+        0x600..=0x6ff | 0x750..=0x77f => 5,
+        0x3040..=0x30ff | 0x3400..=0x9fff | 0xac00..=0xd7af | 0xf900..=0xfaff => 6,
+        _ => 7,
+    })
+}
+
+/// Non-ASCII letters not in the script most of the name's letters are in.
+fn foreign_letters(chars: &[char]) -> usize {
+    let mut per_script = [0usize; 8];
+    for c in chars {
+        if let Some(s) = script(*c) {
+            per_script[usize::from(s)] += 1;
+        }
+    }
+    let main = (0..8u8)
+        .max_by_key(|s| (per_script[usize::from(*s)], std::cmp::Reverse(*s)))
+        .unwrap_or(0);
+    chars
+        .iter()
+        .filter(|c| !c.is_ascii() && script(**c).is_some_and(|s| s != main))
+        .count()
 }
 
 /// One round: the name's characters as CP1252/Latin-1 bytes, read as UTF-8.
@@ -132,6 +189,18 @@ mod tests {
         ] {
             assert_eq!(fix(name), None, "{name}");
         }
+    }
+
+    #[test]
+    fn utf8_cyrillic_read_as_cp1252_is_reversed() {
+        assert_eq!(fix("ÐŸÑ€Ð¸Ð²ÐµÑ‚.txt").as_deref(), Some("Привет.txt"));
+    }
+
+    #[test]
+    fn reversals_into_another_script_or_odd_code_points_are_not_proposed() {
+        // Ø + ¨ would read as Arabic ب amid Latin letters; Í + ¸ as the unassigned U+0378.
+        assert_eq!(fix("Ø¨ test.txt"), None);
+        assert_eq!(fix("Í¸ test.txt"), None);
     }
 
     #[test]

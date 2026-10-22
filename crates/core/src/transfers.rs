@@ -128,9 +128,9 @@ impl Engine {
             let Some(entry) = entries.get(r.issue.entry_idx as usize) else {
                 continue;
             };
-            let rule = r.issue.rule.clone();
-            if let Some(choice) = decisions::decided(r).choice
-                && names.check(entry, &rule, &choice).is_err()
+            let issue = decisions::decided(r);
+            if let Some(choice) = &issue.choice
+                && names.check(entry, &issue, choice).is_err()
             {
                 refused.push(id);
             }
