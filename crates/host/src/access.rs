@@ -10,7 +10,8 @@
 //! sign-in with the old key, held in memory, must be refused, and only then is the key deleted
 //! from the keyring and the profile put back on its key file, SSH agent or password.
 
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 
 use filebridge_core::{Engine, Profile};
 use filebridge_integration_nextcloud::ssh::{NewKey, generate_key};
@@ -58,20 +59,53 @@ fn check_id(profile_id: &str) -> Result<(), ErrorBody> {
     }
 }
 
+/// Profiles with an install or a removal under way in this process.
+static UNDER_WAY: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// One install or removal at a time per profile: two would share one keyring entry and one
+/// `authorized_keys` comment, and one's undo could delete the other's line or key. Held for the
+/// whole operation; dropping it lets the next one in.
+struct Claim(String);
+
+impl Claim {
+    fn take(profile_id: &str) -> Result<Self, ErrorBody> {
+        let mut under_way = UNDER_WAY.lock().unwrap_or_else(|e| e.into_inner());
+        if under_way.insert(profile_id.to_owned()) {
+            Ok(Self(profile_id.to_owned()))
+        } else {
+            Err(err(
+                "busy",
+                "filebridge's own key is already being installed or removed for this destination: wait for it to finish",
+            ))
+        }
+    }
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        UNDER_WAY
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
+    }
+}
+
 /// Adds `line` to `~/.ssh/authorized_keys` once, creating the folder and file private, and
 /// first ending a last line that lacks its newline (or the new line would join it). Bytes are
 /// compared as bytes (`LC_ALL=C grep -a`): a Latin-1 comment or a stray NUL elsewhere in the
-/// file changes nothing.
+/// file changes nothing. A `grep` without `-a` (some BusyBox builds) is used without it: those
+/// don't tell text from binary anyway.
 pub(crate) fn install_script(line: &str) -> String {
     const SCRIPT: &str = r#"umask 077
 mkdir -p ~/.ssh && f=~/.ssh/authorized_keys && touch "$f" || exit 1
+a=-a; LC_ALL=C grep -a -q '' /dev/null 2>/dev/null; [ "$?" -le 1 ] || a=
 l=@LINE@
-LC_ALL=C grep -a -qxF -e "$l" "$f"; s=$?
+LC_ALL=C grep $a -qxF -e "$l" "$f"; s=$?
 [ "$s" -eq 0 ] && exit 0
 [ "$s" -eq 1 ] || { echo "could not read $f" >&2; exit 1; }
 if [ -s "$f" ] && [ "$(tail -c 1 "$f" | wc -l)" -eq 0 ]; then echo >> "$f" || exit 1; fi
 printf '%s\n' "$l" >> "$f" || exit 1
-LC_ALL=C grep -a -qxF -e "$l" "$f" || { echo "the line did not reach $f" >&2; exit 1; }
+LC_ALL=C grep $a -qxF -e "$l" "$f" || { echo "the line did not reach $f" >&2; exit 1; }
 "#;
     SCRIPT.replace(
         "@LINE@",
@@ -88,7 +122,8 @@ fn pattern(profile_id: &str) -> String {
 /// Removes every line of filebridge's key for `profile_id` from `~/.ssh/authorized_keys`, and
 /// nothing else. The file is left exactly as it was unless every step worked:
 /// - lines are compared as bytes (`LC_ALL=C grep -a`), so a Latin-1 comment or a NUL byte
-///   never makes `grep` drop lines or answer "binary file matches";
+///   never makes `grep` drop lines or answer "binary file matches"; a `grep` without `-a` (some
+///   BusyBox builds) is used without it, and a copy it got wrong fails the checks below;
 /// - any `grep` error (status > 1) stops it;
 /// - the filtered copy is made next to the file (same disk, mode 600), and must hold exactly
 ///   the old lines minus the matched ones, and no matched line, before it is written back.
@@ -98,16 +133,17 @@ pub(crate) fn remove_script(profile_id: &str) -> String {
     const SCRIPT: &str = r#"f=~/.ssh/authorized_keys
 [ -f "$f" ] || exit 0
 p=@PATTERN@
+a=-a; LC_ALL=C grep -a -q '' /dev/null 2>/dev/null; [ "$?" -le 1 ] || a=
 num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
 fail() { echo "$1; $f was left as it was" >&2; exit 1; }
-all=$(LC_ALL=C grep -a -c '' "$f"); [ "$?" -le 1 ] && num "$all" || fail "could not read $f"
-ours=$(LC_ALL=C grep -a -c -e "$p" "$f"); [ "$?" -le 1 ] && num "$ours" || fail "could not read $f"
+all=$(LC_ALL=C grep $a -c '' "$f"); [ "$?" -le 1 ] && num "$all" || fail "could not read $f"
+ours=$(LC_ALL=C grep $a -c -e "$p" "$f"); [ "$?" -le 1 ] && num "$ours" || fail "could not read $f"
 [ "$ours" -eq 0 ] && exit 0
 t=$(mktemp "$f.filebridge.XXXXXX") || fail "could not make a temporary file in ~/.ssh"
 trap 'rm -f "$t"' EXIT
-LC_ALL=C grep -a -v -e "$p" "$f" > "$t"; [ "$?" -le 1 ] || fail "could not filter $f"
-left=$(LC_ALL=C grep -a -c '' "$t"); [ "$?" -le 1 ] && num "$left" || fail "could not check the filtered copy"
-still=$(LC_ALL=C grep -a -c -e "$p" "$t"); [ "$?" -le 1 ] && num "$still" || fail "could not check the filtered copy"
+LC_ALL=C grep $a -v -e "$p" "$f" > "$t"; [ "$?" -le 1 ] || fail "could not filter $f"
+left=$(LC_ALL=C grep $a -c '' "$t"); [ "$?" -le 1 ] && num "$left" || fail "could not check the filtered copy"
+still=$(LC_ALL=C grep $a -c -e "$p" "$t"); [ "$?" -le 1 ] && num "$still" || fail "could not check the filtered copy"
 [ "$still" -eq 0 ] && [ "$left" -eq $((all - ours)) ] || fail "the filtered copy has $left of $all lines, expected $((all - ours))"
 cat "$t" > "$f" || { trap - EXIT; echo "could not rewrite $f; what it should hold is in $t" >&2; exit 1; }
 "#;
@@ -315,6 +351,7 @@ pub(crate) async fn install(
     profile_id: &str,
 ) -> Result<AccessReport, ErrorBody> {
     check_id(profile_id)?;
+    let _claim = Claim::take(profile_id)?;
     let profile = engine
         .get_profile(profile_id)
         .await
@@ -442,6 +479,7 @@ pub(crate) async fn remove(
     profile_id: &str,
 ) -> Result<AccessReport, ErrorBody> {
     check_id(profile_id)?;
+    let _claim = Claim::take(profile_id)?;
     let profile = engine
         .get_profile(profile_id)
         .await
@@ -805,6 +843,95 @@ mod tests {
         assert_eq!(std::fs::read(&keys).unwrap(), WITH_OURS);
     }
 
+    /// A `grep` that doesn't know `-a`, as on a minimal BusyBox, in front of `real`.
+    const NO_A: &str = r#"for x in "$@"; do [ "$x" = -a ] && { echo "grep: invalid option -- 'a'" >&2; exit 2; }; done
+exec $REAL "$@""#;
+
+    /// Installs twice and removes in `home`, with `run`; the other lines stay byte for byte.
+    fn install_and_remove(content: &[u8], run: impl Fn(&str, &Path) -> bool) {
+        let home = tempfile::tempdir().unwrap();
+        let keys = keys_file(home.path(), content);
+        let line = "restrict ssh-ed25519 AAAAnew filebridge-p-1";
+        assert!(run(&install_script(line), home.path()));
+        assert!(run(&install_script(line), home.path()));
+        let mut want = content.to_vec();
+        want.extend_from_slice(format!("{line}\n").as_bytes());
+        assert_eq!(std::fs::read(&keys).unwrap(), want);
+        assert!(run(&remove_script("p-1"), home.path()));
+        assert_eq!(std::fs::read(&keys).unwrap(), content);
+        assert_eq!(
+            std::fs::read_dir(home.path().join(".ssh")).unwrap().count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_grep_without_a_is_used_without_it() {
+        let bin = fake_grep(NO_A);
+        install_and_remove(
+            b"ssh-rsa AAAAold jos\xe9@laptop\r\nssh-ed25519 AAAAmine alice@laptop\n",
+            |script, home| run_in(script, home, Some(bin.path())),
+        );
+    }
+
+    /// The scripts under BusyBox's `sh` and applets alone, as on a minimal server; also with a
+    /// `grep` that doesn't know `-a`. Skipped when `busybox` isn't installed.
+    #[cfg(unix)]
+    #[test]
+    fn the_scripts_run_under_busybox() {
+        let Ok(found) = Command::new("sh")
+            .args(["-c", "command -v busybox"])
+            .output()
+        else {
+            return;
+        };
+        let busybox = String::from_utf8(found.stdout).unwrap().trim().to_owned();
+        if busybox.is_empty() {
+            eprintln!("skipped: busybox not installed");
+            return;
+        }
+        let applets = tempfile::tempdir().unwrap();
+        for name in [
+            "sh", "grep", "tail", "wc", "mktemp", "cat", "mkdir", "touch", "rm",
+        ] {
+            std::os::unix::fs::symlink(&busybox, applets.path().join(name)).unwrap();
+        }
+        let no_a = tempfile::tempdir().unwrap();
+        let wrapper = no_a.path().join("grep");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!{}\nREAL='{} grep'\n{NO_A}\n",
+                applets.path().join("sh").display(),
+                busybox
+            ),
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let content: &[u8] = b"ssh-rsa AAAAold jos\xe9@laptop\r\n\
+            ssh-ed25519 AAAA\0odd\n\
+            ssh-ed25519 AAAAmine alice@laptop\n";
+        for path in [
+            std::env::join_paths([applets.path()]).unwrap(),
+            std::env::join_paths([no_a.path(), applets.path()]).unwrap(),
+        ] {
+            install_and_remove(content, |script, home| {
+                Command::new(&busybox)
+                    .args(["sh", "-c", script])
+                    .env_clear()
+                    .env("HOME", home)
+                    .env("PATH", &path)
+                    .env("LANG", "C.UTF-8")
+                    .status()
+                    .unwrap()
+                    .success()
+            });
+        }
+    }
+
     #[test]
     fn profile_ids_are_checked_before_any_script() {
         assert!(check_id("0b8f6a3e-1c2d-4e5f-9a0b-1c2d3e4f5a6b").is_ok());
@@ -1142,6 +1269,52 @@ mod tests {
         assert!(
             matches!(&p.destination.backend, Backend::Sftp { key: Some(r), .. } if *r == key_ref),
             "the profile keeps signing in with it"
+        );
+    }
+
+    #[tokio::test]
+    async fn one_install_or_removal_at_a_time_per_profile() {
+        let dest = tempfile::tempdir().unwrap();
+        let (engine, secrets, id) = engine_with_profile(dest.path()).await;
+        let (other_engine, _other_secrets, other) = engine_with_profile(dest.path()).await;
+        let servers = LocalServers::new();
+        {
+            // As if another install of the same profile were running.
+            let _running = Claim::take(&id).unwrap();
+            for e in [
+                install(&engine, &servers, &id).await.unwrap_err(),
+                remove(&engine, &servers, &id).await.unwrap_err(),
+            ] {
+                assert_eq!(e.code, "busy", "{e:?}");
+            }
+            assert_eq!(servers.connects.load(Ordering::SeqCst), 0);
+            assert!(secrets.get(&reference(&id, SecretKind::SshKey)).is_err());
+            // Another profile isn't held up.
+            let report = install(&other_engine, &servers, &other).await.unwrap();
+            assert!(report.profile.is_some(), "{report:?}");
+        }
+        // Once it is over, the next one goes ahead; a failed one lets go too.
+        assert!(
+            install(&engine, &servers, &id)
+                .await
+                .unwrap()
+                .profile
+                .is_some()
+        );
+        assert!(
+            remove(&engine, &servers, &id)
+                .await
+                .unwrap()
+                .profile
+                .is_some()
+        );
+        assert!(remove(&engine, &servers, &id).await.is_err());
+        assert!(
+            install(&engine, &servers, &id)
+                .await
+                .unwrap()
+                .profile
+                .is_some()
         );
     }
 

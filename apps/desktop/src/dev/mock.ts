@@ -556,6 +556,7 @@ function inspectAll(paths: string[]): SourceInfo_Serialize[] {
 
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
+  serviceReplacing: () => false,
   setTrayLabels: () => null,
   ping: () => ({ protocol: PROTOCOL_VERSION, version: "0.0.1-mock" }),
   listProfiles: () => profiles,

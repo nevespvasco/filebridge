@@ -59,6 +59,12 @@ src-tauri/src/
   5. if the new one still speaks an older protocol, the binary on disk is old too: the window
      remembers it and never stops and restarts it again (until it is reopened).
 
+  From step 4 to the new one answering (up to 10 s plus 5 s) every command waits. The window
+  emits `connection-changed { connected: false, replacing: true }` before step 4, and the
+  window-only command `serviceReplacing` says the same to a window that starts listening later;
+  the banner and the status then read "Updating the copy engine…" instead of an error. It ends
+  with `connected: true`, or `connected: false, replacing: false` when the replacement failed.
+
   A **newer** service is never stopped. Any mismatch left is the error code
   `incompatible_service`. A missing binary or a service that never answers is
   `service_unavailable`. Windows: the user quits the old service.
@@ -66,13 +72,13 @@ src-tauri/src/
   `target/debug/` is always the current one.
 - Events: `Client::events()` is forwarded as the Tauri event `service-event` (payload: the engine
   `Event`). The stream ends (`Closed`) when the connection drops; the window then emits
-  `connection-changed { connected: false }`, reconnects with backoff (starting the service again
+  `connection-changed { connected: false, replacing: false }`, reconnects with backoff (starting the service again
   if needed) and emits `connected: true`, on which the stores reload, since events sent in
   between are lost.
 - Commands (camelCase in TS): `ping`, `listProfiles`, `saveProfile`, `deleteProfile`,
   `testProfile`, `detectNextcloud`, `createJob`, `setOptions`, `analyse`, `ruleCounts`, `issues`,
-  `decide`, `decideAll`, `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint` and
-  `setTrayLabels`. They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
+  `decide`, `decideAll`, `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint`,
+  `serviceReplacing` and `setTrayLabels`. They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
   `api.*` in `src/lib/api.ts` turns that into a value or a thrown `ServiceError` with its `code`.
 
 ## TypeScript bindings

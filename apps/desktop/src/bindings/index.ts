@@ -134,6 +134,11 @@ export const commands = {
 	saveSettings: (settings: AppSettings_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("save_settings", { settings })),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
 	serviceEndpoint: () => __TAURI_INVOKE<string>("service_endpoint"),
+	/**
+	 *  Whether an older copy engine is being replaced right now (`ConnectionChanged` says when it
+	 *  starts and ends; this covers one that started before the window listened).
+	 */
+	serviceReplacing: () => __TAURI_INVOKE<boolean>("service_replacing"),
 	/**  Translated tray menu labels; the strings live in the UI's i18n files. */
 	setTrayLabels: (show: string, quit: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_tray_labels", { show, quit })),
 };
@@ -365,6 +370,11 @@ export type CheckView = {
  */
 export type ConnectionChanged = {
 	connected: boolean,
+	/**
+	 *  An older service is being stopped and replaced: every command waits until it is done
+	 *  (up to [`STOP_TIMEOUT`] plus [`START_TIMEOUT`]).
+	 */
+	replacing: boolean,
 	/**  Socket path or pipe name, for the Details panel. */
 	endpoint: string,
 };

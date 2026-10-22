@@ -65,16 +65,26 @@ impl Engine {
     }
 
     /// A new draft with a finished job's sources, options and name, to `profile_id` or the same
-    /// profile. Its analysis reuses the earlier job's name decisions.
+    /// profile. Its analysis reuses the earlier job's name decisions. A repair is checked again
+    /// on its own destination only: the folder it repaired is there, so another profile is
+    /// refused.
     pub async fn send_again(&self, job_id: &str, profile_id: Option<String>) -> Result<String> {
         let _job = self.begin(job_id, Op::SendAgain).await?;
         let row = self.store.get_job(job_id).await?;
         if JobKind::parse(&row.kind)? == JobKind::Repair {
+            if profile_id.is_some_and(|p| p != row.profile_id) {
+                return Err(CoreError::Invalid(
+                    "a repair checks a folder of its own destination: it can only be run again \
+                     there"
+                        .into(),
+                ));
+            }
             // Again = check the same folder again: names there may have changed since.
             let options: crate::SendOptions =
                 serde_json::from_value(row.options).unwrap_or_default();
-            let profile = profile_id.unwrap_or(row.profile_id);
-            return self.create_repair_job(&profile, options.target_dir).await;
+            return self
+                .create_repair_job(&row.profile_id, options.target_dir)
+                .await;
         }
         let profile = self
             .get_profile(profile_id.as_deref().unwrap_or(&row.profile_id))
