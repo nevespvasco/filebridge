@@ -9,7 +9,13 @@ import AppIcon from "./AppIcon.vue";
 import RelativeTime from "./RelativeTime.vue";
 import StorageMeter from "./StorageMeter.vue";
 
-const props = defineProps<{ profileId: string; compact?: boolean }>();
+const props = defineProps<{
+  profileId: string;
+  compact?: boolean;
+  /** What "Check now" runs, when the screen does more than the check (e.g. Destinations offers
+   *  to trust an unknown SSH server's key, then checks again). */
+  refresh?: () => unknown;
+}>();
 const profiles = useProfiles();
 const { t } = useI18n();
 const fmt = useFmt();
@@ -20,6 +26,11 @@ const known = computed(() => s.value?.free_bytes != null);
 const percent = computed(() => (s.value?.used_bytes != null && s.value.total_bytes ? Math.round((s.value.used_bytes / s.value.total_bytes) * 100) : null));
 const used = computed(() => (s.value?.used_bytes != null ? [{ key: "used", label: t("storage.usedLabel"), bytes: s.value.used_bytes, color: s.value.low ? "var(--danger)" : "var(--text-2)" }] : []));
 const quota = computed(() => s.value?.quota);
+
+function checkNow() {
+  if (props.refresh) props.refresh();
+  else void profiles.loadStorage(props.profileId, true);
+}
 </script>
 
 <template>
@@ -27,7 +38,7 @@ const quota = computed(() => s.value?.quota);
     <template v-if="!s || s.checked_at == null">
       <p class="small muted">
         {{ $t("storage.never") }}
-        <button class="link small" :disabled="checking" @click="profiles.loadStorage(profileId, true)">{{ $t("storage.checkNow") }}</button>
+        <button class="link small" :disabled="checking" @click="checkNow">{{ $t("storage.checkNow") }}</button>
       </p>
     </template>
     <template v-else-if="known">
@@ -50,7 +61,7 @@ const quota = computed(() => s.value?.quota);
         <span class="when" :class="{ stale: s.stale }">
           <AppIcon v-if="s.stale" name="waiting" :label="$t('storage.staleLabel')" />
           {{ $t("storage.checked") }} <RelativeTime :at="s.checked_at" />
-          <button class="link" :disabled="checking" @click="profiles.loadStorage(profileId, true)">{{ checking ? $t("storage.checking") : $t("storage.checkNow") }}</button>
+          <button class="link" :disabled="checking" @click="checkNow">{{ checking ? $t("storage.checking") : $t("storage.checkNow") }}</button>
         </span>
       </p>
       <p v-if="quota && !compact" class="small muted">

@@ -16,6 +16,8 @@ Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`).
   `Nextcloud::set_up` input and saves the profile it builds (with the transport this host
   registered),
   shared by `filebridge profile add-nextcloud` and the service.
+- **SSH host keys:** `scan_host_key` and `trust_host_key` (`src/host_keys.rs`, ADR 0015) answer
+  with the SSH plugin's scan and append; a changed key is `host_key_changed`.
 - **The engine behind the ipc seam:** `EngineOperations` implements `filebridge_ipc::Operations`
   (every operation in the catalogue) with the engine and the plugins; `Host::operations()` is
   what `filebridge-service` serves. Its tests (`tests/ipc.rs`) drive it over a real socket.

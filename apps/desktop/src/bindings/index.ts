@@ -101,6 +101,18 @@ export const commands = {
 	 */
 	removeAccess: (profileId: string) => typedError<AccessReport_Serialize, ErrorBody>(__TAURI_INVOKE("remove_access", { profileId })),
 	/**
+	 *  Connects to an SSH server only far enough to read its host key (never signs in) and
+	 *  says whether `known_hosts_file` (default `~/.ssh/known_hosts`) knows it, has no key
+	 *  for the host, or has another one. Writes nothing.
+	 */
+	scanHostKey: (host: string, port: number, knownHostsFile: string | null) => typedError<HostKeyView_Serialize, ErrorBody>(__TAURI_INVOKE("scan_host_key", { host, port, knownHostsFile })),
+	/**
+	 *  Adds the server's host key to the known_hosts file once the user has checked its
+	 *  `fingerprint`: only when the host has no key there yet and the server still
+	 *  presents that key. A changed key is refused (`host_key_changed`), never replaced.
+	 */
+	trustHostKey: (host: string, port: number, knownHostsFile: string | null, fingerprint: string) => typedError<HostKeyView_Serialize, ErrorBody>(__TAURI_INVOKE("trust_host_key", { host, port, knownHostsFile, fingerprint })),
+	/**
 	 *  Stores the profile's password in the OS keyring (`None` removes it); the profile
 	 *  keeps only its reference (ADR 0004). Never logged, never in a Details panel.
 	 */
@@ -152,7 +164,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 20 as const;
+export const PROTOCOL_VERSION = 21 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -731,6 +743,57 @@ export type FolderNameCheck_Serialize = {
 export type HashView = {
 	algo: string,
 	hex: string,
+};
+
+/**  Where an SSH server's host key stands in the `known_hosts` file filebridge uses. */
+export type HostKeyStatus = 
+/**  The file holds this key for the host: connections go through. */
+"known" | 
+/**  The file holds no key for the host: the user may trust this one (`trust_host_key`). */
+"unknown" | 
+/**
+ *  The file holds another key for the host: the server changed or the connection is being
+ *  intercepted. Never trusted from the app.
+ */
+"changed";
+
+/**  An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015). */
+export type HostKeyView = HostKeyView_Serialize | HostKeyView_Deserialize;
+
+/**  An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015). */
+export type HostKeyView_Deserialize = {
+	host: string,
+	port: number,
+	/**  The file checked, and the one `trust_host_key` adds to. */
+	known_hosts_file: string,
+	status: HostKeyStatus,
+	/**
+	 *  The key type the server presented, e.g. `ssh-ed25519`. `None` only when `changed` and the
+	 *  server offered none of the key types on record.
+	 */
+	key_type?: string | null,
+	/**  `SHA256:…`, as `ssh` shows it; what the user compares and confirms. */
+	fingerprint?: string | null,
+	/**  For `changed`: the line of `known_hosts_file` with the key on record. */
+	line?: number | null,
+};
+
+/**  An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015). */
+export type HostKeyView_Serialize = {
+	host: string,
+	port: number,
+	/**  The file checked, and the one `trust_host_key` adds to. */
+	known_hosts_file: string,
+	status: HostKeyStatus,
+	/**
+	 *  The key type the server presented, e.g. `ssh-ed25519`. `None` only when `changed` and the
+	 *  server offered none of the key types on record.
+	 */
+	key_type: string | null,
+	/**  `SHA256:…`, as `ssh` shows it; what the user compares and confirms. */
+	fingerprint: string | null,
+	/**  For `changed`: the line of `known_hosts_file` with the key on record. */
+	line: number | null,
 };
 
 /**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */

@@ -59,7 +59,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 18: `add_nextcloud_webdav`; `Backend::Webdav`; Nextcloud settings `mode: "webdav"`.
 /// 19: `install_app_key`, `remove_access`; `Backend::Sftp.key`, `SshTarget.key` (ADR 0012).
 /// 20: `planned_renames`; `RuleCount.no_proposal`; `set_options` refused for Repair jobs.
-pub const PROTOCOL_VERSION: u32 = 20;
+/// 21: `scan_host_key`, `trust_host_key` (ADR 0015).
+pub const PROTOCOL_VERSION: u32 = 21;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {
@@ -106,6 +107,36 @@ pub struct Pong {
 pub struct AccessReport {
     pub steps: Vec<DetectStepView>,
     pub profile: Option<Profile>,
+}
+
+/// Where an SSH server's host key stands in the `known_hosts` file filebridge uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum HostKeyStatus {
+    /// The file holds this key for the host: connections go through.
+    Known,
+    /// The file holds no key for the host: the user may trust this one (`trust_host_key`).
+    Unknown,
+    /// The file holds another key for the host: the server changed or the connection is being
+    /// intercepted. Never trusted from the app.
+    Changed,
+}
+
+/// An SSH server's host key, as `scan_host_key` and `trust_host_key` saw it (ADR 0015).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct HostKeyView {
+    pub host: String,
+    pub port: u16,
+    /// The file checked, and the one `trust_host_key` adds to.
+    pub known_hosts_file: String,
+    pub status: HostKeyStatus,
+    /// The key type the server presented, e.g. `ssh-ed25519`. `None` only when `changed` and the
+    /// server offered none of the key types on record.
+    pub key_type: Option<String>,
+    /// `SHA256:…`, as `ssh` shows it; what the user compares and confirms.
+    pub fingerprint: Option<String>,
+    /// For `changed`: the line of `known_hosts_file` with the key on record.
+    pub line: Option<u32>,
 }
 
 /// A password on its way to the OS keyring. On the wire it is a plain string; its `Debug` never

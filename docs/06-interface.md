@@ -28,7 +28,7 @@ whoever wants to can see the equivalent commands in a "Details" panel.
 |---|---|
 | Jobs | List of sends: state, progress, speed, ETA, automatic retries |
 | Job detail | Current file, errors, log, manifest, Pause / Resume / Verify buttons |
-| Destinations | Saved profiles, connection test, Nextcloud mode |
+| Destinations | Saved profiles, connection test, Nextcloud mode. For an SSH destination, a failed test or space check, and Browse, first check each server's host key: an unknown one gets the "Trust this server?" prompt (ADR 0015) and what failed runs again; a changed one is only shown as an error |
 | Integrations | Active plugins and their settings |
 | Repair destination | Analyse and fix names in an existing remote folder |
 | Settings | Bandwidth limit and send window (kept by the service, ADR 0010), notifications, language (pt and en) |
