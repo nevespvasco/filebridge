@@ -33,4 +33,4 @@ windows-sys = { version = "0.61", features = ["Win32_System_Power"] }
 async-trait.workspace = true
 filebridge-transport-fake.workspace = true
 tempfile.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }

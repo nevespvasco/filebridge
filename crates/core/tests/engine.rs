@@ -29,6 +29,8 @@ struct FakeIntegration {
     problem: Mutex<Option<Problem>>,
     /// `after_transfer` never returns, as if the app died during stage 6.
     hang: std::sync::atomic::AtomicBool,
+    /// `preflight` never returns, as if the server or the SSH agent stopped answering.
+    hang_preflight: std::sync::atomic::AtomicBool,
 }
 
 #[async_trait]
@@ -73,6 +75,9 @@ impl Integration for FakeIntegration {
         &self,
         _ctx: &JobContext,
     ) -> filebridge_integration_api::Result<PreflightReport> {
+        if self.hang_preflight.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         Ok(PreflightReport::default())
     }
 
@@ -453,6 +458,39 @@ async fn the_files_of_a_transfer_prove_what_arrived() {
         .unwrap();
     assert_eq!(failed.error.as_deref(), Some("permission denied"));
     assert!(failed.hash.is_none(), "never verified");
+}
+
+/// A connection test always ends: a preflight that never answers becomes a failed check.
+#[tokio::test(start_paused = true)]
+async fn a_preflight_that_never_answers_fails_instead_of_hanging() {
+    let s = setup().await;
+    s.integration.hang_preflight.store(true, Ordering::SeqCst);
+    let test = s.engine.test_profile(&s.profile_id).await.unwrap();
+    assert!(!test.transport.has_failures());
+    let integration = test.integration.expect("the profile has an integration");
+    assert!(integration.has_failures());
+    assert!(integration.checks[0].message.contains("no answer"));
+}
+
+/// The transport's preflight is bounded too, and the integration's still runs after it.
+#[tokio::test(start_paused = true)]
+async fn a_transport_that_never_answers_fails_its_check_and_the_test_goes_on() {
+    let s = setup().await;
+    s.transport.hang_preflight.store(true, Ordering::SeqCst);
+    let started = tokio::time::Instant::now();
+    let test = s.engine.test_profile(&s.profile_id).await.unwrap();
+    assert!(
+        started.elapsed() >= Duration::from_secs(60),
+        "gave up too early"
+    );
+    assert!(test.transport.has_failures());
+    assert!(test.transport.checks[0].message.contains("no answer"));
+    assert!(
+        !test
+            .integration
+            .expect("the profile has an integration")
+            .has_failures()
+    );
 }
 
 #[tokio::test]

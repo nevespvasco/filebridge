@@ -41,6 +41,8 @@ pub struct FakeTransport {
     pub bandwidth_limits: Mutex<Vec<Option<u64>>>,
     /// A single rename (one hop of `move_path`) to this name fails once with this error.
     pub fail_move_once: Mutex<HashMap<String, TransportError>>,
+    /// `preflight` never returns, as if the server or the SSH agent stopped answering.
+    pub hang_preflight: AtomicBool,
 }
 
 impl FakeTransport {
@@ -70,6 +72,9 @@ impl Transport for FakeTransport {
     }
 
     async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
+        if self.hang_preflight.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         Ok(PreflightReport {
             free_bytes: Some(1 << 40),
             total_bytes: Some(3 << 40),

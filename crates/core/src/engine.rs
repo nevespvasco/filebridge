@@ -90,6 +90,18 @@ pub struct Engine {
     pub(crate) locks: JobLocks,
 }
 
+/// How long one plugin's preflight may take. It is a few round trips to the destination; a
+/// server, SSH agent or keyring that never answers must not leave a connection test (or an
+/// analysis) waiting forever, so past this it counts as a failed check.
+const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
+
+fn no_answer() -> String {
+    format!(
+        "no answer within {} s: the destination or its sign-in did not respond",
+        PREFLIGHT_TIMEOUT.as_secs()
+    )
+}
+
 impl Engine {
     pub fn new(store: Store, registry: Registry, options: EngineOptions) -> Arc<Self> {
         let (events, _) = broadcast::channel(1024);
@@ -368,17 +380,26 @@ impl Engine {
         job_id: &str,
     ) -> Result<Vec<PreflightView>> {
         let transport = self.registry.transport(&profile.destination.transport)?;
-        let mut out = vec![match transport.preflight(&profile.destination).await {
-            Ok(r) => PreflightView::from_report("transport", r),
-            Err(e) => PreflightView::failed("transport", e.message),
+        let mut out = vec![match tokio::time::timeout(
+            PREFLIGHT_TIMEOUT,
+            transport.preflight(&profile.destination),
+        )
+        .await
+        {
+            Ok(Ok(r)) => PreflightView::from_report("transport", r),
+            Ok(Err(e)) => PreflightView::failed("transport", e.message),
+            Err(_) => PreflightView::failed("transport", no_answer()),
         }];
         if let Some(id) = &profile.integration {
             let integration = self.registry.integration(id)?;
             let ctx = self.job_context(job_id, profile)?;
-            out.push(match integration.preflight(&ctx).await {
-                Ok(r) => PreflightView::from_report("integration", r),
-                Err(e) => PreflightView::failed("integration", e.message),
-            });
+            out.push(
+                match tokio::time::timeout(PREFLIGHT_TIMEOUT, integration.preflight(&ctx)).await {
+                    Ok(Ok(r)) => PreflightView::from_report("integration", r),
+                    Ok(Err(e)) => PreflightView::failed("integration", e.message),
+                    Err(_) => PreflightView::failed("integration", no_answer()),
+                },
+            );
         }
         Ok(out)
     }
