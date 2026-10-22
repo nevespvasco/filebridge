@@ -786,5 +786,19 @@
     "continue": "Continue",
     "destination": "Destination",
     "otherRules": "Another destination may check names differently."
+  },
+  "activity": {
+    "created": "Created \"{name}\"",
+    "started": "Started sending \"{name}\" to {destination}",
+    "retrying": "{destination} unreachable, retrying",
+    "waiting": "\"{name}\" waits for the send window",
+    "sent": "Sent to {destination}",
+    "sentWarnings": "Sent to {destination}, with {n} warning | Sent to {destination}, with {n} warnings",
+    "cancelled": "Cancelled \"{name}\"",
+    "failed": "\"{name}\" stopped by an error",
+    "profileAdded": "Added destination \"{name}\"",
+    "profileRemoved": "Removed destination \"{name}\"",
+    "empty": "Nothing happened yet. What your transfers do, even with the window closed, appears here.",
+    "error": "Couldn't read the activity."
   }
 }

@@ -24,7 +24,9 @@ use crate::{
     AnalysisSummary, CoreError, Counts, DecisionInput, Event, IssueView, JobKind, JobState,
     JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
 };
-use filebridge_model::{CategoryCount, FileCategory, LogEntry, Op, RecentSource, log_level};
+use filebridge_model::{
+    ActivityItem, CategoryCount, FileCategory, LogEntry, Op, RecentSource, default_label, log_level,
+};
 
 const INSERT_BATCH: usize = 10_000;
 const PAGE: u32 = 5_000;
@@ -124,6 +126,65 @@ impl Engine {
     ) -> Result<()> {
         self.store.append_event(job_id, kind, data).await?;
         Ok(())
+    }
+
+    /// Milestones of every job and profile changes, newest first, before `before_id`.
+    pub async fn activity(&self, before_id: Option<i64>, limit: u32) -> Result<Vec<ActivityItem>> {
+        let rows = self.store.activity_page(before_id, limit.min(200)).await?;
+        let mut jobs: HashMap<String, Option<(String, String)>> = HashMap::new();
+        let mut profile_names: HashMap<String, Option<String>> = HashMap::new();
+        let mut out = Vec::with_capacity(rows.len());
+        for r in rows {
+            let (job_label, profile_name) = match &r.job_id {
+                Some(id) => {
+                    if !jobs.contains_key(id) {
+                        let found = match self.store.get_job(id).await {
+                            Ok(j) => {
+                                let sources: Vec<String> = j
+                                    .sources
+                                    .iter()
+                                    .map(|s| String::from_utf8_lossy(s).into_owned())
+                                    .collect();
+                                Some((
+                                    j.label.unwrap_or_else(|| default_label(&sources)),
+                                    j.profile_id,
+                                ))
+                            }
+                            Err(_) => None,
+                        };
+                        jobs.insert(id.clone(), found);
+                    }
+                    match jobs[id].clone() {
+                        Some((label, profile_id)) => {
+                            if !profile_names.contains_key(&profile_id) {
+                                let name = self.get_profile(&profile_id).await.ok().map(|p| p.name);
+                                profile_names.insert(profile_id.clone(), name);
+                            }
+                            (Some(label), profile_names[&profile_id].clone())
+                        }
+                        None => (None, None),
+                    }
+                }
+                None => (
+                    None,
+                    r.data
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_owned),
+                ),
+            };
+            out.push(ActivityItem {
+                level: log_level(&r.kind, &r.data),
+                id: r.id,
+                at: r.at,
+                kind: r.kind,
+                job_id: r.job_id,
+                job_label,
+                profile_name,
+                data: r.data,
+            });
+        }
+        Ok(out)
     }
 
     /// A job's files per Category, most bytes first (what the transfer contains).

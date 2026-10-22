@@ -27,6 +27,38 @@ pub struct LogEntry {
     pub data: Value,
 }
 
+/// A milestone of any job, or a profile change, for Activity (docs/design/specs/D07).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct ActivityItem {
+    pub id: i64,
+    pub at: i64,
+    pub kind: String,
+    pub level: LogLevel,
+    pub job_id: Option<String>,
+    /// The job's name, or its first source's name.
+    pub job_label: Option<String>,
+    /// The destination's name (for a profile change, the profile's).
+    pub profile_name: Option<String>,
+    pub data: Value,
+}
+
+/// How a job is called when it has no name: its first source's name, "+N" for the others.
+pub fn default_label(sources: &[String]) -> String {
+    let Some(first) = sources.first() else {
+        return "—".into();
+    };
+    let name = first
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(first);
+    if sources.len() > 1 {
+        format!("{name} +{}", sources.len() - 1)
+    } else {
+        name.to_owned()
+    }
+}
+
 /// How serious a recorded event is, from its kind and parameters. Derived when read, not
 /// stored, so the rule can change without touching old logs.
 pub fn log_level(kind: &str, data: &Value) -> LogLevel {
@@ -97,5 +129,7 @@ mod tests {
             LogLevel::Warn
         );
         assert_eq!(log_level("something_new", &json!(null)), LogLevel::Info);
+        assert_eq!(default_label(&["/home/demo/Fotos/".into()]), "Fotos");
+        assert_eq!(default_label(&["/a/B".into(), "/c".into()]), "B +1");
     }
 }

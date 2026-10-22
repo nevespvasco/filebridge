@@ -97,6 +97,8 @@ if (import.meta.env.VITE_MOCK_EMPTY === "1") {
 
 // The job log, as the engine records it (docs/design/specs/D07): parameters only.
 const logs = new Map<string, LogEntry[]>();
+/** App-level events (profile changes), with no job. */
+const appLog: (LogEntry & { jobId: null })[] = [];
 let nextLogId = 1;
 function log(jobId: string, kind: string, data: Record<string, unknown>, at = Date.now()) {
   const n = (k: string) => Number(data[k] ?? 0);
@@ -110,6 +112,7 @@ function log(jobId: string, kind: string, data: Record<string, unknown>, at = Da
   list.push({ id: nextLogId++, at, kind, level, data: data as LogEntry["data"] });
   logs.set(jobId, list);
 }
+appLog.push({ id: nextLogId++, at: now - 2 * 86_400_000, kind: "profile", level: "info", data: { action: "added", profile_id: "p-disk", name: "Disco externo" }, jobId: null });
 if (jobs.some((j) => j.id === "j-old")) {
   const t = now - 86_400_000;
   log("j-old", "created", { sources: ["/home/demo/Documentos"], profile_id: "p-disk", options: { verify: true, concurrency: 8 } }, t);
@@ -416,10 +419,12 @@ const handlers: Handlers = {
   listProfiles: () => profiles,
   saveProfile: (a) => {
     const p = { ...(a.profile as Profile_Serialize) };
+    const added = !p.id;
     if (!p.id) p.id = newId("p");
     const i = profiles.findIndex((x) => x.id === p.id);
     if (i >= 0) profiles[i] = p;
     else profiles.push(p);
+    if (added) appLog.push({ id: nextLogId++, at: Date.now(), kind: "profile", level: "info", data: { action: "added", profile_id: p.id, name: p.name }, jobId: null });
     return p;
   },
   deleteProfile: (a) => {
@@ -692,6 +697,40 @@ const handlers: Handlers = {
       checkedAt.set(a.id as string, Date.now());
     }
     return storageOf(a.id as string);
+  },
+  activity: (a) => {
+    const all: (LogEntry & { jobId: string | null })[] = [...logs.entries()].flatMap(([jobId, list]) => list.map((e) => ({ ...e, jobId })));
+    all.push(...appLog);
+    all.sort((x, y) => x.id - y.id);
+    const seen = new Set<string>();
+    const last = new Map<string, string>();
+    const out = [];
+    for (const e of all) {
+      const d = e.data as Record<string, unknown>;
+      const key = `${e.jobId ?? ""}`;
+      let keep = ["created", "retry", "send_window_wait", "finished", "profile"].includes(e.kind) || (e.kind === "state" && d.to === "transferring");
+      if (keep && e.kind === "state") {
+        keep = !seen.has(`${key}:start`);
+        seen.add(`${key}:start`);
+      }
+      if (!keep) continue;
+      if ((e.kind === "retry" || e.kind === "send_window_wait") && last.get(key) === e.kind) continue;
+      last.set(key, e.kind);
+      const job = e.jobId ? jobs.find((j) => j.id === e.jobId) : undefined;
+      out.push({
+        id: e.id,
+        at: e.at,
+        kind: e.kind,
+        level: e.level,
+        job_id: e.jobId,
+        job_label: job ? (job.label ?? job.sources[0]?.split("/").pop() ?? "—") : null,
+        profile_name: job ? (profiles.find((p) => p.id === job.profile_id)?.name ?? null) : ((d.name as string) ?? null),
+        data: e.data,
+      });
+    }
+    out.reverse();
+    const before = a.beforeId as number | null;
+    return out.filter((e) => before == null || e.id < before).slice(0, a.limit as number);
   },
   jobCategories: (a) => {
     const job = find(a.jobId);

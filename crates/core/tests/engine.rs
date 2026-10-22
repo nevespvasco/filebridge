@@ -653,8 +653,18 @@ async fn the_job_log_tells_what_happened_while_no_one_watched() {
         .unwrap();
     assert_eq!(newest.len() + older.len(), oldest_first.len());
 
-    // A profile change is app-level: it is in no job's log.
+    // A profile change is app-level: it is in no job's log, but it is in Activity.
     assert!(kinds.iter().all(|k| *k != "profile"));
+    let activity = s.engine.activity(None, 50).await.unwrap();
+    let kinds: Vec<_> = activity.iter().map(|a| a.kind.as_str()).collect();
+    assert_eq!(kinds, ["finished", "retry", "state", "created", "profile"]);
+    assert_eq!(activity[0].job_label.as_deref(), Some("Acme"));
+    assert_eq!(activity[0].profile_name.as_deref(), Some("Test"));
+    assert_eq!(
+        activity[4].profile_name.as_deref(),
+        Some("Test"),
+        "the profile change"
+    );
 }
 
 #[tokio::test]

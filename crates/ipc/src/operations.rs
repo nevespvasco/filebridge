@@ -52,6 +52,8 @@ macro_rules! for_each_operation {
             /// profile; its analysis reuses the earlier name decisions.
             SendAgain send_again(job_id: String, profile_id: Option<String>) -> String;
             Job job(job_id: String) -> $crate::JobSummary;
+            /// Milestones of every job and profile changes, newest first, before `before_id`.
+            Activity activity(before_id: Option<i64>, limit: u32) -> Vec<$crate::ActivityItem>;
             /// A job's files per Category, most bytes first.
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
             /// Folders and files sent before, newest first, for "Recently sent from".

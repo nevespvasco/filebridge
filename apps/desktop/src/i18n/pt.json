@@ -786,5 +786,19 @@
     "continue": "Continuar",
     "destination": "Destino",
     "otherRules": "Outro destino pode verificar os nomes de outra forma."
+  },
+  "activity": {
+    "created": "Criada \"{name}\"",
+    "started": "Começou a enviar \"{name}\" para {destination}",
+    "retrying": "{destination} inacessível, a tentar de novo",
+    "waiting": "\"{name}\" espera pela janela de envio",
+    "sent": "Enviada para {destination}",
+    "sentWarnings": "Enviada para {destination}, com {n} aviso | Enviada para {destination}, com {n} avisos",
+    "cancelled": "Cancelada \"{name}\"",
+    "failed": "\"{name}\" parou por um erro",
+    "profileAdded": "Destino \"{name}\" adicionado",
+    "profileRemoved": "Destino \"{name}\" removido",
+    "empty": "Ainda nada aconteceu. O que as transferências fazem, mesmo com a janela fechada, aparece aqui.",
+    "error": "Não foi possível ler a atividade."
   }
 }

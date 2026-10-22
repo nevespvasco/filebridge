@@ -1,6 +1,6 @@
 # D07 — Job log and Activity
 
-- ID: D07 · Status: **job log Built**, Activity Proposed · Phase: **1** for the job log (the Log tab; docs/06 promised it, and
+- ID: D07 · Status: **Built** · Phase: **1** for the job log (the Log tab; docs/06 promised it, and
   a 31-hour send that ran while the window was closed needs it), **2** for Activity (Home feed)
 - Inspired by: G6 (slothUI Recent Activity), D3 (UpLink Recent), E5 (relative times)
 - Layers touched: `crates/core` (what gets appended), `crates/store` (two queries),

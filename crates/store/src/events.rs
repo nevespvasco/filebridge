@@ -106,6 +106,53 @@ impl Store {
     }
 }
 
+impl Store {
+    /// Milestones of every job and profile changes, newest first, before `before_id`
+    /// (docs/design/specs/D07, "Activity"): created, the first start, the first retry or wait
+    /// of a run (repeats collapse), finished, and profile added/removed.
+    pub async fn activity_page(&self, before_id: Option<i64>, limit: u32) -> Result<Vec<EventRow>> {
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "WITH m AS (
+                     SELECT id, job_id, at, kind, data,
+                            ROW_NUMBER() OVER (PARTITION BY job_id, kind ORDER BY id) AS nth
+                     FROM events
+                     WHERE kind IN ('created', 'retry', 'send_window_wait', 'finished', 'profile')
+                        OR (kind = 'state' AND json_extract(data, '$.to') = 'transferring')
+                 ),
+                 firsts AS (SELECT * FROM m WHERE NOT (kind = 'state' AND nth > 1)),
+                 r AS (
+                     SELECT *, LAG(kind) OVER (PARTITION BY job_id ORDER BY id) AS prev
+                     FROM firsts
+                 )
+                 SELECT id, job_id, at, kind, data FROM r
+                 WHERE NOT (kind IN ('retry', 'send_window_wait') AND prev = kind)
+                   AND (?1 IS NULL OR id < ?1)
+                 ORDER BY id DESC LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(params![before_id, limit], |r| {
+                Ok((
+                    EventRow {
+                        id: r.get(0)?,
+                        job_id: r.get(1)?,
+                        at: r.get(2)?,
+                        kind: r.get(3)?,
+                        data: serde_json::Value::Null,
+                    },
+                    r.get::<_, String>(4)?,
+                ))
+            })?;
+            rows.map(|r| {
+                let (mut e, data) = r?;
+                e.data = serde_json::from_str(&data)?;
+                Ok(e)
+            })
+            .collect()
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::test_util::store_with_job;
@@ -134,6 +181,8 @@ mod tests {
         assert_eq!(all[1].data["to"], "ready");
         let after = store.events_page(&job, Some(first), 10).await.unwrap();
         assert_eq!(after.len(), 1);
+        let activity = store.activity_page(None, 10).await.unwrap();
+        assert!(activity.is_empty(), "no milestone kinds yet");
         let newest = store.events_page_before(&job, None, 10).await.unwrap();
         assert_eq!(
             newest.iter().map(|e| e.id).collect::<Vec<_>>(),
@@ -145,5 +194,38 @@ mod tests {
             .unwrap();
         assert_eq!(older.len(), 1);
         assert_eq!(older[0].id, first);
+    }
+
+    #[tokio::test]
+    async fn activity_keeps_milestones_and_collapses_repeats() {
+        use serde_json::json;
+        let (store, job) = store_with_job().await;
+        let add = |kind: &'static str, data: serde_json::Value| {
+            let (store, job) = (store.clone(), job.clone());
+            async move { store.append_event(Some(&job), kind, data).await.unwrap() }
+        };
+        add("created", json!({})).await;
+        add("state", json!({ "to": "transferring" })).await;
+        add("retry", json!({ "attempt": 1 })).await;
+        add("state", json!({ "to": "retrying" })).await;
+        add("state", json!({ "to": "transferring" })).await;
+        add("retry", json!({ "attempt": 2 })).await;
+        add("retry", json!({ "attempt": 3 })).await;
+        add("transfer_round", json!({ "sent": 3 })).await;
+        add("finished", json!({ "state": "completed" })).await;
+        store
+            .append_event(None, "profile", json!({ "action": "added" }))
+            .await
+            .unwrap();
+        let kinds: Vec<_> = store
+            .activity_page(None, 20)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(kinds, ["profile", "finished", "retry", "state", "created"]);
+        let older = store.activity_page(Some(i64::MAX), 2).await.unwrap();
+        assert_eq!(older.len(), 2);
     }
 }

@@ -56,6 +56,8 @@ export const commands = {
 	 */
 	sendAgain: (jobId: string, profileId: string | null) => typedError<string, ErrorBody>(__TAURI_INVOKE("send_again", { jobId, profileId })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
+	/**  Milestones of every job and profile changes, newest first, before `before_id`. */
+	activity: (beforeId: number | null, limit: number) => typedError<ActivityItem_Serialize[], ErrorBody>(__TAURI_INVOKE("activity", { beforeId, limit })),
 	/**  A job's files per Category, most bytes first. */
 	jobCategories: (jobId: string) => typedError<CategoryCount[], ErrorBody>(__TAURI_INVOKE("job_categories", { jobId })),
 	/**  Folders and files sent before, newest first, for "Recently sent from". */
@@ -90,9 +92,40 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 9 as const;
+export const PROTOCOL_VERSION = 10 as const;
 
 /* Types */
+/**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
+export type ActivityItem = ActivityItem_Serialize | ActivityItem_Deserialize;
+
+/**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
+export type ActivityItem_Deserialize = {
+	id: number,
+	at: number,
+	kind: string,
+	level: LogLevel,
+	job_id?: string | null,
+	/**  The job's name, or its first source's name. */
+	job_label?: string | null,
+	/**  The destination's name (for a profile change, the profile's). */
+	profile_name?: string | null,
+	data: Value,
+};
+
+/**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
+export type ActivityItem_Serialize = {
+	id: number,
+	at: number,
+	kind: string,
+	level: LogLevel,
+	job_id: string | null,
+	/**  The job's name, or its first source's name. */
+	job_label: string | null,
+	/**  The destination's name (for a profile change, the profile's). */
+	profile_name: string | null,
+	data: Value,
+};
+
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
 
 export type AnalysisSummary_Deserialize = {

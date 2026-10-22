@@ -21,7 +21,7 @@ pub use entries::{
     EntryView, HashView, StatusCount,
 };
 pub use event::Event;
-pub use log::{LogEntry, LogLevel, log_level};
+pub use log::{ActivityItem, LogEntry, LogLevel, default_label, log_level};
 pub use profile::{Family, Profile, TargetSpec};
 pub use rules::{JobGroup, Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
