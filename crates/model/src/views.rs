@@ -229,3 +229,24 @@ pub struct DoneView {
     pub name: String,
     pub category: FileCategory,
 }
+
+/// How many files of one Category a job has, and their size (docs/design/specs/D02).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct CategoryCount {
+    pub category: FileCategory,
+    pub files: u64,
+    pub bytes: u64,
+}
+
+/// A folder or file sent before, for "Recently sent from".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct RecentSource {
+    /// Absolute path as it was picked.
+    pub path: String,
+    pub last_job_id: String,
+    pub last_profile_id: String,
+    /// Unix ms.
+    pub last_sent_at: i64,
+    /// Whether it is there now (a disk may be unplugged, a folder renamed).
+    pub exists: bool,
+}

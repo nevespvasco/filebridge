@@ -99,7 +99,11 @@
     "pickFilesTip": "Copies only the files you select",
     "removeTip": "Remove from this list (nothing is deleted)",
     "addMore": "You can still add more.",
-    "needOne": "Add at least one file or folder to continue."
+    "needOne": "Add at least one file or folder to continue.",
+    "hint": "Any size. filebridge only reads them: nothing at the source changes.",
+    "recent": "Recently sent from",
+    "recentTo": "to {destination}",
+    "recentMissing": "No longer found at {path}"
   },
   "dest": {
     "title": "Where to?",
@@ -604,5 +608,26 @@
       "other": "Finished"
     },
     "unknown": "Event: {kind}"
+  },
+  "composition": {
+    "title": "What you're sending",
+    "totals": "{files} files · {size}",
+    "unknown": "Not available for transfers analysed before this version.",
+    "fit": "Does it fit?",
+    "used": "Already used",
+    "this": "This transfer",
+    "freeAfter": "Free after",
+    "noTotal": "This destination doesn't report its total size.",
+    "noFree": "This destination doesn't report its free space.",
+    "tight": "After this transfer, {destination} will have {free} free."
+  },
+  "category": {
+    "image": "Photos & images",
+    "video": "Videos",
+    "audio": "Audio",
+    "document": "Documents",
+    "archive": "Archives",
+    "code": "Code",
+    "other": "Other"
   }
 }

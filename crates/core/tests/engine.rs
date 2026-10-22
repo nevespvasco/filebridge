@@ -317,6 +317,33 @@ async fn the_queue_names_files_in_flight_and_the_ones_that_arrived() {
 }
 
 #[tokio::test]
+async fn a_job_says_what_it_contains_and_where_it_came_from() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    let cats = s.engine.job_categories(&job).await.unwrap();
+    let by: Vec<_> = cats
+        .iter()
+        .map(|c| (c.category, c.files, c.bytes))
+        .collect();
+    assert_eq!(
+        by,
+        [(FileCategory::Image, 2, 12), (FileCategory::Document, 1, 6)]
+    );
+
+    // Only sent jobs count as recent sources.
+    assert!(s.engine.recent_sources(10).await.unwrap().is_empty());
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let recent = s.engine.recent_sources(10).await.unwrap();
+    assert_eq!(recent.len(), 1);
+    assert_eq!(recent[0].path, s.src.display().to_string());
+    assert!(recent[0].exists);
+    assert_eq!(recent[0].last_job_id, job);
+
+    std::fs::rename(&s.src, s.src.with_file_name("Renamed")).unwrap();
+    assert!(!s.engine.recent_sources(10).await.unwrap()[0].exists);
+}
+
+#[tokio::test]
 async fn collisions_wait_for_a_decision() {
     let s = setup().await;
     // Same visible name twice: NFC and NFD.

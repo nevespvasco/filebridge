@@ -22,7 +22,7 @@ ADR that records it.
 | ID | Spec | Phase | Layers touched |
 |---|---|---|---|
 | D01 | [Home](specs/D01-home.md) | 2 | UI only (reads D03, D06, D07) |
-| D02 | [Source step and transfer composition](specs/D02-source-and-composition.md) | 2 | UI, `model`, `store` (migration), `ipc` |
+| D02 | [Source step and transfer composition](specs/D02-source-and-composition.md) — **Built** | 2 | UI, `model`, `store` (migration), `ipc` |
 | D03 | [Destination storage](specs/D03-destination-storage.md) | 2 | UI, `transport-api` (additive), `transport-rclone`, `store` (migration), `ipc` |
 | D04 | [Transfer queue](specs/D04-transfer-queue.md) — **Built** | 1 | UI, `transport-api` (additive), `transport-rclone`, `model` event, `core` |
 | D05 | [Files of a transfer and Entry detail](specs/D05-files-and-entry-detail.md) | 2 | UI, `model`, `store`, `core` (persist hash), `ipc` |
@@ -101,6 +101,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 
 | Operation | New / changed | Spec |
 |---|---|---|
+| `job_categories(job_id) -> Vec<CategoryCount>` | new | D02 |
 | `recent_sources(limit) -> Vec<RecentSource>` | new | D02 |
 | `profile_storage(id, refresh) -> StorageView` | new | D03 |
 | `entries(job_id, filter, after, limit) -> EntryPage` | new | D05 |

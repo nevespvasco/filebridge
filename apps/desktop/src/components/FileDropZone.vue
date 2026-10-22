@@ -39,6 +39,7 @@ async function pick(directory: boolean) {
       <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.pickFolders") }}</button>
       <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
     </div>
+    <p class="hint small muted">{{ $t("source.hint") }}</p>
     <p v-if="error" class="error small">{{ error }}</p>
   </div>
 </template>

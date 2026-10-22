@@ -4,6 +4,8 @@ import { computed } from "vue";
 import IssueGroup from "@/components/IssueGroup.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
+import TransferComposition from "@/components/TransferComposition.vue";
+import { useProfiles } from "@/stores/profiles";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
@@ -14,6 +16,8 @@ import { useWizard } from "@/stores/wizard";
 const wizard = useWizard();
 const jobs = useJobs();
 const fmt = useFmt();
+const profiles = useProfiles();
+const destinationName = computed(() => (wizard.profileId ? profiles.byId[wizard.profileId]?.name : undefined));
 
 const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : undefined));
 const job = computed(() => (wizard.jobId ? jobs.byId[wizard.jobId] : undefined));
@@ -96,6 +100,8 @@ const details = computed(() => {
           <button class="btn btn-small" @click="wizard.analyse(true)">{{ $t("analysis.rerun") }}</button>
         </p>
       </div>
+
+      <TransferComposition :job-id="wizard.jobId" :free="free" :destination="destinationName" />
 
       <h3>{{ $t("analysis.names") }}<HelpTip :text="$t('analysis.namesHelp')" :example="$t('analysis.namesExample')" :label="$t('analysis.names')" /></h3>
       <details v-if="wizard.ruleCounts.length" class="legend card" :open="wizard.pending > 0">

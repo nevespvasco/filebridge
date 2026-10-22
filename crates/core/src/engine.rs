@@ -24,7 +24,7 @@ use crate::{
     AnalysisSummary, CoreError, Counts, DecisionInput, Event, IssueView, JobKind, JobState,
     JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
 };
-use filebridge_model::{LogEntry, Op, log_level};
+use filebridge_model::{CategoryCount, FileCategory, LogEntry, Op, RecentSource, log_level};
 
 const INSERT_BATCH: usize = 10_000;
 const PAGE: u32 = 5_000;
@@ -124,6 +124,42 @@ impl Engine {
     ) -> Result<()> {
         self.store.append_event(job_id, kind, data).await?;
         Ok(())
+    }
+
+    /// A job's files per Category, most bytes first (what the transfer contains).
+    pub async fn job_categories(&self, job_id: &str) -> Result<Vec<CategoryCount>> {
+        self.store.get_job(job_id).await?;
+        Ok(self
+            .store
+            .category_counts(job_id)
+            .await?
+            .into_iter()
+            .map(|(c, files, bytes)| CategoryCount {
+                category: FileCategory::parse(&c).unwrap_or(FileCategory::Other),
+                files,
+                bytes,
+            })
+            .collect())
+    }
+
+    /// Folders and files sent before, newest first, one per path, each checked for whether it
+    /// is still there. Paths that aren't valid text are left out (a job is created from text).
+    pub async fn recent_sources(&self, limit: u32) -> Result<Vec<RecentSource>> {
+        let rows = self.store.recent_sources(limit).await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|r| {
+                let path = String::from_utf8(r.path).ok()?;
+                let exists = std::path::Path::new(&path).exists();
+                Some(RecentSource {
+                    path,
+                    last_job_id: r.job_id,
+                    last_profile_id: r.profile_id,
+                    last_sent_at: r.sent_at,
+                    exists,
+                })
+            })
+            .collect())
     }
 
     /// A job's log: oldest first after `after_id`, otherwise newest first before `before_id`

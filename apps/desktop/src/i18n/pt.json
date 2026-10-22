@@ -99,7 +99,11 @@
     "pickFilesTip": "Copia só os ficheiros que selecionar",
     "removeTip": "Retirar desta lista (nada é apagado)",
     "addMore": "Ainda pode juntar mais.",
-    "needOne": "Junte pelo menos um ficheiro ou pasta para continuar."
+    "needOne": "Junte pelo menos um ficheiro ou pasta para continuar.",
+    "hint": "Qualquer tamanho. O filebridge só os lê: nada muda na origem.",
+    "recent": "Enviado recentemente de",
+    "recentTo": "para {destination}",
+    "recentMissing": "Já não existe em {path}"
   },
   "dest": {
     "title": "Para onde?",
@@ -604,5 +608,26 @@
       "other": "Terminada"
     },
     "unknown": "Evento: {kind}"
+  },
+  "composition": {
+    "title": "O que vai enviar",
+    "totals": "{files} ficheiros · {size}",
+    "unknown": "Indisponível para transferências analisadas antes desta versão.",
+    "fit": "Cabe?",
+    "used": "Já usado",
+    "this": "Esta transferência",
+    "freeAfter": "Livre depois",
+    "noTotal": "Este destino não indica o tamanho total.",
+    "noFree": "Este destino não indica o espaço livre.",
+    "tight": "Depois desta transferência, {destination} fica com {free} livres."
+  },
+  "category": {
+    "image": "Fotos e imagens",
+    "video": "Vídeos",
+    "audio": "Áudio",
+    "document": "Documentos",
+    "archive": "Arquivos comprimidos",
+    "code": "Código",
+    "other": "Outros"
   }
 }

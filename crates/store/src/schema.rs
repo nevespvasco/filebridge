@@ -96,6 +96,11 @@ CREATE TABLE settings (
 ALTER TABLE jobs ADD COLUMN warnings TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE jobs ADD COLUMN verify_rounds INTEGER NOT NULL DEFAULT 0;
 "#,
+    // 3: each file's Category (docs/design/specs/D02), set at analysis. Older jobs keep 'other'.
+    r#"
+ALTER TABLE manifest_entries ADD COLUMN category TEXT NOT NULL DEFAULT 'other';
+CREATE INDEX manifest_category ON manifest_entries(job_id, category);
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

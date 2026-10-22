@@ -45,6 +45,10 @@ macro_rules! for_each_operation {
             /// Newest first.
             ListJobs list_jobs(limit: u32, offset: u32) -> Vec<$crate::JobSummary>;
             Job job(job_id: String) -> $crate::JobSummary;
+            /// A job's files per Category, most bytes first.
+            JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
+            /// Folders and files sent before, newest first, for "Recently sent from".
+            RecentSources recent_sources(limit: u32) -> Vec<$crate::RecentSource>;
             /// A job's log: oldest first after `after_id`, otherwise newest first before
             /// `before_id` (the newest page when both are absent).
             JobLog job_log(job_id: String, after_id: Option<i64>, before_id: Option<i64>, limit: u32) -> Vec<$crate::LogEntry>;

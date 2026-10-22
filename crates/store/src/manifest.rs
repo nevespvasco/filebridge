@@ -63,6 +63,8 @@ pub struct NewEntry {
     pub mtime: Option<i64>,
     pub hash: Option<Vec<u8>>,
     pub hash_algo: Option<String>,
+    /// The file's Category (`image`, `video`, …; `other` for directories).
+    pub category: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +96,7 @@ pub struct ManifestCounts {
 }
 
 const COLUMNS: &str = "idx, source, raw_path, parent_idx, is_dir, size, mtime, hash, hash_algo, \
-                       dest_path, transfer_state, verify_state, error";
+                       dest_path, transfer_state, verify_state, error, category";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<(ManifestEntry, String, String)> {
     Ok((
@@ -109,6 +111,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<(ManifestEntry, String, String)> 
                 mtime: row.get(6)?,
                 hash: row.get(7)?,
                 hash_algo: row.get(8)?,
+                category: row.get(13)?,
             },
             dest_path: row.get(9)?,
             transfer_state: EntryState::Pending,
@@ -137,13 +140,14 @@ impl Store {
             {
                 let mut stmt = tx.prepare_cached(
                     "INSERT INTO manifest_entries
-                         (job_id, idx, source, raw_path, parent_idx, is_dir, size, mtime, hash, hash_algo)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                         (job_id, idx, source, raw_path, parent_idx, is_dir, size, mtime, hash, hash_algo,
+                          category)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 )?;
                 for e in &entries {
                     stmt.execute(params![
                         job_id, e.idx, e.source, e.raw_path, e.parent_idx, e.is_dir, e.size,
-                        e.mtime, e.hash, e.hash_algo
+                        e.mtime, e.hash, e.hash_algo, e.category
                     ])?;
                 }
             }
@@ -341,6 +345,20 @@ impl Store {
         })
         .await
     }
+
+    /// Files (not directories) per Category: `(category, files, bytes)`, most bytes first.
+    pub async fn category_counts(&self, job_id: &str) -> Result<Vec<(String, u64, u64)>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT category, COUNT(*), COALESCE(SUM(size), 0) FROM manifest_entries
+                 WHERE job_id = ?1 AND is_dir = 0 GROUP BY category ORDER BY 3 DESC, 1",
+            )?;
+            let rows = stmt.query_map([&job_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +377,12 @@ mod tests {
             mtime: Some(1_700_000_000),
             hash: None,
             hash_algo: None,
+            category: if path.ends_with(b".jpg") {
+                "image"
+            } else {
+                "other"
+            }
+            .into(),
         }
     }
 
@@ -367,8 +391,32 @@ mod tests {
             is_dir: true,
             parent_idx: None,
             size: 0,
+            category: "other".into(),
             ..file(idx, path, 0)
         }
+    }
+
+    #[tokio::test]
+    async fn counts_files_per_category() {
+        let (store, job) = store_with_job().await;
+        store
+            .insert_entries(
+                &job,
+                vec![
+                    dir(0, b"Fotos"),
+                    file(1, b"Fotos/a.jpg", 10),
+                    file(2, b"Fotos/b.jpg", 30),
+                    file(3, b"notes", 5),
+                ],
+            )
+            .await
+            .unwrap();
+        let by = store.category_counts(&job).await.unwrap();
+        assert_eq!(
+            by,
+            [("image".into(), 2, 40), ("other".into(), 1, 5)],
+            "directories left out"
+        );
     }
 
     #[tokio::test]

@@ -24,8 +24,10 @@ import {
   type IssueDecision,
   type IssueView_Serialize,
   type JobState,
+  type CategoryCount,
   type JobSummary_Serialize,
   type LogEntry,
+  type RecentSource,
   type Profile_Serialize,
   type RuleCount,
 } from "@/bindings";
@@ -520,6 +522,32 @@ const handlers: Handlers = {
   },
   listJobs: (a) => jobs.slice(a.offset as number, (a.offset as number) + (a.limit as number)),
   job: (a) => find(a.jobId),
+  jobCategories: (a) => {
+    const job = find(a.jobId);
+    const { files, bytes } = job.counts;
+    const split: [CategoryCount["category"], number, number][] = [
+      ["image", 0.52, 0.62],
+      ["video", 0.41, 0.01],
+      ["document", 0.04, 0.3],
+      ["archive", 0.025, 0.002],
+      ["other", 0.005, 0.068],
+    ];
+    return split
+      .map(([category, b, f]) => ({ category, bytes: Math.round(bytes * b), files: Math.round(files * f) }))
+      .filter((c) => c.files > 0);
+  },
+  recentSources: (a) => {
+    const sent = jobs.filter((j) => !["draft", "analysing", "awaiting_approval", "ready"].includes(j.state));
+    const out = new Map<string, RecentSource>();
+    for (const j of sent) {
+      for (const path of j.sources) {
+        if (!out.has(path)) out.set(path, { path, last_job_id: j.id, last_profile_id: j.profile_id, last_sent_at: j.created_at, exists: true });
+      }
+    }
+    // An unplugged disk, to show a source that is no longer there.
+    out.set("/media/demo/disco-antigo/Scans", { path: "/media/demo/disco-antigo/Scans", last_job_id: "j-old", last_profile_id: "p-disk", last_sent_at: now - 20 * 86_400_000, exists: false });
+    return [...out.values()].slice(0, a.limit as number);
+  },
   jobLog: (a) => {
     find(a.jobId);
     const list = logs.get(a.jobId as string) ?? [];

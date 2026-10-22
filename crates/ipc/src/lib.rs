@@ -25,9 +25,10 @@ pub use server::{Handler, bind, serve};
 /// carry, so clients need only this crate. It doesn't depend on `core`: a client never compiles
 /// the engine (ADR 0008: the window reaches `core` only through `ipc`).
 pub use filebridge_model::{
-    AnalysisSummary, AppSettings, CheckView, Counts, DecisionInput, Event, Family, IssueDecision,
-    IssueSeverity, IssueView, JobKind, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
-    Profile, ProfileTest, RuleCount, SendOptions, SendWindow, TargetSpec, job_operations,
+    AnalysisSummary, AppSettings, CategoryCount, CheckView, Counts, DecisionInput, Event, Family,
+    IssueDecision, IssueSeverity, IssueView, JobKind, JobState, JobSummary, LogEntry, LogLevel,
+    PreflightView, Profile, ProfileTest, RecentSource, RuleCount, SendOptions, SendWindow,
+    TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -38,7 +39,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 4: `get_settings`/`save_settings`; the `waiting` job state and `send_window_wait` event;
 ///    `SendOptions` has no `bwlimit` (the limit is app-wide).
 /// 5: `transfer_progress` lists the files in flight; the `entries_done` event; `job_log`.
-pub const PROTOCOL_VERSION: u32 = 5;
+/// 6: `job_categories`, `recent_sources`.
+pub const PROTOCOL_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

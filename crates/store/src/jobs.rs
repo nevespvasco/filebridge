@@ -265,6 +265,40 @@ impl Store {
     }
 }
 
+/// A source root of a job that was sent, for "Recently sent from" (docs/design/specs/D02).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecentSourceRow {
+    /// As stored: the absolute path's raw bytes.
+    pub path: Vec<u8>,
+    pub job_id: String,
+    pub profile_id: String,
+    pub sent_at: i64,
+}
+
+impl Store {
+    /// Source roots of jobs past `ready` (they were sent), one per path, newest first.
+    pub async fn recent_sources(&self, limit: u32) -> Result<Vec<RecentSourceRow>> {
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT s.path, j.id, j.profile_id, MAX(j.created_at) AS at
+                 FROM job_sources s JOIN jobs j ON j.id = s.job_id
+                 WHERE j.state NOT IN ('draft', 'analysing', 'awaiting_approval', 'ready')
+                 GROUP BY s.path ORDER BY at DESC LIMIT ?1",
+            )?;
+            let rows = stmt.query_map([limit], |r| {
+                Ok(RecentSourceRow {
+                    path: r.get(0)?,
+                    job_id: r.get(1)?,
+                    profile_id: r.get(2)?,
+                    sent_at: r.get(3)?,
+                })
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::StateChange;

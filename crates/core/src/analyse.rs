@@ -8,6 +8,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use filebridge_model::FileCategory;
 use filebridge_names::{Entry, NamePlan, Severity};
 use filebridge_store::{Decision, NewEntry, NewIssue};
 
@@ -153,6 +154,13 @@ pub(crate) fn analyse_sources(
             mtime: None,
             hash: None,
             hash_algo: None,
+            category: if entry.is_dir {
+                FileCategory::Other
+            } else {
+                FileCategory::of_name(&entry.raw_path)
+            }
+            .as_str()
+            .into(),
         });
         dest_paths.push((idx, m.dest_path));
     }

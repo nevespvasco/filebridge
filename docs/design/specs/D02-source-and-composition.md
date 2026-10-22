@@ -1,6 +1,6 @@
 # D02 — Source step and transfer composition
 
-- ID: D02 · Status: Proposed · Phase: 2 (Recent sources can come earlier: they need no migration)
+- ID: D02 · Status: **Built** · Phase: 2 (Recent sources can come earlier: they need no migration)
 - Inspired by: A5, B2 (drop zone with a hint), C1 (Add Files / Add Folders), D5 (folder cards with
   count and size), E2, F5, G5 (storage by type), E6, F6 (quick access / source tiles), D15
   (shortcuts for things you forget)
@@ -176,10 +176,8 @@ pub async fn category_counts(&self, job_id: &str) -> Result<Vec<(String, u64 /*f
 // crates/model/src/views.rs
 pub struct CategoryCount { pub category: FileCategory, pub files: u64, pub bytes: u64 }
 
-pub struct AnalysisSummary {
-    // … existing fields …
-    pub categories: Vec<CategoryCount>,   // ordered by bytes, descending
-}
+// As built: not a field of AnalysisSummary but its own operation, `job_categories(job_id)`, so
+// the card also works for a job reopened from Transfers (the wizard then has no summary).
 
 pub struct RecentSource {
     /// Absolute path as the user picked it; only UTF-8 paths are listed (`create_job` takes
@@ -196,6 +194,8 @@ pub struct RecentSource {
 Catalogue (`crates/ipc/src/operations.rs`):
 
 ```text
+/// A job's files per Category, most bytes first.
+JobCategories job_categories(job_id: String) -> Vec<CategoryCount>;
 /// Source roots of past jobs, newest first, one per path; only those that were sent (state
 /// past Ready). For the "Recently sent from" list.
 RecentSources recent_sources(limit: u32) -> Vec<RecentSource>;

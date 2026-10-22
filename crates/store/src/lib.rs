@@ -24,7 +24,7 @@ use tokio::sync::oneshot;
 
 pub use events::EventRow;
 pub use issues::{Decision, IssueRow, NewIssue, RuleSummary};
-pub use jobs::{JobRow, NewJob, StateChange};
+pub use jobs::{JobRow, NewJob, RecentSourceRow, StateChange};
 pub use manifest::{EntryState, ManifestCounts, ManifestEntry, NewEntry};
 pub use profiles::ProfileRow;
 

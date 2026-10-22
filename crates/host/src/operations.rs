@@ -8,9 +8,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_ipc::{
-    AnalysisSummary, AppSettings, DecisionInput, DetectNextcloudRequest, DetectNextcloudResponse,
-    ErrorBody, Handler, IssueView, JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong,
-    Profile, ProfileTest, RuleCount, SendOptions,
+    AnalysisSummary, AppSettings, CategoryCount, DecisionInput, DetectNextcloudRequest,
+    DetectNextcloudResponse, ErrorBody, Handler, IssueView, JobSummary, LogEntry, Operations,
+    PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, RuleCount, SendOptions,
 };
 use tokio::sync::broadcast;
 
@@ -173,6 +173,17 @@ impl Operations for EngineOperations {
 
     async fn job(&self, job_id: String) -> Res<JobSummary> {
         self.engine.job(&job_id).await.map_err(to_error)
+    }
+
+    async fn job_categories(&self, job_id: String) -> Res<Vec<CategoryCount>> {
+        self.engine.job_categories(&job_id).await.map_err(to_error)
+    }
+
+    async fn recent_sources(&self, limit: u32) -> Res<Vec<RecentSource>> {
+        self.engine
+            .recent_sources(limit.min(50))
+            .await
+            .map_err(to_error)
     }
 
     async fn job_log(

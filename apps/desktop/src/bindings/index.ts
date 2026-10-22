@@ -47,6 +47,10 @@ export const commands = {
 	/**  Newest first. */
 	listJobs: (limit: number, offset: number) => typedError<JobSummary_Serialize[], ErrorBody>(__TAURI_INVOKE("list_jobs", { limit, offset })),
 	job: (jobId: string) => typedError<JobSummary_Serialize, ErrorBody>(__TAURI_INVOKE("job", { jobId })),
+	/**  A job's files per Category, most bytes first. */
+	jobCategories: (jobId: string) => typedError<CategoryCount[], ErrorBody>(__TAURI_INVOKE("job_categories", { jobId })),
+	/**  Folders and files sent before, newest first, for "Recently sent from". */
+	recentSources: (limit: number) => typedError<RecentSource[], ErrorBody>(__TAURI_INVOKE("recent_sources", { limit })),
 	/**
 	 *  A job's log: oldest first after `after_id`, otherwise newest first before
 	 *  `before_id` (the newest page when both are absent).
@@ -71,7 +75,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 5 as const;
+export const PROTOCOL_VERSION = 6 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -131,6 +135,13 @@ export type Backend_Serialize = { kind: "local" } | { kind: "sftp"; host: string
 key_file: string | null; 
 /**  Host keys are always verified; defaults to `~/.ssh/known_hosts`. */
 known_hosts_file: string | null; password: KeyringRef | null };
+
+/**  How many files of one Category a job has, and their size (docs/design/specs/D02). */
+export type CategoryCount = {
+	category: FileCategory,
+	files: number,
+	bytes: number,
+};
 
 export type CheckView = {
 	id: string,
@@ -521,6 +532,18 @@ export type Profile_Serialize = {
 	/**  The integration's own settings, as its profile wizard saved them. */
 	integration_settings: Value,
 	target: TargetSpec,
+};
+
+/**  A folder or file sent before, for "Recently sent from". */
+export type RecentSource = {
+	/**  Absolute path as it was picked. */
+	path: string,
+	last_job_id: string,
+	last_profile_id: string,
+	/**  Unix ms. */
+	last_sent_at: number,
+	/**  Whether it is there now (a disk may be unplugged, a folder renamed). */
+	exists: boolean,
 };
 
 export type RuleCount = {
