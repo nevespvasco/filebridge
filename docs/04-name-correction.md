@@ -145,7 +145,9 @@ As built (`crates/core/src/repair.rs`):
   ignore the send window (renames move no data). The folder and options can't change afterwards
   (`set_options` is refused): "Continue" and "Send again" on a repair open its own page, never
   the New transfer wizard, so every rename passes its confirmation. "Send again" checks the same
-  folder again.
+  folder again, on the same destination only: the folder is that destination's, so `send_again`
+  refuses another profile for a repair, and the menu doesn't offer "Send again to another
+  destination…" for one.
 - Stage 2 lists the folder one level at a time, parents first, up to 500 000 entries. A subfolder
   that can't be read is a scan error (the rest is analysed); not reaching the destination at all
   stops the analysis. On SFTP, symbolic links are skipped (`skip_links`): a link is not renamed

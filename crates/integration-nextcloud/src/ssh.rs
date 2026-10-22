@@ -90,7 +90,19 @@ impl ShellConnector for SshConnector {
             .authenticate_publickey(&target.user, PrivateKeyWithHashAlg::new(key, rsa_hash))
             .await
             .map_err(|e| IntegrationError::retryable(format!("SSH authentication: {e}")))?;
-        Ok(res.success())
+        Ok(key_works(&res))
+    }
+}
+
+/// Whether the server took the key: signed in, or accepted it as one factor and wants another
+/// (`AuthenticationMethods publickey,password` answers "partial success"). For Remove access's
+/// proof the second case still means the key works, so it is never read as "refused".
+fn key_works(res: &client::AuthResult) -> bool {
+    match res {
+        client::AuthResult::Success => true,
+        client::AuthResult::Failure {
+            partial_success, ..
+        } => *partial_success,
     }
 }
 
@@ -286,6 +298,11 @@ async fn authenticate(
             .map_err(net)?;
         return if res.success() {
             Ok(())
+        } else if key_works(&res) {
+            Err(IntegrationError::fatal(format!(
+                "server took filebridge's own key for user {user} but asks for another sign-in \
+                 step after it (AuthenticationMethods), which filebridge can't answer"
+            )))
         } else {
             Err(IntegrationError::fatal(format!(
                 "server refused filebridge's own key for user {user}; it may have been removed \
@@ -470,6 +487,17 @@ impl RemoteShell for SshShell {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_key_taken_as_a_first_factor_works() {
+        let failure = |partial_success| client::AuthResult::Failure {
+            remaining_methods: russh::MethodSet::empty(),
+            partial_success,
+        };
+        assert!(key_works(&client::AuthResult::Success));
+        assert!(key_works(&failure(true)));
+        assert!(!key_works(&failure(false)));
+    }
 
     #[test]
     fn lines_split_across_chunks() {

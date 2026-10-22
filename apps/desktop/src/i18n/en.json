@@ -24,13 +24,19 @@
     "connected": "Copy engine running",
     "connecting": "Starting the copy engine…",
     "disconnected": "Copy engine not responding",
+    "replacing": "Updating the copy engine…",
     "short": {
       "connecting": "Connecting…",
-      "disconnected": "Offline"
+      "disconnected": "Offline",
+      "replacing": "Updating…"
     },
     "retry": "Try again",
     "tip": "The copy engine copies your files in the background, even with this window closed. This shows whether the window can reach it.",
     "problem": {
+      "replacing": {
+        "title": "Updating the copy engine…",
+        "body": "A copy engine from an earlier version of filebridge was running and is being replaced by this version's. This takes a few seconds; the window waits for it. Sends already running continue in the new one."
+      },
       "version": {
         "title": "The copy engine is from another version of filebridge.",
         "body": "Close every filebridge window and open it again. Sends already running are not lost: they continue when the engine starts again."

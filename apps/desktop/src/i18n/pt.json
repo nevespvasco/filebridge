@@ -24,13 +24,19 @@
     "connected": "Motor de cópia a funcionar",
     "connecting": "A iniciar o motor de cópia…",
     "disconnected": "Motor de cópia sem resposta",
+    "replacing": "A atualizar o motor de cópia…",
     "short": {
       "connecting": "A ligar…",
-      "disconnected": "Sem ligação"
+      "disconnected": "Sem ligação",
+      "replacing": "A atualizar…"
     },
     "retry": "Tentar de novo",
     "tip": "O motor de cópia copia os seus ficheiros em segundo plano, mesmo com esta janela fechada. Isto mostra se a janela o consegue contactar.",
     "problem": {
+      "replacing": {
+        "title": "A atualizar o motor de cópia…",
+        "body": "Estava a funcionar um motor de cópia de uma versão anterior do filebridge, que está a ser substituído pelo desta versão. Demora alguns segundos e a janela espera por ele. Os envios em curso continuam no novo."
+      },
       "version": {
         "title": "O motor de cópia é de outra versão do filebridge.",
         "body": "Feche todas as janelas do filebridge e abra-o de novo. Os envios em curso não se perdem: continuam quando o motor voltar a arrancar."

@@ -46,8 +46,10 @@ watch(
   { immediate: true },
 );
 
-/** What the banner says: an old or new engine, one that can't start, or one that stopped. */
+/** What the banner says: an old engine being replaced, an old or new engine, one that can't
+ *  start, or one that stopped. */
 const problem = computed(() => {
+  if (conn.replacing) return "replacing";
   if (conn.lastCode === "incompatible_service") return "version";
   if (conn.lastCode === "service_unavailable") return "start";
   return "lost";
@@ -137,19 +139,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <RouterLink :to="notice.to" class="notice-text">{{ notice.text }}</RouterLink>
         <button class="dismiss" :aria-label="$t('common.dismiss')" @click="dismiss(notice.key, notice.at)"><AppIcon name="close" /></button>
       </div>
-      <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
+      <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false && !conn.replacing ? 'off' : 'wait'">
         <!-- Hovering, focusing or tapping the status itself explains it. -->
         <HelpTip :text="$t('conn.tip')">
           <span class="dot" aria-hidden="true" />
-          <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
+          <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.replacing ? $t("conn.replacing") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
           <!-- The top bar's short form; the banner under it says what happened and what to do. -->
-          <span v-if="!conn.connected" class="conn-short" aria-hidden="true">{{ conn.connected === false ? $t("conn.short.disconnected") : $t("conn.short.connecting") }}</span>
+          <span v-if="!conn.connected" class="conn-short" aria-hidden="true">{{ conn.replacing ? $t("conn.short.replacing") : conn.connected === false ? $t("conn.short.disconnected") : $t("conn.short.connecting") }}</span>
         </HelpTip>
       </div>
     </nav>
     <main class="main">
-      <div v-if="conn.connected === false" class="banner" role="alert">
-        <AppIcon name="warning" :size="20" class="banner-icon" />
+      <div v-if="conn.connected === false" class="banner" :class="{ waiting: conn.replacing }" :role="conn.replacing ? 'status' : 'alert'">
+        <AppIcon :name="conn.replacing ? 'retry' : 'warning'" :size="20" class="banner-icon" />
         <div class="banner-text">
           <strong>{{ $t(`conn.problem.${problem}.title`) }}</strong>
           <span class="small">{{ $t(`conn.problem.${problem}.body`) }}</span>
@@ -158,7 +160,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
             <code>{{ conn.lastError }}</code>
           </details>
         </div>
-        <button class="btn btn-small" :disabled="conn.checking" @click="conn.check()">
+        <!-- While the engine is replaced, every command waits for it: nothing to retry yet. -->
+        <button v-if="!conn.replacing" class="btn btn-small" :disabled="conn.checking" @click="conn.check()">
           <AppIcon name="retry" /> {{ conn.checking ? $t("conn.connecting") : $t("conn.retry") }}
         </button>
       </div>
@@ -230,6 +233,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   margin-bottom: 1rem;
 }
 .banner-icon { color: var(--danger); flex: none; margin-top: 0.1rem; }
+/* Replacing an older engine: news, not an error. */
+.banner.waiting { background: var(--accent-soft); border-color: var(--accent); }
+.banner.waiting .banner-icon { color: var(--accent); }
 .banner-text { display: grid; gap: 0.2rem; flex: 1; min-width: 0; }
 .banner-text details { margin-top: 0.2rem; }
 .banner-text summary { cursor: pointer; }

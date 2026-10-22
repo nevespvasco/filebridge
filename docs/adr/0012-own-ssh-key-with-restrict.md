@@ -34,16 +34,20 @@ allows only SFTP and the exact commands filebridge runs.
 - **Remove access** deletes only the lines whose last word is `filebridge-<profile-id>` (also
   when they end in `\r` or spaces), then tries the old key, held in memory, once more. Only when
   no server accepts it is the profile put back on its key file, SSH agent or password, and then
-  the keyring entry deleted; a server that still accepts it leaves the profile on the key and
+  the keyring entry deleted. A server that takes the key as a first factor and asks for a
+  password next (`AuthenticationMethods publickey,password`, "partial success") accepts it; a server that still accepts it leaves the profile on the key and
   the step failed. It is offered on the Destinations screen, on a finished transfer to that
   destination, and from the delete-destination dialog when the destination has the key.
 - `authorized_keys` is only ever changed by scripts that leave it as it was unless every step
   worked: bytes are compared as bytes (`LC_ALL=C grep -a`, so a Latin-1 comment or a NUL byte
-  can't make GNU grep drop lines or answer "binary file matches"), a `grep` error stops it, and
+  can't make GNU grep drop lines or answer "binary file matches"; a `grep` without `-a`, as on
+  some BusyBox builds, is detected and used without it), a `grep` error stops it, and
   the filtered copy (made in `~/.ssh`, mode 600) must hold exactly the old lines minus the
   matched ones before it is written back in place (`cat >`, so the file keeps its owner and
   mode).
-- Neither install nor remove runs while a transfer to that destination is running, profile ids
+- Neither install nor remove runs while a transfer to that destination is running, only one of
+  them runs at a time per destination (they share one keyring entry and one comment, so a second
+  one answers `busy` instead of undoing the first one's work), profile ids
   are checked to be `[A-Za-z0-9-]` before any script is built, and the install is not offered
   to an SFTP destination that signs in by password only (the line is installed through the key
   file or SSH agent).
