@@ -66,5 +66,7 @@ onBeforeUnmount(() => returnTo?.focus?.());
 .head h2 { font-size: 1rem; margin: 0; }
 .body { overflow: auto; padding: 1rem; display: grid; gap: 1rem; align-content: start; }
 @keyframes slide { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+/* A narrow window: the whole width (docs/design/02, "Window sizes"). */
+@media (max-width: 559px) { .drawer { width: 100vw !important; border-left: 0; } }
 @media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
 </style>

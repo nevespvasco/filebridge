@@ -372,9 +372,9 @@ function decisionLabel(row: IssueView_Serialize) {
 .group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chev { width: 1rem; color: var(--text-2); }
 .block { display: block; }
-.group-body { border-top: 1px solid var(--border); padding: 0.75rem 1rem 1rem; }
+.group-body { border-top: 1px solid var(--border); padding: 0.75rem 1rem 1rem; container-type: inline-size; }
 .bulk { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
-.rows { list-style: none; margin: 0; padding: 0; container-type: inline-size; }
+.rows { list-style: none; margin: 0; padding: 0; }
 .cols { display: flex; justify-content: space-between; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
 .example { color: var(--text-2); margin-top: 0.2rem; }
 .bytes { display: flex; align-items: center; gap: 0.2rem; }
@@ -418,6 +418,7 @@ function decisionLabel(row: IssueView_Serialize) {
   .row, .row.selectable { grid-template-columns: auto minmax(0, 1fr) auto; }
   .row:not(.selectable) { grid-template-columns: minmax(0, 1fr) auto; }
   .actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .cols > span + span { display: none; }
 }
 /* Narrower still: the name at the destination gets its own line. */
 @container (max-width: 480px) {

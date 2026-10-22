@@ -254,7 +254,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .onboarding ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .onboarding li { display: flex; gap: 0.6rem; align-items: center; }
 .onboarding li.done { color: var(--ok); }
-@media (max-width: 1080px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1099px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 /* A narrow list: the name and its state on top, where, size and when under them. */
 @container (max-width: 520px) {
   .recent li { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name name state" "dest size when"; gap: 0.15rem 0.75rem; }

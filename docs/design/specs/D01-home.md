@@ -117,7 +117,7 @@ There are no separate quick-action buttons (E3): New transfer is the page's prim
   marked when Transfer detail opens.
 - Home's drop zone and the wizard's share one component, which now listens to window drops only
   while it is on screen, so the kept-alive wizard no longer takes drops meant for other pages.
-- One column below 1080px.
+- One column below 1100px.
 
 ## States
 

@@ -37,7 +37,8 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
 
     <p v-if="state === 'paused'" class="small muted">{{ $t("queue.paused") }}</p>
     <template v-if="rows.length">
-      <table class="table rows">
+      <!-- Explicit roles: the narrow form is not displayed as a table (see JobsView). -->
+      <table class="table rows" role="table">
         <caption class="sr-only">{{ $t("queue.caption") }}</caption>
         <colgroup>
           <col class="c-name" />
@@ -45,17 +46,17 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
           <col class="c-bar" />
           <col class="c-speed" />
         </colgroup>
-        <thead class="sr-only">
-          <tr>
-            <th scope="col">{{ $t("queue.col.name") }}</th>
-            <th scope="col">{{ $t("queue.col.size") }}</th>
-            <th scope="col">{{ $t("queue.col.progress") }}</th>
-            <th scope="col">{{ $t("queue.col.speed") }}</th>
+        <thead class="sr-only" role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader">{{ $t("queue.col.name") }}</th>
+            <th scope="col" role="columnheader">{{ $t("queue.col.size") }}</th>
+            <th scope="col" role="columnheader">{{ $t("queue.col.progress") }}</th>
+            <th scope="col" role="columnheader">{{ $t("queue.col.speed") }}</th>
           </tr>
         </thead>
-        <tbody>
-          <tr v-for="f in rows" :key="`${f.dir}/${f.name}`" :style="{ '--cat': categoryColor(f.category) }">
-            <td class="name">
+        <tbody role="rowgroup">
+          <tr v-for="f in rows" :key="`${f.dir}/${f.name}`" role="row" :style="{ '--cat': categoryColor(f.category) }">
+            <td class="name" role="cell">
               <div class="name-in">
                 <AppIcon class="cat" :name="CATEGORY_ICON[f.category]" :style="{ color: categoryColor(f.category) }" />
                 <span class="text">
@@ -65,12 +66,12 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
                 <AppIcon v-if="f.renamed_from" name="renamed" class="renamed" :label="$t('queue.renamed', { name: f.renamed_from })" />
               </div>
             </td>
-            <td class="n small size">{{ fmt.bytes(f.size) }}</td>
-            <td class="bar">
+            <td class="n small size" role="cell">{{ fmt.bytes(f.size) }}</td>
+            <td class="bar" role="cell">
               <ProgressBar :value="fmt.percent(f.bytes, f.size)" :tone="held ? 'warn' : 'accent'" />
               <span class="small num pct">{{ Math.round(fmt.percent(f.bytes, f.size)) }} %</span>
             </td>
-            <td class="n small muted speed">
+            <td class="n small muted speed" role="cell">
               {{ fmt.rate(f.bytes_per_sec) }}<template v-if="eta(f)"> · {{ eta(f) }}</template>
             </td>
           </tr>

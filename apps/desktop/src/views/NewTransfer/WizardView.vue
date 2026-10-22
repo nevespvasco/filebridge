@@ -89,11 +89,11 @@ function go(n: Step) {
 .page-head .lead-text { margin-bottom: 0; }
 .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Not enough room for five labels: every step keeps its number, only the current one its label
-   (the others keep theirs for screen readers and in the tooltip). */
+   (the others keep theirs for screen readers). */
 @container (max-width: 700px) {
   .stepper li { flex: 0 0 auto; min-width: 0; }
   .stepper li.current { flex: 1 1 auto; }
-  .stepper li:not(.current) .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .stepper li:not(.current) .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .stepper button { justify-content: center; padding-inline: 0.5rem; }
   .stepper li.current button { justify-content: flex-start; }
 }

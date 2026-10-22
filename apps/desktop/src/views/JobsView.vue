@@ -27,6 +27,8 @@ const fmt = useFmt();
 const { t } = useI18n();
 /** Speed and ETA mean something only while files are moving. */
 const sending = (state: JobState) => RUNNING.includes(state) && state !== "waiting";
+/** A progress bar while it runs or is paused; otherwise the file count. */
+const showsBar = (state: JobState) => RUNNING.includes(state) || state === "paused";
 
 // Filters live in the route query (Back restores them); the search text only in memory.
 const GROUPS: JobGroup[] = ["active", "needs_you", "not_sent", "finished", "cancelled"];
@@ -111,22 +113,25 @@ function clearFilters() {
     </div>
 
     <div v-else class="table-wrap card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th class="c-what" scope="col">{{ $t("jobs.col.transfer") }}</th>
-            <th class="c-where" scope="col">{{ $t("jobs.col.where") }}</th>
-            <th class="c-state" scope="col">{{ $t("jobs.col.state") }}</th>
-            <th class="c-progress" scope="col">
+      <!-- Explicit roles: a narrow window shows the rows as cards, and WebKit drops a table's
+           semantics once it is no longer displayed as one. -->
+      <table class="table" role="table">
+        <thead role="rowgroup">
+          <tr role="row">
+            <th class="c-what" scope="col" role="columnheader">{{ $t("jobs.col.transfer") }}</th>
+            <th class="c-where" scope="col" role="columnheader">{{ $t("jobs.col.where") }}</th>
+            <th class="c-state" scope="col" role="columnheader">{{ $t("jobs.col.state") }}</th>
+            <th class="c-progress" scope="col" role="columnheader">
               <span class="th-help">{{ $t("jobs.col.progress") }}<HelpTip :text="$t('jobs.retriesHelp')" :label="$t('jobs.col.retries')" /></span>
             </th>
-            <th class="c-size n" scope="col">{{ $t("jobs.col.size") }}</th>
-            <th class="c-when" scope="col">{{ $t("jobs.col.when") }}</th>
-            <th class="c-menu" scope="col"><span class="sr-only">{{ $t("jobs.col.actions") }}</span></th>
+            <th class="c-size n" scope="col" role="columnheader">{{ $t("jobs.col.size") }}</th>
+            <th class="c-when" scope="col" role="columnheader">{{ $t("jobs.col.when") }}</th>
+            <th class="c-menu" scope="col" role="columnheader"><span class="sr-only">{{ $t("jobs.col.actions") }}</span></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           <tr
+            role="row"
             v-for="id in jobs.page"
             :key="id"
             tabindex="0"
@@ -136,15 +141,15 @@ function clearFilters() {
             @keydown.enter.self="router.push({ name: 'job', params: { id } })"
           >
             <template v-if="jobs.byId[id]">
-              <td class="c-what">
+              <td class="c-what" role="cell">
                 <strong class="ellipsis block" :title="jobLabel(jobs.byId[id])">{{ jobLabel(jobs.byId[id]) }}</strong>
                 <span v-if="jobs.byId[id].label" class="small muted ellipsis block" :title="jobs.byId[id].sources.join('\n')">{{ defaultLabel(jobs.byId[id].sources) }}</span>
                 <span v-if="jobs.byId[id].again_of" class="small muted block"><AppIcon name="again" /> {{ $t("jobs.again") }}</span>
               </td>
-              <td class="c-where ellipsis" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
-              <td class="c-state"><JobStateBadge :state="jobs.byId[id].state" /></td>
-              <td class="c-progress" :class="{ 'has-bar': RUNNING.includes(jobs.byId[id].state) || jobs.byId[id].state === 'paused' }">
-                <template v-if="RUNNING.includes(jobs.byId[id].state) || jobs.byId[id].state === 'paused'">
+              <td class="c-where ellipsis" role="cell" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
+              <td class="c-state" role="cell"><JobStateBadge :state="jobs.byId[id].state" /></td>
+              <td class="c-progress" role="cell" :class="{ 'has-bar': showsBar(jobs.byId[id].state) }">
+                <template v-if="showsBar(jobs.byId[id].state)">
                   <ProgressBar
                     :tone="jobs.byId[id].state === 'paused' || jobs.byId[id].state === 'retrying' ? 'warn' : 'accent'"
                     :value="fmt.percent(jobs.live[id]?.transfer?.bytes_done ?? jobs.byId[id].counts.bytes_done, jobs.live[id]?.transfer?.bytes_total ?? jobs.byId[id].counts.bytes)"
@@ -160,11 +165,11 @@ function clearFilters() {
                 <span v-else-if="jobs.byId[id].state === 'failed' || jobs.byId[id].state === 'cancelled'" class="muted">—</span>
                 <span v-else class="small num">{{ $t("jobs.files", { n: fmt.count(jobs.byId[id].counts.files) }, jobs.byId[id].counts.files) }}</span>
               </td>
-              <td class="c-size n small num">{{ jobs.byId[id].counts.bytes ? fmt.bytes(jobs.byId[id].counts.bytes) : "—" }}</td>
-              <td class="c-when small muted nowrap">
+              <td class="c-size n small num" role="cell">{{ jobs.byId[id].counts.bytes ? fmt.bytes(jobs.byId[id].counts.bytes) : "—" }}</td>
+              <td class="c-when small muted nowrap" role="cell">
                 <RelativeTime :at="jobs.byId[id].finished_at ?? jobs.byId[id].created_at" />
               </td>
-              <td class="c-menu" @click.stop @keydown.stop>
+              <td class="c-menu" role="cell" @click.stop @keydown.stop>
                 <JobActions :job="jobs.byId[id]" show-open @export-report="reportFor = id" />
               </td>
             </template>
@@ -218,7 +223,10 @@ function clearFilters() {
   .c-what { width: 30%; }
 }
 @container (max-width: 700px) {
-  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  /* The headers stay for screen readers; the retries help in them would be a focus stop no one
+     sees, and the card already says "N retries". */
+  .table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .table thead :deep(.help-tip) { display: none; }
   .table, .table tbody { display: block; }
   .table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.7rem 0.6rem 0.7rem 0.9rem; border-bottom: 1px solid var(--border); }
   /* The line break between the name row and the details. */

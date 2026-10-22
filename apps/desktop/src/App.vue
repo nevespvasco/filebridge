@@ -138,7 +138,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <button class="dismiss" :aria-label="$t('common.dismiss')" @click="dismiss(notice.key, notice.at)"><AppIcon name="close" /></button>
       </div>
       <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
-        <span class="dot" aria-hidden="true" />
+        <span class="dot" aria-hidden="true" :title="conn.connected ? $t('conn.connected') : undefined" />
         <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
         <HelpTip :text="$t('conn.tip')" :label="$t('conn.label')" />
       </div>
@@ -180,6 +180,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   position: sticky;
   top: 0;
   height: 100vh;
+  /* A short window (the minimum is 480px tall) scrolls the sidebar, never cuts it off. */
+  overflow-y: auto;
 }
 .brand { display: flex; gap: 0.5rem; align-items: center; font-weight: 700; font-size: 1.1rem; padding: 0 0.5rem 1rem; }
 .side a {
@@ -259,13 +261,15 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   .grow { display: none; }
   .notice { grid-area: notice; margin: 0 0 0.5rem; }
   .conn { grid-area: conn; padding: 0.25rem; gap: 0.25rem; }
-  .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* Connected is the usual state: the green dot alone says it (with its tooltip and the text for
+     screen readers). Connecting or not responding is always spelled out. */
+  .conn.on .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .main { padding: 1rem 1rem 2rem; }
 }
 /* Too narrow for icon and label side by side: the label goes under the icon. */
 @media (max-width: 559px) {
-  .places a { flex-direction: column; gap: 0.15rem; font-size: 0.72rem; padding: 0.4rem 0.2rem; }
-  .places a .badge { position: absolute; top: 0.15rem; left: calc(50% + 0.5rem); font-size: 0.65rem; padding: 0 0.35rem; }
+  .places a { flex-direction: column; gap: 0.15rem; font-size: var(--fs-xs); padding: 0.4rem 0.2rem; }
+  .places a .badge { position: absolute; top: 0.1rem; left: calc(50% + 0.5rem); padding: 0 0.35rem; }
   .places a .attention { position: absolute; top: 0.3rem; left: calc(50% - 0.9rem); }
 }
 /* A phone-sized window: New transfer keeps its icon and its accessible name, not its text. */

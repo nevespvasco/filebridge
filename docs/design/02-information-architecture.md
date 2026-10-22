@@ -66,7 +66,8 @@ up in logs and crash reports.
 - **Service status** stays at the bottom (exists).
 
 Width stays 200px, and the labels never truncate in en or pt. "Transferências" is the longest
-label, and it fits at 15px.
+label, and it fits at 15px. A window shorter than the sidebar scrolls it. Below 760px the sidebar
+becomes a top bar ([Window sizes](#window-sizes)).
 
 ## Page anatomy
 
@@ -129,7 +130,7 @@ sideways except code in "Technical details".
 | ≥ 1600px | Sidebar + main; the main column grows to 1280px, centred |
 | 1100–1599px | Sidebar + main (1100px, centred); Home in two columns (D01) |
 | 760–1099px | Sidebar + main; Home in one column; lists drop columns or become cards by the width they get (below) |
-| 560–759px | The sidebar becomes a **top bar**: brand, service status (dot and `?`) and New transfer on one row; Home, Transfers, Destinations and Settings as even tabs under it (active one underlined); the notice slot as a strip |
+| 560–759px | The sidebar becomes a **top bar**: brand, service status and New transfer on one row; Home, Transfers, Destinations and Settings as even tabs under it (active one underlined); the notice slot as a strip. The status shows its dot and `?`, plus its text whenever it is not "running" |
 | < 560px | Place tabs put the label under the icon. Footers put their hint on its own line above Back / Next; page heads wrap their actions under the title; the Drawer is full width |
 | < 400px | New transfer in the top bar keeps its icon and accessible name, not its text |
 
@@ -139,11 +140,11 @@ Drawer or a narrow window:
 
 | Component | Narrow form |
 |---|---|
-| Transfers table (D06) | Hides Size under 860px; under 700px each row is a card: name, state and ⋮ on top, the bar when running, then destination · files · size · when |
+| Transfers table (D06) | Hides Size under 860px; under 700px each row is a card: name, state and ⋮ on top, the bar when running, then destination · files · size · when. The rows keep explicit table roles, and the column headers stay for screen readers |
 | Home, Recent transfers | Under 520px: name and state on top, destination · size · when under them |
 | Files tab (D05) | Hides Folder under 760px; under 520px each file takes two lines (name and status, folder and size) in the same row height |
 | Sending now (D04) | Under 560px each file takes two lines: name and size, then bar, % and speed |
-| Name decisions (`IssueGroup`) | Buttons go under the names under 680px; the name at the destination gets its own line under 480px. The byte diff wraps between byte groups, "after" under "before" |
+| Name decisions (`IssueGroup`) | Buttons go under the names (and the "choose" column header goes) under 680px; the name at the destination gets its own line under 480px. The byte diff wraps between bytes, "after" under "before" |
 | Wizard stepper | Under 700px every step keeps its number and only the current one its label |
 | Source list | Under 460px the parent folder goes under the name |
 

@@ -239,7 +239,7 @@ dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .tab:hover { color: var(--text); }
 .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-/* The label and value side by side need room; in a narrow card the value goes under its label. */
+/* The label and value side by side need room; in a narrow window the value goes under its label. */
 @media (max-width: 399px) {
   .kv { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
   .kv dd + dt { margin-top: 0.45rem; }
