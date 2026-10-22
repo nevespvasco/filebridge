@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Builds rclone's librclone (ADR 0014): a shared library with a C `RcloneRPC(method, json)`, the
+# same rc API the desktop reaches over HTTP.
+#
+#   sidecars/librclone/build.sh host      # sidecars/bin/librclone/host/librclone.so (tests)
+#   sidecars/librclone/build.sh android   # .so per ABI into the Android app's jniLibs
+#
+# Needs Go (GO, default `go` on PATH, else ~/.local/go/bin/go) and, for android, the NDK
+# (ANDROID_NDK_HOME, else the newest under ~/Android/Sdk/ndk).
+set -euo pipefail
+
+# Same version as the desktop's rclone sidecar.
+RCLONE_VERSION="v1.75.2"
+# Lowest Android API the app supports (tauri.conf.json `bundle.android.minSdkVersion`).
+ANDROID_API=26
+
+here="$(cd "$(dirname "$0")" && pwd)"
+root="$(cd "$here/../.." && pwd)"
+src="$root/sidecars/bin/librclone/src-$RCLONE_VERSION"
+jni="$root/apps/desktop/src-tauri/gen/android/app/src/main/jniLibs"
+
+go_bin="${GO:-$(command -v go || echo "$HOME/.local/go/bin/go")}"
+[[ -x "$go_bin" ]] || { echo "Go not found; set GO=/path/to/go" >&2; exit 1; }
+
+if [[ ! -d "$src" ]]; then
+  git clone --quiet --depth 1 --branch "$RCLONE_VERSION" https://github.com/rclone/rclone.git "$src"
+fi
+
+# Our shim (only the backends filebridge uses) inside rclone's module.
+mkdir -p "$src/filebridge"
+cp "$here/shim/main.go" "$src/filebridge/main.go"
+
+build() { # <out .so> [env…]
+  local out="$1"; shift
+  mkdir -p "$(dirname "$out")"
+  (cd "$src" && env CGO_ENABLED=1 "$@" "$go_bin" build -trimpath -ldflags "-s -w" \
+    -buildmode=c-shared -o "$out" ./filebridge)
+  rm -f "${out%.so}.h"
+  echo "built $out"
+}
+
+case "${1:-}" in
+  host)
+    build "$root/sidecars/bin/librclone/host/librclone.so"
+    ;;
+  android)
+    ndk="${ANDROID_NDK_HOME:-${NDK_HOME:-$(ls -d "$HOME"/Android/Sdk/ndk/* 2>/dev/null | sort -V | tail -1)}}"
+    [[ -d "$ndk" ]] || { echo "Android NDK not found; set ANDROID_NDK_HOME" >&2; exit 1; }
+    cc="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    # ABI dir, GOARCH, clang target
+    for t in "arm64-v8a arm64 aarch64-linux-android" "x86_64 amd64 x86_64-linux-android"; do
+      read -r abi arch triple <<<"$t"
+      build "$jni/$abi/librclone.so" GOOS=android GOARCH="$arch" CC="$cc/$triple$ANDROID_API-clang"
+    done
+    ;;
+  *)
+    echo "usage: $0 host|android" >&2; exit 2
+    ;;
+esac

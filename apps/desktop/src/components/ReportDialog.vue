@@ -8,7 +8,7 @@ import type { EntryFacets, ExportResult, ReportFormat, ReportScope } from "@/bin
 import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { jobLabel } from "@/lib/jobs";
-import { pickSavePath, revealInFileManager } from "@/lib/platform";
+import { canReveal, pickSavePath, revealInFileManager } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import ProgressBar from "./ProgressBar.vue";
@@ -132,7 +132,7 @@ void t;
           <p class="ok-text" role="status"><AppIcon name="checkCircle" /> {{ $t("report.saved", { rows: fmt.count(done.rows), size: fmt.bytes(done.bytes) }) }}</p>
           <p class="path small">{{ done.path }}</p>
           <div class="actions">
-            <button class="btn" @click="revealInFileManager(done.path)"><AppIcon name="reveal" /> {{ $t("entry.revealFile") }}</button>
+            <button v-if="canReveal()" class="btn" @click="revealInFileManager(done.path)"><AppIcon name="reveal" /> {{ $t("entry.revealFile") }}</button>
             <button class="btn btn-primary" @click="emit('close')">{{ $t("common.close") }}</button>
           </div>
         </template>

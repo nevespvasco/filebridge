@@ -12,7 +12,7 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
 use crate::fs::{Creds, dest_fs, join, local_fs, split_root, utf8};
-use crate::{RcClient, Rcd, rename, stats};
+use crate::{RcClient, rename, stats};
 use filebridge_secrets::{Redacted, SecretStore};
 
 /// How files reach their corrected names. See the crate docs.
@@ -23,7 +23,7 @@ pub enum Strategy {
 }
 
 pub struct RcloneTransport {
-    rcd: Arc<Rcd>,
+    rc: RcClient,
     strategy: Strategy,
     /// Where profiles' passwords are kept; without one, profiles that need a secret fail.
     secrets: Option<Arc<dyn SecretStore>>,
@@ -32,9 +32,10 @@ pub struct RcloneTransport {
 impl RcloneTransport {
     pub const ID: &'static str = "rclone";
 
-    pub fn new(rcd: Arc<Rcd>, strategy: Strategy) -> Self {
+    /// A transport over `rc`: an `Arc<Rcd>` (desktop) or an `Arc<Librclone>` (phones).
+    pub fn new(rc: impl Into<RcClient>, strategy: Strategy) -> Self {
         Self {
-            rcd,
+            rc: rc.into(),
             strategy,
             secrets: None,
         }
@@ -87,7 +88,7 @@ impl RcloneTransport {
     }
 
     fn rc(&self) -> &RcClient {
-        self.rcd.client()
+        &self.rc
     }
 
     async fn per_file(

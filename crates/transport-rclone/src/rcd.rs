@@ -3,16 +3,17 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use filebridge_transport_api::{Result, TransportError};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::process::{Child, Command};
 
-use crate::RcClient;
+use crate::client::{HttpRc, RcCall};
 
-/// A running `rclone rcd` sidecar. Killed when dropped.
+/// A running `rclone rcd` sidecar, reached over HTTP on localhost. Killed when dropped.
 pub struct Rcd {
     _child: Child,
-    client: RcClient,
+    client: HttpRc,
 }
 
 impl Rcd {
@@ -71,7 +72,7 @@ impl Rcd {
             });
         }
 
-        let client = RcClient::new(port, user, pass);
+        let client = HttpRc::new(port, user, pass);
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             if let Ok(Some(status)) = child.try_wait() {
@@ -90,9 +91,12 @@ impl Rcd {
             client,
         })
     }
+}
 
-    pub fn client(&self) -> &RcClient {
-        &self.client
+#[async_trait]
+impl RcCall for Rcd {
+    async fn call(&self, method: &str, params: Value) -> Result<Value> {
+        self.client.call(method, params).await
     }
 }
 

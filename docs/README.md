@@ -14,9 +14,10 @@ detail to build each crate on its own.
 7. [06 — Interface](06-interface.md): the wizard, screens and UX principles.
 8. [07 — Security & reliability](07-security-reliability.md): resume, sleep inhibit, keys, keyring.
 9. [08 — Repository structure](08-repository-structure.md): monorepo layout and dependency rules.
-10. [09 — Roadmap](09-roadmap.md): phases 0–3 and the gate that closes each one.
+10. [09 — Roadmap](09-roadmap.md): phases 0–4 and the gate that closes each one.
 11. [10 — Risks & open decisions](10-risks-and-open-decisions.md).
-12. [Design](design/README.md): review of reference designs, the design system, navigation and
+12. [11 — Mobile](11-mobile.md): Android (built), then iOS, with the phone as a Source.
+13. [Design](design/README.md): review of reference designs, the design system, navigation and
     feature specs D01–D11 (all *Proposed*).
 
 ## Architecture decision records
@@ -35,6 +36,8 @@ detail to build each crate on its own.
 | [0010](adr/0010-bandwidth-limit-and-send-window.md) | One app-wide bandwidth limit and a daily send window (transfer waits outside it) |
 | [0011](adr/0011-reclaimable-source-is-shown-never-freed.md) | *Proposed:* a reclaimable source is shown and opened in the file manager, never freed by the app |
 | [0012](adr/0012-own-ssh-key-with-restrict.md) | filebridge's own SSH key in the keyring, installed with `restrict`; "Remove access" deletes it and proves it no longer signs in |
+| [0013](adr/0013-phones-as-a-source-android-first.md) | On phones filebridge sends the phone's own files; Android first, iOS after, personal builds |
+| [0014](adr/0014-engine-in-the-app-on-phones.md) | On phones the engine runs in the app (Android foreground service) and rclone is linked in as librclone |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

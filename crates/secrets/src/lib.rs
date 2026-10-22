@@ -1,9 +1,10 @@
 //! Secrets in the OS keyring (ADR 0004): a profile's app password and its SSH key. SQLite, the
 //! config, logs and error messages only ever hold a [`KeyringRef`], never the secret.
 //!
-//! [`KeyringStore`] is the real one: Keychain on macOS, Credential Manager on Windows, Secret
-//! Service on Linux (GNOME Keyring, KWallet). There is no file fallback: without a keyring the
-//! call fails with an error that says how to get one. [`MemoryStore`] is for tests and the
+//! [`KeyringStore`] is the real one: Keychain on macOS and iOS, Credential Manager on Windows,
+//! Secret Service on Linux (GNOME Keyring, KWallet). There is no file fallback: without a keyring
+//! the call fails with an error that says how to get one. On Android it always fails: the app
+//! passes its own Keystore-backed store to the host instead (ADR 0014). [`MemoryStore`] is for tests and the
 //! service's fake-transport mode. Calls block (a D-Bus or system round trip): async callers wrap
 //! them in `spawn_blocking`.
 
@@ -91,6 +92,7 @@ pub trait SecretStore: Send + Sync {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct KeyringStore;
 
+#[cfg(not(target_os = "android"))]
 impl KeyringStore {
     fn entry(r: &KeyringRef) -> Result<keyring::Entry> {
         keyring::Entry::new(SERVICE, &r.0).map_err(convert)
@@ -98,6 +100,7 @@ impl KeyringStore {
 }
 
 /// keyring's errors, without anything that could carry the secret.
+#[cfg(not(target_os = "android"))]
 fn convert(e: keyring::Error) -> SecretError {
     use keyring::Error as E;
     match e {
@@ -107,6 +110,7 @@ fn convert(e: keyring::Error) -> SecretError {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 impl SecretStore for KeyringStore {
     fn get(&self, r: &KeyringRef) -> Result<Secret> {
         match Self::entry(r)?.get_password() {
@@ -126,6 +130,27 @@ impl SecretStore for KeyringStore {
             Err(e) => Err(convert(e)),
         }
     }
+}
+
+/// Android: no keyring here; the app's Keystore store is used instead.
+#[cfg(target_os = "android")]
+impl SecretStore for KeyringStore {
+    fn get(&self, _: &KeyringRef) -> Result<Secret> {
+        Err(android_unavailable())
+    }
+
+    fn set(&self, _: &KeyringRef, _: &str) -> Result<()> {
+        Err(android_unavailable())
+    }
+
+    fn delete(&self, _: &KeyringRef) -> Result<()> {
+        Err(android_unavailable())
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_unavailable() -> SecretError {
+    SecretError::Other("no keyring on Android outside the filebridge app".into())
 }
 
 /// In memory, for tests and the fake-transport service. Lost on exit.

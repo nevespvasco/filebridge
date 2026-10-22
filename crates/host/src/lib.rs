@@ -1,5 +1,6 @@
-//! Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`): the data
-//! directory and its single-instance lock, the rclone sidecar, and the built-in plugins.
+//! Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`, and the app
+//! itself on phones, ADR 0014): the data directory and its single-instance lock, rclone (the
+//! sidecar, or librclone in the process), and the built-in plugins.
 //!
 //! This is the one place, besides those binaries, that may name concrete plugins (CLAUDE.md:
 //! only the hosts wire implementations into the `Registry`).
@@ -17,7 +18,7 @@ use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
 use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore};
 use filebridge_transport_fake::FakeTransport;
-use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
+use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport, Strategy};
 
 pub use operations::EngineOperations;
 
@@ -30,7 +31,9 @@ pub const LOCK_FILE: &str = "filebridge.lock";
 pub struct HostOptions {
     /// Default: the OS data directory (see [`default_data_dir`]).
     pub data_dir: Option<PathBuf>,
-    /// Default: `rclone` on PATH, else `~/.local/bin/rclone`.
+    /// The rclone binary (default: `rclone` on PATH, else `~/.local/bin/rclone`), or with
+    /// [`TransportChoice::Librclone`] the library (default: `librclone.so`, found by the
+    /// system loader).
     pub rclone: Option<PathBuf>,
     /// The transport jobs use.
     pub transport: TransportChoice,
@@ -39,9 +42,12 @@ pub struct HostOptions {
 /// Which transport the engine gets.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TransportChoice {
-    /// rclone, started as a sidecar: what the app ships.
+    /// rclone, started as a sidecar: what the desktop app ships.
     #[default]
     Rclone,
+    /// rclone loaded into this process: what phones ship (ADR 0014).
+    #[cfg(feature = "librclone")]
+    Librclone,
     /// None: for commands that never touch a destination. Starts nothing.
     None,
     /// The local-disk fake (`transport` id `fake`): for tests and the UI's dev mode, no rclone.
@@ -94,23 +100,33 @@ pub struct Host {
     transport: Option<&'static str>,
     /// SSH sign-ins (with profiles' own keys from the keyring), for the key operations.
     ssh: Option<Arc<dyn ShellConnector>>,
-    _rcd: Option<Arc<Rcd>>,
+    _rclone: Option<RcClient>,
     _lock: Option<DataLock>,
 }
 
 impl Host {
     /// Opens the data directory with the built-in plugins and `opts.transport`.
     pub async fn open(opts: &HostOptions, access: Access) -> Result<Self> {
+        Self::open_with_secrets(opts, access, None).await
+    }
+
+    /// [`Host::open`] with the store for profiles' secrets. `None`: the OS keyring (ADR 0004),
+    /// or memory with the fake transport (development and tests), which must never touch the
+    /// user's keyring. Android has no keyring crate backend: the app passes its own store.
+    pub async fn open_with_secrets(
+        opts: &HostOptions,
+        access: Access,
+        secrets: Option<Arc<dyn SecretStore>>,
+    ) -> Result<Self> {
         let mut registry = Registry::new();
         let mut transport = None;
-        // Profiles' passwords and keys (ADR 0004): the OS keyring, except with the fake
-        // transport (development and tests), which must never touch the user's keyring.
-        let secrets: Arc<dyn SecretStore> = match opts.transport {
-            TransportChoice::Fake => Arc::new(MemoryStore::default()),
-            _ => Arc::new(KeyringStore),
+        let secrets: Arc<dyn SecretStore> = match (secrets, opts.transport) {
+            (Some(s), _) => s,
+            (None, TransportChoice::Fake) => Arc::new(MemoryStore::default()),
+            (None, _) => Arc::new(KeyringStore),
         };
         registry.set_secrets(secrets.clone());
-        let rcd = match opts.transport {
+        let rclone: Option<RcClient> = match opts.transport {
             TransportChoice::Rclone => {
                 let bin = find_rclone(opts.rclone.as_deref())?;
                 let rcd = Arc::new(
@@ -118,12 +134,18 @@ impl Host {
                         .await
                         .with_context(|| format!("start {}", bin.display()))?,
                 );
-                registry.add_transport(Arc::new(
-                    RcloneTransport::new(rcd.clone(), Strategy::PerFile)
-                        .with_secrets(secrets.clone()),
-                ));
-                transport = Some(RcloneTransport::ID);
-                Some(rcd)
+                Some(rcd.into())
+            }
+            #[cfg(feature = "librclone")]
+            TransportChoice::Librclone => {
+                let lib = opts
+                    .rclone
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("librclone.so"));
+                let lib = filebridge_transport_rclone::Librclone::open(&lib)
+                    .await
+                    .with_context(|| format!("load {}", lib.display()))?;
+                Some(lib.into())
             }
             TransportChoice::Fake => {
                 registry.add_transport(Arc::new(FakeTransport::default()));
@@ -132,6 +154,12 @@ impl Host {
             }
             TransportChoice::None => None,
         };
+        if let Some(rc) = &rclone {
+            registry.add_transport(Arc::new(
+                RcloneTransport::new(rc.clone(), Strategy::PerFile).with_secrets(secrets.clone()),
+            ));
+            transport = Some(RcloneTransport::ID);
+        }
         // SSH sign-ins read a profile's own key (ADR 0012) from the same keyring.
         let ssh: Arc<dyn ShellConnector> = Arc::new(SshConnector::with_secrets(secrets.clone()));
         let nextcloud = Arc::new(Nextcloud::new(ssh.clone()));
@@ -142,7 +170,7 @@ impl Host {
             .load_settings()
             .await
             .context("read the settings")?;
-        host._rcd = rcd;
+        host._rclone = rclone;
         host.nextcloud = Some(nextcloud);
         host.ssh = Some(ssh);
         host.transport = transport;
@@ -201,7 +229,7 @@ impl Host {
             nextcloud: None,
             transport: None,
             ssh: None,
-            _rcd: None,
+            _rclone: None,
             _lock: lock,
         })
     }

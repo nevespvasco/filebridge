@@ -95,7 +95,13 @@ pub fn inhibit(_reason: &str) -> SleepGuard {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 pub fn inhibit(_reason: &str) -> SleepGuard {
-    tracing::warn!("blocking sleep is not supported on this OS");
+    // Phones: the app keeps the device awake itself (ADR 0014: Android's foreground service
+    // holds a wake lock while a Job sends; iOS keeps the screen on while the app is open).
+    if cfg!(any(target_os = "android", target_os = "ios")) {
+        tracing::debug!("sleep is held off by the app, not the engine");
+    } else {
+        tracing::warn!("blocking sleep is not supported on this OS");
+    }
     SleepGuard {}
 }
 

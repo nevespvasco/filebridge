@@ -126,7 +126,7 @@ Message field with a Private toggle, a dark full-width "Start Transfer" button, 
 | D9 | Filter panel (size, type, modified, sharing) | Adapt | State, Category and search chips that are always visible. [D05](specs/D05-files-and-entry-detail.md), [D06](specs/D06-transfers-list.md) |
 | D10 | Empty state: one sentence + one button | Adopt | Already a principle; made into a component. [01](01-design-system.md#empty-states) |
 | D11 | Bin, Empty bin, Restore | Reject | The Source is never deleted (ADR 0005), and filebridge deletes nothing at the destination. |
-| D12 | Mobile layouts | Adapt | A narrow desktop window, not a phone app. [02](02-information-architecture.md#window-sizes) |
+| D12 | Mobile layouts | Adapt | A narrow desktop window; the phone UI since Phase 4 ([ADR 0013](../adr/0013-phones-as-a-source-android-first.md)). [02](02-information-architecture.md#window-sizes) |
 | D13 | Story "know when my team changed files" | Adapt | **Send again** sends only what is new or changed. Scheduled sends stay an open decision. [D06](specs/D06-transfers-list.md) |
 | D14 | Stories on retention and comments | Reject | No store, no other people. |
 | D15 | Hypothesis: tags and shortcuts for forgotten names | Adapt | Job labels and Recent sources. [D06](specs/D06-transfers-list.md), [D02](specs/D02-source-and-composition.md) |
