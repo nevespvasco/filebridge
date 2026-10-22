@@ -29,7 +29,6 @@
       "disconnected": "Offline"
     },
     "retry": "Try again",
-    "label": "copy engine",
     "tip": "The copy engine is the part of filebridge that copies the files, in the background, even with this window closed. This only says the window can talk to it; it says nothing about your destinations, which are checked when you use them.",
     "problem": {
       "version": {

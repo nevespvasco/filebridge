@@ -63,7 +63,8 @@ up in logs and crash reports.
      Dismissible until the next test.
   3. Space can be reclaimed (D10): "120 GB verified and reclaimable" → opens the transfer.
      Dismissible per job.
-- **Service status** stays at the bottom (exists).
+- **Service status** stays at the bottom (exists). Hovering, focusing or tapping it explains what
+  it means; it has no separate `?`.
 
 Width stays 200px, and the labels never truncate in en or pt. "Transferências" is the longest
 label, and it fits at 15px. A window shorter than the sidebar scrolls it. Below 760px the sidebar
@@ -130,7 +131,7 @@ sideways except code in "Technical details".
 | ≥ 1600px | Sidebar + main; the main column grows to 1280px, centred |
 | 1100–1599px | Sidebar + main (1100px, centred); Home in two columns (D01) |
 | 760–1099px | Sidebar + main; Home in one column; lists drop columns or become cards by the width they get (below) |
-| < 760px | The sidebar splits in two, **both always on screen**. A **top bar** (sticky): brand, service status and New transfer on one row, the notice slot as a strip under it. The status shows its `?` and, while running, only its green dot; otherwise a short badge, "Offline" or "Connecting…" (`conn.short`), since the banner under it says what happened. The full sentence stays for screen readers. A **bottom tab bar** (fixed, `--nav-bottom` = 3.6rem tall): Home, Transfers, Destinations and Settings as even tabs, icon over label, the active one marked on top, with the Transfers badge and dot. Whatever sticks to the bottom of a page (the Source step's footer, the selection bar) stands on the tab bar, and scrolling into view keeps clear of both bars |
+| < 760px | The sidebar splits in two, **both always on screen**. A **top bar** (sticky): brand, service status and New transfer on one row, the notice slot as a strip under it. The status shows, while running, only its green dot; otherwise a short badge, "Offline" or "Connecting…" (`conn.short`), since the banner under it says what happened. The full sentence stays for screen readers. A **bottom tab bar** (fixed, `--nav-bottom` = 3.6rem tall): Home, Transfers, Destinations and Settings as even tabs, icon over label, the active one marked on top, with the Transfers badge and dot. Whatever sticks to the bottom of a page (the Source step's footer, the selection bar) stands on the tab bar, and scrolling into view keeps clear of both bars |
 | < 560px | Footers put their hint on its own line above Back / Next; page heads wrap their actions under the title; the Drawer is full width |
 | < 400px | New transfer in the top bar keeps its icon and accessible name, not its text |
 

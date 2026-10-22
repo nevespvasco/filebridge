@@ -2,9 +2,11 @@
 // A small "?" next to a label or term: hovering, focusing or clicking it shows a plain-language
 // explanation, optionally with an example. The text is always in the DOM for screen readers
 // (`aria-describedby`); the bubble itself is placed in `body` so cards never clip it.
-import { nextTick, onBeforeUnmount, ref, useId } from "vue";
+// With a default slot, the slot is the trigger instead of the "?" (and names the button).
+import { nextTick, onBeforeUnmount, ref, useId, useSlots } from "vue";
 
 const props = defineProps<{ text: string; example?: string; label?: string }>();
+const custom = !!useSlots().default;
 const id = useId();
 const btn = ref<HTMLButtonElement | null>(null);
 const bubble = ref<HTMLDivElement | null>(null);
@@ -53,12 +55,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <span class="help-tip">
+  <span class="help-tip" :class="{ custom }">
     <button
       ref="btn"
       type="button"
-      class="q"
-      :aria-label="props.label ? $t('help.about', { what: props.label }) : $t('help.more')"
+      :class="custom ? 'trigger' : 'q'"
+      :aria-label="custom ? undefined : props.label ? $t('help.about', { what: props.label }) : $t('help.more')"
       :aria-describedby="id"
       :aria-expanded="open"
       @mouseenter="show"
@@ -67,7 +69,7 @@ onBeforeUnmount(() => {
       @blur="hide"
       @click.stop.prevent="toggle"
       @keydown.esc="close"
-    >?</button>
+    ><slot>?</slot></button>
     <span :id="id" class="sr-only">{{ text }}<template v-if="example"> {{ $t("help.example") }} {{ example }}</template></span>
     <Teleport to="body">
       <div
@@ -87,6 +89,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .help-tip { display: inline-flex; vertical-align: middle; margin-left: 0.3rem; }
+.help-tip.custom { margin-left: 0; }
+.trigger { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.4rem; cursor: help; border-radius: var(--radius-sm); }
+.trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .q {
   all: unset;
   box-sizing: border-box;

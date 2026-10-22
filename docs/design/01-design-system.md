@@ -216,8 +216,10 @@ New icons used by the specs:
 
 Existing components keep their roles: `BytesDiff`, `ConfirmDialog`, `DetailsPanel`,
 `FileDropZone`, `HelpTip`, `IssueGroup`, `JobProgress`, `JobStateBadge`, `NextcloudDetect`,
-`PreflightList`, `ProfileForm`, `ProgressBar`, `StatusIcon`. The new ones below are generic: each
-takes plain props and knows nothing about the engine, so specs reuse them.
+`PreflightList`, `ProfileForm`, `ProgressBar`, `StatusIcon`. `HelpTip` also takes a default slot,
+which then is the trigger instead of the "?" (the service status in the sidebar uses it: hover,
+focus or tap the status itself). The new ones below are generic: each takes plain props and knows
+nothing about the engine, so specs reuse them.
 
 | Component | Props (sketch) | Behaviour | Used by |
 |---|---|---|---|

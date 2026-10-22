@@ -138,11 +138,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <button class="dismiss" :aria-label="$t('common.dismiss')" @click="dismiss(notice.key, notice.at)"><AppIcon name="close" /></button>
       </div>
       <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
-        <span class="dot" aria-hidden="true" :title="conn.connected ? $t('conn.connected') : undefined" />
-        <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
-        <!-- The top bar's short form; the banner under it says what happened and what to do. -->
-        <span v-if="!conn.connected" class="conn-short" aria-hidden="true">{{ conn.connected === false ? $t("conn.short.disconnected") : $t("conn.short.connecting") }}</span>
-        <HelpTip :text="$t('conn.tip')" :label="$t('conn.label')" />
+        <!-- Hovering, focusing or tapping the status itself explains it. -->
+        <HelpTip :text="$t('conn.tip')">
+          <span class="dot" aria-hidden="true" />
+          <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
+          <!-- The top bar's short form; the banner under it says what happened and what to do. -->
+          <span v-if="!conn.connected" class="conn-short" aria-hidden="true">{{ conn.connected === false ? $t("conn.short.disconnected") : $t("conn.short.connecting") }}</span>
+        </HelpTip>
       </div>
     </nav>
     <main class="main">
@@ -211,6 +213,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .dismiss { background: none; border: 0; padding: 0; color: var(--text-2); cursor: pointer; display: inline-flex; }
 .conn { display: flex; gap: 0.4rem; align-items: center; padding: 0.5rem; color: var(--text-2); }
 .conn-short { display: none; }
+.conn :deep(.trigger):hover { color: var(--text); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .on .dot { background: var(--ok); }
 .off .dot { background: var(--danger); }
@@ -282,11 +285,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   .places a .attention { position: absolute; top: 0.45rem; left: calc(50% - 0.9rem); }
   .grow { display: none; }
   .notice { grid-area: notice; margin: 0; }
-  .conn { grid-area: conn; padding: 0.25rem; gap: 0.25rem; }
+  .conn { grid-area: conn; padding: 0; }
+  /* Room to hover or tap, even when the status is only its dot. */
+  .conn :deep(.trigger) { min-width: 2rem; min-height: 2rem; justify-content: center; padding: 0 0.2rem; }
   /* The full sentence is for screen readers only. Connected is the usual state, and the green dot
      alone says it (with its tooltip); connecting or offline is a short badge next to it. */
   .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .conn:not(.on) { gap: 0.35rem; }
   .conn:not(.on) .dot { display: none; }
   .conn-short { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); }
   .conn-short::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
