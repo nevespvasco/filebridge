@@ -104,6 +104,14 @@ pub enum ProfileCmd {
     Remove {
         profile: String,
     },
+    /// Store an SFTP profile's password in the system keyring (asked without echo, or read
+    /// from stdin when piped; never an argument, which shells keep in their history).
+    SetPassword {
+        profile: String,
+        /// Remove the stored password instead.
+        #[arg(long)]
+        remove: bool,
+    },
 }
 
 fn target(windows: bool) -> TargetSpec {
@@ -280,6 +288,22 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             }
             Ok(())
         }
+        ProfileCmd::SetPassword { profile, remove } => {
+            let app = App::open(g, Access::Exclusive, false).await?;
+            let p = app.profile(&profile).await?;
+            let password = if remove {
+                None
+            } else {
+                Some(read_password(&format!("Password for {}: ", p.name))?)
+            };
+            app.ops.set_profile_password(p.id.clone(), password).await?;
+            if remove {
+                println!("password of {} removed from the keyring", p.name);
+            } else {
+                println!("password of {} stored in the system keyring", p.name);
+            }
+            Ok(())
+        }
         ProfileCmd::Remove { profile } => {
             let app = App::open(g, Access::Exclusive, false).await?;
             let p = app.profile(&profile).await?;
@@ -288,6 +312,22 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// A password without echo on a terminal; the first line of stdin when piped.
+fn read_password(prompt: &str) -> Result<String> {
+    use std::io::{BufRead, IsTerminal};
+    let value = if std::io::stdin().is_terminal() {
+        rpassword::prompt_password(prompt)?
+    } else {
+        let mut line = String::new();
+        std::io::stdin().lock().read_line(&mut line)?;
+        line.trim_end_matches(['\n', '\r']).to_owned()
+    };
+    if value.is_empty() {
+        anyhow::bail!("an empty password; use --remove to delete the stored one");
+    }
+    Ok(value)
 }
 
 async fn save(app: &App, profile: Profile) -> Result<()> {

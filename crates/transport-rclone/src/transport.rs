@@ -3,16 +3,17 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use filebridge_transport_api::{
-    Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome, PreflightReport,
-    ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, TransferJob, TransferResult,
-    Transport, TransportCaps, TransportError,
+    Backend, Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, ItemOutcome,
+    PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, TransferJob,
+    TransferResult, Transport, TransportCaps, TransportError,
 };
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-use crate::fs::{dest_fs, join, local_fs, split_root, utf8};
+use crate::fs::{Creds, dest_fs, join, local_fs, split_root, utf8};
 use crate::{RcClient, Rcd, rename, stats};
+use filebridge_secrets::{Redacted, SecretStore};
 
 /// How files reach their corrected names. See the crate docs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,13 +25,54 @@ pub enum Strategy {
 pub struct RcloneTransport {
     rcd: Arc<Rcd>,
     strategy: Strategy,
+    /// Where profiles' passwords are kept; without one, profiles that need a secret fail.
+    secrets: Option<Arc<dyn SecretStore>>,
 }
 
 impl RcloneTransport {
     pub const ID: &'static str = "rclone";
 
     pub fn new(rcd: Arc<Rcd>, strategy: Strategy) -> Self {
-        Self { rcd, strategy }
+        Self {
+            rcd,
+            strategy,
+            secrets: None,
+        }
+    }
+
+    /// Reads profiles' secrets from `store`.
+    pub fn with_secrets(mut self, store: Arc<dyn SecretStore>) -> Self {
+        self.secrets = Some(store);
+        self
+    }
+
+    /// The destination's secrets for one call: read from the keyring (off the async threads)
+    /// and obscured by rclone, which only takes passwords that way.
+    async fn creds(&self, dest: &Destination) -> Result<Creds> {
+        let password = match &dest.backend {
+            Backend::Sftp {
+                password: Some(r), ..
+            } => r.clone(),
+            _ => return Ok(Creds::default()),
+        };
+        let store = self.secrets.clone().ok_or_else(|| {
+            TransportError::fatal("no keyring available to read the destination's password")
+        })?;
+        let clear = tokio::task::spawn_blocking(move || store.get(&password))
+            .await
+            .map_err(|e| TransportError::fatal(format!("keyring task failed: {e}")))?
+            .map_err(|e| TransportError::new(ErrorKind::Auth, e.to_string()))?;
+        let obscured = self
+            .rc()
+            .call("core/obscure", json!({ "clear": clear.0.as_str() }))
+            .await?;
+        let obscured = obscured
+            .get("obscured")
+            .and_then(Value::as_str)
+            .ok_or_else(|| TransportError::fatal("rclone rc core/obscure: no answer"))?;
+        Ok(Creds {
+            pass: Some(Redacted(obscured.to_owned())),
+        })
     }
 
     fn rc(&self) -> &RcClient {
@@ -89,6 +131,7 @@ impl RcloneTransport {
         job: &TransferJob,
         progress: &ProgressSink,
     ) -> Result<()> {
+        let creds = self.creds(dest).await?;
         let rc = self.rc();
         let concurrency = job.options.concurrency.max(1);
         let (parent, base) = split_root(&dest.root)?;
@@ -97,7 +140,7 @@ impl RcloneTransport {
             root: join(parent, &tmp_name),
             ..dest.clone()
         };
-        let tmp_fs = dest_fs(&tmp, "")?;
+        let tmp_fs = dest_fs(&tmp, &creds, "")?;
         let config = json!({ "Transfers": concurrency, "Checkers": concurrency * 2 });
 
         let mut pairs = Vec::with_capacity(job.items.len());
@@ -184,7 +227,7 @@ impl RcloneTransport {
                     moves.push((
                         "sync/move",
                         json!({
-                            "srcFs": dest_fs(&tmp, a)?, "dstFs": dest_fs(&tmp, b)?,
+                            "srcFs": dest_fs(&tmp, &creds, a)?, "dstFs": dest_fs(&tmp, &creds, b)?,
                             "deleteEmptySrcDirs": true, "_group": group,
                         }),
                     ));
@@ -201,7 +244,7 @@ impl RcloneTransport {
         rc.call_job(
             "sync/move",
             json!({
-                "srcFs": tmp_fs, "dstFs": dest_fs(dest, "")?,
+                "srcFs": tmp_fs, "dstFs": dest_fs(dest, &creds, "")?,
                 "deleteEmptySrcDirs": true, "_config": config, "_group": group,
             }),
         )
@@ -211,7 +254,7 @@ impl RcloneTransport {
             root: parent.to_owned(),
             ..dest.clone()
         };
-        let parent_fs = dest_fs(&parent_dest, "")?;
+        let parent_fs = dest_fs(&parent_dest, &creds, "")?;
         let left = rc
             .call(
                 "operations/stat",
@@ -286,10 +329,14 @@ impl Transport for RcloneTransport {
     }
 
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport> {
+        let creds = self.creds(dest).await?;
         let started = Instant::now();
         let about = self
             .rc()
-            .call("operations/about", json!({ "fs": dest_fs(dest, "")? }))
+            .call(
+                "operations/about",
+                json!({ "fs": dest_fs(dest, &creds, "")? }),
+            )
             .await;
         let latency_ms = Some(started.elapsed().as_millis() as u64);
         let mut report = PreflightReport {
@@ -327,6 +374,7 @@ impl Transport for RcloneTransport {
         from: &RemotePath,
         to: &RemotePath,
     ) -> Result<()> {
+        let creds = self.creds(dest).await?;
         let parent_of = |p: &RemotePath| p.parent().map(RemotePath::new).transpose();
         let listed = |dir: Option<RemotePath>| async move {
             match self.list(dest, dir.as_ref(), false).await {
@@ -360,7 +408,7 @@ impl Transport for RcloneTransport {
             from.parent().unwrap_or(""),
             &format!(".fb-move-{}-{nanos}", std::process::id()),
         );
-        let root = dest_fs(dest, "")?;
+        let root = dest_fs(dest, &creds, "")?;
         for (a, b) in [(from.as_str(), mid.as_str()), (mid.as_str(), to.as_str())] {
             if source.is_dir {
                 // The target never exists, so rclone does a single server-side DirMove.
@@ -368,7 +416,7 @@ impl Transport for RcloneTransport {
                     .call_job(
                         "sync/move",
                         json!({
-                            "srcFs": dest_fs(dest, a)?, "dstFs": dest_fs(dest, b)?,
+                            "srcFs": dest_fs(dest, &creds, a)?, "dstFs": dest_fs(dest, &creds, b)?,
                             "deleteEmptySrcDirs": true,
                         }),
                     )
@@ -391,12 +439,13 @@ impl Transport for RcloneTransport {
         dir: Option<&RemotePath>,
         dirs_only: bool,
     ) -> Result<Vec<RemoteEntry>> {
+        let creds = self.creds(dest).await?;
         let v = self
             .rc()
             .call(
                 "operations/list",
                 json!({
-                    "fs": dest_fs(dest, "")?,
+                    "fs": dest_fs(dest, &creds, "")?,
                     "remote": dir.map_or("", RemotePath::as_str),
                     "opt": { "dirsOnly": dirs_only },
                 }),
@@ -434,10 +483,11 @@ impl Transport for RcloneTransport {
         job: &TransferJob,
         progress: ProgressSink,
     ) -> Result<TransferResult> {
+        let creds = self.creds(dest).await?;
         let rc = self.rc();
         let group = format!("job-{}", job.id);
         let src_fs = local_fs(&job.source_root)?;
-        let dst_fs = dest_fs(dest, "")?;
+        let dst_fs = dest_fs(dest, &creds, "")?;
         let totals = (
             job.items.len() as u64,
             job.items.iter().map(|i| i.size).sum::<u64>(),
@@ -483,6 +533,7 @@ impl Transport for RcloneTransport {
     }
 
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest> {
+        let creds = self.creds(dest).await?;
         let hash_type = match algo {
             HashAlgo::Sha256 => "sha256",
             HashAlgo::Xxh3_128 => {
@@ -491,7 +542,7 @@ impl Transport for RcloneTransport {
                 ));
             }
         };
-        let fs = dest_fs(dest, path.as_str())?;
+        let fs = dest_fs(dest, &creds, path.as_str())?;
         let params =
             |download: bool| json!({ "fs": fs, "hashType": hash_type, "download": download });
         let first_line = |v: &Value| {

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use filebridge_integration_api::Integration;
 use filebridge_names::{ActiveFor, NamePlan, NameRule, RuleSet, general_rules};
+use filebridge_secrets::SecretStore;
 use filebridge_transport_api::Transport;
 
 use crate::{CoreError, Profile, Result};
@@ -14,11 +15,25 @@ use crate::{CoreError, Profile, Result};
 pub struct Registry {
     transports: HashMap<String, Arc<dyn Transport>>,
     integrations: HashMap<String, Arc<dyn Integration>>,
+    /// Where profiles' secrets live (ADR 0004); `None` when the host has none to give.
+    secrets: Option<Arc<dyn SecretStore>>,
 }
 
 impl Registry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The keyring the engine stores profiles' secrets in, and deletes them from.
+    pub fn set_secrets(&mut self, store: Arc<dyn SecretStore>) -> &mut Self {
+        self.secrets = Some(store);
+        self
+    }
+
+    pub fn secrets(&self) -> Result<Arc<dyn SecretStore>> {
+        self.secrets
+            .clone()
+            .ok_or_else(|| CoreError::Invalid("no keyring is available here".into()))
     }
 
     pub fn add_transport(&mut self, transport: Arc<dyn Transport>) -> &mut Self {

@@ -75,6 +75,9 @@ macro_rules! for_each_operation {
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
             /// Folders and files sent before, newest first, for "Recently sent from".
             RecentSources recent_sources(limit: u32) -> Vec<$crate::RecentSource>;
+            /// Stores the profile's password in the OS keyring (`None` removes it); the profile
+            /// keeps only its reference (ADR 0004). Never logged, never in a Details panel.
+            SetProfilePassword set_profile_password(profile_id: String, password: Option<String>) -> $crate::Profile;
             /// A draft "Repair destination" job for a folder of a profile (`None` = its root):
             /// `analyse`, the decisions and `start` then work on it like on a send.
             CreateRepairJob create_repair_job(profile_id: String, dir: Option<String>) -> String;

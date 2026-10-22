@@ -63,7 +63,7 @@ impl Store {
         self.call(move |c| {
             let pair = c
                 .query_row(
-                    &format!("SELECT {COLUMNS} FROM profiles WHERE id = ?1"),
+                    &format!("SELECT {COLUMNS} FROM profiles WHERE id = ?1 AND deleted_at IS NULL"),
                     [&id],
                     ProfileRow::from_row,
                 )
@@ -76,18 +76,24 @@ impl Store {
 
     pub async fn list_profiles(&self) -> Result<Vec<ProfileRow>> {
         self.call(|c| {
-            let mut stmt = c.prepare(&format!("SELECT {COLUMNS} FROM profiles ORDER BY name"))?;
+            let mut stmt = c.prepare(&format!(
+                "SELECT {COLUMNS} FROM profiles WHERE deleted_at IS NULL ORDER BY name"
+            ))?;
             let rows = stmt.query_map([], ProfileRow::from_row)?;
             rows.map(|r| ProfileRow::parse(r?)).collect()
         })
         .await
     }
 
-    /// Fails while any job still references the profile.
+    /// Forgets a profile: gone from every list and lookup, so nothing can be sent to it again.
+    /// Its row stays (marked deleted), because the jobs that used it keep their history.
     pub async fn delete_profile(&self, id: &str) -> Result<()> {
         let id = id.to_owned();
         self.call(move |c| {
-            let n = c.execute("DELETE FROM profiles WHERE id = ?1", [&id])?;
+            let n = c.execute(
+                "UPDATE profiles SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, now_ms()],
+            )?;
             if n == 0 {
                 return Err(StoreError::NotFound(format!("profile {id}")));
             }
@@ -192,11 +198,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn profile_in_use_cannot_be_deleted() {
-        let (store, _) = store_with_job().await;
+    async fn a_used_profile_is_forgotten_and_its_jobs_stay() {
+        let (store, job) = store_with_job().await;
+        store.delete_profile("p1").await.unwrap();
+        assert!(matches!(
+            store.get_profile("p1").await,
+            Err(StoreError::NotFound(_))
+        ));
+        assert!(store.list_profiles().await.unwrap().is_empty());
+        assert_eq!(store.get_job(&job).await.unwrap().profile_id, "p1");
         assert!(matches!(
             store.delete_profile("p1").await,
-            Err(StoreError::Sqlite(_))
+            Err(StoreError::NotFound(_))
         ));
     }
 }

@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
+filebridge-secrets.workspace = true
 filebridge-transport-api.workspace = true
 getrandom.workspace = true
 reqwest.workspace = true

@@ -128,6 +128,11 @@ ALTER TABLE issues ADD COLUMN carried_over INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX jobs_state ON jobs(state, created_at);
 CREATE INDEX jobs_profile ON jobs(profile_id, created_at);
 "#,
+    // 7: a deleted destination is forgotten but its row stays, so the transfers that used it
+    // keep their history (the jobs reference it).
+    r#"
+ALTER TABLE profiles ADD COLUMN deleted_at INTEGER;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

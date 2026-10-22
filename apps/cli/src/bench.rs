@@ -146,7 +146,7 @@ pub async fn run(args: Args) -> Result<()> {
     // Creates the bench folder and warms up the connection, so the first mode isn't penalised.
     rc.call(
         "operations/mkdir",
-        json!({ "fs": fs::dest_fs(&bench, "")?, "remote": "" }),
+        json!({ "fs": fs::dest_fs(&bench, &fs::Creds::default(), "")?, "remote": "" }),
     )
     .await
     .context("cannot create the bench folder at the destination")?;
@@ -235,7 +235,7 @@ async fn run_mode(
                     "sync/copy",
                     json!({
                         "srcFs": fs::local_fs(&args.source)?,
-                        "dstFs": fs::dest_fs(dest, "")?,
+                        "dstFs": fs::dest_fs(dest, &fs::Creds::default(), "")?,
                         "_config": { "Transfers": c, "Checkers": c * 2 },
                         "_group": group,
                     }),
@@ -290,7 +290,7 @@ async fn run_mode(
     let listed = rc
         .call(
             "operations/list",
-            json!({ "fs": fs::dest_fs(dest, "")?, "remote": "", "opt": { "recurse": true, "filesOnly": true } }),
+            json!({ "fs": fs::dest_fs(dest, &fs::Creds::default(), "")?, "remote": "", "opt": { "recurse": true, "filesOnly": true } }),
         )
         .await?;
     let actual: BTreeSet<String> = listed["list"]

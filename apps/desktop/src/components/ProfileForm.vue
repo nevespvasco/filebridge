@@ -4,7 +4,7 @@ import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref } from "vue";
 import type { Backend_Deserialize, Family, Profile_Deserialize, Profile_Serialize } from "@/bindings";
 import FolderBrowser from "./FolderBrowser.vue";
-import { errorMessage } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import { useI18n } from "vue-i18n";
@@ -28,6 +28,8 @@ const form = reactive({
   family: "unix" as Family,
   case_sensitive: true,
 });
+/** SFTP only, optional; goes to the OS keyring after the profile is saved, never into it. */
+const password = ref("");
 const saving = ref(false);
 const error = ref<string | null>(null);
 
@@ -90,7 +92,12 @@ async function save() {
   saving.value = true;
   error.value = null;
   try {
-    const saved = await profiles.save(build(form.root.trim()));
+    let saved = await profiles.save(build(form.root.trim()));
+    if (kind.value === "sftp" && password.value) {
+      saved = await api.setProfilePassword(saved.id, password.value);
+      password.value = "";
+      await profiles.load();
+    }
     emit("saved", saved);
   } catch (e) {
     error.value = errorMessage(e);
@@ -186,7 +193,14 @@ async function save() {
             <input v-model="form.known_hosts_file" spellcheck="false" placeholder="~/.ssh/known_hosts" />
             <span class="hint">{{ $t("profile.hint.knownHosts") }}</span>
           </label>
-          <p class="guide warn small wide"><AppIcon class="guide-icon" name="key" :size="20" /><span>{{ $t("profile.noPassword") }}</span></p>
+          <label class="field wide">
+            <span class="label-line">{{ $t("profile.password") }}
+              <HelpTip :text="$t('profile.help.password')" :label="$t('profile.password')" />
+            </span>
+            <input v-model="password" type="password" autocomplete="new-password" spellcheck="false" :placeholder="$t('profile.passwordHint')" />
+            <span class="hint"><AppIcon name="lock" :size="16" /> {{ $t("profile.hint.password") }}</span>
+          </label>
+          <p class="guide small wide"><AppIcon class="guide-icon" name="key" :size="20" /><span>{{ $t("profile.firstConnect") }}</span></p>
         </template>
       </div>
 

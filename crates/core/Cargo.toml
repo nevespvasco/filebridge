@@ -12,6 +12,7 @@ filebridge-integration-api.workspace = true
 filebridge-model.workspace = true
 filebridge-names.workspace = true
 filebridge-scanner.workspace = true
+filebridge-secrets.workspace = true
 filebridge-store.workspace = true
 filebridge-transport-api.workspace = true
 getrandom.workspace = true

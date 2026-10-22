@@ -535,7 +535,6 @@
     "keyFile": "Chave privada",
     "keyFileHint": "vazio = usar o agente SSH",
     "knownHosts": "Ficheiro known_hosts",
-    "noPassword": "O acesso é só por chave SSH (ainda sem palavra-passe). Antes de usar um servidor aqui pela primeira vez, ligue-se a ele uma vez num terminal (ssh utilizador{'@'}servidor) e aceite-o, para este computador o ficar a conhecer.",
     "target": "Sistema de ficheiros do destino",
     "family": {
       "unix": "Linux / Unix",
@@ -559,7 +558,8 @@
       "keyFile": "O ficheiro com a sua chave SSH privada, usada em vez de palavra-passe. Deixe vazio para usar a chave já carregada neste computador (agente SSH).",
       "knownHosts": "O ficheiro com os servidores em que este computador já confia. Deixe vazio para usar o habitual.",
       "target": "O tipo de sistema que o destino usa; decide que nomes precisam de correção. Na dúvida: pen USB ou disco também usado no Windows → Windows; NAS ou servidor Linux → Linux.",
-      "case": "Ligado, “Foto.jpg” e “foto.jpg” são dois ficheiros diferentes. O Windows e o macOS costumam tratá-los como o mesmo ficheiro."
+      "case": "Ligado, “Foto.jpg” e “foto.jpg” são dois ficheiros diferentes. O Windows e o macOS costumam tratá-los como o mesmo ficheiro.",
+      "password": "Só se este servidor entrar com palavra-passe em vez de chave. Fica guardada no cofre do sistema (Keychain, Gestor de Credenciais, GNOME Keyring), nunca nos ficheiros do filebridge."
     },
     "hint": {
       "name": "Só para o reconhecer.",
@@ -573,8 +573,12 @@
       "knownHosts": "Vazio = ~/.ssh/known_hosts",
       "target": "Na dúvida, mantenha a sugestão: Windows e macOS desligam “distingue maiúsculas” sozinhos.",
       "browseServer": "Ver as pastas do servidor e escolher uma",
-      "browseNeedsHost": "Preencha primeiro o servidor"
-    }
+      "browseNeedsHost": "Preencha primeiro o servidor",
+      "password": "Guardada no cofre do sistema, não no filebridge."
+    },
+    "password": "Palavra-passe",
+    "passwordHint": "opcional: vazio = chave ou agente SSH",
+    "firstConnect": "Antes de usar aqui um servidor pela primeira vez, ligue-se a ele uma vez num terminal (ssh utilizador{'@'}servidor) e aceite-o, para este computador o conhecer."
   },
   "nextcloud": {
     "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox (e encontra o contentor do Nextcloud) ou diretamente à máquina onde o Nextcloud corre, e verifica cada passo. Nada é alterado durante a deteção.",

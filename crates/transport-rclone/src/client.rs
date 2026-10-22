@@ -52,7 +52,7 @@ impl RcClient {
             .unwrap_or("unknown error");
         Err(TransportError::new(
             kind_of(Some(status), msg),
-            format!("rclone rc {method}: {msg}"),
+            format!("rclone rc {method}: {}", crate::fs::redact(msg)),
         ))
     }
 
@@ -79,7 +79,7 @@ impl RcClient {
                 .unwrap_or("unknown error");
             return Err(TransportError::new(
                 kind_of(None, err),
-                format!("rclone job {method}: {err}"),
+                format!("rclone job {method}: {}", crate::fs::redact(err)),
             ));
         }
     }

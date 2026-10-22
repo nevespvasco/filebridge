@@ -12,6 +12,7 @@ members = [
     "crates/model",
     "crates/names",
     "crates/scanner",
+    "crates/secrets",
     "crates/store",
     "crates/transport-api",
     "crates/transport-fake",
@@ -33,6 +34,7 @@ filebridge-integration-nextcloud = { path = "crates/integration-nextcloud" }
 filebridge-ipc = { path = "crates/ipc" }
 filebridge-model = { path = "crates/model" }
 filebridge-names = { path = "crates/names" }
+filebridge-secrets = { path = "crates/secrets" }
 filebridge-scanner = { path = "crates/scanner" }
 filebridge-store = { path = "crates/store" }
 filebridge-transport-api = { path = "crates/transport-api" }

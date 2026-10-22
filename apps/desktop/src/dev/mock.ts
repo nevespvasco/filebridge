@@ -653,6 +653,14 @@ const handlers: Handlers = {
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
   },
+  setProfilePassword: (a) => {
+    const p = profiles.find((x) => x.id === a.profileId);
+    if (!p) throw fail("not_found", `no profile ${a.profileId as string}`);
+    if (p.destination.backend.kind !== "sftp") throw fail("invalid", "a local folder has no password");
+    // Like the service: only the reference is kept; the mock forgets the value.
+    p.destination.backend.password = a.password ? `filebridge/${p.id}/app-password` : null;
+    return p;
+  },
   createRepairJob: (a) => {
     const id = newId("j");
     const dir = trimBoth((a.dir as string | null) ?? "", "/") || null;

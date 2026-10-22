@@ -535,7 +535,6 @@
     "keyFile": "Private key",
     "keyFileHint": "empty = use the SSH agent",
     "knownHosts": "known_hosts file",
-    "noPassword": "Login is by SSH key only (no password yet). Before using a server here for the first time, connect to it once in a terminal (ssh user{'@'}server) and accept it, so this computer knows it.",
     "target": "Destination file system",
     "family": {
       "unix": "Linux / Unix",
@@ -559,7 +558,8 @@
       "keyFile": "The file with your private SSH key, used instead of a password. Leave empty to use the key already loaded on this computer (SSH agent).",
       "knownHosts": "The file listing the servers this computer already trusts. Leave empty to use the usual one.",
       "target": "The kind of system the destination uses; it decides which names need fixing. If unsure: a USB stick or disk also used on Windows → Windows; a NAS or Linux server → Linux.",
-      "case": "When on, “Photo.jpg” and “photo.jpg” are two different files. Windows and macOS usually treat them as the same file."
+      "case": "When on, “Photo.jpg” and “photo.jpg” are two different files. Windows and macOS usually treat them as the same file.",
+      "password": "Only if this server signs in with a password instead of a key. It is kept in your system's keyring (Keychain, Credential Manager, GNOME Keyring), never in filebridge's files."
     },
     "hint": {
       "name": "Just for you to recognise it.",
@@ -573,8 +573,12 @@
       "knownHosts": "Empty = ~/.ssh/known_hosts",
       "target": "If unsure, keep the suggestion: Windows and macOS turn off “case-sensitive” by themselves.",
       "browseServer": "Look at the server's folders and pick one",
-      "browseNeedsHost": "Fill in the server first"
-    }
+      "browseNeedsHost": "Fill in the server first",
+      "password": "Kept in the system keyring, not in filebridge."
+    },
+    "password": "Password",
+    "passwordHint": "optional: empty = key or SSH agent",
+    "firstConnect": "Before using a server here for the first time, connect to it once in a terminal (ssh user{'@'}server) and accept it, so this computer knows it."
   },
   "nextcloud": {
     "intro": "filebridge connects over SSH either to the Proxmox host (and finds the Nextcloud container) or straight to the machine Nextcloud runs on, and checks each step. Nothing is changed during detection.",

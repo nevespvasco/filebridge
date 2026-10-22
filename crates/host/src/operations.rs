@@ -302,6 +302,17 @@ impl Operations for EngineOperations {
             .map_err(to_error)
     }
 
+    async fn set_profile_password(
+        &self,
+        profile_id: String,
+        password: Option<String>,
+    ) -> Res<Profile> {
+        self.engine
+            .set_profile_password(&profile_id, password)
+            .await
+            .map_err(to_error)
+    }
+
     async fn create_repair_job(&self, profile_id: String, dir: Option<String>) -> Res<String> {
         self.engine
             .create_repair_job(&profile_id, dir)

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_nextcloud::Nextcloud;
+use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore};
 use filebridge_transport_fake::FakeTransport;
 use filebridge_transport_rclone::{Rcd, RcloneTransport, Strategy};
 
@@ -99,6 +100,13 @@ impl Host {
     pub async fn open(opts: &HostOptions, access: Access) -> Result<Self> {
         let mut registry = Registry::new();
         let mut transport = None;
+        // Profiles' passwords and keys (ADR 0004): the OS keyring, except with the fake
+        // transport (development and tests), which must never touch the user's keyring.
+        let secrets: Arc<dyn SecretStore> = match opts.transport {
+            TransportChoice::Fake => Arc::new(MemoryStore::default()),
+            _ => Arc::new(KeyringStore),
+        };
+        registry.set_secrets(secrets.clone());
         let rcd = match opts.transport {
             TransportChoice::Rclone => {
                 let bin = find_rclone(opts.rclone.as_deref())?;
@@ -107,10 +115,9 @@ impl Host {
                         .await
                         .with_context(|| format!("start {}", bin.display()))?,
                 );
-                registry.add_transport(Arc::new(RcloneTransport::new(
-                    rcd.clone(),
-                    Strategy::PerFile,
-                )));
+                registry.add_transport(Arc::new(
+                    RcloneTransport::new(rcd.clone(), Strategy::PerFile).with_secrets(secrets),
+                ));
                 transport = Some(RcloneTransport::ID);
                 Some(rcd)
             }

@@ -7,6 +7,7 @@
 mod analyse;
 pub mod backoff;
 mod browse;
+mod credentials;
 mod decisions;
 mod engine;
 mod files;

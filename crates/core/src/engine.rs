@@ -290,6 +290,21 @@ impl Engine {
     pub async fn delete_profile(&self, id: &str) -> Result<()> {
         let profile = self.get_profile(id).await.ok();
         self.store.delete_profile(id).await?;
+        // Its password and key go with it: nothing is left in the keyring under its id.
+        if let Ok(secrets) = self.registry.secrets() {
+            let id = id.to_owned();
+            let gone = tokio::task::spawn_blocking(move || {
+                filebridge_secrets::SecretKind::ALL
+                    .iter()
+                    .try_for_each(|k| secrets.delete(&filebridge_secrets::reference(&id, *k)))
+            })
+            .await;
+            match gone {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => tracing::warn!("could not remove a deleted profile's secrets: {e}"),
+                Err(e) => tracing::warn!("could not remove a deleted profile's secrets: {e}"),
+            }
+        }
         if let Some(p) = profile {
             self.log(None, "profile", profile_event("removed", &p))
                 .await?;

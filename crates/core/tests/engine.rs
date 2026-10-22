@@ -1714,6 +1714,85 @@ async fn repair_never_overwrites_a_name_that_is_taken() {
 }
 
 #[tokio::test]
+async fn a_profile_password_lives_in_the_keyring_only() {
+    use filebridge_secrets::{MemoryStore, SecretKind, SecretStore, reference};
+    let store = Store::open_in_memory().unwrap();
+    let secrets = Arc::new(MemoryStore::default());
+    let mut registry = Registry::new();
+    registry.add_transport(Arc::new(FakeTransport::default()));
+    registry.set_secrets(secrets.clone());
+    let engine = Engine::new(
+        store.clone(),
+        registry,
+        EngineOptions {
+            backoff: Backoff::Fixed(Duration::from_millis(10)),
+            batch_size: 3,
+            inhibit_sleep: false,
+            max_verify_rounds: 3,
+            local_clock: LocalClock::fixed(|| NOON),
+        },
+    );
+    let profile = engine
+        .save_profile(Profile {
+            id: String::new(),
+            name: "NAS".into(),
+            destination: Destination {
+                transport: "fake".into(),
+                backend: Backend::Sftp {
+                    host: "nas.example.lan".into(),
+                    port: None,
+                    user: Some("alice".into()),
+                    key_file: None,
+                    known_hosts_file: None,
+                    password: None,
+                },
+                root: "/srv/backup".into(),
+            },
+            integration: None,
+            integration_settings: serde_json::json!({}),
+            target: TargetSpec::default(),
+        })
+        .await
+        .unwrap();
+    let r = reference(&profile.id, SecretKind::AppPassword);
+
+    let saved = engine
+        .set_profile_password(&profile.id, Some("s3cret-pass".into()))
+        .await
+        .unwrap();
+    assert!(
+        matches!(&saved.destination.backend, Backend::Sftp { password: Some(p), .. } if *p == r)
+    );
+    assert_eq!(secrets.get(&r).unwrap().0.as_str(), "s3cret-pass");
+    let rows = format!("{:?}", store.list_profiles().await.unwrap());
+    assert!(
+        !rows.contains("s3cret-pass"),
+        "the database holds only the reference"
+    );
+
+    engine
+        .set_profile_password(&profile.id, None)
+        .await
+        .unwrap();
+    assert!(secrets.get(&r).is_err());
+    let p = engine.get_profile(&profile.id).await.unwrap();
+    assert!(matches!(
+        p.destination.backend,
+        Backend::Sftp { password: None, .. }
+    ));
+
+    engine
+        .set_profile_password(&profile.id, Some("again".into()))
+        .await
+        .unwrap();
+    engine.delete_profile(&profile.id).await.unwrap();
+    assert!(
+        secrets.get(&r).is_err(),
+        "deleting the profile deletes its secrets"
+    );
+}
+
+#[tokio::test]
 async fn warnings_of_earlier_stages_survive_a_restart() {
     let s = setup().await;
     s.transport.no_hash.store(true, Ordering::SeqCst);

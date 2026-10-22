@@ -141,14 +141,14 @@ function clearFilters() {
             @keydown.enter.self="router.push({ name: 'job', params: { id } })"
           >
             <template v-if="jobs.byId[id]">
-              <td class="c-what" role="cell">
+              <td class="c-what">
                 <strong class="ellipsis block" :title="jobLabel(jobs.byId[id])">{{ jobLabel(jobs.byId[id]) }}</strong>
                 <span v-if="jobs.byId[id].label" class="small muted ellipsis block" :title="jobs.byId[id].sources.join('\n')">{{ defaultLabel(jobs.byId[id].sources) }}</span>
                 <span v-if="jobs.byId[id].again_of" class="small muted block"><AppIcon name="again" /> {{ $t("jobs.again") }}</span>
               </td>
-              <td class="c-where ellipsis" role="cell" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
-              <td class="c-state" role="cell"><JobStateBadge :state="jobs.byId[id].state" /></td>
-              <td class="c-progress" role="cell" :class="{ 'has-bar': showsBar(jobs.byId[id].state) }">
+              <td class="c-where ellipsis" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
+              <td class="c-state"><JobStateBadge :state="jobs.byId[id].state" /></td>
+              <td class="c-progress" :class="{ 'has-bar': showsBar(jobs.byId[id].state) }">
                 <template v-if="showsBar(jobs.byId[id].state)">
                   <ProgressBar
                     :tone="jobs.byId[id].state === 'paused' || jobs.byId[id].state === 'retrying' ? 'warn' : 'accent'"
@@ -165,11 +165,11 @@ function clearFilters() {
                 <span v-else-if="jobs.byId[id].state === 'failed' || jobs.byId[id].state === 'cancelled'" class="muted">—</span>
                 <span v-else class="small num">{{ $t("jobs.files", { n: fmt.count(jobs.byId[id].counts.files) }, jobs.byId[id].counts.files) }}</span>
               </td>
-              <td class="c-size n small num" role="cell">{{ jobs.byId[id].counts.bytes ? fmt.bytes(jobs.byId[id].counts.bytes) : "—" }}</td>
-              <td class="c-when small muted nowrap" role="cell">
+              <td class="c-size n small num">{{ jobs.byId[id].counts.bytes ? fmt.bytes(jobs.byId[id].counts.bytes) : "—" }}</td>
+              <td class="c-when small muted nowrap">
                 <RelativeTime :at="jobs.byId[id].finished_at ?? jobs.byId[id].created_at" />
               </td>
-              <td class="c-menu" role="cell" @click.stop @keydown.stop>
+              <td class="c-menu" @click.stop @keydown.stop>
                 <JobActions :job="jobs.byId[id]" show-open @export-report="reportFor = id" />
               </td>
             </template>

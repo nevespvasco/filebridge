@@ -56,7 +56,7 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
         </thead>
         <tbody role="rowgroup">
           <tr v-for="f in rows" :key="`${f.dir}/${f.name}`" role="row" :style="{ '--cat': categoryColor(f.category) }">
-            <td class="name" role="cell">
+            <td class="name">
               <div class="name-in">
                 <AppIcon class="cat" :name="CATEGORY_ICON[f.category]" :style="{ color: categoryColor(f.category) }" />
                 <span class="text">
@@ -66,12 +66,12 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
                 <AppIcon v-if="f.renamed_from" name="renamed" class="renamed" :label="$t('queue.renamed', { name: f.renamed_from })" />
               </div>
             </td>
-            <td class="n small size" role="cell">{{ fmt.bytes(f.size) }}</td>
-            <td class="bar" role="cell">
+            <td class="n small size">{{ fmt.bytes(f.size) }}</td>
+            <td class="bar">
               <ProgressBar :value="fmt.percent(f.bytes, f.size)" :tone="held ? 'warn' : 'accent'" />
               <span class="small num pct">{{ Math.round(fmt.percent(f.bytes, f.size)) }} %</span>
             </td>
-            <td class="n small muted speed" role="cell">
+            <td class="n small muted speed">
               {{ fmt.rate(f.bytes_per_sec) }}<template v-if="eta(f)"> · {{ eta(f) }}</template>
             </td>
           </tr>

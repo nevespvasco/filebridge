@@ -18,6 +18,7 @@ filebridge-host.workspace = true
 filebridge-integration-nextcloud.workspace = true
 filebridge-ipc.workspace = true
 filebridge-names.workspace = true
+rpassword = "7"
 filebridge-scanner.workspace = true
 filebridge-store.workspace = true
 filebridge-transport-api.workspace = true

@@ -84,6 +84,11 @@ export const commands = {
 	/**  Folders and files sent before, newest first, for "Recently sent from". */
 	recentSources: (limit: number) => typedError<RecentSource[], ErrorBody>(__TAURI_INVOKE("recent_sources", { limit })),
 	/**
+	 *  Stores the profile's password in the OS keyring (`None` removes it); the profile
+	 *  keeps only its reference (ADR 0004). Never logged, never in a Details panel.
+	 */
+	setProfilePassword: (profileId: string, password: string | null) => typedError<Profile_Serialize, ErrorBody>(__TAURI_INVOKE("set_profile_password", { profileId, password })),
+	/**
 	 *  A draft "Repair destination" job for a folder of a profile (`None` = its root):
 	 *  `analyse`, the decisions and `start` then work on it like on a send.
 	 */
@@ -120,7 +125,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 16 as const;
+export const PROTOCOL_VERSION = 17 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
