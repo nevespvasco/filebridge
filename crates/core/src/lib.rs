@@ -18,6 +18,7 @@ mod registry;
 pub mod report;
 mod run;
 mod settings;
+mod sources;
 mod storage;
 mod transfers;
 
@@ -30,7 +31,8 @@ pub use filebridge_model::{
     InFlightView, IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage,
     JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile, ProfileTest,
     RecentSource, ReclaimBlocker, ReclaimStatus, ReportFormat, ReportRequest, ReportScope,
-    RuleCount, SendOptions, SendWindow, StorageView, TargetSpec, UnknownValue, job_operations,
+    RuleCount, SendOptions, SendWindow, SourceInfo, SourceProblem, StorageView, TargetSpec,
+    UnknownValue, job_operations,
 };
 pub use registry::Registry;
 pub use settings::LocalClock;

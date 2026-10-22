@@ -59,7 +59,6 @@
   "details": {
     "title": "Technical details",
     "none": "Nothing sent to the service yet.",
-    "sourceNote": "Nothing is read yet: the files are counted once you choose the destination.",
     "hint": "(for advanced users: what this screen asks the service)"
   },
   "wizard": {
@@ -83,33 +82,55 @@
   },
   "source": {
     "title": "What do you want to send?",
-    "intro": "Drag files and folders onto this window, or use the buttons below. You can add several; they all go to the same place.",
     "drop": "Drop files or folders here",
     "pickFolders": "Choose folders",
     "pickFiles": "Choose files",
     "chosen": "{n} item chosen | {n} items chosen",
     "remove": "Remove {path}",
     "total": "{files} files · {size}",
-    "countLater": "The total (files and GB) is counted in the analysis, once the destination is chosen.",
-    "readOnly": "filebridge only reads the source: nothing there is ever moved, renamed or deleted.",
-    "examples": "For example: your Photos folder, a project folder or a whole external disk.",
-    "howTitle": "How it works",
-    "how": {
-      "1": "Choose what to copy (this screen).",
-      "2": "Choose where it goes: an external disk, a server or Nextcloud.",
-      "3": "filebridge checks the names and warns you about any the destination wouldn't accept.",
-      "4": "You confirm, and the copy starts. You can close the window: it keeps going."
-    },
     "dropOr": "or",
     "pickFoldersTip": "Copies the folder with everything inside it",
     "pickFilesTip": "Copies only the files you select",
     "removeTip": "Remove from this list (nothing is deleted)",
-    "addMore": "You can still add more.",
     "needOne": "Add at least one file or folder to continue.",
-    "hint": "Any size. filebridge only reads them: nothing at the source changes.",
+    "hint": "Any size, from a single file to a whole disk.",
     "recent": "Recently sent from",
     "recentTo": "to {destination}",
-    "recentMissing": "No longer found at {path}"
+    "recentMissing": "No longer found at {path}",
+    "lead": "Add as many files and folders as you like; they all go to the same place. filebridge only reads them: nothing at the source is moved, renamed or deleted.",
+    "dropMore": "Drop more here, or",
+    "addFolders": "Folders",
+    "addFiles": "Files",
+    "clearAll": "Clear all",
+    "overlay": "Drop to add",
+    "items": "{n} item | {n} items",
+    "itemsCapped": "{n}+ items",
+    "emptyFolder": "Empty folder",
+    "changed": "changed",
+    "checking": "Checking…",
+    "checkFailed": "These couldn't be checked now; the analysis checks them again.",
+    "showMore": "Show {n} more",
+    "problem": {
+      "missing": "Not found: moved, renamed, or on a disk that isn't plugged in.",
+      "unreadable": "Can't be read with your permissions.",
+      "symlink": "A shortcut (link) to {target}: links aren't sent.",
+      "root": "A whole disk's top folder can't be sent; choose the folders inside it.",
+      "special": "Not a regular file or folder (a device or a pipe)."
+    },
+    "covered": "Already inside {name}: it would be sent twice.",
+    "useTarget": "Use {name} instead",
+    "removeIt": "Remove",
+    "removeDuplicates": "Remove the duplicate | Remove the {n} duplicates",
+    "nItems": "{n} item | {n} items",
+    "nFolders": "{n} folder | {n} folders",
+    "nFiles": "{n} file | {n} files",
+    "summarySize": "{size} in files",
+    "nothingYet": "Nothing chosen yet.",
+    "blocked": "Fix {n} item to continue | Fix {n} items to continue",
+    "removed": "Removed {what}.",
+    "undo": "Undo",
+    "recentAdd": "Add {path}",
+    "recentGone": "Not found"
   },
   "dest": {
     "title": "Where to?",
@@ -616,7 +637,11 @@
       "light": "Light",
       "dark": "Dark"
     },
-    "themeHint": "System follows your computer's light or dark mode."
+    "themeHint": "System follows your computer's light or dark mode.",
+    "guides": "Show guides on first use",
+    "guidesHint": "A short tour the first time you open a screen. The ? next to a title plays it again.",
+    "guidesReset": "Show guides again",
+    "guidesResetDone": "Every guide will show again the next time."
   },
   "help": {
     "about": "Help: {what}",
@@ -932,6 +957,36 @@
       "destination": "Add a destination: a disk, a server or Nextcloud.",
       "folders": "Choose the folders to send.",
       "send": "Send. You can close the window: it keeps going."
+    }
+  },
+  "tour": {
+    "replay": "Show the guide for this step",
+    "count": "{n} of {total}",
+    "skip": "Skip",
+    "done": "Done",
+    "dontShow": "Don't show guides automatically",
+    "announce": "Guide, step {step}: {title}",
+    "source": {
+      "steps": {
+        "title": "Four steps to send",
+        "body": "Choose what to send, then where. filebridge checks every name, you review, and the copy starts. You can go back to an earlier step until you send."
+      },
+      "add": {
+        "title": "Add what you want to send",
+        "body": "Drag files and folders onto the window, or use the buttons. Add as many as you like: they all go to the same place, and nothing at the source changes."
+      },
+      "recent": {
+        "title": "The same place again",
+        "body": "Folders you sent before are here: one click adds one. One on a disk that isn't plugged in shows as not found."
+      },
+      "chosen": {
+        "title": "Check what you chose",
+        "body": "Each item says what it is and how big. If one can't be sent (missing, a link, or already inside another folder) it says why, with a fix."
+      },
+      "next": {
+        "title": "Then choose where it goes",
+        "body": "Next is ready once there is nothing to fix. The files are counted after you choose the destination."
+      }
     }
   }
 }

@@ -14,6 +14,16 @@ import { THEMES, useSettings } from "@/stores/settings";
 const settings = useSettings();
 const conn = useConnection();
 const { t } = useI18n();
+// Guides (docs/design/specs/D02): on/off, and "show them again" for everyone who skipped them.
+const guidesAuto = computed({
+  get: () => settings.guides.auto,
+  set: (auto: boolean) => (settings.guides = { ...settings.guides, auto }),
+});
+const guidesReset = ref(false);
+function resetGuides() {
+  settings.resetGuides();
+  guidesReset.value = true;
+}
 const themeOptions = computed(() => THEMES.map((value) => ({ value, label: t(`settings.themes.${value}`), icon: value })));
 
 /** Bytes per second in one of each unit (decimal, like the rest of the app). */
@@ -117,6 +127,20 @@ async function save() {
         </label>
       </section>
 
+      <section class="card guides">
+        <label class="check">
+          <input v-model="guidesAuto" type="checkbox" />
+          <span>
+            <strong>{{ $t("settings.guides") }}</strong>
+            <span class="small muted block">{{ $t("settings.guidesHint") }}</span>
+          </span>
+        </label>
+        <div class="row">
+          <button class="btn btn-small" type="button" @click="resetGuides"><AppIcon name="help" /> {{ $t("settings.guidesReset") }}</button>
+          <span v-if="guidesReset" class="small ok-text" role="status">{{ $t("settings.guidesResetDone") }}</span>
+        </div>
+      </section>
+
       <section class="card sending">
         <h2>{{ $t("settings.sending") }}</h2>
         <p v-if="settings.appError" class="error small">{{ settings.appError }}</p>
@@ -181,6 +205,7 @@ async function save() {
 .check { display: flex; gap: 0.75rem; align-items: flex-start; cursor: pointer; }
 .check input { margin-top: 0.3rem; }
 .block { display: block; }
+.guides { display: grid; gap: 0.75rem; }
 .sending { display: grid; gap: 0.9rem; }
 .sending h2 { margin-bottom: 0; }
 .group { display: grid; gap: 0.4rem; }

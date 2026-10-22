@@ -13,7 +13,7 @@ use filebridge_ipc::{
     EntryDetail, EntryFacets, EntryFilter, EntryPage, ErrorBody, ExportResult, FolderNameCheck,
     Handler, IssueView, JobFilter, JobPage, JobSummary, LogEntry, Operations, PROTOCOL_VERSION,
     Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
-    StorageView,
+    SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -55,6 +55,9 @@ fn to_error(e: CoreError) -> ErrorBody {
 }
 
 type Res<T> = Result<T, ErrorBody>;
+
+/// The most sources one `inspect_sources` call checks.
+const MAX_INSPECT: usize = 10_000;
 
 #[async_trait]
 impl Operations for EngineOperations {
@@ -297,6 +300,16 @@ impl Operations for EngineOperations {
             .recent_sources(limit.min(50))
             .await
             .map_err(to_error)
+    }
+
+    async fn inspect_sources(&self, paths: Vec<String>) -> Res<Vec<SourceInfo>> {
+        if paths.len() > MAX_INSPECT {
+            return Err(ErrorBody {
+                code: "invalid".into(),
+                message: format!("at most {MAX_INSPECT} sources at a time"),
+            });
+        }
+        self.engine.inspect_sources(paths).await.map_err(to_error)
     }
 
     async fn job_log(

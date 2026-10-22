@@ -12,6 +12,7 @@ import { emit } from "@tauri-apps/api/event";
 import {
   JOB_OPERATIONS,
   PROTOCOL_VERSION,
+  SOURCE_CHILDREN_CAP,
   type AnalysisSummary_Serialize,
   type AppSettings_Serialize,
   type commands,
@@ -38,6 +39,8 @@ import {
   type StorageView_Serialize as StorageView,
   type Profile_Serialize,
   type RuleCount,
+  type SourceInfo_Serialize,
+  type SourceProblem,
 } from "@/bindings";
 
 type Args = Record<string, unknown>;
@@ -463,6 +466,71 @@ type Answer<K extends keyof Commands> = Awaited<ReturnType<Commands[K]>> extends
 /** One handler per command in the bindings, answering that command's type. */
 type Handlers = { [K in keyof Commands]: (a: Args) => Answer<K> | Promise<Answer<K>> };
 
+// A small pretend disk for `inspect_sources`: a browser can't look at real paths.
+type FakeNode = { dir?: number; capped?: boolean; link?: string; problem?: SourceProblem };
+const FAKE_FS: Record<string, FakeNode> = {
+  "/home/demo/Fotos": { dir: 412 },
+  "/home/demo/Fotos/2023": { dir: 96 },
+  "/home/demo/Documentos": { dir: 37 },
+  "/home/demo/Música": { dir: SOURCE_CHILDREN_CAP, capped: true },
+  "/home/demo/Atalho": { link: "/home/demo/Fotos" },
+  "/home/demo/Privado": { dir: 0, problem: "unreadable" },
+  "/dev/null": { problem: "special" },
+};
+const FAKE_GONE = ["/media/demo/disco-antigo"];
+const EXT_CATEGORY: Record<string, FileCategory> = {
+  jpg: "image", jpeg: "image", png: "image", heic: "image", mp4: "video", mov: "video", mp3: "audio", flac: "audio",
+  pdf: "document", docx: "document", txt: "document", xlsx: "document", zip: "archive", tar: "archive",
+};
+
+/** "/a/./b/../c/" → "/a/c", like `canonicalize` without links. */
+function normalPath(path: string): string {
+  const out: string[] = [];
+  for (const seg of path.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return "/" + out.join("/");
+}
+const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+function inspectOne(path: string): SourceInfo_Serialize {
+  const info: SourceInfo_Serialize = { path, problem: null, is_dir: false, size: null, children: null, children_capped: false, mtime: null, category: null, covered_by: null, link_target: null };
+  const p = normalPath(path);
+  if (p === "/") return { ...info, problem: "root" };
+  if (FAKE_GONE.some((g) => p === g || p.startsWith(g + "/"))) return { ...info, problem: "missing" };
+  info.mtime = now - (hash(p) % 60) * 86_400_000;
+  const node = FAKE_FS[p];
+  if (node?.link) return { ...info, problem: "symlink", link_target: node.link };
+  if (node?.problem) return { ...info, problem: node.problem, is_dir: node.dir != null };
+  const name = p.slice(p.lastIndexOf("/") + 1);
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : null;
+  if (node?.dir != null || !ext) {
+    return { ...info, is_dir: true, children: node?.dir ?? hash(p) % 200, children_capped: node?.capped ?? false };
+  }
+  return { ...info, size: 10_000 + (hash(p) % 50_000_000), category: EXT_CATEGORY[ext] ?? "other" };
+}
+
+/** Like the engine: the outermost other source that contains each one, the earlier of duplicates. */
+function inspectAll(paths: string[]): SourceInfo_Serialize[] {
+  const out = paths.map(inspectOne);
+  const canon = out.map((i) => (i.problem ? null : normalPath(i.path)));
+  const first = new Map<string, number>();
+  canon.forEach((c, i) => c && !first.has(c) && first.set(c, i));
+  canon.forEach((c, i) => {
+    if (!c) return;
+    let outermost: number | null = null;
+    for (let a = c; ; a = a.slice(0, a.lastIndexOf("/")) || "/") {
+      const j = first.get(a);
+      if (j != null && j !== i) outermost = j;
+      if (a === "/") break;
+    }
+    out[i].covered_by = outermost;
+  });
+  return out;
+}
+
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
   setTrayLabels: () => null,
@@ -852,6 +920,12 @@ const handlers: Handlers = {
     return split
       .map(([category, b, f]) => ({ category, bytes: Math.round(bytes * b), files: Math.round(files * f) }))
       .filter((c) => c.files > 0);
+  },
+  inspectSources: async (a) => {
+    await sleep(250);
+    const paths = a.paths as string[];
+    if (paths.length > 10_000) throw fail("invalid", "at most 10000 sources at a time");
+    return inspectAll(paths);
   },
   recentSources: (a) => {
     const sent = jobs.filter((j) => !["draft", "analysing", "awaiting_approval", "ready"].includes(j.state));

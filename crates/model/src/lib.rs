@@ -31,8 +31,9 @@ pub use views::{
     DecideManyResult, DecisionInput, DoneView, FolderNameCheck, InFlightView, IssueDecision,
     IssueSeverity, IssueView, JobFilter, JobPage, JobSort, JobSummary, LOW_SPACE_BYTES,
     LOW_SPACE_RATIO, PreflightView, ProfileTest, RECLAIM_CHECK_FRESH_MS, RecentSource,
-    ReclaimBlocker, ReclaimStatus, RefusedIssue, RemoteEntryView, RuleCount,
-    STORAGE_STALE_AFTER_MS, SendOptions, SourceReclaim, SpaceView, StorageView,
+    ReclaimBlocker, ReclaimStatus, RefusedIssue, RemoteEntryView, RuleCount, SOURCE_CHILDREN_CAP,
+    STORAGE_STALE_AFTER_MS, SendOptions, SourceInfo, SourceProblem, SourceReclaim, SpaceView,
+    StorageView,
 };
 
 /// A stored value (a job state, a job kind) this build doesn't know.

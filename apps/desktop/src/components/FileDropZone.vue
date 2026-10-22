@@ -1,41 +1,19 @@
 <script setup lang="ts">
-// Drop files and folders on the window, or pick them in the file explorer.
+// Drop files and folders on the window, or pick them in the file explorer. `compact` is the
+// one-line bar shown once something is chosen.
 import AppIcon from "@/components/AppIcon.vue";
-import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { onFileDrop, pickPaths } from "@/lib/platform";
+import { pickPaths } from "@/lib/platform";
 import { errorMessage } from "@/lib/api";
+import { useFileDrop } from "@/composables/useFileDrop";
+import DropOverlay from "./DropOverlay.vue";
 
+defineProps<{ compact?: boolean }>();
 const emit = defineEmits<{ add: [paths: string[]] }>();
 const { t } = useI18n();
-const over = ref(false);
 const error = ref<string | null>(null);
-let unlisten: (() => void) | null = null;
-
-// Listen only while on screen: a kept-alive wizard in the background must not take drops meant
-// for another page (Home has its own drop zone).
-let active = false;
-async function listen() {
-  active = true;
-  if (unlisten) return;
-  const off = await onFileDrop((state, paths) => {
-    over.value = state === "over";
-    if (state === "drop" && paths.length) emit("add", paths);
-  });
-  // Left the screen while subscribing: don't keep the listener.
-  if (active && !unlisten) unlisten = off;
-  else off();
-}
-function stop() {
-  active = false;
-  unlisten?.();
-  unlisten = null;
-  over.value = false;
-}
-onMounted(listen);
-onActivated(listen);
-onDeactivated(stop);
-onBeforeUnmount(stop);
+const { over } = useFileDrop((paths) => emit("add", paths));
 
 async function pick(directory: boolean) {
   error.value = null;
@@ -49,15 +27,26 @@ async function pick(directory: boolean) {
 </script>
 
 <template>
-  <div class="drop" :class="{ over }">
-    <AppIcon class="icon" name="drop" :size="40" />
-    <p class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
-    <div class="buttons">
-      <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.pickFolders") }}</button>
-      <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
-    </div>
-    <p class="hint small muted">{{ $t("source.hint") }}</p>
-    <p v-if="error" class="error small">{{ error }}</p>
+  <div class="drop" :class="{ over, compact }">
+    <template v-if="compact">
+      <AppIcon class="icon" name="drop" :size="22" />
+      <span class="lead">{{ $t("source.dropMore") }}</span>
+      <span class="buttons">
+        <button class="btn btn-small" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.addFolders") }}</button>
+        <button class="btn btn-small" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.addFiles") }}</button>
+      </span>
+    </template>
+    <template v-else>
+      <AppIcon class="icon" name="drop" :size="44" />
+      <p class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
+      <div class="buttons">
+        <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.pickFolders") }}</button>
+        <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
+      </div>
+      <p class="hint small muted">{{ $t("source.hint") }}</p>
+    </template>
+    <p v-if="error" class="error small" role="alert">{{ error }}</p>
+    <DropOverlay :show="over" />
   </div>
 </template>
 
@@ -65,7 +54,7 @@ async function pick(directory: boolean) {
 .drop {
   border: 2px dashed var(--border-strong);
   border-radius: 12px;
-  padding: 2rem 1rem;
+  padding: 2.25rem 1rem;
   text-align: center;
   background: var(--surface-2);
   transition: border-color 0.15s, background 0.15s;
@@ -75,4 +64,18 @@ async function pick(directory: boolean) {
 .lead { margin: 0.5rem 0 1rem; color: var(--text-2); display: grid; gap: 0.35rem; }
 .or { font-size: 0.85rem; }
 .buttons { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+.hint { margin: 0.9rem 0 0; }
+.drop.compact {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  text-align: left;
+  border-width: 1.5px;
+  flex-wrap: wrap;
+}
+.compact .lead { margin: 0; flex: 1; min-width: 10rem; display: block; }
+.compact .buttons { justify-content: flex-end; }
+.compact .error { width: 100%; margin: 0; }
+@media (prefers-reduced-motion: reduce) { .drop { transition: none; } }
 </style>

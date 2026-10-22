@@ -12,7 +12,7 @@ use filebridge_core::{
     AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
     EntryStatus, Event, FileCategory, IssueDecision, JobFilter, JobGroup, JobState, LocalClock,
     LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest, ReportScope,
-    SendOptions, SendWindow, Store, StoreError, TargetSpec,
+    SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -888,6 +888,112 @@ async fn folders_are_browsed_checked_and_sent_into() {
         .unwrap();
     assert_eq!(inside.segments, ["2019"]);
     assert_eq!(inside.folders[0].path, "2019/Novas");
+}
+
+#[tokio::test]
+async fn sources_are_checked_without_reading_them() {
+    let s = setup().await;
+    let root = s.src.parent().unwrap().to_path_buf();
+    let big = root.join("big");
+    std::fs::create_dir_all(&big).unwrap();
+    for i in 0..1001 {
+        std::fs::write(big.join(format!("{i}.txt")), b"").unwrap();
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(s.src.join("Fotos"), root.join("link")).unwrap();
+    let before = snapshot(&s.src);
+    let p = |x: &Path| x.display().to_string();
+
+    let got = s
+        .engine
+        .inspect_sources(vec![
+            p(&s.src),
+            p(&s.src.join("Fotos")),
+            p(&s.src.join("Relato\u{301}rio.pdf")),
+            p(&s.src.join("Fotos/../../Acme")),
+            p(&root.join("nope")),
+            "/".into(),
+            p(&big),
+            p(&root.join("link")),
+        ])
+        .await
+        .unwrap();
+
+    assert!(got[0].is_dir && got[0].problem.is_none());
+    assert_eq!(got[0].children, Some(2));
+    assert!(got[0].mtime.is_some());
+    assert_eq!(got[0].covered_by, None);
+    assert_eq!(got[1].covered_by, Some(0), "a folder inside another");
+    assert_eq!(got[2].size, Some(6));
+    assert_eq!(got[2].category, Some(FileCategory::Document));
+    assert_eq!(got[2].covered_by, Some(0));
+    assert_eq!(
+        got[3].covered_by,
+        Some(0),
+        "the same folder written another way"
+    );
+    assert_eq!(got[4].problem, Some(SourceProblem::Missing));
+    assert_eq!(got[5].problem, Some(SourceProblem::Root));
+    assert_eq!(got[6].children, Some(1000));
+    assert!(got[6].children_capped);
+    #[cfg(unix)]
+    {
+        assert_eq!(got[7].problem, Some(SourceProblem::Symlink));
+        assert_eq!(
+            got[7].link_target.as_deref(),
+            Some(p(&std::fs::canonicalize(s.src.join("Fotos")).unwrap()).as_str())
+        );
+    }
+    assert_eq!(snapshot(&s.src), before, "the source is only looked at");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_unreadable_source_is_named() {
+    use std::os::unix::fs::PermissionsExt;
+    let s = setup().await;
+    let locked = s.src.parent().unwrap().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let readable_anyway = std::fs::read_dir(&locked).is_ok(); // running as root
+    let got = s
+        .engine
+        .inspect_sources(vec![locked.display().to_string()])
+        .await
+        .unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if !readable_anyway {
+        assert_eq!(got[0].problem, Some(SourceProblem::Unreadable));
+    }
+}
+
+#[tokio::test]
+async fn nested_sources_are_refused() {
+    let s = setup().await;
+    for pair in [
+        vec![s.src.clone(), s.src.join("Fotos")],
+        vec![s.src.join("Fotos/Inverno.jpg"), s.src.clone()],
+        vec![s.src.clone(), s.src.join("Fotos/../../Acme")],
+    ] {
+        let err = s
+            .engine
+            .create_job(pair, &s.profile_id, SendOptions::default())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&err, CoreError::Invalid(m) if m.contains("already inside")),
+            "{err}"
+        );
+    }
+    // Two folders side by side are fine.
+    s.engine
+        .create_job(
+            vec![s.src.join("Fotos"), s.src.join("Relato\u{301}rio.pdf")],
+            &s.profile_id,
+            SendOptions::default(),
+        )
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

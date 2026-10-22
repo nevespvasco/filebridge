@@ -75,6 +75,8 @@ macro_rules! for_each_operation {
             JobCategories job_categories(job_id: String) -> Vec<$crate::CategoryCount>;
             /// Folders and files sent before, newest first, for "Recently sent from".
             RecentSources recent_sources(limit: u32) -> Vec<$crate::RecentSource>;
+            /// What each chosen source is and what is wrong with it, without reading contents.
+            InspectSources inspect_sources(paths: Vec<String>) -> Vec<$crate::SourceInfo>;
             /// One page of a job's files, filtered and sorted (at most 500).
             Entries entries(job_id: String, filter: $crate::EntryFilter, after: Option<$crate::EntryCursor>, limit: u32) -> $crate::EntryPage;
             /// Counts for the Files tab's filter chips, over the whole job.

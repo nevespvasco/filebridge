@@ -83,6 +83,8 @@ export const commands = {
 	jobCategories: (jobId: string) => typedError<CategoryCount[], ErrorBody>(__TAURI_INVOKE("job_categories", { jobId })),
 	/**  Folders and files sent before, newest first, for "Recently sent from". */
 	recentSources: (limit: number) => typedError<RecentSource[], ErrorBody>(__TAURI_INVOKE("recent_sources", { limit })),
+	/**  What each chosen source is and what is wrong with it, without reading contents. */
+	inspectSources: (paths: string[]) => typedError<SourceInfo_Serialize[], ErrorBody>(__TAURI_INVOKE("inspect_sources", { paths })),
 	/**  One page of a job's files, filtered and sorted (at most 500). */
 	entries: (jobId: string, filter: EntryFilter_Deserialize, after: EntryCursor | null, limit: number) => typedError<EntryPage_Serialize, ErrorBody>(__TAURI_INVOKE("entries", { jobId, filter, after, limit })),
 	/**  Counts for the Files tab's filter chips, over the whole job. */
@@ -113,7 +115,9 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 14 as const;
+export const PROTOCOL_VERSION = 15 as const;
+
+export const SOURCE_CHILDREN_CAP = 1000 as const;
 
 /* Types */
 /**  A milestone of any job, or a profile change, for Activity (docs/design/specs/D07). */
@@ -1048,6 +1052,70 @@ export type ServiceEvent_Deserialize = Event_Deserialize;
 
 /**  Every engine event, forwarded as is from `Client::events()`. */
 export type ServiceEvent_Serialize = Event_Serialize;
+
+/**  One chosen source, checked without reading its contents (docs/design/specs/D02). */
+export type SourceInfo = SourceInfo_Serialize | SourceInfo_Deserialize;
+
+/**  One chosen source, checked without reading its contents (docs/design/specs/D02). */
+export type SourceInfo_Deserialize = {
+	/**  As given. */
+	path: string,
+	problem?: SourceProblem | null,
+	is_dir: boolean,
+	/**  Files only. */
+	size?: number | null,
+	/**  Folders: direct entries, at most [`SOURCE_CHILDREN_CAP`]. */
+	children?: number | null,
+	children_capped: boolean,
+	/**  Unix ms. */
+	mtime?: number | null,
+	/**  Files only. */
+	category?: FileCategory | null,
+	/**
+	 *  Index of another chosen source that already contains this one (or is the same): it
+	 *  would be sent twice.
+	 */
+	covered_by?: number | null,
+	/**  Where a symbolic link points, when it resolves. */
+	link_target?: string | null,
+};
+
+/**  One chosen source, checked without reading its contents (docs/design/specs/D02). */
+export type SourceInfo_Serialize = {
+	/**  As given. */
+	path: string,
+	problem: SourceProblem | null,
+	is_dir: boolean,
+	/**  Files only. */
+	size: number | null,
+	/**  Folders: direct entries, at most [`SOURCE_CHILDREN_CAP`]. */
+	children: number | null,
+	children_capped: boolean,
+	/**  Unix ms. */
+	mtime: number | null,
+	/**  Files only. */
+	category: FileCategory | null,
+	/**
+	 *  Index of another chosen source that already contains this one (or is the same): it
+	 *  would be sent twice.
+	 */
+	covered_by: number | null,
+	/**  Where a symbolic link points, when it resolves. */
+	link_target: string | null,
+};
+
+/**  What is wrong with a chosen source, found without reading it (docs/design/specs/D02). */
+export type SourceProblem = 
+/**  Not there (moved, renamed, a disk unplugged). */
+"missing" | 
+/**  There, but this user can't read it. */
+"unreadable" | 
+/**  A symbolic link: pick its target instead (links are not followed). */
+"symlink" | 
+/**  A whole filesystem root: it has no name to send it under. */
+"root" | 
+/**  Not a file or a folder (a device, a socket, a pipe). */
+"special";
 
 /**  One source root of a job, and whether it can be freed. */
 export type SourceReclaim = SourceReclaim_Serialize | SourceReclaim_Deserialize;

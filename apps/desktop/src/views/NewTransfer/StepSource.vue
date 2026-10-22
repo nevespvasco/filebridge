@@ -1,25 +1,29 @@
 <script setup lang="ts">
-import AppIcon from "@/components/AppIcon.vue";
-import { computed, onActivated, onBeforeUnmount, onMounted, ref } from "vue";
+// Step 1, what to send (docs/design/specs/D02). Each chosen source is checked as it is added
+// (what it is, how big, what is wrong with it); Next waits until nothing needs fixing.
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 import type { RecentSource } from "@/bindings";
-import RelativeTime from "@/components/RelativeTime.vue";
+import AppIcon from "@/components/AppIcon.vue";
+import FileDropZone from "@/components/FileDropZone.vue";
+import RecentSources from "@/components/RecentSources.vue";
+import SourceList from "@/components/SourceList.vue";
+import TourButton from "@/components/TourButton.vue";
+import { useFmt } from "@/composables/useFmt";
 import { api } from "@/lib/api";
 import { baseName } from "@/lib/format";
-import { useProfiles } from "@/stores/profiles";
-import FileDropZone from "@/components/FileDropZone.vue";
-import DetailsPanel from "@/components/DetailsPanel.vue";
-import { useFmt } from "@/composables/useFmt";
-import { useJobs } from "@/stores/jobs";
+import { useTour } from "@/stores/tour";
 import { useWizard } from "@/stores/wizard";
 
 const wizard = useWizard();
-const jobs = useJobs();
+const tour = useTour();
 const fmt = useFmt();
-const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : undefined));
-const profiles = useProfiles();
+const { t } = useI18n();
 
-// "Recently sent from" (docs/design/specs/D02): re-read when the window comes back, since a
-// disk may have been plugged in or out meanwhile.
+const has = computed(() => wizard.sources.length > 0);
+
+// ---- "Recently sent from": re-read when the window comes back, since a disk may have been
+// plugged in or out meanwhile; the chosen ones are checked again for the same reason ----
 const recent = ref<RecentSource[]>([]);
 async function loadRecent() {
   try {
@@ -28,89 +32,154 @@ async function loadRecent() {
     recent.value = [];
   }
 }
-const recentShown = computed(() => recent.value.filter((r) => !wizard.sources.includes(r.path)).slice(0, 6));
-onMounted(loadRecent);
-onActivated(loadRecent);
-window.addEventListener("focus", loadRecent);
-onBeforeUnmount(() => window.removeEventListener("focus", loadRecent));
+const recentShown = computed(() =>
+  recent.value.filter((r) => !wizard.sources.includes(r.path)).slice(0, has.value ? 3 : 6),
+);
+function onFocus() {
+  void loadRecent();
+  if (has.value) void wizard.inspect();
+}
+
+/** The guide starts by itself once, after the page has what it points at. */
+async function arrive() {
+  await loadRecent();
+  await nextTick();
+  tour.maybeStart("source");
+}
+onMounted(arrive);
+onActivated(arrive);
+window.addEventListener("focus", onFocus);
+onDeactivated(() => tour.stop("source"));
+onBeforeUnmount(() => {
+  window.removeEventListener("focus", onFocus);
+  tour.stop("source");
+  clearTimeout(undoTimer);
+});
+
+// ---- removing, with undo ----
+type Removed = { path: string; at: number };
+const undo = ref<{ items: Removed[]; label: string } | null>(null);
+let undoTimer: ReturnType<typeof setTimeout> | undefined;
+function offerUndo(items: Removed[]) {
+  if (!items.length) return;
+  clearTimeout(undoTimer);
+  const label = items.length === 1 ? baseName(items[0].path) : t("source.nItems", { n: items.length }, items.length);
+  undo.value = { items, label };
+  undoTimer = setTimeout(() => (undo.value = null), 8000);
+}
+function remove(path: string) {
+  const at = wizard.removeSource(path);
+  if (at >= 0) offerUndo([{ path, at }]);
+}
+function removeMany(paths: string[]) {
+  // Where each one was: undo puts them back in order.
+  const all = wizard.sources.map((path, at) => ({ path, at }));
+  const gone = all.filter((r) => paths.includes(r.path));
+  wizard.sources = wizard.sources.filter((p) => !paths.includes(p));
+  offerUndo(gone);
+}
+function clearAll() {
+  removeMany([...wizard.sources]);
+}
+function restore() {
+  if (!undo.value) return;
+  wizard.restoreSources(undo.value.items);
+  undo.value = null;
+  clearTimeout(undoTimer);
+}
+
+/** Already inside another chosen source: "Remove the N duplicates". */
+const duplicates = computed(() =>
+  wizard.sources.filter((p) => wizard.coveredBy[p] && wizard.sources.includes(wizard.coveredBy[p])),
+);
+
+// ---- the summary in the footer ----
+const summary = computed(() => {
+  const known = wizard.sources.map((p) => wizard.sourceInfo[p]).filter((i) => i && !i.problem);
+  const folders = known.filter((i) => i.is_dir).length;
+  const files = known.length - folders;
+  const bytes = known.reduce((n, i) => n + (i.size ?? 0), 0);
+  const parts = [t("source.nItems", { n: wizard.sources.length }, wizard.sources.length)];
+  if (known.length) {
+    const kinds = [
+      folders ? t("source.nFolders", { n: folders }, folders) : null,
+      files ? t("source.nFiles", { n: files }, files) : null,
+    ].filter(Boolean);
+    parts.push(kinds.join(", "));
+  }
+  if (files) parts.push(t("source.summarySize", { size: fmt.bytes(bytes) }));
+  return parts.join(" · ");
+});
+const blocked = computed(() => wizard.sourceBlockers.length);
 </script>
 
 <template>
   <div class="step">
-    <h2>{{ $t("source.title") }}</h2>
-
-    <div v-if="!wizard.sources.length" class="guide how">
-      <AppIcon class="guide-icon" name="lightbulb" :size="20" />
-      <div>
-        <p><strong>{{ $t("source.howTitle") }}</strong></p>
-        <ol>
-          <li v-for="n in 4" :key="n">{{ $t(`source.how.${n}`) }}</li>
-        </ol>
-      </div>
+    <div class="title-row">
+      <h2>{{ $t("source.title") }}</h2>
+      <TourButton tour="source" />
     </div>
+    <p class="lead-text">{{ $t("source.lead") }}</p>
 
-    <p class="lead-text">{{ $t("source.intro") }} <span class="examples">{{ $t("source.examples") }}</span></p>
-    <FileDropZone @add="wizard.addSources" />
+    <FileDropZone data-tour="source-add" :compact="has" @add="wizard.addSources" />
 
-    <div v-if="wizard.sources.length" class="card list">
-      <div class="list-head">
+    <section v-if="has" class="card chosen" data-tour="source-chosen" :aria-label="$t('source.chosen', { n: wizard.sources.length }, wizard.sources.length)">
+      <div class="chosen-head">
         <strong>{{ $t("source.chosen", { n: wizard.sources.length }, wizard.sources.length) }}</strong>
-        <span v-if="scan" class="small muted">
-          {{ $t("source.total", { files: fmt.count(scan.files), size: fmt.bytes(scan.bytes) }) }}
-        </span>
-      </div>
-      <ul>
-        <li v-for="p in wizard.sources" :key="p">
-          <span class="ellipsis mono small" :title="p">{{ p }}</span>
-          <button class="btn btn-small" :title="$t('source.removeTip')" :aria-label="$t('source.remove', { path: p })" @click="wizard.removeSource(p)"><AppIcon name="close" /></button>
-        </li>
-      </ul>
-      <p class="small muted">{{ $t("source.addMore") }} {{ $t("source.countLater") }}</p>
-    </div>
-
-    <section v-if="recentShown.length" class="recent" :aria-label="$t('source.recent')">
-      <h3 class="small muted">{{ $t("source.recent") }}</h3>
-      <div class="chips">
-        <button
-          v-for="r in recentShown"
-          :key="r.path"
-          class="chip"
-          :aria-disabled="!r.exists"
-          :title="r.exists ? r.path : $t('source.recentMissing', { path: r.path })"
-          @click="r.exists && wizard.addSources([r.path])"
-        >
-          <AppIcon name="folder" />
-          <span class="name">{{ baseName(r.path) }}</span>
-          <span class="muted small">· {{ $t("source.recentTo", { destination: profiles.byId[r.last_profile_id]?.name ?? "—" }) }} · <RelativeTime :at="r.last_sent_at" /></span>
+        <span v-if="wizard.inspecting" class="small muted">{{ $t("source.checking") }}</span>
+        <span class="grow" />
+        <button v-if="duplicates.length" class="btn btn-small" type="button" @click="removeMany(duplicates)">
+          {{ $t("source.removeDuplicates", { n: duplicates.length }, duplicates.length) }}
         </button>
+        <button class="btn btn-small" type="button" @click="clearAll">{{ $t("source.clearAll") }}</button>
       </div>
+      <p v-if="wizard.inspectError" class="small muted">{{ $t("source.checkFailed") }}</p>
+      <SourceList
+        :sources="wizard.sources"
+        :info="wizard.sourceInfo"
+        :covered-by="wizard.coveredBy"
+        @remove="remove"
+        @replace="wizard.replaceSource"
+      />
     </section>
 
-    <p class="guide ok small safe"><AppIcon class="guide-icon" name="lock" :size="20" /><span>{{ $t("source.readOnly") }}</span></p>
-    <DetailsPanel :lines="[]" :note="$t('details.sourceNote')" />
+    <RecentSources v-if="recentShown.length" class="recent" data-tour="source-recent" :items="recentShown" @add="(p) => wizard.addSources([p])" />
 
-    <div class="footer">
+    <div class="footer sticky" data-tour="source-next">
+      <span class="summary small" aria-live="polite">
+        <template v-if="has">{{ summary }}</template>
+        <template v-else>{{ $t("source.nothingYet") }}</template>
+      </span>
+      <span v-if="undo" class="undo small" role="status">
+        {{ $t("source.removed", { what: undo.label }) }}
+        <button class="btn btn-small" type="button" @click="restore"><AppIcon name="undo" /> {{ $t("source.undo") }}</button>
+      </span>
       <span class="grow" />
-      <span v-if="!wizard.sources.length" class="why-disabled">{{ $t("source.needOne") }}</span>
-      <button class="btn btn-primary" :disabled="!wizard.sources.length" @click="wizard.step = 2">{{ $t("common.next") }} <AppIcon name="next" /></button>
+      <span v-if="!has" class="why-disabled">{{ $t("source.needOne") }}</span>
+      <span v-else-if="blocked" class="why-disabled warn-text">{{ $t("source.blocked", { n: blocked }, blocked) }}</span>
+      <button class="btn btn-primary" :disabled="!wizard.canLeaveSource" @click="wizard.step = 2">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.list { margin: 1rem 0; }
-.recent { margin: 1rem 0; }
-.recent h3 { margin: 0 0 0.4rem; font-weight: 600; }
-.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.chip { font: inherit; display: inline-flex; gap: 0.4rem; align-items: center; max-width: 100%; padding: 0.35rem 0.7rem; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface); color: var(--text); cursor: pointer; }
-.chip:hover:not([aria-disabled="true"]) { background: var(--surface-2); }
-.chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.chip[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
-.chip .name { font-weight: 600; }
-.how { margin-bottom: 1.25rem; }
-.safe { margin-top: 1rem; }
-.examples { display: block; font-size: 0.85rem; margin-top: 0.2rem; }
-.list-head { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
-.list ul { list-style: none; padding: 0; margin: 0.5rem 0; }
-.list li { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+.step { display: grid; gap: 1rem; }
+.title-row { display: flex; gap: 0.6rem; align-items: center; }
+.title-row h2 { margin: 0; }
+.lead-text { margin: -0.4rem 0 0; }
+.chosen { padding: 0.75rem 1rem; }
+.chosen-head { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+.chosen > p { margin: 0.5rem 0 0; }
+.grow { flex: 1; }
+.sticky {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: 0.5rem;
+  padding: 0.75rem 0;
+  background: var(--bg);
+  box-shadow: 0 -10px 12px -10px rgb(0 0 0 / 0.12);
+}
+.summary { color: var(--text-2); }
+.undo { display: inline-flex; gap: 0.5rem; align-items: center; padding-left: 0.75rem; border-left: 1px solid var(--border); }
 </style>

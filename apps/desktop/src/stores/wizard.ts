@@ -2,13 +2,14 @@
 // (the service needs a profile to create one) and analysed right away; the analysis step then
 // shows the scan's running total.
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import type {
   AnalysisSummary_Serialize,
   DecisionInput,
   JobSummary_Serialize,
   RuleCount,
   SendOptions,
+  SourceInfo_Serialize,
 } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 import { useJobs } from "./jobs";
@@ -41,6 +42,60 @@ export const useWizard = defineStore("wizard", () => {
   /** Bumped after every decision, so open issue lists can refresh their rows. */
   const decisionsVersion = ref(0);
 
+  // ---- what each chosen source is (docs/design/specs/D02): checked as the list changes ----
+  /** By path; a path missing here is still being checked. */
+  const sourceInfo = shallowRef<Record<string, SourceInfo_Serialize>>({});
+  const inspecting = ref(false);
+  const inspectError = ref<string | null>(null);
+  let inspectSeq = 0;
+  let inspectTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function inspect() {
+    clearTimeout(inspectTimer);
+    const seq = ++inspectSeq;
+    const paths = [...sources.value];
+    if (!paths.length) {
+      sourceInfo.value = {};
+      inspecting.value = false;
+      inspectError.value = null;
+      return;
+    }
+    inspecting.value = true;
+    try {
+      const found = await api.inspectSources(paths);
+      if (seq !== inspectSeq) return; // the list changed while it ran
+      // `covered_by` is an index into the list as sent; keep it as the path it names.
+      const next: Record<string, SourceInfo_Serialize> = {};
+      for (const info of found) next[info.path] = info;
+      sourceInfo.value = next;
+      coveredBy.value = Object.fromEntries(
+        found.filter((i) => i.covered_by != null).map((i) => [i.path, paths[i.covered_by!]]),
+      );
+      inspectError.value = null;
+    } catch (e) {
+      if (seq !== inspectSeq) return;
+      inspectError.value = errorMessage(e);
+    } finally {
+      if (seq === inspectSeq) inspecting.value = false;
+    }
+  }
+  /** Path → the chosen source that already contains it. */
+  const coveredBy = shallowRef<Record<string, string>>({});
+  watch(
+    () => sources.value.join("\n"),
+    () => {
+      clearTimeout(inspectTimer);
+      inspectTimer = setTimeout(() => void inspect(), 150);
+    },
+  );
+
+  /** Sources that stop the step: a problem, or already inside another chosen one. */
+  const sourceBlockers = computed(() =>
+    sources.value.filter((p) => !!sourceInfo.value[p]?.problem || (!!coveredBy.value[p] && sources.value.includes(coveredBy.value[p]))),
+  );
+  /** A failed check doesn't block: the analysis looks at everything again. */
+  const canLeaveSource = computed(() => sources.value.length > 0 && sourceBlockers.value.length === 0);
+
   const pending = computed(() => ruleCounts.value.reduce((n, r) => n + r.pending, 0));
   const key = computed(() => JSON.stringify([sources.value, profileId.value]));
   const canAnalyse = computed(() => sources.value.length > 0 && profileId.value != null);
@@ -51,13 +106,37 @@ export const useWizard = defineStore("wizard", () => {
     for (const p of paths) if (!seen.has(p)) sources.value.push(p);
   }
 
-  function removeSource(path: string) {
-    sources.value = sources.value.filter((p) => p !== path);
+  /** Returns where it was, for undo. */
+  function removeSource(path: string): number {
+    const i = sources.value.indexOf(path);
+    if (i >= 0) sources.value = sources.value.filter((p) => p !== path);
+    return i;
+  }
+
+  /** Undo: puts removed sources back where they were (`at` ascending). */
+  function restoreSources(removed: { path: string; at: number }[]) {
+    const next = [...sources.value];
+    for (const r of [...removed].sort((a, b) => a.at - b.at)) {
+      if (!next.includes(r.path)) next.splice(Math.min(r.at, next.length), 0, r.path);
+    }
+    sources.value = next;
+  }
+
+  /** "Use the folder the link points to": in place, unless it is already chosen. */
+  function replaceSource(old: string, next: string) {
+    sources.value = sources.value.includes(next)
+      ? sources.value.filter((p) => p !== old)
+      : sources.value.map((p) => (p === old ? next : p));
   }
 
   function reset() {
     step.value = 1;
     sources.value = [];
+    sourceInfo.value = {};
+    coveredBy.value = {};
+    inspecting.value = false;
+    inspectError.value = null;
+    inspectSeq++;
     profileId.value = null;
     options.value = defaultOptions();
     jobId.value = null;
@@ -216,8 +295,17 @@ export const useWizard = defineStore("wizard", () => {
     decisionsVersion,
     canAnalyse,
     canReview,
+    sourceInfo,
+    coveredBy,
+    inspecting,
+    inspectError,
+    sourceBlockers,
+    canLeaveSource,
+    inspect,
     addSources,
     removeSource,
+    restoreSources,
+    replaceSource,
     reset,
     analyse,
     refreshRuleCounts,

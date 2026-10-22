@@ -456,3 +456,45 @@ pub struct FolderNameCheck {
     /// i18n key of the first rule that changed it.
     pub message_key: Option<String>,
 }
+
+/// What is wrong with a chosen source, found without reading it (docs/design/specs/D02).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceProblem {
+    /// Not there (moved, renamed, a disk unplugged).
+    Missing,
+    /// There, but this user can't read it.
+    Unreadable,
+    /// A symbolic link: pick its target instead (links are not followed).
+    Symlink,
+    /// A whole filesystem root: it has no name to send it under.
+    Root,
+    /// Not a file or a folder (a device, a socket, a pipe).
+    Special,
+}
+
+/// The most direct entries of a folder `inspect_sources` counts.
+pub const SOURCE_CHILDREN_CAP: u32 = 1000;
+
+/// One chosen source, checked without reading its contents (docs/design/specs/D02).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SourceInfo {
+    /// As given.
+    pub path: String,
+    pub problem: Option<SourceProblem>,
+    pub is_dir: bool,
+    /// Files only.
+    pub size: Option<u64>,
+    /// Folders: direct entries, at most [`SOURCE_CHILDREN_CAP`].
+    pub children: Option<u32>,
+    pub children_capped: bool,
+    /// Unix ms.
+    pub mtime: Option<i64>,
+    /// Files only.
+    pub category: Option<FileCategory>,
+    /// Index of another chosen source that already contains this one (or is the same): it
+    /// would be sent twice.
+    pub covered_by: Option<u32>,
+    /// Where a symbolic link points, when it resolves.
+    pub link_target: Option<String>,
+}

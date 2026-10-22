@@ -101,6 +101,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 |---|---|---|
 | `job_categories(job_id) -> Vec<CategoryCount>` | new | D02 |
 | `recent_sources(limit) -> Vec<RecentSource>` | new | D02 |
+| `inspect_sources(paths) -> Vec<SourceInfo>` | new (protocol 15); `create_job` now refuses nested sources | D02 |
 | `profile_storage(id, refresh) -> StorageView` | new | D03 |
 | `entries(job_id, filter, after, limit) -> EntryPage` | new | D05 |
 | `entry_facets(job_id) -> EntryFacets` | new | D05 |

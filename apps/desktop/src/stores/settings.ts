@@ -1,4 +1,4 @@
-// Settings. Window preferences (language, notifications, theme) are kept in this browser profile
+// Settings. Window preferences (language, notifications, theme, guides) are kept in this browser profile
 // (localStorage); the app-wide bandwidth limit and send window live in the service, which applies
 // them to every send (docs/adr/0010).
 import { defineStore } from "pinia";
@@ -30,7 +30,11 @@ function applyTheme(theme: Theme) {
   else root.dataset.theme = theme;
 }
 
-type Stored = { locale: Locale; notifications: boolean };
+/** First-run guides (docs/design/specs/D02): whether they start by themselves, and which
+ *  version of each one was finished or skipped. */
+export type Guides = { auto: boolean; seen: Record<string, number> };
+
+type Stored = { locale: Locale; notifications: boolean; guides: Guides };
 
 function load(): Partial<Stored> {
   try {
@@ -45,6 +49,15 @@ export const useSettings = defineStore("settings", () => {
   const locale = ref<Locale>(stored.locale ?? (navigator.language.startsWith("pt") ? "pt" : "en"));
   const notifications = ref(stored.notifications ?? true);
   const theme = ref<Theme>(loadTheme());
+  const guides = ref<Guides>({ auto: stored.guides?.auto ?? true, seen: { ...(stored.guides?.seen ?? {}) } });
+
+  function markTourSeen(id: string, version: number) {
+    guides.value = { ...guides.value, seen: { ...guides.value.seen, [id]: version } };
+  }
+  /** "Show guides again": every guide starts by itself once more. */
+  function resetGuides() {
+    guides.value = { auto: true, seen: {} };
+  }
 
   watch(
     theme,
@@ -61,11 +74,12 @@ export const useSettings = defineStore("settings", () => {
   );
 
   watch(
-    [locale, notifications],
+    [locale, notifications, guides],
     () => {
       setLocale(locale.value);
       try {
-        localStorage.setItem(KEY, JSON.stringify({ locale: locale.value, notifications: notifications.value }));
+        const s: Stored = { locale: locale.value, notifications: notifications.value, guides: guides.value };
+        localStorage.setItem(KEY, JSON.stringify(s));
       } catch {
         // Private mode or blocked storage: the choice lasts for this session only.
       }
@@ -95,5 +109,5 @@ export const useSettings = defineStore("settings", () => {
     await loadApp();
   }
 
-  return { locale, notifications, theme, app, appLoaded, appError, loadApp, saveApp };
+  return { locale, notifications, theme, guides, markTourSeen, resetGuides, app, appLoaded, appError, loadApp, saveApp };
 });

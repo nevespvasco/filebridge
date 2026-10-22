@@ -21,7 +21,9 @@ function reachable(n: Step) {
   if (wizard.step === 5) return n === 5;
   if (n === 5) return false;
   if (n === 1) return true;
-  if (n === 2) return wizard.sources.length > 0;
+  // Past the source only with nothing to fix there (a nested source would be sent twice).
+  if (!wizard.canLeaveSource) return false;
+  if (n === 2) return true;
   if (n === 3) return !!wizard.jobId;
   return wizard.canReview;
 }
@@ -46,7 +48,7 @@ function go(n: Step) {
       </div>
       <span v-if="wizard.step < 5" class="badge badge-accent">{{ $t("wizard.stepOf", { n: wizard.step, total: 4 }) }}</span>
     </header>
-    <ol class="stepper">
+    <ol class="stepper" data-tour="wizard-stepper">
       <li v-for="s in steps" :key="s.n" :class="{ current: wizard.step === s.n, done: s.n < wizard.step }">
         <button :disabled="!reachable(s.n)" :title="s.tip" :aria-current="wizard.step === s.n ? 'step' : undefined" @click="go(s.n)">
           <span class="num"><AppIcon v-if="s.n < wizard.step" name="check" weight="bold" /><template v-else>{{ s.n }}</template></span>

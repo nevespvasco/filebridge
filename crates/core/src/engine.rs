@@ -366,6 +366,14 @@ impl Engine {
             }
             roots.push(os_bytes(abs.as_os_str()));
         }
+        // A folder inside another chosen one would be sent twice.
+        if let Some((inside, container)) = crate::sources::first_nested(&sources) {
+            return Err(CoreError::Invalid(format!(
+                "{} is already inside {}",
+                inside.display(),
+                container.display()
+            )));
+        }
         let id = uuid::Uuid::new_v4().to_string();
         self.store
             .insert_job(NewJob {

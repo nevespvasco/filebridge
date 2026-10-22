@@ -165,12 +165,12 @@ Replacement map for what exists today:
 
 | Today | Where | Phosphor |
 |---|---|---|
-| `💡` | `StepSource` guide | `PhLightbulb` |
+| `💡` | `StepSource` guide (since replaced by the guided tour, D02) | `PhLightbulb` |
 | `👉` | `StepDestination`, `JobDetailView` guide | `PhHandPointing` |
 | `✋` | `StepAnalysis` guide (decisions pending) | `PhHand` |
 | `⚠️` | `StepAnalysis` guide (warning) | `PhWarning` |
 | `✅` | `StepAnalysis` guide (all decided) | `PhCheckCircle` |
-| `🔒` | `StepSource` read-only note, `StepReview` safety | `PhLockSimple` |
+| `🔒` | `StepReview` safety; a source that can't be read (D02) | `PhLockSimple` |
 | `☕` | `StepAfter` guide ("you can close the window") | `PhCoffee` |
 | `📭` | `JobsView` empty state | `PhTray` |
 | `🗂️` | `DestinationsView` empty state | `PhHardDrives` |
@@ -208,6 +208,9 @@ New icons used by the specs:
 | Send again | `PhArrowsClockwise` |
 | Activity | `PhPulse` |
 | Low space | `PhGauge` |
+| Guide / help (`?`) | `PhQuestion` |
+| Symbolic link | `PhLinkSimple` |
+| Undo | `PhArrowUUpLeft` |
 
 ## Components
 
@@ -234,6 +237,9 @@ takes plain props and knows nothing about the engine, so specs reuse them.
 | `RelativeTime` | `at: number` | "3 min ago" / "há 3 min" through `Intl.RelativeTimeFormat`; the exact time in `title` and `<time datetime>` | D01, D06, D07 |
 | `Notice` | `tone, icon, text, action?, dismissible?` | Inline bar, also used in the sidebar notice slot | D03, D10, [02](02-information-architecture.md#sidebar) |
 | `Toast` | `text` | Short confirmation ("Path copied"), `aria-live="polite"`, 3 s | D05, D09 |
+| `DropOverlay` | `show` | Full-window layer while files are dragged over it: dashed accent frame, "Drop to add". `aria-hidden`, `pointer-events: none` | D02 (`FileDropZone`) |
+| `GuidedTour` | — (reads the tour store) | Mounted once in `App.vue`. Spotlight on a `data-tour` element (`box-shadow` with `--overlay`), a card with count, dots, Skip / Back / Next. `role="dialog"`, `#app` inert, focus trapped and restored, Esc skips, ← / → move. Steps are data in `src/lib/tour.ts` | D02 |
+| `TourButton` | `tour` | The `?` next to a page title: plays its guide again | D02 |
 
 ### Long lists
 
@@ -313,7 +319,9 @@ not be technical).
 - Built as specified: tokens (colour, Category, type, spacing, radii, shadow), the theme setting
   with `public/theme-boot.js`, `AppIcon` over `@phosphor-icons/vue`, tabular numbers, and the
   components `StorageMeter`, `FilterChips`, `SearchField`, `RowMenu`, `Drawer`, `SelectionBar`,
-  `Breadcrumbs`, `RelativeTime` and `SegmentedControl`.
+  `Breadcrumbs`, `RelativeTime` and `SegmentedControl`; later `DropOverlay`, `GuidedTour` and
+  `TourButton` (D02's Source step redesign). `FileDropZone` gained a `compact` one-line form, and
+  its listen-while-on-screen logic moved to `composables/useFileDrop.ts`.
 - Done differently: there is no generic `DataTable`. The one list that needs virtualisation (the
   Files tab) has its own `role="grid"` built on `@tanstack/vue-virtual`, and the other tables are
   short, offset-paged `<table>`s. `CategoryBar`, `Notice`, `StatTile` and `Toast` are inline

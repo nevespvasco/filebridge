@@ -31,8 +31,9 @@ pub use filebridge_model::{
     Family, FolderNameCheck, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
     JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
     Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
-    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow,
-    SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
+    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
+    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
+    StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -52,7 +53,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 12: `export_report` and the `report_progress` event.
 /// 13: `reclaim_status`, `recheck_sources`, `dismiss_reclaim`, the `reclaim_check_progress` event.
 /// 14: `browse`, `check_folder_name`; `SendOptions.target_dir`.
-pub const PROTOCOL_VERSION: u32 = 14;
+/// 15: `inspect_sources`; nested or repeated sources refused by `create_job`.
+pub const PROTOCOL_VERSION: u32 = 15;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

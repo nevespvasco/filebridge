@@ -4,6 +4,7 @@ import { useFmt } from "@/composables/useFmt";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppIcon from "@/components/AppIcon.vue";
+import GuidedTour from "@/components/GuidedTour.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { commands } from "@/lib/api";
 import { isMock } from "@/lib/platform";
@@ -141,6 +142,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         </KeepAlive>
       </RouterView>
     </main>
+    <GuidedTour />
   </div>
 </template>
 

@@ -47,13 +47,42 @@ export type DropState = "over" | "drop" | "leave";
 
 /** Files and folders dropped on the window. Returns an unsubscribe function. */
 export async function onFileDrop(cb: (state: DropState, paths: string[]) => void): Promise<() => void> {
-  if (isMock) return () => {};
+  if (isMock) return mockFileDrop(cb);
   return getCurrentWebview().onDragDropEvent((event) => {
     const p = event.payload;
     if (p.type === "enter" || p.type === "over") cb("over", []);
     else if (p.type === "drop") cb("drop", p.paths);
     else cb("leave", []);
   });
+}
+
+/** Mock mode only: the page's own drag & drop. A browser hides real paths, so a dropped item
+ *  becomes `/home/demo/<its name>`. */
+function mockFileDrop(cb: (state: DropState, paths: string[]) => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files");
+  // `dragleave` fires between child elements too: "left" is when `dragover` stops coming.
+  const onOver = (e: DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    cb("over", []);
+    clearTimeout(timer);
+    timer = setTimeout(() => cb("leave", []), 200);
+  };
+  const onDrop = (e: DragEvent) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    clearTimeout(timer);
+    const names = [...(e.dataTransfer?.files ?? [])].map((f) => f.name);
+    cb("drop", names.map((n) => `/home/demo/${n}`));
+  };
+  window.addEventListener("dragover", onOver);
+  window.addEventListener("drop", onDrop);
+  return () => {
+    clearTimeout(timer);
+    window.removeEventListener("dragover", onOver);
+    window.removeEventListener("drop", onDrop);
+  };
 }
 
 let permission: boolean | null = null;

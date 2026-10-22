@@ -57,6 +57,13 @@ export function baseName(path: string): string {
   return i >= 0 ? trimmed.slice(i + 1) : trimmed;
 }
 
+/** The folder a path is in ("/home/demo" for "/home/demo/Fotos"); "" for a bare name. */
+export function parentPath(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const i = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return i > 0 ? trimmed.slice(0, i) : i === 0 ? trimmed.slice(0, 1) : "";
+}
+
 /** Minutes since midnight → `HH:MM` (the value of an `<input type="time">`). */
 export function minutesToTime(m: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;

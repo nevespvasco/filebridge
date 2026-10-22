@@ -25,6 +25,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         // mock (`src/dev/mock.ts`) reads it instead of keeping a copy.
         .constant("JOB_OPERATIONS", filebridge_ipc::job_operations())
         .constant("PROTOCOL_VERSION", filebridge_ipc::PROTOCOL_VERSION)
+        // Past this many direct entries a chosen folder shows "1000+".
+        .constant("SOURCE_CHILDREN_CAP", filebridge_ipc::SOURCE_CHILDREN_CAP)
         // Byte counts and millisecond timestamps (u64/i64) stay far below 2^53, so they are
         // exported as `number`. specta-typescript refuses 64-bit integers otherwise.
         .dangerously_cast_bigints_to_number()
