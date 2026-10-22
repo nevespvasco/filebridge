@@ -1318,6 +1318,55 @@ async fn files_finished_mid_batch_are_kept_when_paused() {
 }
 
 #[tokio::test]
+async fn a_batch_sends_and_verifies_files_of_several_sources_in_one_call_each() {
+    let s = setup().await;
+    let other = s.src.parent().unwrap().join("Other");
+    std::fs::create_dir_all(&other).unwrap();
+    for i in 0..5 {
+        std::fs::write(other.join(format!("o{i}.txt")), b"o").unwrap();
+    }
+    let single = s.src.parent().unwrap().join("single.txt");
+    std::fs::write(&single, b"one").unwrap();
+    let engine = engine_with_batch(
+        s.store.clone(),
+        s.transport.clone(),
+        s.integration.clone(),
+        100,
+    );
+    let sources = vec![s.src.join("Fotos"), other, single];
+    let job = engine
+        .create_job(
+            sources,
+            &s.profile_id,
+            SendOptions {
+                verify: true,
+                ..SendOptions::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(engine.analyse(&job).await.unwrap().state, JobState::Ready);
+    let (sends, hashes) = (
+        s.transport.calls.load(Ordering::SeqCst),
+        s.transport.hash_many_calls.load(Ordering::SeqCst),
+    );
+    engine.start(&job).await.unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    // 8 files from 3 Sources: one transfer call and one hash_many, not one per Source.
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst) - sends, 1);
+    assert_eq!(
+        s.transport.hash_many_calls.load(Ordering::SeqCst) - hashes,
+        1
+    );
+    let summary = engine.job(&job).await.unwrap();
+    assert_eq!((summary.counts.done, summary.counts.verified_ok), (8, 8));
+}
+
+#[tokio::test]
 async fn unverifiable_destinations_warn_without_resending() {
     let s = setup().await;
     s.transport.no_hash.store(true, Ordering::SeqCst);

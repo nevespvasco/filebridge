@@ -218,20 +218,26 @@ impl RcloneTransport {
     /// reported by `ItemDone`.
     async fn per_file(
         &self,
-        src_fs: &str,
         dst_fs: &str,
         group: &str,
         job: &TransferJob,
         progress: &ProgressSink,
     ) -> Result<Vec<ItemOutcome>> {
         let listed = self.listed_folders(dst_fs, job).await?;
+        let src_fs: Vec<Result<String>> = job.source_roots.iter().map(|r| local_fs(r)).collect();
         let mut outcomes = vec![ItemOutcome::Done; job.items.len()];
         let mut refused: Option<TransportError> = None;
         let sem = Arc::new(Semaphore::new(job.options.concurrency.max(1)));
         let mut set = JoinSet::new();
         for (i, item) in job.items.iter().enumerate() {
-            let src = match utf8(&item.source) {
-                Ok(s) => s.to_owned(),
+            let root = src_fs.get(item.root).cloned().unwrap_or_else(|| {
+                Err(TransportError::fatal(format!(
+                    "{}: unknown source root {}",
+                    item.dest, item.root
+                )))
+            });
+            let (src_fs, src) = match root.and_then(|fs| Ok((fs, utf8(&item.source)?.to_owned()))) {
+                Ok(s) => s,
                 Err(e) => {
                     outcomes[i] = ItemOutcome::Failed(e);
                     continue;
@@ -416,7 +422,6 @@ impl Transport for RcloneTransport {
         let creds = self.creds(dest).await?;
         let rc = self.rc();
         let group = format!("job-{}", job.id);
-        let src_fs = local_fs(&job.source_root)?;
         let dst_fs = dest_fs(dest, &creds, "")?;
         let totals = (
             job.items.len() as u64,
@@ -433,13 +438,15 @@ impl Transport for RcloneTransport {
         );
 
         progress.send(ProgressEvent::Stage("copy".into()));
-        let outcomes = self
-            .per_file(&src_fs, &dst_fs, &group, job, &progress)
-            .await;
+        let outcomes = self.per_file(&dst_fs, &group, job, &progress).await;
         poller.abort();
         if let Ok(s) = stats::snapshot(rc, &group, Some(&names)).await {
             progress.send(ProgressEvent::Stats(s));
         }
+        // Each call has its own group, so rclone would keep every one of them until it exits.
+        let _ = rc
+            .call("core/stats-delete", json!({ "group": group }))
+            .await;
         let outcomes = outcomes?;
         let bytes = job
             .items
@@ -644,10 +651,11 @@ mod tests {
     fn job(paths: &[&str]) -> TransferJob {
         TransferJob {
             id: "j".into(),
-            source_root: "/src".into(),
+            source_roots: vec!["/src".into()],
             items: paths
                 .iter()
                 .map(|p| TransferItem {
+                    root: 0,
                     source: p.into(),
                     dest: RemotePath::new(*p).unwrap(),
                     size: 1,

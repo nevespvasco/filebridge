@@ -129,6 +129,7 @@ async fn webdav_with_a_password_from_the_keyring() {
                     name.clone()
                 };
                 TransferItem {
+                    root: 0,
                     source: name.into(),
                     dest: RemotePath::new(to).unwrap(),
                     size: 1,
@@ -138,7 +139,7 @@ async fn webdav_with_a_password_from_the_keyring() {
             .collect();
         let job = TransferJob {
             id: "refused".into(),
-            source_root: scratch.clone(),
+            source_roots: vec![scratch.clone()],
             items,
             options: TransferOptions { concurrency: 1 },
         };

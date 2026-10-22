@@ -252,7 +252,7 @@ async fn run_mode(
             let transport = RcloneTransport::new(rcd.clone());
             let job = TransferJob {
                 id: format!("{stamp}-{}", mode.dir()),
-                source_root: args.source.clone(),
+                source_roots: vec![args.source.clone()],
                 items: p.items.clone(),
                 options: TransferOptions {
                     concurrency: args.concurrency,

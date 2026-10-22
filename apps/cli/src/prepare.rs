@@ -61,6 +61,7 @@ pub fn prepare(source: &Path) -> Result<Prepared> {
                     renamed_files += 1;
                 }
                 items.push(TransferItem {
+                    root: 0,
                     source,
                     dest: RemotePath::new(dest.clone())?,
                     size: entry.size,

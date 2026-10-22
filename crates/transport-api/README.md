@@ -12,8 +12,9 @@ without touching the keyring (the host implements it; ADR 0004).
 ## Contract suite
 `contract::check(transport, dest, scratch)` (feature `contract`) is the contract as a test: names
 corrected in transit with new parent directories, one outcome per item in order, a missing
-source as `NotFound`, `ItemDone` per file, a second send into folders that already hold files
-(a changed file replaced, an unchanged one kept, new ones next to them), hashes, `NotFound` /
+source as `NotFound`, `ItemDone` per file, stats that count only the call's own files, a second
+send into folders that already hold files (a changed file replaced, an unchanged one kept, new
+ones next to them) with sources from two roots, hashes, `NotFound` /
 `Unsupported` from `hash`. Every adapter runs it from its own tests.
 
 ## Rules

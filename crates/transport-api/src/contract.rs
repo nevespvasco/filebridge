@@ -36,6 +36,7 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
     let mut items: Vec<_> = files
         .iter()
         .map(|(name, data, to)| TransferItem {
+            root: 0,
             source: name.into(),
             dest: RemotePath::new(*to).unwrap(),
             size: data.len() as u64,
@@ -43,6 +44,7 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
         })
         .collect();
     items.push(TransferItem {
+        root: 0,
         source: "missing.txt".into(),
         dest: RemotePath::new("missing.txt").unwrap(),
         size: 1,
@@ -50,7 +52,7 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
     });
     let job = TransferJob {
         id: "contract".into(),
-        source_root: src.clone(),
+        source_roots: vec![src.clone()],
         items,
         options: TransferOptions::default(),
     };
@@ -88,6 +90,7 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
             // A transport may not know what is in flight (an empty list), but what it names
             // must be one of the job's items, under its destination name.
             ProgressEvent::Stats(s) => {
+                assert!(s.files_done <= 4, "counts this call's files: {s:?}");
                 for f in &s.transferring {
                     assert!(
                         job.items.iter().any(|i| i.dest.as_str() == f.dest),
@@ -161,10 +164,11 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
         };
         let job = TransferJob {
             id: "contract-hash-many".into(),
-            source_root: src.clone(),
+            source_roots: vec![src.clone()],
             items: extra
                 .iter()
                 .map(|(name, data, to)| TransferItem {
+                    root: 0,
                     source: name.into(),
                     dest: RemotePath::new(*to).unwrap(),
                     size: data.len() as u64,
@@ -212,22 +216,30 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
         );
 
         // Sent again into folders that already hold files: a changed file is replaced, an
-        // unchanged one stays, new ones arrive next to them.
-        let again: [(&str, &[u8], &str); 4] = [
-            ("a.txt", b"alpha, changed", "a.txt"),
-            ("a2.txt", b"new at the root", "a2.txt"),
-            ("sub/b.bin", &[0, 1, 2, 255], "deep/er/b.bin"),
-            ("c.txt", b"new next to b", "deep/er/c.txt"),
+        // unchanged one stays, new ones arrive next to them. Files come from two roots, one name
+        // in both, and the call's stats count only its own files.
+        let src2 = scratch.join("contract-src2");
+        tokio::fs::create_dir_all(&src2).await.unwrap();
+        let again: [(usize, &str, &[u8], &str); 5] = [
+            (0, "a.txt", b"alpha, changed", "a.txt"),
+            (0, "a2.txt", b"new at the root", "a2.txt"),
+            (0, "sub/b.bin", &[0, 1, 2, 255], "deep/er/b.bin"),
+            (0, "c.txt", b"new next to b", "deep/er/c.txt"),
+            (1, "a.txt", b"the other root's a", "Fotos/a from src2.txt"),
         ];
-        for (name, data, _) in again {
-            tokio::fs::write(src.join(name), data).await.unwrap();
+        let roots = [src.clone(), src2];
+        for (root, name, data, _) in again {
+            tokio::fs::write(roots[root].join(name), data)
+                .await
+                .unwrap();
         }
         let job = TransferJob {
             id: "contract-again".into(),
-            source_root: src.clone(),
+            source_roots: roots.to_vec(),
             items: again
                 .iter()
-                .map(|(name, data, to)| TransferItem {
+                .map(|(root, name, data, to)| TransferItem {
+                    root: *root,
                     source: name.into(),
                     dest: RemotePath::new(*to).unwrap(),
                     size: data.len() as u64,
@@ -236,17 +248,24 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
                 .collect(),
             options: TransferOptions::default(),
         };
-        let sent = transport
-            .transfer(dest, &job, ProgressSink::noop())
-            .await
-            .unwrap();
+        let total: u64 = job.items.iter().map(|i| i.size).sum();
+        let (sink, mut rx) = ProgressSink::channel();
+        let sent = transport.transfer(dest, &job, sink).await.unwrap();
         assert_eq!(sent.failed(), 0, "{:?}", sent.items);
+        while let Ok(event) = rx.try_recv() {
+            if let ProgressEvent::Stats(s) = event {
+                assert!(
+                    s.files_done <= 5 && s.bytes <= total,
+                    "counts this call's files only: {s:?}"
+                );
+            }
+        }
         let paths: Vec<_> = again
             .iter()
-            .map(|(_, _, to)| RemotePath::new(*to).unwrap())
+            .map(|(_, _, _, to)| RemotePath::new(*to).unwrap())
             .collect();
         let hashes = transport.hash_many(dest, &paths, HashAlgo::Sha256).await;
-        for ((_, data, to), got) in again.iter().zip(hashes) {
+        for ((_, _, data, to), got) in again.iter().zip(hashes) {
             assert_eq!(got.unwrap().bytes, Sha256::digest(data).to_vec(), "{to}");
         }
     }
@@ -285,6 +304,7 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
             .await
             .unwrap();
         items.push(TransferItem {
+            root: 0,
             source: name.into(),
             dest: RemotePath::new(to).unwrap(),
             size: name.len() as u64,
@@ -293,7 +313,7 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
     }
     let job = TransferJob {
         id: "contract-move".into(),
-        source_root: src,
+        source_roots: vec![src],
         items,
         options: TransferOptions::default(),
     };

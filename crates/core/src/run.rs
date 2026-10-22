@@ -3,27 +3,24 @@
 //! starts, so a crash resumes at the stage it was in; per-entry states mean finished files are
 //! never sent again.
 
-use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use filebridge_integration_api::{IntegrationEvent, IntegrationSink};
-use filebridge_store::{EntryState, ManifestEntry, now_ms};
-use filebridge_transport_api::{
-    ErrorKind, HashAlgo, InFlight, ItemOutcome, ProgressEvent, ProgressSink, RemotePath,
-    TransferItem, TransferJob, TransferOptions, TransportCaps,
-};
+use filebridge_store::{EntryState, now_ms};
+use filebridge_transport_api::{ErrorKind, HashAlgo, RemotePath, TransportCaps};
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::analyse::{bytes_path, source_parent};
+use crate::batch::{Batch, Sent, Stop, Tally};
 use crate::inhibit::{SleepGuard, inhibit};
 use crate::lifecycle::Outcome;
 use crate::repair::RepairEnd;
 use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOptions};
-use filebridge_model::{DoneView, FileCategory, InFlightView, Op};
+use filebridge_model::Op;
 
 const PAGE: u32 = 2_000;
 /// The most bytes one verify batch reads ([`verify_batches`]).
@@ -265,15 +262,25 @@ impl Engine {
             .reset_transfer_states(&ctx.job_id, &[EntryState::Partial], EntryState::Pending)
             .await?;
         let counts = self.store.manifest_counts(&ctx.job_id).await?;
-        let files_total = counts.files - counts.skipped;
-        let bytes_total = counts.bytes;
-        let mut base_bytes = counts.bytes_done;
-        let mut base_files = counts.done;
-        let mut retry: Option<String> = None;
-        let mut round = Round::default();
+        let batch = Batch {
+            store: &self.store,
+            events: &self.events,
+            transport: transport.as_ref(),
+            dest: &ctx.profile.destination,
+            job_id: &ctx.job_id,
+            sources: &ctx.sources,
+            concurrency: ctx.options.concurrency.max(1) as usize,
+            files_total: counts.files - counts.skipped,
+            bytes_total: counts.bytes,
+        };
+        let mut tally = Tally {
+            bytes_done: counts.bytes_done,
+            files_done: counts.done,
+            ..Tally::default()
+        };
 
         loop {
-            let batch = self
+            let entries = self
                 .store
                 .files_with_transfer_state(
                     &ctx.job_id,
@@ -282,200 +289,32 @@ impl Engine {
                     self.options.batch_size,
                 )
                 .await?;
-            if batch.is_empty() {
+            if entries.is_empty() {
                 break;
             }
-            let mut by_source: BTreeMap<u32, Vec<ManifestEntry>> = BTreeMap::new();
-            for e in batch {
-                by_source.entry(e.entry.source).or_default().push(e);
-            }
-            for (source, entries) in by_source {
-                let mut items = Vec::with_capacity(entries.len());
-                let mut kept = Vec::with_capacity(entries.len());
-                let mut updates = Vec::new();
-                for e in entries {
-                    let dest = e
-                        .dest_path
-                        .clone()
-                        .ok_or_else(|| "no destination name".to_owned())
-                        .and_then(|p| RemotePath::new(p).map_err(|err| err.message));
-                    match dest {
-                        Ok(dest) => {
-                            items.push(TransferItem {
-                                source: bytes_path(&e.entry.raw_path),
-                                dest,
-                                size: e.entry.size,
-                                expected_hash: None,
-                            });
-                            kept.push(e);
-                        }
-                        Err(msg) => updates.push((e.entry.idx, EntryState::Failed, Some(msg))),
-                    }
+            let stop = async {
+                tokio::select! {
+                    _ = ctx.cancel.cancelled() => Stop::Cancelled,
+                    _ = self.window_closes() => Stop::Held,
                 }
-                self.store
-                    .set_transfer_states(&ctx.job_id, std::mem::take(&mut updates))
-                    .await?;
-                if items.is_empty() {
-                    continue;
+            };
+            match batch.send(entries, &mut tally, stop).await? {
+                Sent::Answered { retry: None } => {}
+                Sent::Answered { retry: Some(e) } => {
+                    self.log_round(&ctx.job_id, &tally).await?;
+                    return Ok(StageEnd::Retry(e));
                 }
-                let root = ctx
-                    .sources
-                    .get(source as usize)
-                    .map(|s| source_parent(s))
-                    .ok_or_else(|| CoreError::Invalid(format!("unknown source {source}")))?;
-                let tj = TransferJob {
-                    id: format!("{}-{}", ctx.job_id, kept[0].entry.idx),
-                    source_root: root,
-                    items,
-                    options: TransferOptions {
-                        concurrency: ctx.options.concurrency.max(1) as usize,
-                    },
-                };
-                self.store
-                    .set_transfer_states(
-                        &ctx.job_id,
-                        kept.iter()
-                            .map(|e| (e.entry.idx, EntryState::Partial, None))
-                            .collect(),
-                    )
-                    .await?;
-
-                let (sink, mut rx) = ProgressSink::channel();
-                let events = self.events.clone();
-                let store = self.store.clone();
-                let job_id = ctx.job_id.clone();
-                let idx_of: Vec<u64> = kept.iter().map(|e| e.entry.idx).collect();
-                let queue = QueueNames::of(&kept);
-                let (bb, bf) = (base_bytes, base_files);
-                // Forwards progress, and saves each finished file as soon as the transport
-                // reports it, so a crash mid-batch never resends what already arrived.
-                let forward = tokio::spawn(async move {
-                    let mut finished = Vec::new();
-                    let mut arrived = Vec::new();
-                    let mut tick = tokio::time::interval(Duration::from_millis(500));
-                    loop {
-                        tokio::select! {
-                            ev = rx.recv() => match ev {
-                                Some(ProgressEvent::Stats(s)) => {
-                                    let in_flight =
-                                        s.transferring.iter().map(|f| queue.in_flight(f)).collect();
-                                    let bytes_done = bb + s.bytes;
-                                    let eta_secs = (s.bytes_per_sec > 0.0).then(|| {
-                                        (bytes_total.saturating_sub(bytes_done) as f64
-                                            / s.bytes_per_sec) as u64
-                                    });
-                                    let _ = events.send(Event::TransferProgress {
-                                        job_id: job_id.clone(),
-                                        bytes_done,
-                                        bytes_total,
-                                        files_done: bf + s.files_done,
-                                        files_total,
-                                        bytes_per_sec: s.bytes_per_sec,
-                                        eta_secs,
-                                        in_flight,
-                                    });
-                                }
-                                Some(ProgressEvent::ItemDone { index, ok: true }) => {
-                                    if let Some(idx) = idx_of.get(index) {
-                                        finished.push((*idx, EntryState::Done, None));
-                                    }
-                                    if let Some(done) = queue.done(index) {
-                                        arrived.push(done);
-                                    }
-                                }
-                                Some(_) => {}
-                                None => break,
-                            },
-                            _ = tick.tick() => {
-                                if !arrived.is_empty() {
-                                    let _ = events.send(entries_done(&job_id, std::mem::take(&mut arrived)));
-                                }
-                            }
-                        }
-                        if !finished.is_empty()
-                            && let Err(e) = store
-                                .set_transfer_states(&job_id, std::mem::take(&mut finished))
-                                .await
-                        {
-                            tracing::warn!(job = job_id, "cannot save progress: {e}");
-                        }
-                    }
-                    if !finished.is_empty() {
-                        let _ = store.set_transfer_states(&job_id, finished).await;
-                    }
-                    if !arrived.is_empty() {
-                        let _ = events.send(entries_done(&job_id, arrived));
-                    }
-                });
-                let stopped = tokio::select! {
-                    r = transport.transfer(&ctx.profile.destination, &tj, sink) => Ok(r),
-                    _ = ctx.cancel.cancelled() => Err(StageEnd::Cancelled),
-                    _ = self.window_closes() => Err(StageEnd::Held),
-                };
-                let result = match stopped {
-                    Ok(r) => r,
-                    Err(end) => {
-                        // Dropping the transfer drops its sink; let the forwarder save what
-                        // finished before stopping. Files still in flight stay Partial and go
-                        // again next time.
-                        let _ = tokio::time::timeout(Duration::from_secs(2), forward).await;
-                        return Ok(end);
-                    }
-                };
-                // The transport dropped its sink, so the forwarder ends once it has drained.
-                let _ = tokio::time::timeout(Duration::from_secs(1), forward).await;
-
-                let result = match result {
-                    Ok(r) => r,
-                    Err(e) if e.is_retryable() => return Ok(StageEnd::Retry(e.message)),
-                    Err(e) => return Err(e.into()),
-                };
-                let mut any_done = false;
-                for (e, outcome) in kept.iter().zip(result.items) {
-                    match outcome {
-                        ItemOutcome::Done => {
-                            any_done = true;
-                            base_bytes += e.entry.size;
-                            base_files += 1;
-                            round.sent += 1;
-                            round.bytes += e.entry.size;
-                            updates.push((e.entry.idx, EntryState::Done, None));
-                        }
-                        ItemOutcome::Failed(err) => {
-                            let path = String::from_utf8_lossy(&e.entry.raw_path).into_owned();
-                            self.emit(Event::EntryFailed {
-                                job_id: ctx.job_id.clone(),
-                                path,
-                                error: err.message.clone(),
-                                retryable: err.is_retryable(),
-                            });
-                            round.failed += 1;
-                            round.first_error.get_or_insert_with(|| err.message.clone());
-                            if err.is_retryable() {
-                                retry.get_or_insert_with(|| err.message.clone());
-                                updates.push((e.entry.idx, EntryState::Partial, Some(err.message)));
-                            } else {
-                                updates.push((e.entry.idx, EntryState::Failed, Some(err.message)));
-                            }
-                        }
-                    }
-                }
-                self.store.set_transfer_states(&ctx.job_id, updates).await?;
-                if any_done {
-                    self.store.set_job_retry(&ctx.job_id, 0, None).await?;
-                }
-            }
-            if let Some(e) = retry.take() {
-                self.log_round(&ctx.job_id, &round).await?;
-                return Ok(StageEnd::Retry(e));
+                Sent::Retry(e) => return Ok(StageEnd::Retry(e)),
+                Sent::Stopped(Stop::Cancelled) => return Ok(StageEnd::Cancelled),
+                Sent::Stopped(Stop::Held) => return Ok(StageEnd::Held),
             }
         }
-        self.log_round(&ctx.job_id, &round).await?;
+        self.log_round(&ctx.job_id, &tally).await?;
         Ok(StageEnd::Done(()))
     }
 
     /// One transfer stage run, for the job log: what moved and what didn't.
-    async fn log_round(&self, job_id: &str, round: &Round) -> Result<()> {
+    async fn log_round(&self, job_id: &str, round: &Tally) -> Result<()> {
         if round.sent == 0 && round.failed == 0 {
             return Ok(());
         }
@@ -785,98 +624,6 @@ fn sha256_file(path: &std::path::Path) -> Result<Vec<u8>> {
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finalize().to_vec())
-}
-
-/// What one transfer stage run moved, for the job log.
-#[derive(Default)]
-struct Round {
-    sent: u64,
-    failed: u64,
-    bytes: u64,
-    first_error: Option<String>,
-}
-
-/// Most files listed in one `EntriesDone`; the rest are counted.
-const ENTRIES_DONE_LISTED: usize = 20;
-
-fn entries_done(job_id: &str, mut arrived: Vec<DoneView>) -> Event {
-    let more = arrived.len().saturating_sub(ENTRIES_DONE_LISTED) as u64;
-    arrived.truncate(ENTRIES_DONE_LISTED);
-    Event::EntriesDone {
-        job_id: job_id.to_owned(),
-        entries: arrived,
-        more,
-    }
-}
-
-/// One batch's items as the transfer queue shows them (docs/design/specs/D04): by item index
-/// for `ItemDone`, by destination path for the transport's files in flight.
-struct QueueNames {
-    items: Vec<QueueItem>,
-    by_dest: std::collections::HashMap<String, usize>,
-}
-
-struct QueueItem {
-    idx: u64,
-    dest: String,
-    category: FileCategory,
-    /// The source name, when it differs from the destination name.
-    renamed_from: Option<String>,
-}
-
-impl QueueNames {
-    fn of(kept: &[ManifestEntry]) -> Self {
-        let items: Vec<QueueItem> = kept
-            .iter()
-            .map(|e| {
-                let dest = e.dest_path.clone().unwrap_or_default();
-                let source_name = file_name(&String::from_utf8_lossy(&e.entry.raw_path)).to_owned();
-                QueueItem {
-                    idx: e.entry.idx,
-                    category: FileCategory::of_name(&e.entry.raw_path),
-                    renamed_from: (source_name != file_name(&dest)).then_some(source_name),
-                    dest,
-                }
-            })
-            .collect();
-        let by_dest = items
-            .iter()
-            .enumerate()
-            .map(|(i, item)| (item.dest.clone(), i))
-            .collect();
-        Self { items, by_dest }
-    }
-
-    fn in_flight(&self, f: &InFlight) -> InFlightView {
-        let item = self.by_dest.get(&f.dest).map(|&i| &self.items[i]);
-        let (dir, name) = match f.dest.rsplit_once('/') {
-            Some((dir, name)) => (dir.to_owned(), name.to_owned()),
-            None => (String::new(), f.dest.clone()),
-        };
-        InFlightView {
-            idx: item.map(|i| i.idx),
-            category: item.map_or_else(|| FileCategory::of_name(name.as_bytes()), |i| i.category),
-            renamed_from: item.and_then(|i| i.renamed_from.clone()),
-            name,
-            dir,
-            size: f.size,
-            bytes: f.bytes,
-            bytes_per_sec: f.bytes_per_sec,
-            eta_secs: f.eta_secs,
-        }
-    }
-
-    fn done(&self, index: usize) -> Option<DoneView> {
-        self.items.get(index).map(|i| DoneView {
-            idx: i.idx,
-            name: file_name(&i.dest).to_owned(),
-            category: i.category,
-        })
-    }
-}
-
-fn file_name(path: &str) -> &str {
-    path.rsplit_once('/').map_or(path, |(_, n)| n)
 }
 
 #[cfg(test)]

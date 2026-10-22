@@ -33,6 +33,8 @@ pub struct FakeTransport {
     pub per_file: Mutex<Duration>,
     /// Transfer calls so far.
     pub calls: AtomicU32,
+    /// `hash_many` calls so far.
+    pub hash_many_calls: AtomicU32,
     /// The destination can't compute hashes.
     pub no_hash: AtomicBool,
     /// Every bandwidth limit set, in order.
@@ -117,7 +119,12 @@ impl Transport for FakeTransport {
                 )));
                 continue;
             }
-            let from = job.source_root.join(&item.source);
+            let Some(from) = job.source_of(item) else {
+                items.push(ItemOutcome::Failed(TransportError::fatal(
+                    "unknown source root",
+                )));
+                continue;
+            };
             let to = Path::new(&dest.root).join(item.dest.as_str());
             let copied = std::fs::create_dir_all(to.parent().expect("dest has a parent"))
                 .map_err(|e| io_error("create directory", e))
@@ -166,6 +173,20 @@ impl Transport for FakeTransport {
             algo,
             bytes: Sha256::digest(&data).to_vec(),
         })
+    }
+
+    async fn hash_many(
+        &self,
+        dest: &Destination,
+        paths: &[RemotePath],
+        algo: HashAlgo,
+    ) -> Vec<Result<Digest>> {
+        self.hash_many_calls.fetch_add(1, Ordering::SeqCst);
+        let mut out = Vec::with_capacity(paths.len());
+        for path in paths {
+            out.push(self.hash(dest, path, algo).await);
+        }
+        out
     }
 
     async fn move_unchecked(

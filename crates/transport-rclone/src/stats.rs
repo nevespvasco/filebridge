@@ -15,24 +15,36 @@ use crate::RcClient;
 /// How rclone names a file in flight → the item's destination name. For `operations/copyfile`
 /// rclone reports the **source** path (checked with rclone v1.75.2: copying `src-name.bin` to
 /// `dest-name.bin` shows `src-name.bin`); the destination name is mapped too, so a strategy or an
-/// rclone version that reports it still works.
+/// rclone version that reports it still works. A source path that two of the job's roots both
+/// hold, for different destinations, can't be told apart: such a file isn't reported in flight.
 #[derive(Debug, Default)]
-pub struct InFlightNames(HashMap<String, String>);
+pub struct InFlightNames(HashMap<String, Option<String>>);
 
 impl InFlightNames {
     pub fn of(job: &TransferJob) -> Self {
-        let mut names = HashMap::with_capacity(job.items.len() * 2);
+        let mut names: HashMap<String, Option<String>> =
+            HashMap::with_capacity(job.items.len() * 2);
         for item in &job.items {
             let dest = item.dest.as_str().to_owned();
             let source = item.source.to_string_lossy().replace('\\', "/");
-            names.insert(source, dest.clone());
-            names.insert(dest.clone(), dest);
+            names
+                .entry(source)
+                .and_modify(|d| {
+                    if d.as_deref() != Some(dest.as_str()) {
+                        *d = None;
+                    }
+                })
+                .or_insert_with(|| Some(dest.clone()));
+        }
+        for item in &job.items {
+            let dest = item.dest.as_str().to_owned();
+            names.insert(dest.clone(), Some(dest));
         }
         Self(names)
     }
 
     fn dest_of(&self, name: &str) -> Option<&str> {
-        self.0.get(name).map(String::as_str)
+        self.0.get(name)?.as_deref()
     }
 }
 
@@ -118,8 +130,9 @@ mod tests {
     fn job() -> TransferJob {
         TransferJob {
             id: "j".into(),
-            source_root: PathBuf::from("/src"),
+            source_roots: vec![PathBuf::from("/src")],
             items: vec![TransferItem {
+                root: 0,
                 source: PathBuf::from("Fotos/Vera\u{303}o.jpg"),
                 dest: RemotePath::new("Fotos/Ver\u{e3}o.jpg").unwrap(),
                 size: 10,
@@ -151,6 +164,23 @@ mod tests {
         assert_eq!(s.transferring[1].eta_secs, None);
         // Without names (the bench), rclone's names are kept as they are.
         assert_eq!(parse_stats(&v, None).transferring.len(), 3);
+    }
+
+    #[test]
+    fn a_source_path_two_roots_share_is_not_guessed() {
+        let mut job = job();
+        job.source_roots.push(PathBuf::from("/other"));
+        let item = |root, dest: &str| TransferItem {
+            root,
+            source: PathBuf::from("x.jpg"),
+            dest: RemotePath::new(dest).unwrap(),
+            size: 1,
+            expected_hash: None,
+        };
+        job.items = vec![item(0, "a/x.jpg"), item(1, "b/x.jpg")];
+        let names = InFlightNames::of(&job);
+        assert_eq!(names.dest_of("x.jpg"), None);
+        assert_eq!(names.dest_of("b/x.jpg"), Some("b/x.jpg"));
     }
 
     #[test]

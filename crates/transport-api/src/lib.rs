@@ -263,7 +263,9 @@ impl Digest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferItem {
-    /// Relative to `TransferJob::source_root`; may hold non-UTF-8 bytes.
+    /// Which of `TransferJob::source_roots` `source` is relative to.
+    pub root: usize,
+    /// Relative to its root; may hold non-UTF-8 bytes.
     pub source: PathBuf,
     /// Already-corrected destination name.
     pub dest: RemotePath,
@@ -286,9 +288,20 @@ impl Default for TransferOptions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransferJob {
     pub id: String,
-    pub source_root: PathBuf,
+    /// The folders the items' sources are relative to: one call can send files from several
+    /// Sources.
+    pub source_roots: Vec<PathBuf>,
     pub items: Vec<TransferItem>,
     pub options: TransferOptions,
+}
+
+impl TransferJob {
+    /// Where `item` is read from; `None` when its `root` isn't one of the job's.
+    pub fn source_of(&self, item: &TransferItem) -> Option<PathBuf> {
+        self.source_roots
+            .get(item.root)
+            .map(|r| r.join(&item.source))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -337,7 +350,8 @@ pub struct RemoteEntry {
     pub mtime: Option<i64>,
 }
 
-/// Point-in-time transfer statistics.
+/// Point-in-time transfer statistics of one [`Transport::transfer`] call. The counts start
+/// from zero with each call: the caller adds what earlier calls sent.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StatsSnapshot {
     pub bytes: u64,
@@ -395,7 +409,11 @@ pub trait Transport: Send + Sync {
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport>;
     /// Sends every item to its `dest` name, creating parent directories. An error for the whole
     /// call means nothing can be said per item; otherwise each item has its own outcome, in
-    /// order, and a missing source file is `NotFound`. `ItemDone` is sent as each file arrives.
+    /// order, and a missing source file is `NotFound`.
+    ///
+    /// `ItemDone { ok: true }` is sent as each file arrives, and only once it is complete under
+    /// its `dest` name: the caller records it as sent on that event, so a crash afterwards never
+    /// sends it again. `Stats` count from zero for this call ([`StatsSnapshot`]).
     async fn transfer(
         &self,
         dest: &Destination,

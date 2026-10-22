@@ -17,6 +17,9 @@ pub trait Transport: Send + Sync {
     fn id(&self) -> &str;
     fn capabilities(&self) -> TransportCaps; // resume, hashes, chown, rename
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport>; // space, permissions, connectivity
+    // Items name their source by root (`TransferJob::source_roots`), so one call sends files
+    // of several Sources. `ItemDone` only once a file is complete under its name: core records
+    // it as sent then. `Stats` count from zero for each call.
     async fn transfer(&self, job: &TransferJob, progress: ProgressSink) -> Result<TransferResult>;
     async fn hash(&self, path: &RemotePath, algo: HashAlgo) -> Result<Digest>;
     // One answer per path, in order, each what `hash` would say; verify asks in batches. The

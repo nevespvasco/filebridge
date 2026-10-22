@@ -21,8 +21,10 @@ All types that cross into the UI derive `specta::Type`.
   ` (2)`) and `encoding` (an undecodable name with no fix). Both need a decision.
 - **Start.** Decisions are applied to the manifest: final paths are recomputed, skipped
   subtrees are marked, and duplicate final paths are refused.
-- **Transfer.** Files go in batches per source root. Each file the transport reports finished
-  is saved within 0.5 s, so a crash never resends what already arrived. Retryable failures back
+- **Transfer.** Files go in batches (`batch.rs`): one `Transport::transfer` per page of
+  `batch_size` Pending files, from however many Sources (`TransferJob::source_roots`). Each file
+  the transport reports finished is saved on the next 0.5 s tick, so a crash or a pause resends
+  at most that tick's files. Retryable failures back
   off 30 s → 1 min → … → 15 min (±10 %) forever; a fatal per-file error marks that file failed
   and the job finishes with warnings.
 - **Verify** (when `SendOptions::verify`). SHA-256 of the source is compared with

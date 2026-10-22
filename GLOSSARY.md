@@ -23,6 +23,11 @@ another Profile, reusing the earlier Job's Decisions. Only files that are new or
 **Stage**: one of the six steps of a Job (source & destination, analyse, fix names, transfer,
 verify, update tool). Docs/02.
 
+**Batch**: one page of a Job's Pending Entries (up to `batch_size`, 500 by default) sent with one
+`Transport::transfer` call, from however many Sources. Its Entries go `Partial` before the call
+and `Done` as the transport reports each arrival (`crates/core/src/batch.rs`). Verify asks
+`Transport::hash_many` in batches too, capped by files and bytes.
+
 **Job lifecycle**: which operation may run in which state, which state may follow which, and how a
 state change is recorded (with the finished Stage's outcome). The rules are pure data in
 `crates/model/src/rules.rs`; `crates/core/src/lifecycle.rs` enforces and records them.

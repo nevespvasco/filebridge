@@ -6,6 +6,7 @@
 
 mod analyse;
 pub mod backoff;
+mod batch;
 mod browse;
 mod credentials;
 mod decisions;

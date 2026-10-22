@@ -155,7 +155,7 @@ doc comment): a slow subscriber may miss some, and that is fine. It is **not** w
 
 ### Core
 
-`run.rs`, in the forwarder that already handles `ProgressEvent::Stats` and `ItemDone`:
+`batch.rs`, in the forwarder that already handles `ProgressEvent::Stats` and `ItemDone`:
 
 - Build `in_flight` from `s.transferring` with the batch's `dest → idx` map. `renamed_from` comes
   from the Manifest entry's raw name when it differs from the destination name, lossily decoded.
