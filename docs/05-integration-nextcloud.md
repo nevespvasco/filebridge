@@ -13,7 +13,7 @@ network (like the 500 GB initial migration).
 |---|---|---|
 | How it sends | Nextcloud API, chunked upload (rclone `webdav` backend, vendor `nextcloud`) | SFTP into the data folder, as done with rsync (rclone `sftp` backend) |
 | Needs | URL, user and app password | SSH access to the host or the LXC |
-| Indexing | Automatic, no scan | `occ files:scan --path` only on uploaded folders |
+| Indexing | Automatic, no scan | `occ files:scan --path` only on the sent files and folders |
 | Owner and permissions | Handled by Nextcloud | Applied by the profile (e.g. `100033:100033`, `750/640`) |
 | Speed | Slower (HTTP overhead per file) | Limited by disk and network |
 | Works away from home | Yes | Only on LAN or VPN |
@@ -91,9 +91,12 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
 - **Direct mode:**
   1. Apply owner/mode if the transport couldn't (`chown -R 100033:100033`, dirs `750`, files `640`)
      — only on changed paths.
-  2. Compute the minimal set of folders covering `changed` (deduplicate parents).
-  3. Run `occ files:scan --path="<user>/files/<folder>"` for each, **showing progress** parsed from
-     `occ` output ("Indexing in Nextcloud: 3 folders", files scanned).
+  2. Scan **only the sent files**, never what was already in the destination: a folder that holds
+     nothing but sent files is scanned recursively; in a folder that also holds other files, the
+     sent files are scanned one by one (many of them: `--shallow` on the folder) and its
+     subfolders are decided the same way. File counts on the server tell the two apart.
+  3. Run `occ files:scan --path="<user>/files/<folder or file>"` for each, **showing progress**
+     parsed from `occ` output ("Indexing in Nextcloud: 3 / 5", files scanned).
   4. Treat `incompatible encoding` warnings as **visible errors** with a "Repair destination"
      button, instead of leaving them lost in the terminal.
   5. On slow HDDs show "waiting for disk" instead of looking stuck.

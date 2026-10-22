@@ -9,7 +9,7 @@ use filebridge_integration_api::{
 };
 use filebridge_integration_nextcloud::direct::{
     PROBLEM_ENCODING, PROBLEM_SCAN_ERROR, PROBLEM_SCAN_FAILED, STAGE_PERMISSIONS, STAGE_SCAN,
-    WAITING_FOR_DISK,
+    WAITING_FOR_DISK, count_files_cmd,
 };
 use filebridge_integration_nextcloud::fake::{FakeConnector, FakeShell};
 use filebridge_integration_nextcloud::{
@@ -90,6 +90,22 @@ fn drain(rx: &mut UnboundedReceiver<IntegrationEvent>) -> Vec<IntegrationEvent> 
 
 fn scan_cmd(path: &str) -> String {
     profile().occ_cmd(&["files:scan", "-v", &format!("--path={path}")])
+}
+
+/// The file count for `(files-relative folder, limit)` pairs.
+fn count_cmd(dirs: &[(&str, u64)]) -> String {
+    let dirs: Vec<(String, u64)> = dirs
+        .iter()
+        .map(|(d, n)| {
+            let host = if d.is_empty() {
+                FILES.to_string()
+            } else {
+                format!("{FILES}/{d}")
+            };
+            (host, *n)
+        })
+        .collect();
+    count_files_cmd(&profile(), &dirs)
 }
 
 #[tokio::test]
@@ -215,9 +231,14 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
     let scan = "pct exec 105 -- su -s /bin/bash www-data -c \
         'php /var/www/nextcloud/occ files:scan -v --path=alice/files/Fotos'";
     assert_eq!(scan, scan_cmd("alice/files/Fotos"));
+    // The files folder holds other files too; `Fotos` only what was sent.
+    let count_root = count_cmd(&[("", 6)]);
+    let count_fotos = count_cmd(&[("Fotos", 6)]);
     shell
         .on(chown.clone(), Output::ok(""))
         .on(find.clone(), Output::ok(""))
+        .on(count_root.clone(), Output::ok("6\n"))
+        .on(count_fotos.clone(), Output::ok("5\n"))
         .on(scan, Output::ok(SCAN_FOTOS));
 
     let (sink, mut rx) = IntegrationSink::channel();
@@ -226,7 +247,16 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
         .await
         .unwrap();
     assert_eq!(shell.unexpected(), Vec::<String>::new());
-    assert_eq!(shell.ran(), [chown.as_str(), find.as_str(), scan]);
+    assert_eq!(
+        shell.ran(),
+        [
+            chown.as_str(),
+            find.as_str(),
+            count_root.as_str(),
+            count_fotos.as_str(),
+            scan
+        ]
+    );
 
     assert_eq!(report.updated, ["alice/files/Fotos"]);
     assert_eq!(report.items, 4, "from the summary table");
@@ -253,7 +283,10 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
 #[tokio::test]
 async fn transport_that_sets_owner_skips_permissions() {
     let (shell, _, nc) = setup();
-    shell.on(scan_cmd("alice/files/Docs"), Output::ok(""));
+    shell
+        .on(count_cmd(&[("", 2)]), Output::ok("2\n"))
+        .on(count_cmd(&[("Docs", 2)]), Output::ok("1\n"))
+        .on(scan_cmd("alice/files/Docs"), Output::ok(""));
     let report = nc
         .after_transfer(
             &ctx(FILES, TransportCaps::CHOWN | TransportCaps::CHMOD),
@@ -262,7 +295,7 @@ async fn transport_that_sets_owner_skips_permissions() {
         )
         .await
         .unwrap();
-    assert_eq!(shell.ran(), [scan_cmd("alice/files/Docs")]);
+    assert_eq!(shell.ran().last(), Some(&scan_cmd("alice/files/Docs")));
     assert!(report.is_clean());
 }
 
@@ -280,6 +313,12 @@ async fn destination_subfolder_and_failed_scans() {
             ),
             Output::ok(""),
         )
+        .on(count_cmd(&[("Migração 2024", 3)]), Output::ok("3\n"))
+        .on(
+            count_cmd(&[("Migração 2024/Docs", 2), ("Migração 2024/Música", 2)]),
+            Output::ok("2\n1\n"),
+        )
+        .on(count_cmd(&[("Migração 2024/Docs/IRS", 2)]), Output::ok("1\n"))
         .on(
             scan_cmd("alice/files/Migração 2024/Docs/IRS"),
             Output {
@@ -306,8 +345,8 @@ async fn destination_subfolder_and_failed_scans() {
     assert_eq!(
         report.updated,
         [
-            "alice/files/Migração 2024/Docs/IRS",
-            "alice/files/Migração 2024/Música"
+            "alice/files/Migração 2024/Música",
+            "alice/files/Migração 2024/Docs/IRS"
         ]
     );
     let codes: Vec<_> = report
@@ -317,9 +356,52 @@ async fn destination_subfolder_and_failed_scans() {
         .collect();
     assert_eq!(
         codes,
-        [(PROBLEM_SCAN_ERROR, true), (PROBLEM_SCAN_FAILED, true)]
+        [(PROBLEM_SCAN_FAILED, true), (PROBLEM_SCAN_ERROR, true)]
     );
-    assert!(report.problems[1].message.contains("memory size"));
+    assert!(report.problems[0].message.contains("memory size"));
+}
+
+#[tokio::test]
+async fn scans_only_sent_files_next_to_existing_ones() {
+    let (shell, _, nc) = setup();
+    let count = "sh -c 'while [ $# -gt 1 ]; do find \"$2\" -type f 2>/dev/null | head -n \"$1\" \
+        | wc -l; shift 2; done' sh 2 /tank/nextcloud-data/alice/files";
+    assert_eq!(count, count_cmd(&[("", 2)]));
+    // 7 400 files already in the account: only the sent one is scanned.
+    shell
+        .on(count, Output::ok("2\n"))
+        .on(scan_cmd("alice/files/cv.pdf"), Output::ok(""));
+    let report = nc
+        .after_transfer(
+            &ctx(FILES, TransportCaps::CHOWN | TransportCaps::CHMOD),
+            &paths(&["cv.pdf"]),
+            IntegrationSink::noop(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(shell.unexpected(), Vec::<String>::new());
+    assert_eq!(report.updated, ["alice/files/cv.pdf"]);
+}
+
+#[tokio::test]
+async fn many_sent_files_beside_existing_ones_scan_shallow() {
+    let (shell, _, nc) = setup();
+    let changed: Vec<String> = (0..20).map(|i| format!("Docs/{i}.pdf")).collect();
+    let changed: Vec<&str> = changed.iter().map(String::as_str).collect();
+    let shallow = profile().occ_cmd(&["files:scan", "-v", "--shallow", "--path=alice/files/Docs"]);
+    shell
+        .on(count_cmd(&[("", 21)]), Output::ok("21\n"))
+        .on(count_cmd(&[("Docs", 21)]), Output::ok("21\n"))
+        .on(shallow.clone(), Output::ok(""));
+    nc.after_transfer(
+        &ctx(FILES, TransportCaps::CHOWN | TransportCaps::CHMOD),
+        &paths(&changed),
+        IntegrationSink::noop(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(shell.unexpected(), Vec::<String>::new());
+    assert_eq!(shell.ran().last(), Some(&shallow));
 }
 
 #[tokio::test]
@@ -370,6 +452,9 @@ async fn slow_disk_shows_waiting_then_progress() {
     let files: String = (0..150)
         .map(|i| format!("\tFile\t/alice/files/Video/clip{i}.mp4\n"))
         .collect();
+    shell
+        .on(count_cmd(&[("", 2)]), Output::ok("2\n"))
+        .on(count_cmd(&[("Video", 2)]), Output::ok("1\n"));
     // Each line arrives only after a long silence.
     shell.on_slow(
         scan_cmd("alice/files/Video"),

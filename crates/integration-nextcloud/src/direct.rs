@@ -23,8 +23,9 @@ use crate::shell::{RemoteShell, ShellConnector};
 /// Tuning for [`after_transfer`].
 #[derive(Debug, Clone)]
 pub struct DirectOptions {
-    /// More folders than this are merged into their parents, to bound `occ` start-ups.
-    pub max_scan_folders: usize,
+    /// In a folder that also holds files the job didn't send, more sent files than this (directly
+    /// in it) are scanned with one `--shallow` run of the folder instead of one run per file.
+    pub shallow_above: usize,
     /// Silence from `occ` longer than this shows "waiting for disk".
     pub quiet_after: Duration,
     /// Upper bound for one remote command line (the remote `sh -c` gets it as one argument).
@@ -34,7 +35,7 @@ pub struct DirectOptions {
 impl Default for DirectOptions {
     fn default() -> Self {
         Self {
-            max_scan_folders: 64,
+            shallow_above: 16,
             quiet_after: Duration::from_secs(15),
             max_command_bytes: 96 * 1024,
         }
@@ -84,14 +85,6 @@ fn rel_join(a: &str, b: &str) -> String {
     }
 }
 
-fn depth(folder: &str) -> usize {
-    if folder.is_empty() {
-        0
-    } else {
-        folder.split('/').count()
-    }
-}
-
 fn parent(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(p, _)| p)
 }
@@ -104,42 +97,163 @@ fn is_within(path: &str, folder: &str) -> bool {
             .is_some_and(|r| r.starts_with('/'))
 }
 
-fn drop_nested(folders: BTreeSet<String>) -> Vec<String> {
-    // Sorted order puts every folder right after its ancestors (`a` < `a/b`), but `a b` sorts
-    // between `a` and `a/b`, so check against every kept folder, not only the last.
-    let mut kept: Vec<String> = Vec::new();
-    for f in folders {
-        if !kept.iter().any(|k| is_within(&f, k)) {
-            kept.push(f);
-        }
-    }
-    kept
+/// One `occ files:scan` run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScanTarget {
+    /// A folder holding only sent files, scanned recursively.
+    Tree(String),
+    /// A folder's own entries, not its subfolders (`--shallow`).
+    Shallow(String),
+    /// One sent file.
+    File(String),
 }
 
-/// The fewest folders whose recursive scan covers every changed file: each file's parent,
-/// minus folders inside another one. Above `max`, the deepest folders are merged into their
-/// parents until it fits (`""` = the whole files folder).
-pub fn covering_folders(files_rel: &[String], max: usize) -> Vec<String> {
-    let mut folders = drop_nested(files_rel.iter().map(|p| parent(p).to_string()).collect());
-    while folders.len() > max.max(1) {
-        let deepest = folders.iter().map(|f| depth(f)).max().unwrap_or(0);
-        if deepest == 0 {
-            break;
+impl ScanTarget {
+    fn path(&self) -> &str {
+        match self {
+            Self::Tree(p) | Self::Shallow(p) | Self::File(p) => p,
         }
-        folders = drop_nested(
-            folders
-                .into_iter()
-                .map(|f| {
-                    if depth(&f) == deepest {
-                        parent(&f).to_string()
-                    } else {
-                        f
-                    }
-                })
-                .collect(),
-        );
     }
-    folders
+}
+
+/// Decides how to scan the sent files under `dir`, given how many files `dir` holds on disk.
+/// When they are all sent, one recursive scan covers them and nothing else. Otherwise the sent
+/// files directly in `dir` are scanned one by one (or with one `--shallow` run above
+/// `shallow_above`), and the subfolders holding sent files are returned to be decided the same way.
+pub fn plan_folder(
+    files_rel: &[String],
+    dir: &str,
+    on_disk: u64,
+    shallow_above: usize,
+) -> (Vec<ScanTarget>, Vec<String>) {
+    let under: Vec<&String> = files_rel
+        .iter()
+        .filter(|f| f.as_str() != dir && is_within(f, dir))
+        .collect();
+    if on_disk <= under.len() as u64 {
+        return (vec![ScanTarget::Tree(dir.to_string())], Vec::new());
+    }
+    let direct: Vec<&String> = under.iter().copied().filter(|f| parent(f) == dir).collect();
+    let mut targets = if direct.len() > shallow_above {
+        vec![ScanTarget::Shallow(dir.to_string())]
+    } else {
+        direct
+            .iter()
+            .map(|f| ScanTarget::File(f.to_string()))
+            .collect()
+    };
+    targets.sort_by(|a, b| a.path().cmp(b.path()));
+    let skip = if dir.is_empty() { 0 } else { dir.len() + 1 };
+    let children: BTreeSet<String> = under
+        .iter()
+        .filter_map(|f| {
+            let first = f[skip..].split_once('/')?.0;
+            Some(rel_join(dir, first))
+        })
+        .collect();
+    (targets, children.into_iter().collect())
+}
+
+/// Counts the files under each folder (host paths), stopping at `limit`: the caller only needs
+/// to know whether there are more than it sent.
+const COUNT_SCRIPT: &str = "while [ $# -gt 1 ]; do find \"$2\" -type f 2>/dev/null | head -n \"$1\" | wc -l; shift 2; done";
+
+/// The command that counts files in `dirs` (`(host path, limit)` pairs), one number per line.
+pub fn count_files_cmd(profile: &NextcloudDirectProfile, dirs: &[(String, u64)]) -> String {
+    let mut argv = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        COUNT_SCRIPT.to_string(),
+        "sh".to_string(),
+    ];
+    for (dir, limit) in dirs {
+        argv.push(limit.to_string());
+        argv.push(dir.clone());
+    }
+    profile.host_cmd(&argv)
+}
+
+/// How many files each folder holds on disk (files-relative folders), up to `limit` each.
+async fn files_on_disk(
+    profile: &NextcloudDirectProfile,
+    shell: &dyn RemoteShell,
+    dirs: &[(String, u64)],
+    opts: &DirectOptions,
+) -> Result<Vec<u64>> {
+    let base = profile.host_files_dir();
+    let mut counts = Vec::with_capacity(dirs.len());
+    let fixed = count_files_cmd(profile, &[]).len();
+    let mut batch: Vec<(String, u64)> = Vec::new();
+    let mut len = fixed;
+    let mut i = 0;
+    while i < dirs.len() || !batch.is_empty() {
+        if let Some((dir, limit)) = dirs.get(i) {
+            let host = path_join(&base, dir);
+            let n = crate::quote::quote(&host).len() + 22;
+            if batch.is_empty() || len + n <= opts.max_command_bytes {
+                batch.push((host, *limit));
+                len += n;
+                i += 1;
+                continue;
+            }
+        }
+        let out = crate::shell::run_ok(
+            shell,
+            &count_files_cmd(profile, &batch),
+            "counting files in the destination",
+        )
+        .await?;
+        let got: Vec<u64> = out
+            .stdout
+            .lines()
+            .filter_map(|l| l.trim().parse().ok())
+            .collect();
+        if got.len() != batch.len() {
+            return Err(IntegrationError::retryable(format!(
+                "counting files in the destination: expected {} numbers, got {:?}",
+                batch.len(),
+                out.stdout
+            )));
+        }
+        counts.extend(got);
+        batch.clear();
+        len = fixed;
+    }
+    Ok(counts)
+}
+
+/// The scans that index exactly the sent files, starting from the destination root (`prefix`)
+/// and descending only into folders that also hold other files. One count command per level.
+async fn scan_targets(
+    profile: &NextcloudDirectProfile,
+    shell: &dyn RemoteShell,
+    prefix: &str,
+    files_rel: &[String],
+    opts: &DirectOptions,
+) -> Result<Vec<ScanTarget>> {
+    let mut targets = Vec::new();
+    let mut level = vec![prefix.to_string()];
+    while !level.is_empty() {
+        let dirs: Vec<(String, u64)> = level
+            .iter()
+            .map(|d| {
+                let sent = files_rel
+                    .iter()
+                    .filter(|f| f.as_str() != d && is_within(f, d))
+                    .count();
+                (d.clone(), sent as u64 + 1)
+            })
+            .collect();
+        let counts = files_on_disk(profile, shell, &dirs, opts).await?;
+        let mut next = Vec::new();
+        for (dir, on_disk) in level.iter().zip(counts) {
+            let (t, children) = plan_folder(files_rel, dir, on_disk, opts.shallow_above);
+            targets.extend(t);
+            next.extend(children);
+        }
+        level = next;
+    }
+    Ok(targets)
 }
 
 /// Every changed path plus each directory between it and the files folder, files-relative.
@@ -392,21 +506,21 @@ pub async fn after_transfer(
     }
 
     sink.send(IntegrationEvent::Stage(STAGE_SCAN.into()));
-    let folders = covering_folders(&files_rel, opts.max_scan_folders);
+    let targets = scan_targets(profile, shell.as_ref(), &prefix, &files_rel, opts).await?;
     let mut scan = Scan {
         profile,
         prefix: &prefix,
         sink,
-        total: folders.len() as u64,
+        total: targets.len() as u64,
         items: 0,
         problems: Vec::new(),
     };
-    for (i, folder) in folders.iter().enumerate() {
-        scan.folder(shell.as_ref(), i as u64, folder, opts.quiet_after)
+    for (i, target) in targets.iter().enumerate() {
+        scan.target(shell.as_ref(), i as u64, target, opts.quiet_after)
             .await?;
         report
             .updated
-            .push(rel_join(&format!("{}/files", profile.user), folder));
+            .push(rel_join(&format!("{}/files", profile.user), target.path()));
     }
     sink.send(IntegrationEvent::Progress(StepProgress {
         step: STAGE_SCAN.into(),
@@ -504,11 +618,11 @@ impl Scan<'_> {
         self.problems.push(p);
     }
 
-    async fn folder(
+    async fn target(
         &mut self,
         shell: &dyn RemoteShell,
         index: u64,
-        folder: &str,
+        target: &ScanTarget,
         quiet_after: Duration,
     ) -> Result<()> {
         let total = self.total;
@@ -521,11 +635,14 @@ impl Scan<'_> {
                 current: Some(current.to_string()),
             })
         };
-        let scan_path = rel_join(&format!("{}/files", self.profile.user), folder);
+        let scan_path = rel_join(&format!("{}/files", self.profile.user), target.path());
         self.sink.send(progress(self.items, &scan_path));
-        let cmd = self
-            .profile
-            .occ_cmd(&["files:scan", "-v", &format!("--path={scan_path}")]);
+        let path_arg = format!("--path={scan_path}");
+        let args: &[&str] = match target {
+            ScanTarget::Shallow(_) => &["files:scan", "-v", "--shallow", &path_arg],
+            ScanTarget::Tree(_) | ScanTarget::File(_) => &["files:scan", "-v", &path_arg],
+        };
+        let cmd = self.profile.occ_cmd(args);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let run = shell.run_lines(&cmd, tx);
@@ -643,33 +760,49 @@ mod tests {
     }
 
     #[test]
-    fn covering_drops_nested_and_duplicates() {
-        let files = strs(&[
-            "Fotos/2024/a.jpg",
-            "Fotos/2024/b.jpg",
-            "Fotos/c.jpg",
-            "Fotos b/x.txt",
-            "Fotos/2024/Junho/d.jpg",
-            "Docs/IRS/2023.pdf",
-            "Docs/IRS 2/2024.pdf",
-        ]);
+    fn plan_whole_folder_when_only_sent_files_are_there() {
+        let files = strs(&["Fotos/a.jpg", "Fotos/2024/b.jpg"]);
         assert_eq!(
-            covering_folders(&files, 64),
-            ["Docs/IRS", "Docs/IRS 2", "Fotos", "Fotos b"]
+            plan_folder(&files, "Fotos", 2, 16),
+            (vec![ScanTarget::Tree("Fotos".into())], vec![])
+        );
+        assert_eq!(
+            plan_folder(&files, "", 2, 16),
+            (vec![ScanTarget::Tree("".into())], vec![]),
+            "an empty destination is scanned whole"
         );
     }
 
     #[test]
-    fn covering_root_file_means_whole_folder() {
-        assert_eq!(covering_folders(&strs(&["a.txt", "B/c.txt"]), 64), [""]);
+    fn plan_files_and_subfolders_when_others_are_there() {
+        let files = strs(&["cv.pdf", "Fotos/a.jpg", "Fotos/2024/b.jpg", "Docs/c.pdf"]);
+        assert_eq!(
+            plan_folder(&files, "", 7_400, 16),
+            (
+                vec![ScanTarget::File("cv.pdf".into())],
+                vec!["Docs".into(), "Fotos".into()]
+            )
+        );
+        assert_eq!(
+            plan_folder(&files, "Fotos", 3, 16),
+            (
+                vec![ScanTarget::File("Fotos/a.jpg".into())],
+                vec!["Fotos/2024".into()]
+            )
+        );
     }
 
     #[test]
-    fn covering_merges_deepest_above_max() {
-        let files = strs(&["A/1/x", "A/2/x", "A/3/x", "B/1/x", "C/x"]);
-        assert_eq!(covering_folders(&files, 5).len(), 5);
-        assert_eq!(covering_folders(&files, 3), ["A", "B", "C"]);
-        assert_eq!(covering_folders(&files, 2), [""]);
+    fn plan_shallow_above_threshold() {
+        let files = strs(&["a b/1", "a b/2", "a b/3", "a b/x/4"]);
+        assert_eq!(
+            plan_folder(&files, "a b", 10, 2),
+            (
+                vec![ScanTarget::Shallow("a b".into())],
+                vec!["a b/x".into()]
+            )
+        );
+        assert_eq!(plan_folder(&files, "a b", 10, 3).0.len(), 3);
     }
 
     #[test]

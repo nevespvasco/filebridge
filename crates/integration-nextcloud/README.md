@@ -23,7 +23,7 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | `profile` | `NextcloudSettings` (tagged `mode: "direct"`), `NextcloudDirectProfile`, command builders (`host_cmd`, `container_cmd`, `occ_cmd`) |
 | `detect` | `Detector`, `LxcDetector`, `HostDetector`, `DetectInput`, `Detection` (steps with the commands they ran; whether the detector applies) |
 | `parse` | `pct list`, `pct config`, `config.php`, `id`, `stat`, `df`, `occ status`, `occ files:scan` output |
-| `direct` | preflight, owner/mode fix, minimal folder set, scan with progress |
+| `direct` | preflight, owner/mode fix, sent-only scan plan, scan with progress |
 | `rules` | `NextcloudNfc`, `NextcloudReserved` |
 | `setup` | The profile wizard, `Nextcloud::set_up(req, transport)`: connect with the integration's own `ShellConnector`, run each detector, build the destination (SFTP to the SSH host, rooted at the user's files folder) and settings. `check_direct` is what every saved profile must pass (valid settings, same host for SFTP and SSH, root inside the files folder); `Integration::check_profile` runs it on every save |
 
@@ -75,9 +75,13 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
    paths and the directories between them and `files/` (new directories need the owner too);
    batched under 96 KiB per command line. Failure is a fatal error (Nextcloud couldn't read the
    files).
-2. Minimal folder set: each file's parent, minus folders inside another; above 64 folders the
-   deepest are merged into their parents.
-3. `occ files:scan -v --path=<user>/files/<folder>` per folder. Output is streamed: `File` lines
+2. Scan only what was sent, never files that were already there. Starting at the destination
+   root, one remote command per level counts the files in each folder (`find -type f | head -n
+   <sent+1> | wc -l`, so the count stops early). A folder holding only sent files gets one
+   recursive scan. In a folder that also holds other files, the sent files directly in it are
+   scanned one by one (above 16, one `--shallow` scan of the folder instead), and the subfolders
+   holding sent files are decided the same way.
+3. `occ files:scan -v [--shallow] --path=<user>/files/<folder or file>` per target. Output is streamed: `File` lines
    drive `StepProgress.items` (every 100), 15 s of silence sends `Waiting("nextcloud.waiting-for-disk")`,
    the summary table gives the final count.
 4. `Entry "…" will not be accessible due to incompatible encoding` → a
