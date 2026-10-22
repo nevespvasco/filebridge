@@ -23,6 +23,8 @@ macro_rules! for_each_operation {
             DeleteProfile delete_profile(id: String) -> ();
             /// Connection test: the transport's and the integration's preflight.
             TestProfile test_profile(id: String) -> $crate::ProfileTest;
+            /// A destination's space from its last check; `refresh` checks it first (network).
+            ProfileStorage profile_storage(id: String, refresh: bool) -> $crate::StorageView;
             /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
             /// Nextcloud on the SSH host itself). Saves the profile when every step passes.
             DetectNextcloud detect_nextcloud(req: $crate::DetectNextcloudRequest) -> $crate::DetectNextcloudResponse;

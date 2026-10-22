@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import IssueGroup from "@/components/IssueGroup.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
@@ -18,6 +18,15 @@ const jobs = useJobs();
 const fmt = useFmt();
 const profiles = useProfiles();
 const destinationName = computed(() => (wizard.profileId ? profiles.byId[wizard.profileId]?.name : undefined));
+/** The destination's space: the analysis just measured it, so the kept numbers are fresh. */
+const storage = computed(() => (wizard.profileId ? profiles.storage[wizard.profileId] : undefined));
+watch(
+  () => [wizard.profileId, wizard.analysis] as const,
+  ([id]) => {
+    if (id) void profiles.loadStorage(id);
+  },
+  { immediate: true },
+);
 
 const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : undefined));
 const job = computed(() => (wizard.jobId ? jobs.byId[wizard.jobId] : undefined));
@@ -101,7 +110,13 @@ const details = computed(() => {
         </p>
       </div>
 
-      <TransferComposition :job-id="wizard.jobId" :free="free" :destination="destinationName" />
+      <TransferComposition
+        :job-id="wizard.jobId"
+        :free="storage?.free_bytes ?? free"
+        :total="storage?.total_bytes ?? null"
+        :used="storage?.used_bytes ?? null"
+        :destination="destinationName"
+      />
 
       <h3>{{ $t("analysis.names") }}<HelpTip :text="$t('analysis.namesHelp')" :example="$t('analysis.namesExample')" :label="$t('analysis.names')" /></h3>
       <details v-if="wizard.ruleCounts.length" class="legend card" :open="wizard.pending > 0">

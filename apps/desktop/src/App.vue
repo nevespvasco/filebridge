@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useFmt } from "@/composables/useFmt";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppIcon from "@/components/AppIcon.vue";
@@ -17,11 +18,12 @@ const profiles = useProfiles();
 const settings = useSettings();
 const { t } = useI18n();
 const router = useRouter();
+const fmt = useFmt();
 
 onMounted(async () => {
   await jobs.init();
   await conn.init();
-  void profiles.load();
+  void profiles.load().then(() => profiles.loadAllStorage());
   void settings.loadApp();
   conn.onReconnect(() => void settings.loadApp());
   void jobs.loadPage(0);
@@ -37,6 +39,35 @@ watch(
 );
 
 const active = computed(() => Object.values(jobs.byId).filter((j) => RUNNING.includes(j.state)).length);
+// The sidebar's notice slot (docs/design/02, "Sidebar"): one notice at most. A dismissed one stays
+// hidden until its condition is new (here: a newer measurement of the same destination).
+const dismissed = ref<Record<string, number>>(readDismissed());
+function readDismissed(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem("filebridge.dismissed") ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+function dismiss(key: string, at: number) {
+  dismissed.value = { ...dismissed.value, [key]: at };
+  try {
+    localStorage.setItem("filebridge.dismissed", JSON.stringify(dismissed.value));
+  } catch {
+    // The notice comes back next time.
+  }
+}
+const notice = computed(() => {
+  for (const p of profiles.low) {
+    const s = profiles.storage[p.id];
+    const key = `low:${p.id}`;
+    if (s?.checked_at != null && dismissed.value[key] !== s.checked_at) {
+      return { key, at: s.checked_at, text: t("storage.lowNotice", { name: p.name, free: fmt.bytes(s.free_bytes) }), to: "/destinations" };
+    }
+  }
+  return null;
+});
+
 /** Jobs waiting for the user (decisions, a failure, a long retry): the dot on Transfers. */
 const attention = computed(() => Object.values(jobs.byId).filter((j) => needsYou(j)).length);
 
@@ -75,6 +106,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <AppIcon name="settings" :size="20" /><span class="label">{{ $t("nav.settings") }}</span>
       </RouterLink>
       <span class="grow" />
+      <div v-if="notice" class="notice small" role="status">
+        <AppIcon name="warning" class="warn-text" />
+        <RouterLink :to="notice.to" class="notice-text">{{ notice.text }}</RouterLink>
+        <button class="dismiss" :aria-label="$t('common.dismiss')" @click="dismiss(notice.key, notice.at)"><AppIcon name="close" /></button>
+      </div>
       <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
         <span class="dot" aria-hidden="true" />
         {{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}
@@ -128,6 +164,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .side a.new-transfer:hover { filter: brightness(1.08); background: var(--accent); }
 .side a.new-transfer.router-link-active { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 0 4px var(--accent); }
 .attention { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+.notice { display: flex; gap: 0.4rem; align-items: flex-start; padding: 0.55rem 0.6rem; border-radius: var(--radius-sm); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); margin: 0 0.1rem 0.5rem; }
+.side a.notice-text { all: unset; flex: 1; cursor: pointer; color: var(--text); }
+.side a.notice-text:hover { text-decoration: underline; }
+.dismiss { background: none; border: 0; padding: 0; color: var(--text-2); cursor: pointer; display: inline-flex; }
 .conn { display: flex; gap: 0.4rem; align-items: center; padding: 0.5rem; color: var(--text-2); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .on .dot { background: var(--ok); }

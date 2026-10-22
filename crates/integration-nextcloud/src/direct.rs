@@ -444,16 +444,18 @@ pub async fn preflight(
         }
     }
 
-    // Free space on the data volume.
+    // Space on the data volume.
     match shell.run(&profile.host_cmd(&["df", "-Pk", &files])).await {
-        Ok(o) => match parse::df_available(&o.stdout).filter(|_| o.success()) {
-            Some(free) => {
-                report.free_bytes = Some(free);
+        Ok(o) => match parse::df_space(&o.stdout).filter(|_| o.success()) {
+            Some(df) => {
+                report.free_bytes = Some(df.available);
+                report.total_bytes = Some(df.total);
+                report.used_bytes = Some(df.used);
                 check(
                     &mut report,
                     "free-space",
                     CheckStatus::Ok,
-                    format!("{free} bytes free"),
+                    format!("{} bytes free", df.available),
                 );
             }
             None => check(
@@ -464,6 +466,30 @@ pub async fn preflight(
             ),
         },
         Err(e) => lost(&mut report, e),
+    }
+
+    // The user's quota, when it is tighter than the disk (docs/design/specs/D03). Best effort:
+    // an older Nextcloud without a storage block, or no quota, leaves the disk's numbers.
+    if let Ok(o) = shell
+        .run(&profile.occ_cmd(&["user:info", profile.user.as_str(), "--output=json"]))
+        .await
+        && o.success()
+        && let Some(q) = parse::user_quota(&o.stdout)
+    {
+        check(
+            &mut report,
+            "quota",
+            CheckStatus::Ok,
+            format!(
+                "quota for {}: {} of {} bytes used",
+                profile.user, q.used, q.total
+            ),
+        );
+        if report.free_bytes.is_none_or(|f| q.free < f) {
+            report.free_bytes = Some(q.free);
+            report.total_bytes = Some(q.total);
+            report.used_bytes = Some(q.used);
+        }
     }
     Ok(report)
 }

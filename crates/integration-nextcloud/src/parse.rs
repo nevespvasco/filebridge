@@ -237,6 +237,53 @@ pub fn uid_gid(out: &str) -> Option<(u32, u32)> {
 }
 
 /// Available bytes from `df -Pk <path>` (the field before the `NN%` capacity column).
+/// `df -Pk <path>`: the volume's size, used and available space, in bytes.
+pub fn df_space(out: &str) -> Option<DfSpace> {
+    let line = out.lines().nth(1)?;
+    let cols: Vec<&str> = line.split_whitespace().collect();
+    let cap = cols.iter().position(|c| c.ends_with('%'))?;
+    let kb = |i: usize| cols.get(i)?.parse::<u64>().ok()?.checked_mul(1024);
+    Some(DfSpace {
+        total: kb(cap.checked_sub(3)?)?,
+        used: kb(cap.checked_sub(2)?)?,
+        available: kb(cap.checked_sub(1)?)?,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DfSpace {
+    pub total: u64,
+    pub used: u64,
+    pub available: u64,
+}
+
+/// The user's quota from `occ user:info <user> --output=json` (`storage.quota` > 0); `None` when
+/// the user has no quota or the output has no storage block (older Nextcloud).
+pub fn user_quota(out: &str) -> Option<Quota> {
+    let v: serde_json::Value = out
+        .lines()
+        .rev()
+        .find_map(|l| serde_json::from_str(l.trim()).ok())?;
+    let s = v.get("storage")?;
+    let n = |k: &str| s.get(k).and_then(serde_json::Value::as_f64);
+    let quota = n("quota")?;
+    if quota <= 0.0 {
+        return None;
+    }
+    Some(Quota {
+        total: quota as u64,
+        used: n("used").unwrap_or(0.0).max(0.0) as u64,
+        free: n("free").unwrap_or(0.0).max(0.0) as u64,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    pub total: u64,
+    pub used: u64,
+    pub free: u64,
+}
+
 pub fn df_available(out: &str) -> Option<u64> {
     let line = out.lines().nth(1)?;
     let cols: Vec<&str> = line.split_whitespace().collect();
@@ -468,6 +515,34 @@ mod tests {
                   tank/nextcloud-data   3904897024 1175269376 2729627648      31% /tank/nextcloud-data\n";
         assert_eq!(df_available(df), Some(2_729_627_648 * 1024));
         assert_eq!(df_available("garbage"), None);
+        assert_eq!(
+            df_space(df),
+            Some(DfSpace {
+                total: 3_904_897_024 * 1024,
+                used: 1_175_269_376 * 1024,
+                available: 2_729_627_648 * 1024,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_the_user_quota() {
+        let with = "PHP Warning: something\n{\"user_id\":\"demo\",\"storage\":{\"free\":500,\"used\":500,\"total\":1000,\"relative\":50,\"quota\":1000}}";
+        assert_eq!(
+            user_quota(with),
+            Some(Quota {
+                total: 1000,
+                used: 500,
+                free: 500
+            })
+        );
+        let unlimited = "{\"user_id\":\"demo\",\"storage\":{\"free\":9,\"used\":1,\"quota\":-3}}";
+        assert_eq!(user_quota(unlimited), None);
+        assert_eq!(
+            user_quota("{\"user_id\":\"demo\"}"),
+            None,
+            "older Nextcloud: no storage block"
+        );
     }
 
     #[test]

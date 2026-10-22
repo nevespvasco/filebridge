@@ -45,7 +45,8 @@
     "recommended": "recommended",
     "optional": "optional",
     "clear": "Clear",
-    "close": "Close"
+    "close": "Close",
+    "dismiss": "Dismiss"
   },
   "status": {
     "ok": "OK",
@@ -717,5 +718,23 @@
     "nextcloud-reserved": "Name Nextcloud reserves",
     "collision": "Clash with another name",
     "encoding": "Name that isn't valid text"
+  },
+  "storage": {
+    "caption": "Space used at the destination",
+    "usedLabel": "Used",
+    "used": "{used} used · {free} free · {total}",
+    "freeOnly": "{free} free",
+    "percent": "{p} % used",
+    "checked": "checked",
+    "checking": "Checking…",
+    "staleLabel": "Checked more than an hour ago",
+    "never": "Space not checked yet.",
+    "checkNow": "Check now",
+    "noTotal": "This destination doesn't report its total size.",
+    "unsupported": "This destination doesn't report its free space.",
+    "quota": "Quota of the account: {used} of {total} used",
+    "low": "Only {free} free",
+    "lowNotice": "{name} has {free} free",
+    "lastError": "Last check failed: {reason}"
   }
 }

@@ -297,6 +297,8 @@ impl Transport for RcloneTransport {
         match about {
             Ok(v) => {
                 report.free_bytes = v.get("free").and_then(Value::as_u64);
+                report.total_bytes = v.get("total").and_then(Value::as_u64);
+                report.used_bytes = v.get("used").and_then(Value::as_u64);
                 report.checks.push(Check {
                     id: "connect".into(),
                     status: CheckStatus::Ok,

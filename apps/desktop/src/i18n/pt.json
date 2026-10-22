@@ -45,7 +45,8 @@
     "recommended": "recomendado",
     "optional": "opcional",
     "clear": "Limpar",
-    "close": "Fechar"
+    "close": "Fechar",
+    "dismiss": "Dispensar"
   },
   "status": {
     "ok": "OK",
@@ -717,5 +718,23 @@
     "nextcloud-reserved": "Nome reservado pelo Nextcloud",
     "collision": "Choque com outro nome",
     "encoding": "Nome que não é texto válido"
+  },
+  "storage": {
+    "caption": "Espaço usado no destino",
+    "usedLabel": "Usado",
+    "used": "{used} usados · {free} livres · {total}",
+    "freeOnly": "{free} livres",
+    "percent": "{p} % usado",
+    "checked": "verificado",
+    "checking": "A verificar…",
+    "staleLabel": "Verificado há mais de uma hora",
+    "never": "Espaço ainda não verificado.",
+    "checkNow": "Verificar agora",
+    "noTotal": "Este destino não indica o tamanho total.",
+    "unsupported": "Este destino não indica o espaço livre.",
+    "quota": "Quota da conta: {used} de {total} usados",
+    "low": "Apenas {free} livres",
+    "lowNotice": "{name} tem {free} livres",
+    "lastError": "A última verificação falhou: {reason}"
   }
 }

@@ -15,6 +15,7 @@ mod profile;
 mod registry;
 mod run;
 mod settings;
+mod storage;
 
 pub use engine::{Engine, EngineOptions};
 /// The shared types and rules, so `core`'s callers keep their paths.

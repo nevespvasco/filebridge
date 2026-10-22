@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Profile_Serialize } from "@/bindings";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import DestinationSpace from "@/components/DestinationSpace.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import PreflightList from "@/components/PreflightList.vue";
@@ -19,7 +20,10 @@ const deleting = ref<Profile_Serialize | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
-onMounted(() => profiles.load());
+onMounted(async () => {
+  await profiles.load();
+  void profiles.loadAllStorage();
+});
 
 function onSaved(p: Profile_Serialize) {
   creating.value = false;
@@ -80,6 +84,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       <section v-for="p in profiles.list" :key="p.id" class="card">
         <div class="head">
           <div class="who">
+            <AppIcon :name="profileKind(p)" :size="20" class="kind" />
             <span class="badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
             <strong>{{ p.name }}</strong>
             <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: nextcloudMode(p) }) }}</span>
@@ -90,6 +95,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
           </div>
         </div>
         <p class="mono small muted ellipsis" :title="profileWhere(p)">{{ profileWhere(p) }}</p>
+        <DestinationSpace :profile-id="p.id" class="space" />
         <p class="small muted">
           {{ $t(`profile.family.${p.target.family}`) }} · {{ p.target.case_sensitive ? $t("profile.caseSensitive") : $t("profile.caseInsensitive") }}
           <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
@@ -128,7 +134,9 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 .empty-icon { color: var(--muted); }
 .list { display: grid; gap: 0.75rem; }
 .head { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.kind { align-self: center; color: var(--text-2); }
 .who { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
 .actions { display: flex; gap: 0.4rem; }
+.space { margin: 0.5rem 0; }
 .test { margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
 </style>

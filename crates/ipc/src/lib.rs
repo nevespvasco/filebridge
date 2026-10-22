@@ -29,7 +29,7 @@ pub use filebridge_model::{
     EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event,
     Family, HashView, IssueDecision, IssueSeverity, IssueView, JobKind, JobState, JobSummary,
     LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, RuleCount, SendOptions,
-    SendWindow, StatusCount, TargetSpec, job_operations,
+    SendWindow, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -42,7 +42,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 5: `transfer_progress` lists the files in flight; the `entries_done` event; `job_log`.
 /// 6: `job_categories`, `recent_sources`.
 /// 7: `entries`, `entry_facets`, `entry`.
-pub const PROTOCOL_VERSION: u32 = 7;
+/// 8: `profile_storage`; preflight views carry total and used space.
+pub const PROTOCOL_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

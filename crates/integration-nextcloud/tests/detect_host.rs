@@ -267,10 +267,7 @@ async fn default_data_folder_when_config_php_has_none() {
             grep(&none),
         )
         .on("test -d /var/www/nextcloud/data", Output::ok(""))
-        .on(
-            "test -d /var/www/nextcloud/data/demo/files",
-            Output::ok(""),
-        )
+        .on("test -d /var/www/nextcloud/data/demo/files", Output::ok(""))
         .on(
             "stat -c %u:%g /var/www/nextcloud/data",
             Output::ok("33:33\n"),
@@ -386,7 +383,13 @@ async fn the_wizard_falls_back_to_the_host_when_pct_is_missing() {
     shell
         .on(format!("test -d {root}"), Output::ok(""))
         .on(format!("test -w {root}"), Output::ok(""))
-        .on(format!("df -Pk {FILES}"), Output::ok(DF));
+        .on(format!("df -Pk {FILES}"), Output::ok(DF))
+        .on(
+            "su -s /bin/bash www-data -c 'php /var/www/nextcloud/occ user:info demo --output=json'",
+            Output::ok(
+                r#"{"user_id":"demo","storage":{"free":400,"used":600,"total":1000,"quota":1000}}"#,
+            ),
+        );
     let ctx = JobContext {
         job_id: "job-1".into(),
         profile: ProfileView {
@@ -408,6 +411,12 @@ async fn the_wizard_falls_back_to_the_host_when_pct_is_missing() {
         .filter(|c| c.status != CheckStatus::Ok)
         .collect();
     assert!(failed.is_empty(), "{failed:?}");
+    // The user's quota is tighter than the disk, so it is what the report says.
+    assert_eq!(
+        (report.free_bytes, report.total_bytes, report.used_bytes),
+        (Some(400), Some(1000), Some(600))
+    );
+    assert!(report.checks.iter().any(|c| c.id == "quota"));
     assert_eq!(
         shell.unexpected(),
         Vec::<String>::new(),

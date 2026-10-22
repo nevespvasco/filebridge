@@ -238,12 +238,7 @@ impl Engine {
     /// Connection test: the transport's and the integration's preflight.
     pub async fn test_profile(&self, id: &str) -> Result<ProfileTest> {
         let profile = self.get_profile(id).await?;
-        let preflight = self.preflight(&profile, "profile-test").await?;
-        let mut it = preflight.into_iter();
-        Ok(ProfileTest {
-            transport: it.next().expect("transport preflight is always present"),
-            integration: it.next(),
-        })
+        self.measure(&profile, "profile-test").await
     }
 
     pub(crate) fn job_context(&self, job_id: &str, profile: &Profile) -> Result<JobContext> {
@@ -260,7 +255,11 @@ impl Engine {
         })
     }
 
-    async fn preflight(&self, profile: &Profile, job_id: &str) -> Result<Vec<PreflightView>> {
+    pub(crate) async fn preflight(
+        &self,
+        profile: &Profile,
+        job_id: &str,
+    ) -> Result<Vec<PreflightView>> {
         let transport = self.registry.transport(&profile.destination.transport)?;
         let mut out = vec![match transport.preflight(&profile.destination).await {
             Ok(r) => PreflightView::from_report("transport", r),
@@ -434,6 +433,16 @@ impl Engine {
         self.store.insert_issues(&job_id, analysis.issues).await?;
 
         let preflight = self.preflight(&profile, &job_id).await?;
+        {
+            let mut it = preflight.iter().cloned();
+            if let Some(transport) = it.next() {
+                let test = ProfileTest {
+                    transport,
+                    integration: it.next(),
+                };
+                self.keep_test(&profile.id, &test).await;
+            }
+        }
         let pending = self.store.pending_issue_count(&job_id).await?;
         let next = if pending > 0 {
             JobState::AwaitingApproval

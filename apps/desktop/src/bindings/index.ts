@@ -21,6 +21,8 @@ export const commands = {
 	deleteProfile: (id: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("delete_profile", { id })),
 	/**  Connection test: the transport's and the integration's preflight. */
 	testProfile: (id: string) => typedError<ProfileTest_Serialize, ErrorBody>(__TAURI_INVOKE("test_profile", { id })),
+	/**  A destination's space from its last check; `refresh` checks it first (network). */
+	profileStorage: (id: string, refresh: boolean) => typedError<StorageView_Serialize, ErrorBody>(__TAURI_INVOKE("profile_storage", { id, refresh })),
 	/**
 	 *  Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
 	 *  Nextcloud on the SSH host itself). Saves the profile when every step passes.
@@ -81,7 +83,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 7 as const;
+export const PROTOCOL_VERSION = 8 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -630,6 +632,8 @@ export type PreflightView_Deserialize = {
 	/**  `transport` or `integration`. */
 	source: string,
 	free_bytes?: number | null,
+	total_bytes?: number | null,
+	used_bytes?: number | null,
 	writable: boolean,
 	checks: CheckView[],
 };
@@ -638,6 +642,8 @@ export type PreflightView_Serialize = {
 	/**  `transport` or `integration`. */
 	source: string,
 	free_bytes: number | null,
+	total_bytes: number | null,
+	used_bytes: number | null,
 	writable: boolean,
 	checks: CheckView[],
 };
@@ -727,9 +733,67 @@ export type ServiceEvent_Deserialize = Event_Deserialize;
 /**  Every engine event, forwarded as is from `Client::events()`. */
 export type ServiceEvent_Serialize = Event_Serialize;
 
+/**  Free, total and used space as one side reports it. */
+export type SpaceView = SpaceView_Serialize | SpaceView_Deserialize;
+
+/**  Free, total and used space as one side reports it. */
+export type SpaceView_Deserialize = {
+	free_bytes?: number | null,
+	total_bytes?: number | null,
+	used_bytes?: number | null,
+};
+
+/**  Free, total and used space as one side reports it. */
+export type SpaceView_Serialize = {
+	free_bytes: number | null,
+	total_bytes: number | null,
+	used_bytes: number | null,
+};
+
 export type StatusCount = {
 	status: EntryStatus,
 	files: number,
+};
+
+/**  A destination's space from its last check, without a network call. */
+export type StorageView = StorageView_Serialize | StorageView_Deserialize;
+
+/**  A destination's space from its last check, without a network call. */
+export type StorageView_Deserialize = {
+	profile_id: string,
+	/**  The tighter of the disk and the tool's quota: what every screen uses. */
+	free_bytes?: number | null,
+	total_bytes?: number | null,
+	used_bytes?: number | null,
+	/**  The disk or account as the transport sees it. */
+	transport?: SpaceView_Deserialize | null,
+	/**  What the destination's tool reports (the user's quota, e.g. on Nextcloud), when it does. */
+	quota?: SpaceView_Deserialize | null,
+	/**  Unix ms of the numbers above. */
+	checked_at?: number | null,
+	stale: boolean,
+	low: boolean,
+	/**  Why the last check failed, when it did (the numbers are then the last good ones). */
+	last_error?: string | null,
+};
+
+/**  A destination's space from its last check, without a network call. */
+export type StorageView_Serialize = {
+	profile_id: string,
+	/**  The tighter of the disk and the tool's quota: what every screen uses. */
+	free_bytes: number | null,
+	total_bytes: number | null,
+	used_bytes: number | null,
+	/**  The disk or account as the transport sees it. */
+	transport: SpaceView_Serialize | null,
+	/**  What the destination's tool reports (the user's quota, e.g. on Nextcloud), when it does. */
+	quota: SpaceView_Serialize | null,
+	/**  Unix ms of the numbers above. */
+	checked_at: number | null,
+	stale: boolean,
+	low: boolean,
+	/**  Why the last check failed, when it did (the numbers are then the last good ones). */
+	last_error: string | null,
 };
 
 export type TargetSpec = {

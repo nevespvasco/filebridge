@@ -7,6 +7,7 @@ import type {
   Profile_Deserialize,
   Profile_Serialize,
   ProfileTest_Serialize,
+  StorageView_Serialize as StorageView,
 } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 
@@ -18,6 +19,9 @@ export const useProfiles = defineStore("profiles", () => {
   const loaded = ref(false);
   const loadError = ref<string | null>(null);
   const tests = ref<Record<string, TestState>>({});
+  /** Each destination's space from its last check (docs/design/specs/D03). */
+  const storage = ref<Record<string, StorageView>>({});
+  const checking = ref<Record<string, boolean>>({});
 
   const byId = computed(() => Object.fromEntries(list.value.map((p) => [p.id, p])));
 
@@ -56,8 +60,29 @@ export const useProfiles = defineStore("profiles", () => {
     } catch (e) {
       tests.value[id] = { running: false, error: errorMessage(e) };
     }
+    void loadStorage(id);
     return tests.value[id];
   }
+
+  /** The space from the last check; `refresh` checks first (a network round trip). */
+  async function loadStorage(id: string, refresh = false): Promise<StorageView | undefined> {
+    if (refresh) checking.value[id] = true;
+    try {
+      storage.value[id] = await api.profileStorage(id, refresh);
+    } catch {
+      // Keep what was shown.
+    } finally {
+      if (refresh) checking.value[id] = false;
+    }
+    return storage.value[id];
+  }
+
+  async function loadAllStorage() {
+    await Promise.all(list.value.map((p) => loadStorage(p.id)));
+  }
+
+  /** Destinations under the low-space thresholds. */
+  const low = computed(() => list.value.filter((p) => storage.value[p.id]?.low));
 
   async function detectNextcloud(req: DetectNextcloudRequest_Deserialize): Promise<DetectNextcloudResponse_Serialize> {
     const res = await api.detectNextcloud(req);
@@ -65,7 +90,7 @@ export const useProfiles = defineStore("profiles", () => {
     return res;
   }
 
-  return { list, loaded, loadError, tests, byId, load, ensure, save, remove, test, detectNextcloud };
+  return { list, loaded, loadError, tests, storage, checking, low, byId, load, ensure, save, remove, test, loadStorage, loadAllStorage, detectNextcloud };
 });
 
 /** Free space reported by a connection test, if any. */

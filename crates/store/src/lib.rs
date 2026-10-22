@@ -28,7 +28,7 @@ pub use jobs::{JobRow, NewJob, RecentSourceRow, StateChange};
 pub use manifest::{
     EntryKey, EntryOrder, EntryQuery, EntryRow, EntryState, ManifestCounts, ManifestEntry, NewEntry,
 };
-pub use profiles::ProfileRow;
+pub use profiles::{ProfileRow, StoredTest};
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
 

@@ -120,7 +120,12 @@ async fn preflight_all_green() {
             "pct exec 105 -- su -s /bin/bash www-data -c 'php /var/www/nextcloud/occ status --output=json'",
             Output::ok(OCC_STATUS),
         )
-        .on(format!("df -Pk {FILES}"), Output::ok(DF));
+        .on(format!("df -Pk {FILES}"), Output::ok(DF))
+        // No quota (-3 is "unlimited"): the disk's numbers stand.
+        .on(
+            "pct exec 105 -- su -s /bin/bash www-data -c 'php /var/www/nextcloud/occ user:info alice --output=json'",
+            Output::ok(r#"{"user_id":"alice","storage":{"free":1,"used":2,"quota":-3}}"#),
+        );
     let report = nc
         .preflight(&ctx(&root, TransportCaps::empty()))
         .await
@@ -143,6 +148,8 @@ async fn preflight_all_green() {
     );
     assert!(report.writable);
     assert_eq!(report.free_bytes, Some(2_729_627_648 * 1024));
+    assert_eq!(report.total_bytes, Some(3_904_897_024 * 1024));
+    assert_eq!(report.used_bytes, Some(1_175_269_376 * 1024));
     assert!(report.latency_ms.is_some());
     assert_eq!(connector.targets()[0].host, "pve.lan");
 }

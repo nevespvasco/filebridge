@@ -429,6 +429,40 @@ async fn the_files_of_a_transfer_prove_what_arrived() {
 }
 
 #[tokio::test]
+async fn a_destinations_space_is_kept_from_its_last_check() {
+    let s = setup().await;
+    let never = s
+        .engine
+        .profile_storage(&s.profile_id, false)
+        .await
+        .unwrap();
+    assert_eq!((never.checked_at, never.free_bytes), (None, None));
+
+    s.engine.test_profile(&s.profile_id).await.unwrap();
+    let kept = s
+        .engine
+        .profile_storage(&s.profile_id, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        (kept.free_bytes, kept.total_bytes, kept.used_bytes),
+        (Some(1 << 40), Some(3 << 40), Some(2 << 40))
+    );
+    assert!(!kept.stale && !kept.low);
+    assert!(kept.last_error.is_none());
+
+    // A send measures the destination again when its transfer ends.
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let after = s
+        .engine
+        .profile_storage(&s.profile_id, false)
+        .await
+        .unwrap();
+    assert!(after.checked_at.unwrap() >= kept.checked_at.unwrap());
+}
+
+#[tokio::test]
 async fn collisions_wait_for_a_decision() {
     let s = setup().await;
     // Same visible name twice: NFC and NFD.

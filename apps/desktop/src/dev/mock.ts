@@ -32,6 +32,7 @@ import {
   type JobSummary_Serialize,
   type LogEntry,
   type RecentSource,
+  type StorageView_Serialize as StorageView,
   type Profile_Serialize,
   type RuleCount,
 } from "@/bindings";
@@ -287,6 +288,29 @@ function matchingEntries(job: JobSummary_Serialize, filter: EntryFilter) {
   return { out, rank };
 }
 
+/** Each destination's space (bytes), and when it was last checked. */
+const SPACE: Record<string, { total: number; used: number; quota?: { total: number; used: number } }> = {
+  "p-nc": { total: 2_400_000_000_000, used: 1_588_000_000_000, quota: { total: 2_000_000_000_000, used: 1_210_000_000_000 } },
+  "p-disk": { total: 2_000_000_000_000, used: 100_000_000_000 },
+};
+const checkedAt = new Map<string, number>([
+  ["p-nc", now - 5 * 60_000],
+  ["p-disk", now - 3 * 3_600_000],
+]);
+function spaceOf(id: string) {
+  const s = SPACE[id] ?? { total: 1_000_000_000_000, used: 400_000_000_000 };
+  return { total_bytes: s.total, used_bytes: s.used, free_bytes: s.total - s.used };
+}
+function storageOf(id: string): StorageView {
+  const at = checkedAt.get(id) ?? null;
+  const disk = spaceOf(id);
+  const q = SPACE[id]?.quota;
+  const quota = q ? { total_bytes: q.total, used_bytes: q.used, free_bytes: q.total - q.used } : null;
+  const eff = quota && quota.free_bytes < disk.free_bytes ? quota : disk;
+  const low = eff.free_bytes < 10e9 || eff.free_bytes < eff.total_bytes * 0.1;
+  return { profile_id: id, ...eff, transport: disk, quota, checked_at: at, stale: at == null || Date.now() - at > 3_600_000, low, last_error: null };
+}
+
 function runTransfer(job: JobSummary_Serialize) {
   clearInterval(timers.get(job.id));
   const total = job.counts.bytes;
@@ -389,9 +413,10 @@ const handlers: Handlers = {
     await sleep(600);
     const p = profiles.find((x) => x.id === a.id);
     const nc = p?.integration === "nextcloud";
+    checkedAt.set(a.id as string, Date.now());
     return {
-      transport: { source: "transport", free_bytes: nc ? 812_000_000_000 : 1_900_000_000_000, writable: true, checks: [{ id: "connect", status: "ok", message: "connected" }, { id: "writable", status: "ok", message: "test file written and removed" }] },
-      integration: nc ? { source: "integration", free_bytes: null, writable: true, checks: [{ id: "nextcloud.occ", status: "ok", message: "occ 30.0.2 answers" }, { id: "nextcloud.owner", status: "warn", message: "files will be chowned to www-data (33:33)" }] } : null,
+      transport: { source: "transport", ...spaceOf(a.id as string), writable: true, checks: [{ id: "connect", status: "ok", message: "connected" }, { id: "writable", status: "ok", message: "test file written and removed" }] },
+      integration: nc ? { source: "integration", free_bytes: null, total_bytes: null, used_bytes: null, writable: true, checks: [{ id: "nextcloud.occ", status: "ok", message: "occ 30.0.2 answers" }, { id: "nextcloud.owner", status: "warn", message: "files will be chowned to www-data (33:33)" }] } : null,
     };
   },
   detectNextcloud: async (a) => {
@@ -484,6 +509,7 @@ const handlers: Handlers = {
     const pending = rules.reduce((n, r) => n + r.pending, 0);
     setState(job, pending ? "awaiting_approval" : "ready");
     log(job.id, "analysis", { files, bytes, scan_errors: 1, skipped_symlinks: 2 });
+    checkedAt.set(job.profile_id, Date.now());
     const summary: AnalysisSummary_Serialize = {
       job_id: job.id,
       state: job.state,
@@ -494,7 +520,7 @@ const handlers: Handlers = {
       pending_decisions: pending,
       scan_errors: ["/home/demo/Fotos/privado: permission denied"],
       skipped_symlinks: 2,
-      preflight: [{ source: "transport", free_bytes: 812_000_000_000, writable: true, checks: [{ id: "writable", status: "ok", message: "test file written and removed" }] }],
+      preflight: [{ source: "transport", ...spaceOf(job.profile_id), writable: true, checks: [{ id: "writable", status: "ok", message: "test file written and removed" }] }],
     };
     return summary;
   },
@@ -609,6 +635,13 @@ const handlers: Handlers = {
       error: view.status === "failed" ? "permission denied" : null,
     };
     return detail;
+  },
+  profileStorage: async (a) => {
+    if (a.refresh) {
+      await sleep(600);
+      checkedAt.set(a.id as string, Date.now());
+    }
+    return storageOf(a.id as string);
   },
   jobCategories: (a) => {
     const job = find(a.jobId);

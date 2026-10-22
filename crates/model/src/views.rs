@@ -68,6 +68,8 @@ pub struct PreflightView {
     /// `transport` or `integration`.
     pub source: String,
     pub free_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub used_bytes: Option<u64>,
     pub writable: bool,
     pub checks: Vec<CheckView>,
 }
@@ -77,6 +79,8 @@ impl PreflightView {
         Self {
             source: source.into(),
             free_bytes: r.free_bytes,
+            total_bytes: r.total_bytes,
+            used_bytes: r.used_bytes,
             writable: r.writable,
             checks: r
                 .checks
@@ -104,6 +108,8 @@ impl PreflightView {
         Self {
             source: source.into(),
             free_bytes: None,
+            total_bytes: None,
+            used_bytes: None,
             writable: false,
             checks: vec![CheckView {
                 id: format!("{source}.preflight"),
@@ -249,4 +255,51 @@ pub struct RecentSource {
     pub last_sent_at: i64,
     /// Whether it is there now (a disk may be unplugged, a folder renamed).
     pub exists: bool,
+}
+
+/// Below either of these, a destination is low on space (docs/design/specs/D03).
+pub const LOW_SPACE_RATIO: f64 = 0.10;
+pub const LOW_SPACE_BYTES: u64 = 10_000_000_000;
+/// A space measurement older than this is shown as stale.
+pub const STORAGE_STALE_AFTER_MS: i64 = 3_600_000;
+
+/// Free, total and used space as one side reports it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SpaceView {
+    pub free_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub used_bytes: Option<u64>,
+}
+
+/// A destination's space from its last check, without a network call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct StorageView {
+    pub profile_id: String,
+    /// The tighter of the disk and the tool's quota: what every screen uses.
+    pub free_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+    pub used_bytes: Option<u64>,
+    /// The disk or account as the transport sees it.
+    pub transport: Option<SpaceView>,
+    /// What the destination's tool reports (the user's quota, e.g. on Nextcloud), when it does.
+    pub quota: Option<SpaceView>,
+    /// Unix ms of the numbers above.
+    pub checked_at: Option<i64>,
+    pub stale: bool,
+    pub low: bool,
+    /// Why the last check failed, when it did (the numbers are then the last good ones).
+    pub last_error: Option<String>,
+}
+
+impl StorageView {
+    /// Whether `free` of `total` is under the low-space thresholds.
+    pub fn is_low(free: Option<u64>, total: Option<u64>) -> bool {
+        match (free, total) {
+            (Some(f), Some(t)) if t > 0 => {
+                f < LOW_SPACE_BYTES || (f as f64) < t as f64 * LOW_SPACE_RATIO
+            }
+            (Some(f), _) => f < LOW_SPACE_BYTES,
+            _ => false,
+        }
+    }
 }

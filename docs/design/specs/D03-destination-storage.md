@@ -1,6 +1,6 @@
 # D03 — Destination storage
 
-- ID: D03 · Status: Proposed · Phase: 2
+- ID: D03 · Status: **Built** (see "As built") · Phase: 2
 - Inspired by: D2 (UpLink sidebar meter), E9 (CloudVault storage card), F5 (Vault & Vine stacked
   meter), G5 (slothUI donut), G7 ("Space almost expired" notice)
 - Layers touched: `crates/transport-api` (two **additive** fields on `PreflightReport`),
@@ -87,6 +87,18 @@ Measuring means an SSH or HTTP round trip, so it never runs on a timer:
 
 `profile_storage(id, refresh = false)` never touches the network. It answers from the stored
 result (`stale = true` when older than 1 hour).
+
+### As built
+
+- Built: `total_bytes`/`used_bytes` on `PreflightReport` (rclone from `operations/about`, the fake
+  from fixed values, Nextcloud direct mode from `df -Pk`), the contract check, the Nextcloud quota
+  from `occ user:info <user> --output=json` (`storage.quota` > 0; tighter than the disk wins), the
+  kept test (migration 5, `last_test` and `last_good_test` with their times), measuring after
+  Test, Analyse and every transfer stage, `profile_storage`, the Destinations meter, total and
+  used in "Does it fit?", and the sidebar's low-space notice.
+- Not built yet: the warning *during* a send ("may run out of space") and mapping a disk-full
+  transfer error to "destination is full". Both need the transport to report the error kind;
+  today a full disk fails the job with rclone's own message.
 
 ## States
 

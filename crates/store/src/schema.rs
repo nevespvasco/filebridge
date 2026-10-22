@@ -109,6 +109,14 @@ CREATE INDEX manifest_size ON manifest_entries(job_id, size, idx);
 CREATE INDEX issues_job_entry ON issues(job_id, entry_idx);
 CREATE INDEX events_kind ON events(kind, id);
 "#,
+    // 5: each profile's last connection test, so its space shows without a network call
+    // (docs/design/specs/D03). JSON of the preflight views: no secrets.
+    r#"
+ALTER TABLE profiles ADD COLUMN last_test TEXT;
+ALTER TABLE profiles ADD COLUMN last_test_at INTEGER;
+ALTER TABLE profiles ADD COLUMN last_good_test TEXT;
+ALTER TABLE profiles ADD COLUMN last_good_test_at INTEGER;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

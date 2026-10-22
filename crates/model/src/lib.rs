@@ -28,8 +28,9 @@ pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use state::{JobKind, JobState};
 pub use views::{
     AnalysisSummary, CategoryCount, CheckView, Counts, DecisionInput, DoneView, InFlightView,
-    IssueDecision, IssueSeverity, IssueView, JobSummary, PreflightView, ProfileTest, RecentSource,
-    RuleCount, SendOptions,
+    IssueDecision, IssueSeverity, IssueView, JobSummary, LOW_SPACE_BYTES, LOW_SPACE_RATIO,
+    PreflightView, ProfileTest, RecentSource, RuleCount, STORAGE_STALE_AFTER_MS, SendOptions,
+    SpaceView, StorageView,
 };
 
 /// A stored value (a job state, a job kind) this build doesn't know.

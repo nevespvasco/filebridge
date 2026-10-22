@@ -55,6 +55,19 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
         options: TransferOptions::default(),
     };
 
+    // Space, when reported, adds up: free never beyond total, used + free about total (some
+    // filesystems keep reserved blocks, hence the 2 % slack).
+    let report = transport.preflight(dest).await.unwrap();
+    if let (Some(free), Some(total)) = (report.free_bytes, report.total_bytes) {
+        assert!(free <= total, "free {free} > total {total}");
+        if let Some(used) = report.used_bytes {
+            assert!(
+                used + free <= total + total / 50,
+                "used {used} + free {free} > total {total}"
+            );
+        }
+    }
+
     let (sink, mut rx) = ProgressSink::channel();
     let result = transport.transfer(dest, &job, sink).await.unwrap();
     assert_eq!(result.items.len(), 4, "one outcome per item");

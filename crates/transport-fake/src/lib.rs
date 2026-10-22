@@ -64,6 +64,8 @@ impl Transport for FakeTransport {
     async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
         Ok(PreflightReport {
             free_bytes: Some(1 << 40),
+            total_bytes: Some(3 << 40),
+            used_bytes: Some(2 << 40),
             writable: true,
             ..Default::default()
         })

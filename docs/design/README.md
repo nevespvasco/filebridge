@@ -23,7 +23,7 @@ ADR that records it.
 |---|---|---|---|
 | D01 | [Home](specs/D01-home.md) | 2 | UI only (reads D03, D06, D07) |
 | D02 | [Source step and transfer composition](specs/D02-source-and-composition.md) — **Built** | 2 | UI, `model`, `store` (migration), `ipc` |
-| D03 | [Destination storage](specs/D03-destination-storage.md) | 2 | UI, `transport-api` (additive), `transport-rclone`, `store` (migration), `ipc` |
+| D03 | [Destination storage](specs/D03-destination-storage.md) — **Built** (two parts later) | 2 | UI, `transport-api` (additive), `transport-rclone`, `store` (migration), `ipc` |
 | D04 | [Transfer queue](specs/D04-transfer-queue.md) — **Built** | 1 | UI, `transport-api` (additive), `transport-rclone`, `model` event, `core` |
 | D05 | [Files of a transfer and Entry detail](specs/D05-files-and-entry-detail.md) — **Built** | 2 | UI, `model`, `store`, `core` (persist hash), `ipc` |
 | D06 | [Transfers list](specs/D06-transfers-list.md) | 2 | UI, `model` rules, `store` (migration), `ipc` |

@@ -97,6 +97,77 @@ impl Store {
     }
 }
 
+/// `last_test, last_test_at, last_good_test, last_good_test_at`.
+type TestColumns = (Option<String>, Option<i64>, Option<String>, Option<i64>);
+
+/// A profile's last connection test, and its last one that reached the destination.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredTest {
+    pub last: Option<(serde_json::Value, i64)>,
+    pub last_good: Option<(serde_json::Value, i64)>,
+}
+
+impl Store {
+    /// Records a connection test (`ok`: the destination answered, so its numbers are good).
+    pub async fn save_profile_test(
+        &self,
+        id: &str,
+        test: serde_json::Value,
+        ok: bool,
+    ) -> Result<()> {
+        let (id, test) = (id.to_owned(), serde_json::to_string(&test)?);
+        self.call(move |c| {
+            let now = now_ms();
+            let n = if ok {
+                c.execute(
+                    "UPDATE profiles SET last_test = ?2, last_test_at = ?3,
+                         last_good_test = ?2, last_good_test_at = ?3 WHERE id = ?1",
+                    params![id, test, now],
+                )?
+            } else {
+                c.execute(
+                    "UPDATE profiles SET last_test = ?2, last_test_at = ?3 WHERE id = ?1",
+                    params![id, test, now],
+                )?
+            };
+            if n == 0 {
+                return Err(StoreError::NotFound(format!("profile {id}")));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn profile_test(&self, id: &str) -> Result<StoredTest> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            let row: Option<TestColumns> = c
+                .query_row(
+                    "SELECT last_test, last_test_at, last_good_test, last_good_test_at
+                     FROM profiles WHERE id = ?1",
+                    [&id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()?;
+            let Some((last, last_at, good, good_at)) = row else {
+                return Err(StoreError::NotFound(format!("profile {id}")));
+            };
+            let pair =
+                |v: Option<String>, at: Option<i64>| -> Result<Option<(serde_json::Value, i64)>> {
+                    match (v, at) {
+                        (Some(v), Some(at)) => Ok(Some((serde_json::from_str(&v)?, at))),
+                        _ => Ok(None),
+                    }
+                };
+            Ok(StoredTest {
+                last: pair(last, last_at)?,
+                last_good: pair(good, good_at)?,
+            })
+        })
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

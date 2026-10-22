@@ -11,7 +11,7 @@ use filebridge_ipc::{
     AnalysisSummary, AppSettings, CategoryCount, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     ErrorBody, Handler, IssueView, JobSummary, LogEntry, Operations, PROTOCOL_VERSION, Pong,
-    Profile, ProfileTest, RecentSource, RuleCount, SendOptions,
+    Profile, ProfileTest, RecentSource, RuleCount, SendOptions, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -174,6 +174,13 @@ impl Operations for EngineOperations {
 
     async fn job(&self, job_id: String) -> Res<JobSummary> {
         self.engine.job(&job_id).await.map_err(to_error)
+    }
+
+    async fn profile_storage(&self, id: String, refresh: bool) -> Res<StorageView> {
+        self.engine
+            .profile_storage(&id, refresh)
+            .await
+            .map_err(to_error)
     }
 
     async fn entries(

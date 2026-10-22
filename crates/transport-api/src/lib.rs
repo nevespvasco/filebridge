@@ -183,6 +183,10 @@ pub struct Check {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PreflightReport {
     pub free_bytes: Option<u64>,
+    /// Size of the filesystem or account that holds the root, when the backend reports it.
+    pub total_bytes: Option<u64>,
+    /// Space in use there (by anyone, not only filebridge).
+    pub used_bytes: Option<u64>,
     pub writable: bool,
     pub latency_ms: Option<u64>,
     pub checks: Vec<Check>,

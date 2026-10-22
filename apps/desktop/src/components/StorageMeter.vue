@@ -17,8 +17,10 @@ const props = withDefaults(
     caption: string;
     /** Bytes beyond `total` (does not fit): drawn as a danger cap at the end. */
     overflow?: boolean;
+    /** Off when the numbers are already said next to the bar. */
+    legend?: boolean;
   }>(),
-  { total: null, mode: "composition", freeLabel: "", overflow: false },
+  { total: null, mode: "composition", freeLabel: "", overflow: false, legend: true },
 );
 const fmt = useFmt();
 
@@ -35,7 +37,7 @@ const pct = (b: number) => (b / whole.value) * 100;
     <div class="bar" :class="{ overflow }" aria-hidden="true">
       <span v-for="(s, i) in segments" :key="s.key" class="seg" :style="{ width: `${Math.min(widths[i], 100)}%`, background: s.color }" />
     </div>
-    <ul class="legend small">
+    <ul v-if="legend" class="legend small">
       <li v-for="s in segments" :key="s.key">
         <span class="swatch" :style="{ background: s.color }" aria-hidden="true" />
         <span>{{ s.label }}</span>

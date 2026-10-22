@@ -96,7 +96,7 @@ impl Engine {
                     JobState::Transferring
                 }
                 JobState::Transferring if self.window_closed() => JobState::Waiting,
-                JobState::Transferring => match self.transfer_stage(&mut ctx).await? {
+                JobState::Transferring => match self.transfer_and_measure(&mut ctx).await? {
                     StageEnd::Done(()) if ctx.options.verify => JobState::Verifying,
                     StageEnd::Done(()) => JobState::Integrating,
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
@@ -215,6 +215,14 @@ impl Engine {
     }
 
     // ---- stage 4 -----------------------------------------------------------------------
+
+    /// The transfer stage, then a fresh measurement of the destination (best effort): the send
+    /// may have filled it (docs/design/specs/D03).
+    async fn transfer_and_measure(&self, ctx: &mut Ctx) -> Result<StageEnd<()>> {
+        let end = self.transfer_stage(ctx).await?;
+        let _ = self.measure(&ctx.profile, &ctx.job_id).await;
+        Ok(end)
+    }
 
     async fn transfer_stage(&self, ctx: &mut Ctx) -> Result<StageEnd<()>> {
         let transport = self
