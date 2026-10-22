@@ -35,3 +35,7 @@ sidecars/bin/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Claude Code local state (worktrees are full repo copies)
+.claude/worktrees/
+.claude/settings.local.json
