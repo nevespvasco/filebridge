@@ -140,6 +140,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
       <div class="conn small" :class="conn.connected ? 'on' : conn.connected === false ? 'off' : 'wait'">
         <span class="dot" aria-hidden="true" :title="conn.connected ? $t('conn.connected') : undefined" />
         <span class="conn-text">{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</span>
+        <!-- The top bar's short form; the banner under it says what happened and what to do. -->
+        <span v-if="!conn.connected" class="conn-short" aria-hidden="true">{{ conn.connected === false ? $t("conn.short.disconnected") : $t("conn.short.connecting") }}</span>
         <HelpTip :text="$t('conn.tip')" :label="$t('conn.label')" />
       </div>
     </nav>
@@ -208,6 +210,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
 .side a.notice-text:hover { text-decoration: underline; }
 .dismiss { background: none; border: 0; padding: 0; color: var(--text-2); cursor: pointer; display: inline-flex; }
 .conn { display: flex; gap: 0.4rem; align-items: center; padding: 0.5rem; color: var(--text-2); }
+.conn-short { display: none; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .on .dot { background: var(--ok); }
 .off .dot { background: var(--danger); }
@@ -257,7 +260,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
-  .brand { grid-area: brand; padding: 0.25rem; min-width: 0; }
+  .brand { grid-area: brand; padding: 0.25rem; min-width: 0; overflow: hidden; }
+  .brand span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .side a.new-transfer { grid-area: new; margin: 0; padding: 0.4rem 0.75rem; }
   .places {
     position: fixed;
@@ -279,9 +283,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   .grow { display: none; }
   .notice { grid-area: notice; margin: 0; }
   .conn { grid-area: conn; padding: 0.25rem; gap: 0.25rem; }
-  /* Connected is the usual state: the green dot alone says it (with its tooltip and the text for
-     screen readers). Connecting or not responding is always spelled out. */
-  .conn.on .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* The full sentence is for screen readers only. Connected is the usual state, and the green dot
+     alone says it (with its tooltip); connecting or offline is a short badge next to it. */
+  .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .conn:not(.on) { gap: 0.35rem; }
+  .conn:not(.on) .dot { display: none; }
+  .conn-short { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); }
+  .conn-short::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .off .conn-short { background: var(--danger-soft); color: var(--danger); }
+  .off .conn-short::before { background: var(--danger); }
+  /* The banner's button goes under its text when they don't fit side by side. */
+  .banner { flex-wrap: wrap; }
+  .banner-text { flex: 1 1 12rem; }
+  .banner > .btn { margin-left: calc(20px + 0.75rem); }
   .main { padding: 1rem 1rem calc(var(--nav-bottom) + 2rem); }
 }
 /* A phone-sized window: New transfer keeps its icon and its accessible name, not its text. */
