@@ -12,8 +12,8 @@ use std::time::Duration;
 use filebridge_integration_api::{IntegrationEvent, IntegrationSink};
 use filebridge_store::{EntryState, ManifestEntry, now_ms};
 use filebridge_transport_api::{
-    ErrorKind, HashAlgo, ItemOutcome, ProgressEvent, ProgressSink, RemotePath, TransferItem,
-    TransferJob, TransferOptions, TransportCaps,
+    ErrorKind, HashAlgo, InFlight, ItemOutcome, ProgressEvent, ProgressSink, RemotePath,
+    TransferItem, TransferJob, TransferOptions, TransportCaps,
 };
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
@@ -22,7 +22,7 @@ use crate::analyse::{bytes_path, source_parent};
 use crate::inhibit::{SleepGuard, inhibit};
 use crate::lifecycle::Outcome;
 use crate::{CoreError, Engine, Event, JobState, Profile, Result, SendOptions};
-use filebridge_model::Op;
+use filebridge_model::{DoneView, FileCategory, InFlightView, Op};
 
 const PAGE: u32 = 2_000;
 
@@ -299,16 +299,20 @@ impl Engine {
                 let store = self.store.clone();
                 let job_id = ctx.job_id.clone();
                 let idx_of: Vec<u64> = kept.iter().map(|e| e.entry.idx).collect();
+                let queue = QueueNames::of(&kept);
                 let (bb, bf) = (base_bytes, base_files);
                 // Forwards progress, and saves each finished file as soon as the transport
                 // reports it, so a crash mid-batch never resends what already arrived.
                 let forward = tokio::spawn(async move {
                     let mut finished = Vec::new();
+                    let mut arrived = Vec::new();
                     let mut tick = tokio::time::interval(Duration::from_millis(500));
                     loop {
                         tokio::select! {
                             ev = rx.recv() => match ev {
                                 Some(ProgressEvent::Stats(s)) => {
+                                    let in_flight =
+                                        s.transferring.iter().map(|f| queue.in_flight(f)).collect();
                                     let bytes_done = bb + s.bytes;
                                     let eta_secs = (s.bytes_per_sec > 0.0).then(|| {
                                         (bytes_total.saturating_sub(bytes_done) as f64
@@ -322,17 +326,25 @@ impl Engine {
                                         files_total,
                                         bytes_per_sec: s.bytes_per_sec,
                                         eta_secs,
+                                        in_flight,
                                     });
                                 }
                                 Some(ProgressEvent::ItemDone { index, ok: true }) => {
                                     if let Some(idx) = idx_of.get(index) {
                                         finished.push((*idx, EntryState::Done, None));
                                     }
+                                    if let Some(done) = queue.done(index) {
+                                        arrived.push(done);
+                                    }
                                 }
                                 Some(_) => {}
                                 None => break,
                             },
-                            _ = tick.tick() => {}
+                            _ = tick.tick() => {
+                                if !arrived.is_empty() {
+                                    let _ = events.send(entries_done(&job_id, std::mem::take(&mut arrived)));
+                                }
+                            }
                         }
                         if !finished.is_empty()
                             && let Err(e) = store
@@ -344,6 +356,9 @@ impl Engine {
                     }
                     if !finished.is_empty() {
                         let _ = store.set_transfer_states(&job_id, finished).await;
+                    }
+                    if !arrived.is_empty() {
+                        let _ = events.send(entries_done(&job_id, arrived));
                     }
                 });
                 let stopped = tokio::select! {
@@ -632,4 +647,87 @@ fn sha256_file(path: &std::path::Path) -> Result<Vec<u8>> {
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finalize().to_vec())
+}
+
+/// Most files listed in one `EntriesDone`; the rest are counted.
+const ENTRIES_DONE_LISTED: usize = 20;
+
+fn entries_done(job_id: &str, mut arrived: Vec<DoneView>) -> Event {
+    let more = arrived.len().saturating_sub(ENTRIES_DONE_LISTED) as u64;
+    arrived.truncate(ENTRIES_DONE_LISTED);
+    Event::EntriesDone {
+        job_id: job_id.to_owned(),
+        entries: arrived,
+        more,
+    }
+}
+
+/// One batch's items as the transfer queue shows them (docs/design/specs/D04): by item index
+/// for `ItemDone`, by destination path for the transport's files in flight.
+struct QueueNames {
+    items: Vec<QueueItem>,
+    by_dest: std::collections::HashMap<String, usize>,
+}
+
+struct QueueItem {
+    idx: u64,
+    dest: String,
+    category: FileCategory,
+    /// The source name, when it differs from the destination name.
+    renamed_from: Option<String>,
+}
+
+impl QueueNames {
+    fn of(kept: &[ManifestEntry]) -> Self {
+        let items: Vec<QueueItem> = kept
+            .iter()
+            .map(|e| {
+                let dest = e.dest_path.clone().unwrap_or_default();
+                let source_name = file_name(&String::from_utf8_lossy(&e.entry.raw_path)).to_owned();
+                QueueItem {
+                    idx: e.entry.idx,
+                    category: FileCategory::of_name(&e.entry.raw_path),
+                    renamed_from: (source_name != file_name(&dest)).then_some(source_name),
+                    dest,
+                }
+            })
+            .collect();
+        let by_dest = items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| (item.dest.clone(), i))
+            .collect();
+        Self { items, by_dest }
+    }
+
+    fn in_flight(&self, f: &InFlight) -> InFlightView {
+        let item = self.by_dest.get(&f.dest).map(|&i| &self.items[i]);
+        let (dir, name) = match f.dest.rsplit_once('/') {
+            Some((dir, name)) => (dir.to_owned(), name.to_owned()),
+            None => (String::new(), f.dest.clone()),
+        };
+        InFlightView {
+            idx: item.map(|i| i.idx),
+            category: item.map_or_else(|| FileCategory::of_name(name.as_bytes()), |i| i.category),
+            renamed_from: item.and_then(|i| i.renamed_from.clone()),
+            name,
+            dir,
+            size: f.size,
+            bytes: f.bytes,
+            bytes_per_sec: f.bytes_per_sec,
+            eta_secs: f.eta_secs,
+        }
+    }
+
+    fn done(&self, index: usize) -> Option<DoneView> {
+        self.items.get(index).map(|i| DoneView {
+            idx: i.idx,
+            name: file_name(&i.dest).to_owned(),
+            category: i.category,
+        })
+    }
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit_once('/').map_or(path, |(_, n)| n)
 }

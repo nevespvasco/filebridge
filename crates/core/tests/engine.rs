@@ -9,8 +9,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
-    AppSettings, CoreError, DecisionInput, Engine, EngineOptions, Event, IssueDecision, JobState,
-    LocalClock, Profile, Registry, SendOptions, SendWindow, Store, StoreError, TargetSpec,
+    AppSettings, CoreError, DecisionInput, Engine, EngineOptions, Event, FileCategory,
+    IssueDecision, JobState, LocalClock, Profile, Registry, SendOptions, SendWindow, Store,
+    StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -268,6 +269,51 @@ async fn sends_with_nfc_names_and_updates_the_integration() {
         }
     }
     assert!(saw_progress && saw_integration);
+}
+
+#[tokio::test]
+async fn the_queue_names_files_in_flight_and_the_ones_that_arrived() {
+    let s = setup().await;
+    let mut events = s.engine.subscribe();
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+
+    let (mut in_flight, mut arrived, mut more) = (Vec::new(), Vec::new(), 0);
+    while let Ok(e) = events.try_recv() {
+        match e {
+            Event::TransferProgress { in_flight: f, .. } => in_flight.extend(f),
+            Event::EntriesDone {
+                entries, more: m, ..
+            } => {
+                arrived.extend(entries);
+                more += m;
+            }
+            _ => {}
+        }
+    }
+    // The fake sends one file at a time and names each one while it is in flight.
+    assert!(!in_flight.is_empty());
+    assert!(in_flight.iter().all(|f| f.idx.is_some()), "{in_flight:?}");
+    let summer = in_flight
+        .iter()
+        .find(|f| f.name == "Ver\u{e3}o.jpg")
+        .expect("the renamed photo was in flight");
+    assert_eq!(summer.dir, "Acme/Fotos");
+    assert_eq!(summer.category, FileCategory::Image);
+    assert_eq!(summer.renamed_from.as_deref(), Some("Vera\u{303}o.jpg"));
+    let winter = in_flight.iter().find(|f| f.name == "Inverno.jpg").unwrap();
+    assert_eq!(
+        winter.renamed_from, None,
+        "unchanged names carry no source name"
+    );
+
+    let mut names: Vec<_> = arrived.iter().map(|d| d.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["Inverno.jpg", "Relat\u{f3}rio.pdf", "Ver\u{e3}o.jpg"]
+    );
+    assert_eq!(more, 0);
 }
 
 #[tokio::test]

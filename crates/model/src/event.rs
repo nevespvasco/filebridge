@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::JobState;
+use crate::{DoneView, InFlightView, JobState};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -29,6 +29,15 @@ pub enum Event {
         files_total: u64,
         bytes_per_sec: f64,
         eta_secs: Option<u64>,
+        /// Files in flight now (at most the job's concurrency), in the order they started.
+        in_flight: Vec<InFlightView>,
+    },
+    /// Files that arrived since the last one of these (at most 20 listed; `more` counts the
+    /// rest). Advisory like every progress event, and never written to the job log.
+    EntriesDone {
+        job_id: String,
+        entries: Vec<DoneView>,
+        more: u64,
     },
     EntryFailed {
         job_id: String,
@@ -80,6 +89,7 @@ impl Event {
             Self::JobStateChanged { job_id, .. }
             | Self::ScanProgress { job_id, .. }
             | Self::TransferProgress { job_id, .. }
+            | Self::EntriesDone { job_id, .. }
             | Self::EntryFailed { job_id, .. }
             | Self::RetryScheduled { job_id, .. }
             | Self::SendWindowWait { job_id, .. }

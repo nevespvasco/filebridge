@@ -560,5 +560,22 @@
     "about": "Ajuda: {what}",
     "more": "Mais informação",
     "example": "Exemplo:"
+  },
+  "queue": {
+    "title": "A enviar agora ({n})",
+    "caption": "Ficheiros a ser enviados agora",
+    "col": {
+      "name": "Ficheiro",
+      "size": "Tamanho",
+      "progress": "Progresso",
+      "speed": "Velocidade"
+    },
+    "total": "{speed} no total",
+    "finished": "Acabados de chegar",
+    "lastMinute": "{n} no último minuto",
+    "renamed": "Renomeado de {name}",
+    "starting": "A começar…",
+    "between": "A preparar os próximos ficheiros…",
+    "paused": "Em pausa. Os ficheiros a meio continuam de onde o filebridge os puder retomar."
   }
 }

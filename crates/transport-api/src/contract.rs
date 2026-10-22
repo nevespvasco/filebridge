@@ -70,8 +70,20 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
     }
     let mut done = Vec::new();
     while let Ok(event) = rx.try_recv() {
-        if let ProgressEvent::ItemDone { index, ok: true } = event {
-            done.push(index);
+        match event {
+            ProgressEvent::ItemDone { index, ok: true } => done.push(index),
+            // A transport may not know what is in flight (an empty list), but what it names
+            // must be one of the job's items, under its destination name.
+            ProgressEvent::Stats(s) => {
+                for f in &s.transferring {
+                    assert!(
+                        job.items.iter().any(|i| i.dest.as_str() == f.dest),
+                        "in flight but not in the job: {:?}",
+                        f.dest
+                    );
+                }
+            }
+            _ => {}
         }
     }
     done.sort_unstable();

@@ -258,6 +258,18 @@ impl TransferResult {
     }
 }
 
+/// One file the transport is sending at the moment of a snapshot.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct InFlight {
+    /// The item's `TransferItem::dest`, as text.
+    pub dest: String,
+    pub size: u64,
+    /// Bytes of this file sent so far.
+    pub bytes: u64,
+    pub bytes_per_sec: f64,
+    pub eta_secs: Option<u64>,
+}
+
 /// Point-in-time transfer statistics.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StatsSnapshot {
@@ -268,6 +280,8 @@ pub struct StatsSnapshot {
     pub bytes_per_sec: f64,
     pub errors: u64,
     pub elapsed_secs: f64,
+    /// Files being sent at the moment of the snapshot; empty when the transport can't tell.
+    pub transferring: Vec<InFlight>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -37,7 +37,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///    issue's `decision` and `severity` are enums.
 /// 4: `get_settings`/`save_settings`; the `waiting` job state and `send_window_wait` event;
 ///    `SendOptions` has no `bwlimit` (the limit is app-wide).
-pub const PROTOCOL_VERSION: u32 = 4;
+/// 5: `transfer_progress` lists the files in flight; the `entries_done` event.
+pub const PROTOCOL_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Envelope {

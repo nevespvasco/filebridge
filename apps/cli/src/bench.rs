@@ -224,6 +224,7 @@ async fn run_mode(
                 rc.clone(),
                 group.clone(),
                 Some(totals),
+                None,
                 sink.clone(),
                 Duration::from_millis(500),
             );

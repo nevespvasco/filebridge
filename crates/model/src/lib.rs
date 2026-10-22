@@ -5,6 +5,7 @@
 //! Every type here crosses into TypeScript (`specta::Type`): renaming a field or a variant is a
 //! protocol change (`filebridge_ipc::PROTOCOL_VERSION`).
 
+mod category;
 mod event;
 mod profile;
 mod rules;
@@ -12,14 +13,15 @@ mod settings;
 mod state;
 mod views;
 
+pub use category::FileCategory;
 pub use event::Event;
 pub use profile::{Family, Profile, TargetSpec};
 pub use rules::{Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use state::{JobKind, JobState};
 pub use views::{
-    AnalysisSummary, CheckView, Counts, DecisionInput, IssueDecision, IssueSeverity, IssueView,
-    JobSummary, PreflightView, ProfileTest, RuleCount, SendOptions,
+    AnalysisSummary, CheckView, Counts, DecisionInput, DoneView, InFlightView, IssueDecision,
+    IssueSeverity, IssueView, JobSummary, PreflightView, ProfileTest, RuleCount, SendOptions,
 };
 
 /// A stored value (a job state, a job kind) this build doesn't know.

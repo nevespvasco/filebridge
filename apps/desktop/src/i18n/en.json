@@ -560,5 +560,22 @@
     "about": "Help: {what}",
     "more": "More information",
     "example": "Example:"
+  },
+  "queue": {
+    "title": "Sending now ({n})",
+    "caption": "Files being sent now",
+    "col": {
+      "name": "File",
+      "size": "Size",
+      "progress": "Progress",
+      "speed": "Speed"
+    },
+    "total": "{speed} total",
+    "finished": "Just finished",
+    "lastMinute": "{n} in the last minute",
+    "renamed": "Renamed from {name}",
+    "starting": "Starting…",
+    "between": "Preparing the next files…",
+    "paused": "Paused. Files that were half-sent will start again from where filebridge can resume them."
   }
 }

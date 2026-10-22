@@ -16,8 +16,11 @@ import {
   type AppSettings_Serialize,
   type commands,
   type DecisionInput,
+  type DoneView,
   type ErrorBody,
   type Event_Serialize,
+  type FileCategory,
+  type InFlightView_Serialize,
   type IssueDecision,
   type IssueView_Serialize,
   type JobState,
@@ -190,14 +193,43 @@ function sendOrWait(job: JobSummary_Serialize) {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 
+/** Dummy files for the transfer queue: what is in flight on tick `n`, and what just arrived. */
+const QUEUE_FILES: { dir: string; name: (i: number) => string; category: FileCategory; size: number; renamed?: (i: number) => string }[] = [
+  { dir: "Fotos/2019/Verão", name: (i) => `IMG_${2000 + i}.jpg`, category: "image", size: 4_200_000 },
+  { dir: "Fotos/2019/Verão", name: (i) => `VID_${i.toString().padStart(4, "0")}.mov`, category: "video", size: 2_300_000_000 },
+  { dir: "Documentos", name: (i) => `Ata reunião ${i}.pdf`, category: "document", size: 210_000, renamed: (i) => `Ata reunia\u0303o ${i}.pdf` },
+  { dir: "Documentos/Contratos", name: (i) => `contrato_${i}.docx`, category: "document", size: 48_000 },
+  { dir: "Música", name: (i) => `faixa ${i}.flac`, category: "audio", size: 31_000_000 },
+  { dir: "Projetos", name: (i) => `backup_${i}.zip`, category: "archive", size: 640_000_000 },
+];
+
+function queueAt(job: JobSummary_Serialize, n: number) {
+  const slots = Math.max(1, Math.min(job.options.concurrency, 8));
+  const in_flight: InFlightView_Serialize[] = Array.from({ length: slots }, (_, k) => {
+    const f = QUEUE_FILES[k % QUEUE_FILES.length];
+    const i = n + k;
+    const part = ((n * 37 + k * 17) % 100) / 100;
+    return { idx: i * 10 + k, name: f.name(i), dir: f.dir, category: f.category, renamed_from: f.renamed?.(i) ?? null, size: f.size, bytes: Math.round(f.size * part), bytes_per_sec: 2_000_000 + k * 1_500_000, eta_secs: Math.round((f.size * (1 - part)) / (2_000_000 + k * 1_500_000)) };
+  });
+  const entries: DoneView[] = Array.from({ length: 3 }, (_, k) => {
+    const f = QUEUE_FILES[(n + k) % QUEUE_FILES.length];
+    return { idx: n * 100 + k, name: f.name(n - 1 + k), category: f.category };
+  });
+  return { in_flight, entries };
+}
+
 function runTransfer(job: JobSummary_Serialize) {
   clearInterval(timers.get(job.id));
   const total = job.counts.bytes;
+  let tick = 0;
   const t = setInterval(async () => {
     if (job.state !== "transferring") return;
+    tick++;
     job.counts.bytes_done = Math.min(total, job.counts.bytes_done + total / 25);
     job.counts.done = Math.floor((job.counts.bytes_done / total) * job.counts.files);
-    send({ type: "transfer_progress", job_id: job.id, bytes_done: job.counts.bytes_done, bytes_total: total, files_done: job.counts.done, files_total: job.counts.files, bytes_per_sec: 48_000_000, eta_secs: Math.round((total - job.counts.bytes_done) / 48_000_000) });
+    const q = queueAt(job, tick);
+    send({ type: "transfer_progress", job_id: job.id, bytes_done: job.counts.bytes_done, bytes_total: total, files_done: job.counts.done, files_total: job.counts.files, bytes_per_sec: 48_000_000, eta_secs: Math.round((total - job.counts.bytes_done) / 48_000_000), in_flight: job.counts.bytes_done >= total ? [] : q.in_flight });
+    send({ type: "entries_done", job_id: job.id, entries: q.entries, more: 37 });
     if (job.counts.bytes_done >= total) {
       clearInterval(t);
       timers.delete(job.id);

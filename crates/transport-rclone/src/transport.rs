@@ -331,10 +331,12 @@ impl Transport for RcloneTransport {
             job.items.len() as u64,
             job.items.iter().map(|i| i.size).sum::<u64>(),
         );
+        let names = Arc::new(stats::InFlightNames::of(job));
         let poller = stats::spawn_poller(
             rc.clone(),
             group.clone(),
             Some(totals),
+            Some(names.clone()),
             progress.clone(),
             Duration::from_millis(500),
         );
@@ -352,7 +354,7 @@ impl Transport for RcloneTransport {
                 .map(|()| vec![ItemOutcome::Done; job.items.len()]),
         };
         poller.abort();
-        if let Ok(s) = stats::snapshot(rc, &group).await {
+        if let Ok(s) = stats::snapshot(rc, &group, Some(&names)).await {
             progress.send(ProgressEvent::Stats(s));
         }
         let outcomes = outcomes?;

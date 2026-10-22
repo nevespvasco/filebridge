@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use filebridge_transport_api::{
-    Destination, Digest, HashAlgo, ItemOutcome, PreflightReport, ProgressEvent, ProgressSink,
-    RemotePath, Result, StatsSnapshot, TransferJob, TransferResult, Transport, TransportCaps,
-    TransportError,
+    Destination, Digest, HashAlgo, InFlight, ItemOutcome, PreflightReport, ProgressEvent,
+    ProgressSink, RemotePath, Result, StatsSnapshot, TransferJob, TransferResult, Transport,
+    TransportCaps, TransportError,
 };
 use sha2::{Digest as _, Sha256};
 
@@ -87,6 +87,18 @@ impl Transport for FakeTransport {
         let mut items = Vec::with_capacity(job.items.len());
         let mut bytes = 0;
         for (i, item) in job.items.iter().enumerate() {
+            // One file at a time: it is the one in flight until it is copied.
+            progress.send(ProgressEvent::Stats(StatsSnapshot {
+                bytes,
+                files_done: i as u64,
+                bytes_per_sec: 1000.0,
+                transferring: vec![InFlight {
+                    dest: item.dest.as_str().to_owned(),
+                    size: item.size,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }));
             if !delay.is_zero() {
                 tokio::time::sleep(delay).await;
             }

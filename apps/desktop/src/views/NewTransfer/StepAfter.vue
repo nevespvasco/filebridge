@@ -3,6 +3,7 @@ import AppIcon from "@/components/AppIcon.vue";
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import JobProgress from "@/components/JobProgress.vue";
+import TransferQueue from "@/components/TransferQueue.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
@@ -33,6 +34,7 @@ function newTransfer() {
     </div>
 
     <div class="card"><JobProgress :job-id="id" /></div>
+    <div v-if="job && ['transferring', 'retrying', 'paused'].includes(job.state)" class="card queue-card"><TransferQueue :job-id="id" /></div>
 
     <div v-if="done && job" class="card report">
       <h3>{{ $t(`after.result.${job.state}`) }}</h3>
@@ -70,6 +72,7 @@ function newTransfer() {
 </template>
 
 <style scoped>
+.queue-card { margin-top: 1rem; }
 .report { margin-top: 1rem; }
 .report h3 { margin-top: 0; }
 .stats { display: flex; gap: 2rem; flex-wrap: wrap; }

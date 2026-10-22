@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import JobProgress from "@/components/JobProgress.vue";
+import TransferQueue from "@/components/TransferQueue.vue";
 import { useFmt } from "@/composables/useFmt";
 import { errorMessage } from "@/lib/api";
 import { request } from "@/lib/requests";
@@ -140,6 +141,7 @@ const details = computed(() => [
 
       <div v-if="tab === 'overview'" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
         <div class="card"><JobProgress :job-id="id" /></div>
+        <div v-if="['transferring', 'retrying', 'paused'].includes(job.state)" class="card queue-card"><TransferQueue :job-id="id" /></div>
 
         <div class="grid">
           <section class="card">
@@ -210,6 +212,7 @@ const details = computed(() => [
 </template>
 
 <style scoped>
+.queue-card { margin-top: 1rem; }
 .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1rem 0; }
 h2 { font-size: 1rem; margin-top: 0; }

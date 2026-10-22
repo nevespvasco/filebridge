@@ -3,7 +3,7 @@
 // (speed, ETA, current file, retries, the send window, integration step).
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import type { Event_Serialize, JobState, JobSummary_Serialize } from "@/bindings";
+import type { DoneView, Event_Serialize, JobState, JobSummary_Serialize } from "@/bindings";
 import { api, errorMessage, events } from "@/lib/api";
 import { notify } from "@/lib/platform";
 import { i18n } from "@/i18n";
@@ -23,12 +23,19 @@ export type Live = {
   retry?: Of<"retry_scheduled"> & { at: number };
   /** When the send window opens, while the job waits for it. */
   window?: Of<"send_window_wait">;
+  /** The last files that arrived, newest first (the queue's "Just finished"). */
+  arrived: DoneView[];
+  /** Arrivals counted per event, for "+N in the last minute". */
+  arrivals: { at: number; n: number }[];
   failures: Of<"entry_failed">[];
   problems: Of<"integration_problem">[];
   log: LogLine[];
 };
 
 const MAX_LINES = 500;
+/** Files kept in "Just finished". */
+const MAX_ARRIVED = 20;
+const MINUTE = 60_000;
 export const PAGE_SIZE = 50;
 
 /** States in which the service is working on the job. */
@@ -60,7 +67,7 @@ export const useJobs = defineStore("jobs", () => {
   const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   function liveOf(id: string): Live {
-    return (live.value[id] ??= { failures: [], problems: [], log: [] });
+    return (live.value[id] ??= { arrived: [], arrivals: [], failures: [], problems: [], log: [] });
   }
 
   function push<T>(list: T[], item: T) {
@@ -116,6 +123,10 @@ export const useJobs = defineStore("jobs", () => {
         break;
       case "transfer_progress":
         l.transfer = ev;
+        break;
+      case "entries_done":
+        l.arrived = [...[...ev.entries].reverse(), ...l.arrived].slice(0, MAX_ARRIVED);
+        l.arrivals = [...l.arrivals.filter((a) => now - a.at < MINUTE), { at: now, n: ev.entries.length + ev.more }];
         break;
       case "verify_progress":
         l.verify = ev;
@@ -199,5 +210,11 @@ export const useJobs = defineStore("jobs", () => {
     await refresh(id);
   }
 
-  return { byId, live, page, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
+  /** Files that arrived in the last minute (from `entries_done`). */
+  function arrivedLastMinute(id: string): number {
+    const now = Date.now();
+    return (live.value[id]?.arrivals ?? []).filter((a) => now - a.at < MINUTE).reduce((sum, a) => sum + a.n, 0);
+  }
+
+  return { byId, live, page, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
 });

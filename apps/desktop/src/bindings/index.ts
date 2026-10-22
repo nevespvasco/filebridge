@@ -66,7 +66,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 4 as const;
+export const PROTOCOL_VERSION = 5 as const;
 
 /* Types */
 export type AnalysisSummary = AnalysisSummary_Serialize | AnalysisSummary_Deserialize;
@@ -257,6 +257,14 @@ export type DetectStepView = {
 	commands: string[],
 };
 
+/**  A file that just arrived. */
+export type DoneView = {
+	idx: number,
+	/**  Destination file name. */
+	name: string,
+	category: FileCategory,
+};
+
 /**
  *  An error the service returns. `code` is stable (for the UI to branch on); `message` is
  *  for people.
@@ -272,7 +280,14 @@ export type ErrorBody = {
 
 export type Event = Event_Serialize | Event_Deserialize;
 
-export type Event_Deserialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error?: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current?: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs?: number | null } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
+export type Event_Deserialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error?: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current?: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs?: number | null; 
+/**  Files in flight now (at most the job's concurrency), in the order they started. */
+in_flight: InFlightView_Deserialize[] } | 
+/**
+ *  Files that arrived since the last one of these (at most 20 listed; `more` counts the
+ *  rest). Advisory like every progress event, and never written to the job log.
+ */
+{ type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
 { type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
@@ -280,7 +295,14 @@ step: string; done: number; total: number; items: number; current?: string | nul
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
 waiting?: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path?: string | null } | { type: "job_finished"; job_id: string; state: JobState; error?: string | null };
 
-export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
+export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null; 
+/**  Files in flight now (at most the job's concurrency), in the order they started. */
+in_flight: InFlightView_Serialize[] } | 
+/**
+ *  Files that arrived since the last one of these (at most 20 listed; `more` counts the
+ *  rest). Advisory like every progress event, and never written to the job log.
+ */
+{ type: "entries_done"; job_id: string; entries: DoneView[]; more: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
 { type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
@@ -290,6 +312,45 @@ waiting: string | null } | { type: "integration_problem"; job_id: string; code: 
 
 /**  What the destination filesystem accepts; decides which general name rules apply. */
 export type Family = "unix" | "windows" | "macos";
+
+export type FileCategory = "image" | "video" | "audio" | "document" | "archive" | "code" | "other";
+
+/**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */
+export type InFlightView = InFlightView_Serialize | InFlightView_Deserialize;
+
+/**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */
+export type InFlightView_Deserialize = {
+	/**  Its manifest entry, when the engine could tell which one it is. */
+	idx?: number | null,
+	/**  Destination file name. */
+	name: string,
+	/**  Destination folder, relative to the profile root ("" at the root). */
+	dir: string,
+	category: FileCategory,
+	/**  The source name, when a name rule changed it (lossily decoded). */
+	renamed_from?: string | null,
+	size: number,
+	bytes: number,
+	bytes_per_sec: number | null,
+	eta_secs?: number | null,
+};
+
+/**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */
+export type InFlightView_Serialize = {
+	/**  Its manifest entry, when the engine could tell which one it is. */
+	idx: number | null,
+	/**  Destination file name. */
+	name: string,
+	/**  Destination folder, relative to the profile root ("" at the root). */
+	dir: string,
+	category: FileCategory,
+	/**  The source name, when a name rule changed it (lossily decoded). */
+	renamed_from: string | null,
+	size: number,
+	bytes: number,
+	bytes_per_sec: number | null,
+	eta_secs: number | null,
+};
 
 /**  Where the decision on an issue stands, as the UI shows it. `rejected`: keep the original name. */
 export type IssueDecision = "pending" | "accepted" | "edited" | "rejected" | "skipped";

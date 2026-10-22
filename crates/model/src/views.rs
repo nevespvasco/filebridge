@@ -3,7 +3,7 @@
 use filebridge_transport_api::{CheckStatus, PreflightReport};
 use serde::{Deserialize, Serialize};
 
-use crate::{JobKind, JobState};
+use crate::{FileCategory, JobKind, JobState};
 
 /// Per-job choices made in step 4 of the wizard.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -201,4 +201,31 @@ pub enum DecisionInput {
 pub struct ProfileTest {
     pub transport: PreflightView,
     pub integration: Option<PreflightView>,
+}
+
+/// A file being sent right now (docs/design/specs/D04-transfer-queue.md).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct InFlightView {
+    /// Its manifest entry, when the engine could tell which one it is.
+    pub idx: Option<u64>,
+    /// Destination file name.
+    pub name: String,
+    /// Destination folder, relative to the profile root ("" at the root).
+    pub dir: String,
+    pub category: FileCategory,
+    /// The source name, when a name rule changed it (lossily decoded).
+    pub renamed_from: Option<String>,
+    pub size: u64,
+    pub bytes: u64,
+    pub bytes_per_sec: f64,
+    pub eta_secs: Option<u64>,
+}
+
+/// A file that just arrived.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct DoneView {
+    pub idx: u64,
+    /// Destination file name.
+    pub name: String,
+    pub category: FileCategory,
 }
