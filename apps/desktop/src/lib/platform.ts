@@ -13,7 +13,11 @@ export const isMock = import.meta.env.VITE_MOCK === "1";
 /** Native picker. Returns absolute paths (empty when cancelled). */
 export async function pickPaths(opts: { directory: boolean; multiple?: boolean; title?: string }): Promise<string[]> {
   if (isMock) {
-    return opts.directory ? ["/home/demo/Fotos"] : ["/home/demo/Documentos/relatório.pdf"];
+    // A browser can't open the OS picker or see real paths: ask for one, with an example.
+    const example = opts.directory ? "/home/demo/Fotos" : "/home/demo/Documentos/relatório.pdf";
+    const what = opts.directory ? "folder" : "file";
+    const answer = window.prompt(`Demo mode: type the ${what} path (the real app opens the system picker)`, example);
+    return answer?.trim() ? [answer.trim()] : [];
   }
   const picked = await open({
     directory: opts.directory,

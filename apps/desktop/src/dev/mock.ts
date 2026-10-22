@@ -69,6 +69,12 @@ const jobs: JobSummary_Serialize[] = [
   },
 ];
 
+// `VITE_MOCK_EMPTY=1`: start like a new user, with no destinations and no jobs.
+if (import.meta.env.VITE_MOCK_EMPTY === "1") {
+  profiles.length = 0;
+  jobs.length = 0;
+}
+
 // Issues are generated on demand, so a rule can have hundreds of thousands of them.
 type RuleDef = { rule: string; total: number; auto: boolean; base: number };
 const rulesByJob = new Map<string, RuleDef[]>();
@@ -257,7 +263,16 @@ const handlers: Handlers = {
   },
   detectNextcloud: async (a) => {
     await sleep(1200);
-    const req = a.req as { name: string; ctid: number | null };
+    const req = a.req as {
+      name: string;
+      host: string;
+      port: number;
+      user: string;
+      key_file: string | null;
+      nextcloud_user: string;
+      folder: string;
+      ctid: number | null;
+    };
     const steps = [
       { id: "ssh", status: "ok", message: "connected as root", commands: ["ssh -p 22 root@pve.example.lan true"] },
       { id: "pct-list", status: req.ctid == null ? "warn" : "ok", message: req.ctid == null ? "2 containers look like Nextcloud" : `container ${req.ctid}`, commands: ["pct list"] },
@@ -269,7 +284,21 @@ const handlers: Handlers = {
       { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data", commands: [] },
       { id: "owner", status: "ok", message: "100033:100033", commands: ["stat -c %u:%g /srv/ncdata/demo/files"] },
     );
-    const profile: Profile_Serialize = { ...profiles[0], id: `p-${Math.random().toString(36).slice(2, 8)}`, name: req.name };
+    // Built from the request, so it also works when the mock starts empty (VITE_MOCK_EMPTY).
+    const folder = req.folder.replace(/^\/+|\/+$/g, "");
+    const files = `/srv/ncdata/${req.nextcloud_user}/files`;
+    const profile: Profile_Serialize = {
+      id: `p-${Math.random().toString(36).slice(2, 8)}`,
+      name: req.name,
+      destination: {
+        transport: "rclone",
+        backend: { kind: "sftp", host: req.host, port: req.port, user: req.user, key_file: req.key_file, known_hosts_file: null, password: null },
+        root: folder ? `${files}/${folder}` : files,
+      },
+      integration: "nextcloud",
+      integration_settings: { mode: "direct" },
+      target: { family: "unix", case_sensitive: true },
+    };
     profiles.push(profile);
     return { steps, containers: [], profile };
   },

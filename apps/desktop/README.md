@@ -81,6 +81,7 @@ pnpm tauri dev          # needs the Tauri system libraries (Linux: webkit2gtk-4.
 FILEBRIDGE_FAKE_TRANSPORT=1 pnpm tauri dev   # the real service and engine, no rclone: profiles
                                              # use transport "fake" and a local root
 VITE_MOCK=1 pnpm dev    # UI only, in a plain browser, against src/dev/mock.ts (visual work)
+VITE_MOCK=1 VITE_MOCK_EMPTY=1 pnpm dev   # the same, starting like a new user (no destinations, no jobs)
 pnpm build              # vue-tsc + vite build
 pnpm bindings           # regenerate src/bindings/index.ts
 ```
