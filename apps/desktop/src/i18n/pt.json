@@ -9,10 +9,12 @@
       "new": "Copiar ficheiros e pastas para outro sítio, passo a passo",
       "jobs": "Ver os envios em curso e os que já terminaram",
       "destinations": "Os sítios para onde envia ficheiros: um disco, um servidor ou o Nextcloud",
-      "settings": "Língua e notificações"
+      "settings": "Língua e notificações",
+      "home": "O que precisa de si, o que está a enviar e o que aconteceu"
     },
     "attention": "{n} transferência precisa de si | {n} transferências precisam de si",
-    "active": "{n} em curso | {n} em curso"
+    "active": "{n} em curso | {n} em curso",
+    "home": "Início"
   },
   "tray": {
     "show": "Abrir filebridge",
@@ -893,6 +895,43 @@
       "sendInto": "Enviar para:",
       "change": "Mudar…",
       "root": "Usar a raiz"
+    }
+  },
+  "home": {
+    "title": "Início",
+    "headline": {
+      "offline": "Sem ligação ao serviço",
+      "needsYou": "{n} transferência precisa de si | {n} transferências precisam de si",
+      "sending": "{n} transferência em curso | {n} transferências em curso",
+      "allGood": "Está tudo em dia",
+      "none": "Ainda não há transferências"
+    },
+    "needsYou": "Precisa de si",
+    "nowSending": "A enviar agora",
+    "drop": "Largue pastas aqui para começar uma transferência",
+    "recent": "Transferências recentes",
+    "allTransfers": "Todas as transferências",
+    "activity": "Atividade",
+    "reclaimable": "Espaço que pode libertar",
+    "reclaimTotal": "{size} verificados no destino",
+    "more": "+{n} mais",
+    "error": "Não foi possível ler as transferências.",
+    "reason": {
+      "decide": "Alguns nomes precisam de uma decisão",
+      "failed": "Parada por um erro",
+      "retrying": "Ainda a tentar (tentativa {n})",
+      "warnings": "Concluída com avisos"
+    },
+    "action": {
+      "decide": "Decidir",
+      "open": "Abrir",
+      "review": "Rever"
+    },
+    "start": {
+      "title": "Comece em três passos",
+      "destination": "Adicione um destino: um disco, um servidor ou o Nextcloud.",
+      "folders": "Escolha as pastas a enviar.",
+      "send": "Envie. Pode fechar a janela: continua."
     }
   }
 }

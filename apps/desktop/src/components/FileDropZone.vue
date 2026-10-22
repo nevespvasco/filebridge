@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Drop files and folders on the window, or pick them in the file explorer.
 import AppIcon from "@/components/AppIcon.vue";
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { onFileDrop, pickPaths } from "@/lib/platform";
 import { errorMessage } from "@/lib/api";
@@ -12,13 +12,30 @@ const over = ref(false);
 const error = ref<string | null>(null);
 let unlisten: (() => void) | null = null;
 
-onMounted(async () => {
-  unlisten = await onFileDrop((state, paths) => {
+// Listen only while on screen: a kept-alive wizard in the background must not take drops meant
+// for another page (Home has its own drop zone).
+let active = false;
+async function listen() {
+  active = true;
+  if (unlisten) return;
+  const off = await onFileDrop((state, paths) => {
     over.value = state === "over";
     if (state === "drop" && paths.length) emit("add", paths);
   });
-});
-onBeforeUnmount(() => unlisten?.());
+  // Left the screen while subscribing: don't keep the listener.
+  if (active && !unlisten) unlisten = off;
+  else off();
+}
+function stop() {
+  active = false;
+  unlisten?.();
+  unlisten = null;
+  over.value = false;
+}
+onMounted(listen);
+onActivated(listen);
+onDeactivated(stop);
+onBeforeUnmount(stop);
 
 async function pick(directory: boolean) {
   error.value = null;

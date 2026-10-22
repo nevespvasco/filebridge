@@ -131,7 +131,7 @@ A narrow window is the only "mobile" layout. No phone app is planned (D12 in the
 
 ## Acceptance criteria
 
-1. `/` lands on Home once D01 ships. Until then it lands on `/new` (no behaviour change before then).
+1. `/` lands on Home (built with D01).
 2. "New transfer" is the first sidebar item, styled as the primary button, with `Ctrl/⌘+N`
    working from any page.
 3. The Transfers item shows the running count and, separately, the attention dot, each with an

@@ -1,6 +1,6 @@
 # D01 — Home
 
-- ID: D01 · Status: Proposed · Phase: 2
+- ID: D01 · Status: **Built** · Phase: 2
 - Inspired by: E1, E3, E4, E5 (CloudVault dashboard), G2, G3, G6 (slothUI My Cloud), F6, F7
   (Vault & Vine home), D3 (UpLink Recent)
 - Layers touched: `apps/desktop` only. Reads the operations of [D03](D03-destination-storage.md),
@@ -108,6 +108,16 @@ There are no separate quick-action buttons (E3): New transfer is the page's prim
   instead of the empty sections: "1 Add a destination · 2 Choose folders · 3 Send". Each step
   turns into a check when done. Hidden for good once a job completes.
 - **Routing**: `/` redirects to `/home` once this ships ([02](../02-information-architecture.md#navigation-map)).
+
+### As built
+
+- `stores/home.ts` runs four bounded `list_jobs` queries (needs you, active, finished or
+  cancelled, and a count) and re-runs them at most once a second when a job changes state.
+- "Not yet opened since it finished" is kept per window in `localStorage` (`filebridge.seen`),
+  marked when Transfer detail opens.
+- Home's drop zone and the wizard's share one component, which now listens to window drops only
+  while it is on screen, so the kept-alive wizard no longer takes drops meant for other pages.
+- One column below 1080px.
 
 ## States
 

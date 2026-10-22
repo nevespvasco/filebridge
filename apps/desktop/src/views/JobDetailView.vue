@@ -18,6 +18,7 @@ import { errorMessage } from "@/lib/api";
 import { request } from "@/lib/requests";
 import { RUNNING, TERMINAL, useJobs } from "@/stores/jobs";
 import { profileWhere, useProfiles } from "@/stores/profiles";
+import { useHome } from "@/stores/home";
 import { useWizard } from "@/stores/wizard";
 
 const props = defineProps<{ id: string }>();
@@ -59,6 +60,8 @@ function onTabKey(e: KeyboardEvent) {
 async function load() {
   const j = await jobs.refresh(props.id);
   notFound.value = !j;
+  // Opened: Home stops listing its warnings under "Needs you".
+  if (j) useHome().markSeen(j.id);
   if (j) await profiles.ensure(j.profile_id);
 }
 onMounted(load);

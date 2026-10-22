@@ -21,7 +21,7 @@ ADR that records it.
 
 | ID | Spec | Phase | Layers touched |
 |---|---|---|---|
-| D01 | [Home](specs/D01-home.md) | 2 | UI only (reads D03, D06, D07) |
+| D01 | [Home](specs/D01-home.md) — **Built** | 2 | UI only (reads D03, D06, D07) |
 | D02 | [Source step and transfer composition](specs/D02-source-and-composition.md) — **Built** | 2 | UI, `model`, `store` (migration), `ipc` |
 | D03 | [Destination storage](specs/D03-destination-storage.md) — **Built** (two parts later) | 2 | UI, `transport-api` (additive), `transport-rclone`, `store` (migration), `ipc` |
 | D04 | [Transfer queue](specs/D04-transfer-queue.md) — **Built** | 1 | UI, `transport-api` (additive), `transport-rclone`, `model` event, `core` |
@@ -36,11 +36,9 @@ ADR that records it.
 The design-system foundation ([01](01-design-system.md)) and the navigation
 ([02](02-information-architecture.md)) go first, in Phase 1, because every spec builds on them.
 
-**Built so far** (branch `design/implementation`): the foundation of 01 (tokens, Phosphor icons,
-tabular numbers, the theme setting, `AppIcon`, `SegmentedControl`; the other components arrive
-with the spec that first needs them), the navigation of 02 (sidebar, attention dot, shortcuts,
-Overview / Log tabs; the Files tab comes with D05), D04, the log half of D07, and D02's
-`FileCategory` table (without its migration).
+**Built** (branch `design/implementation`): everything in this folder — the design system and
+navigation, and D01–D11. Each spec ends with an "As built" note where the code differs from it,
+and lists what is left for later.
 
 ## Decisions this folder rests on
 

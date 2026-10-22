@@ -103,6 +103,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
       <RouterLink to="/new" class="new-transfer" :title="$t('nav.tips.new')">
         <AppIcon name="send" :size="20" /><span class="label">{{ $t("nav.new") }}</span>
       </RouterLink>
+      <RouterLink to="/home" :title="$t('nav.tips.home')">
+        <AppIcon name="home" :size="20" /><span class="label">{{ $t("nav.home") }}</span>
+      </RouterLink>
       <RouterLink to="/jobs" :title="$t('nav.tips.jobs')">
         <AppIcon name="transfers" :size="20" /><span class="label">{{ $t("nav.jobs") }}</span>
         <span v-if="attention" class="attention" role="img" :aria-label="$t('nav.attention', { n: attention }, attention)" :title="$t('nav.attention', { n: attention }, attention)" />

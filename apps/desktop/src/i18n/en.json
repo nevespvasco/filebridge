@@ -9,10 +9,12 @@
       "new": "Copy files and folders to another place, step by step",
       "jobs": "See the transfers in progress and the ones already finished",
       "destinations": "The places you send files to: a disk, a server or Nextcloud",
-      "settings": "Language and notifications"
+      "settings": "Language and notifications",
+      "home": "What needs you, what is sending, and what happened"
     },
     "attention": "{n} transfer needs you | {n} transfers need you",
-    "active": "{n} running | {n} running"
+    "active": "{n} running | {n} running",
+    "home": "Home"
   },
   "tray": {
     "show": "Open filebridge",
@@ -893,6 +895,43 @@
       "sendInto": "Send into:",
       "change": "Change…",
       "root": "Use the root"
+    }
+  },
+  "home": {
+    "title": "Home",
+    "headline": {
+      "offline": "Not connected to the service",
+      "needsYou": "{n} transfer needs you | {n} transfers need you",
+      "sending": "{n} transfer is sending | {n} transfers are sending",
+      "allGood": "Everything is up to date",
+      "none": "No transfers yet"
+    },
+    "needsYou": "Needs you",
+    "nowSending": "Now sending",
+    "drop": "Drop folders here to start a transfer",
+    "recent": "Recent transfers",
+    "allTransfers": "All transfers",
+    "activity": "Activity",
+    "reclaimable": "Space you can free",
+    "reclaimTotal": "{size} verified at the destination",
+    "more": "+{n} more",
+    "error": "Couldn't read the transfers.",
+    "reason": {
+      "decide": "Some names need a decision",
+      "failed": "Stopped by an error",
+      "retrying": "Still retrying (attempt {n})",
+      "warnings": "Finished with warnings"
+    },
+    "action": {
+      "decide": "Decide",
+      "open": "Open",
+      "review": "Review"
+    },
+    "start": {
+      "title": "Start in three steps",
+      "destination": "Add a destination: a disk, a server or Nextcloud.",
+      "folders": "Choose the folders to send.",
+      "send": "Send. You can close the window: it keeps going."
     }
   }
 }
