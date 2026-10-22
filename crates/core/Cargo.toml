@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 filebridge-integration-api.workspace = true
+filebridge-model.workspace = true
 filebridge-names.workspace = true
 filebridge-scanner.workspace = true
 filebridge-store.workspace = true

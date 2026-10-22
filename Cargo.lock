@@ -1558,6 +1558,7 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "filebridge-integration-api",
+ "filebridge-model",
  "filebridge-names",
  "filebridge-scanner",
  "filebridge-store",
@@ -1649,7 +1650,7 @@ name = "filebridge-ipc"
 version = "0.0.1"
 dependencies = [
  "async-trait",
- "filebridge-core",
+ "filebridge-model",
  "filebridge-transport-api",
  "interprocess",
  "serde",
@@ -1658,6 +1659,18 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "filebridge-model"
+version = "0.0.1"
+dependencies = [
+ "filebridge-names",
+ "filebridge-transport-api",
+ "serde",
+ "serde_json",
+ "specta",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

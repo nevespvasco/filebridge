@@ -37,7 +37,7 @@ points at every other place. Bump `PROTOCOL_VERSION` with it.
 - Client: `Client::connect(&Endpoint)`, every operation through `Operations` (`use
   filebridge_ipc::Operations`), and `events()`. When the connection drops, every `events()` receiver reports `Closed` and later
   calls fail at once with `disconnected`.
-- The `core` and `transport-api` types that requests, responses and events carry (`Profile`,
+- The `model` and `transport-api` types that requests, responses and events carry (`Profile`,
   `SendOptions`, `JobSummary`, `Event`, `Destination`, …) are re-exported, so clients depend on
   this crate only.
 
@@ -54,5 +54,5 @@ completion, and checks error codes and the 0700 directory; `set_options` and `de
 the socket; and that event streams close when the service hangs up.
 
 ## Allowed dependencies
-`core` and `transport-api` (only for the types it re-exports; nothing here calls the engine),
-`interprocess`, `tokio`, `serde`, `serde_json`, `specta`, `async-trait`.
+`model` and `transport-api` (for the types it re-exports), `interprocess`, `tokio`, `serde`,
+`serde_json`, `specta`, `async-trait`. **Never `core`**: a client must not compile the engine.

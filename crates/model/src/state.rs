@@ -1,8 +1,9 @@
-//! Job kinds and states. Which state may follow which is the Job lifecycle's (`lifecycle.rs`).
+//! Job kinds and states. Which state may follow which, and which operation runs in which, is in
+//! `rules.rs`.
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CoreError, Result};
+use crate::UnknownValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
@@ -20,11 +21,11 @@ impl JobKind {
         }
     }
 
-    pub fn parse(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self, UnknownValue> {
         match s {
             "transfer" => Ok(Self::Transfer),
             "repair" => Ok(Self::Repair),
-            other => Err(CoreError::Invalid(format!("job kind {other:?}"))),
+            other => Err(UnknownValue::new("job kind", other)),
         }
     }
 }
@@ -82,11 +83,11 @@ impl JobState {
         }
     }
 
-    pub fn parse(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self, UnknownValue> {
         Self::ALL
             .into_iter()
             .find(|st| st.as_str() == s)
-            .ok_or_else(|| CoreError::Invalid(format!("job state {s:?}")))
+            .ok_or_else(|| UnknownValue::new("job state", s))
     }
 
     /// No further transitions; the job is never resumed.

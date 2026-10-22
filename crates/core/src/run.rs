@@ -20,8 +20,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::analyse::{bytes_path, source_parent};
 use crate::inhibit::{SleepGuard, inhibit};
-use crate::lifecycle::{Op, Outcome};
+use crate::lifecycle::Outcome;
 use crate::{CoreError, Engine, Event, JobState, Profile, Result, SendOptions};
+use filebridge_model::Op;
 
 const PAGE: u32 = 2_000;
 

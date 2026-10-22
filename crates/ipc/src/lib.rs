@@ -21,9 +21,10 @@ pub use client::Client;
 pub use operations::{Operations, Request};
 pub use server::{Handler, bind, serve};
 
-/// The core and transport types requests, responses and events carry, so clients need only
-/// this crate (ADR 0008: the window reaches `core` only through `ipc`).
-pub use filebridge_core::{
+/// The shared types (`filebridge-model`) and transport types requests, responses and events
+/// carry, so clients need only this crate. It doesn't depend on `core`: a client never compiles
+/// the engine (ADR 0008: the window reaches `core` only through `ipc`).
+pub use filebridge_model::{
     AnalysisSummary, CheckView, Counts, DecisionInput, Event, Family, IssueDecision, IssueSeverity,
     IssueView, JobKind, JobState, JobSummary, PreflightView, Profile, ProfileTest, RuleCount,
     SendOptions, TargetSpec, job_operations,

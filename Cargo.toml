@@ -9,6 +9,7 @@ members = [
     "crates/integration-api",
     "crates/integration-nextcloud",
     "crates/ipc",
+    "crates/model",
     "crates/names",
     "crates/scanner",
     "crates/store",
@@ -30,6 +31,7 @@ filebridge-host = { path = "crates/host" }
 filebridge-integration-api = { path = "crates/integration-api" }
 filebridge-integration-nextcloud = { path = "crates/integration-nextcloud" }
 filebridge-ipc = { path = "crates/ipc" }
+filebridge-model = { path = "crates/model" }
 filebridge-names = { path = "crates/names" }
 filebridge-scanner = { path = "crates/scanner" }
 filebridge-store = { path = "crates/store" }

@@ -9,9 +9,9 @@ Stages and the Job lifecycle's states; everything about it is persisted in SQLit
 **Stage**: one of the six steps of a Job (source & destination, analyse, fix names, transfer,
 verify, update tool). Docs/02.
 
-**Job lifecycle**: the module that owns which operation may run in which state, which state may
-follow which, and how a state change is recorded (with the finished Stage's outcome).
-`crates/core/src/lifecycle.rs`.
+**Job lifecycle**: which operation may run in which state, which state may follow which, and how a
+state change is recorded (with the finished Stage's outcome). The rules are pure data in
+`crates/model/src/rules.rs`; `crates/core/src/lifecycle.rs` enforces and records them.
 
 **Stage outcome**: what a finished Stage leaves for the end of the Job: its warnings, and whether
 it was a verify round that sends files again. Saved with the state change that ends the Stage.

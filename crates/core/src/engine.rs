@@ -10,8 +10,6 @@ use std::time::Duration;
 use filebridge_integration_api::{JobContext, ProfileView};
 use filebridge_names::{Choice, Entry, NamePlan, Planned};
 use filebridge_store::{Decision, EntryState, IssueRow, JobRow, ManifestCounts, NewJob, Store};
-use filebridge_transport_api::{CheckStatus, PreflightReport};
-use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, broadcast};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -19,8 +17,12 @@ use tokio_util::sync::CancellationToken;
 use crate::analyse::{self, bytes_path, os_bytes};
 use crate::backoff::Backoff;
 use crate::decisions;
-use crate::lifecycle::{JobLock, JobLocks, Op};
-use crate::{CoreError, Event, JobKind, JobState, Profile, Registry, Result};
+use crate::lifecycle::{JobLock, JobLocks};
+use crate::{
+    AnalysisSummary, CoreError, Counts, DecisionInput, Event, IssueView, JobKind, JobState,
+    JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
+};
+use filebridge_model::Op;
 
 const INSERT_BATCH: usize = 10_000;
 const PAGE: u32 = 5_000;
@@ -46,221 +48,21 @@ impl Default for EngineOptions {
     }
 }
 
-/// Per-job choices made in step 4 of the wizard.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct SendOptions {
-    /// Compare SHA-256 of every file at the end (source vs destination).
-    pub verify: bool,
-    /// Files in flight at once.
-    pub concurrency: u32,
-    /// rclone-style bandwidth limit, e.g. `"20M"`.
-    pub bwlimit: Option<String>,
-}
-
-impl Default for SendOptions {
-    fn default() -> Self {
-        Self {
-            verify: false,
-            concurrency: 8,
-            bwlimit: None,
-        }
+/// A manifest's totals as the UI shows them: partial files count as pending, missing ones as
+/// mismatched.
+fn counts(c: ManifestCounts) -> Counts {
+    Counts {
+        files: c.files,
+        dirs: c.dirs,
+        bytes: c.bytes,
+        pending: c.pending + c.partial,
+        done: c.done,
+        failed: c.failed,
+        skipped: c.skipped,
+        bytes_done: c.bytes_done,
+        verified_ok: c.verified_ok,
+        mismatch: c.mismatch + c.missing,
     }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-pub struct Counts {
-    pub files: u64,
-    pub dirs: u64,
-    pub bytes: u64,
-    pub pending: u64,
-    pub done: u64,
-    pub failed: u64,
-    pub skipped: u64,
-    pub bytes_done: u64,
-    pub verified_ok: u64,
-    pub mismatch: u64,
-}
-
-impl From<ManifestCounts> for Counts {
-    fn from(c: ManifestCounts) -> Self {
-        Self {
-            files: c.files,
-            dirs: c.dirs,
-            bytes: c.bytes,
-            pending: c.pending + c.partial,
-            done: c.done,
-            failed: c.failed,
-            skipped: c.skipped,
-            bytes_done: c.bytes_done,
-            verified_ok: c.verified_ok,
-            mismatch: c.mismatch + c.missing,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct JobSummary {
-    pub id: String,
-    pub kind: JobKind,
-    pub profile_id: String,
-    pub state: JobState,
-    pub error: Option<String>,
-    pub attempt: u32,
-    pub next_retry_at: Option<i64>,
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub finished_at: Option<i64>,
-    /// Source roots, lossily decoded for display.
-    pub sources: Vec<String>,
-    pub options: SendOptions,
-    pub counts: Counts,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct CheckView {
-    pub id: String,
-    /// `ok`, `warn` or `fail`.
-    pub status: String,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct PreflightView {
-    /// `transport` or `integration`.
-    pub source: String,
-    pub free_bytes: Option<u64>,
-    pub writable: bool,
-    pub checks: Vec<CheckView>,
-}
-
-impl PreflightView {
-    fn from_report(source: &str, r: PreflightReport) -> Self {
-        Self {
-            source: source.into(),
-            free_bytes: r.free_bytes,
-            writable: r.writable,
-            checks: r
-                .checks
-                .into_iter()
-                .map(|c| CheckView {
-                    id: c.id,
-                    status: Self::status_text(c.status).into(),
-                    message: c.message,
-                })
-                .collect(),
-        }
-    }
-
-    /// `ok`, `warn` or `fail`: how a check's status travels to the UI.
-    pub fn status_text(status: CheckStatus) -> &'static str {
-        match status {
-            CheckStatus::Ok => "ok",
-            CheckStatus::Warn => "warn",
-            CheckStatus::Fail => "fail",
-        }
-    }
-
-    fn failed(source: &str, message: String) -> Self {
-        Self {
-            source: source.into(),
-            free_bytes: None,
-            writable: false,
-            checks: vec![CheckView {
-                id: format!("{source}.preflight"),
-                status: "fail".into(),
-                message,
-            }],
-        }
-    }
-
-    pub fn has_failures(&self) -> bool {
-        self.checks.iter().any(|c| c.status == "fail")
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-pub struct RuleCount {
-    pub rule: String,
-    pub total: u64,
-    pub pending: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct AnalysisSummary {
-    pub job_id: String,
-    pub state: JobState,
-    pub files: u64,
-    pub dirs: u64,
-    pub bytes: u64,
-    pub rules: Vec<RuleCount>,
-    pub pending_decisions: u64,
-    pub scan_errors: Vec<String>,
-    pub skipped_symlinks: u64,
-    pub preflight: Vec<PreflightView>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct IssueView {
-    pub id: i64,
-    pub entry_idx: u64,
-    /// Source path relative to the source's parent, lossily decoded.
-    pub path: String,
-    pub rule: String,
-    pub severity: IssueSeverity,
-    pub message_key: String,
-    pub before: Vec<u8>,
-    pub after: Vec<u8>,
-    pub before_text: String,
-    pub after_text: String,
-    pub decision: IssueDecision,
-    pub custom_name: Option<String>,
-}
-
-/// Whether an issue's fix is applied unless overridden, or waits for the user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum IssueSeverity {
-    Auto,
-    NeedsDecision,
-}
-
-/// Where the decision on an issue stands, as the UI shows it. `rejected`: keep the original name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum IssueDecision {
-    Pending,
-    Accepted,
-    Edited,
-    Rejected,
-    Skipped,
-}
-
-impl IssueDecision {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Accepted => "accepted",
-            Self::Edited => "edited",
-            Self::Rejected => "rejected",
-            Self::Skipped => "skipped",
-        }
-    }
-}
-
-/// What the user decides about one issue.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
-#[serde(tag = "kind", content = "name", rename_all = "snake_case")]
-pub enum DecisionInput {
-    Accept,
-    Edit(String),
-    KeepOriginal,
-    Skip,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
-pub struct ProfileTest {
-    pub transport: PreflightView,
-    pub integration: Option<PreflightView>,
 }
 
 struct Running {
@@ -314,12 +116,14 @@ impl Engine {
             profile.id = uuid::Uuid::new_v4().to_string();
         }
         self.registry.check_profile(&profile)?;
-        self.store.upsert_profile(profile.to_row()?).await?;
+        self.store
+            .upsert_profile(crate::profile::to_row(&profile)?)
+            .await?;
         Ok(profile)
     }
 
     pub async fn get_profile(&self, id: &str) -> Result<Profile> {
-        Profile::from_row(self.store.get_profile(id).await?)
+        crate::profile::from_row(self.store.get_profile(id).await?)
     }
 
     pub async fn list_profiles(&self) -> Result<Vec<Profile>> {
@@ -327,7 +131,7 @@ impl Engine {
             .list_profiles()
             .await?
             .into_iter()
-            .map(Profile::from_row)
+            .map(crate::profile::from_row)
             .collect()
     }
 
@@ -445,7 +249,7 @@ impl Engine {
     }
 
     async fn summary(&self, row: JobRow) -> Result<JobSummary> {
-        let counts = self.store.manifest_counts(&row.id).await?.into();
+        let counts = counts(self.store.manifest_counts(&row.id).await?);
         Ok(JobSummary {
             kind: JobKind::parse(&row.kind)?,
             state: JobState::parse(&row.state)?,
@@ -625,7 +429,7 @@ impl Engine {
     ) -> Result<()> {
         let mut job = self.begin(job_id, Op::Decide).await?;
         let row = self.store.issue(job_id, issue_id).await?;
-        let choice = Choice::from(input);
+        let choice = decisions::choice(input);
         let names = self.job_name_plan(job_id).await?;
         let entry = self.entry(job_id, row.issue.entry_idx).await?;
         names.check(&entry, &row.issue.rule, &choice)?;
@@ -646,7 +450,7 @@ impl Engine {
         rule: Option<String>,
         input: DecisionInput,
     ) -> Result<u64> {
-        let choice = Choice::from(input);
+        let choice = decisions::choice(input);
         if matches!(choice, Choice::Edit(_)) {
             return Err(CoreError::Invalid(
                 "an edited name applies to one issue, not to many".into(),

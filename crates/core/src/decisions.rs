@@ -7,14 +7,13 @@ use filebridge_store::{Decision, IssueRow, ManifestEntry};
 
 use crate::{CoreError, DecisionInput, IssueDecision, IssueSeverity};
 
-impl From<DecisionInput> for Choice {
-    fn from(input: DecisionInput) -> Self {
-        match input {
-            DecisionInput::Accept => Choice::Accept,
-            DecisionInput::Edit(name) => Choice::Edit(name),
-            DecisionInput::KeepOriginal => Choice::KeepOriginal,
-            DecisionInput::Skip => Choice::Skip,
-        }
+/// What the user decided, in the Name plan's terms.
+pub(crate) fn choice(input: DecisionInput) -> Choice {
+    match input {
+        DecisionInput::Accept => Choice::Accept,
+        DecisionInput::Edit(name) => Choice::Edit(name),
+        DecisionInput::KeepOriginal => Choice::KeepOriginal,
+        DecisionInput::Skip => Choice::Skip,
     }
 }
 

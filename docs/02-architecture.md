@@ -75,8 +75,9 @@ Rules:
 - Each transition is written to SQLite **before** the next stage starts work, in one transaction
   with what the finished stage produced (its warnings, a verify round) and the `state` event, so a
   job resumed after a crash ends with the warnings it had before.
-- One module owns these rules (`crates/core/src/lifecycle.rs`): the transition table above, and
-  which operation (set options, analyse, decide, start, pause, cancel) may run in which state.
+- These rules are pure data in one place (`crates/model/src/rules.rs`): the transition table
+  above, and which operation (set options, analyse, decide, start, pause, cancel) may run in which
+  state. `crates/core/src/lifecycle.rs` enforces them; the UI reads the same table.
   Every operation locks its job first, so checking the state and acting on it can't be split by a
   concurrent request.
 - On app/service start, `core` loads every job not in a terminal state and resumes it at its
