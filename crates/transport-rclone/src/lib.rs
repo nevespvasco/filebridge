@@ -14,6 +14,8 @@ pub mod fs;
 #[cfg(feature = "librclone")]
 mod librclone;
 mod rcd;
+#[cfg(test)]
+mod recording;
 pub mod stats;
 mod transport;
 

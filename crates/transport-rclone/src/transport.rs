@@ -621,11 +621,145 @@ fn bwlimit_rate(bytes_per_sec: Option<u64>) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{BTreeSet, HashMap, HashSet};
+    use std::sync::Arc;
 
-    use super::{bwlimit_rate, glob_escape, is_absent, parse_hashsum_line};
+    use super::{RcloneTransport, bwlimit_rate, glob_escape, is_absent, parse_hashsum_line};
+    use crate::recording::Recording;
     use filebridge_names::loose_key;
-    use filebridge_transport_api::{HashAlgo, RemotePath};
+    use filebridge_transport_api::{
+        Backend, Destination, ErrorKind, HashAlgo, ProgressSink, RemotePath, TransferItem,
+        TransferJob, TransferOptions, Transport, TransportError,
+    };
+    use serde_json::{Value, json};
+
+    fn dest() -> Destination {
+        Destination {
+            transport: RcloneTransport::ID.into(),
+            backend: Backend::Local,
+            root: "/dest".into(),
+        }
+    }
+
+    fn job(paths: &[&str]) -> TransferJob {
+        TransferJob {
+            id: "j".into(),
+            source_root: "/src".into(),
+            items: paths
+                .iter()
+                .map(|p| TransferItem {
+                    source: p.into(),
+                    dest: RemotePath::new(*p).unwrap(),
+                    size: 1,
+                    expected_hash: None,
+                })
+                .collect(),
+            options: TransferOptions { concurrency: 2 },
+        }
+    }
+
+    fn strings(calls: &[Value], key: &str) -> BTreeSet<String> {
+        calls
+            .iter()
+            .map(|p| p[key].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    fn set(names: &[&str]) -> BTreeSet<String> {
+        names.iter().map(|n| (*n).to_owned()).collect()
+    }
+
+    #[tokio::test]
+    async fn a_send_lists_each_shared_folder_once_and_checks_only_what_is_there() {
+        let rc = Arc::new(Recording::new(|method, p| match method {
+            // `a` holds x.txt, under another case; the root isn't there yet.
+            "operations/list" if p["remote"] == "a" => Some(Ok(
+                json!({ "list": [{ "Name": "X.TXT", "IsDir": false, "Size": 1 }] }),
+            )),
+            "operations/list" => Some(Err(TransportError::not_found("directory not found"))),
+            _ => None,
+        }));
+        let t = RcloneTransport::new(rc.clone());
+        let paths = [
+            "a/x.txt",
+            "a/y.txt",
+            "a/z.txt",
+            "b/only.txt",
+            "r1.txt",
+            "r2.txt",
+        ];
+        let sent = t
+            .transfer(&dest(), &job(&paths), ProgressSink::noop())
+            .await
+            .unwrap();
+        assert_eq!(sent.failed(), 0, "{:?}", sent.items);
+
+        // One listing per folder with two or more files; `b` has one, so its file is checked.
+        let lists = rc.calls_to("operations/list");
+        assert_eq!(strings(&lists, "remote"), set(&["", "a"]));
+        assert_eq!(lists.len(), 2);
+        let copies = rc.calls_to("operations/copyfile");
+        assert_eq!(strings(&copies, "dstRemote"), set(&paths));
+        let unchecked: Vec<_> = copies
+            .iter()
+            .filter(|p| p["_config"]["NoCheckDest"] == true)
+            .cloned()
+            .collect();
+        assert_eq!(
+            strings(&unchecked, "dstRemote"),
+            set(&["a/y.txt", "a/z.txt", "r1.txt", "r2.txt"])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refused_listing_sends_nothing() {
+        let rc = Arc::new(Recording::new(|method, _| {
+            (method == "operations/list")
+                .then(|| Err(TransportError::new(ErrorKind::Auth, "401 Unauthorized")))
+        }));
+        let t = RcloneTransport::new(rc.clone());
+        let err = t
+            .transfer(&dest(), &job(&["a/1", "a/2"]), ProgressSink::noop())
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::Auth);
+        assert!(rc.calls_to("operations/copyfile").is_empty());
+    }
+
+    #[tokio::test]
+    async fn hashing_many_asks_once_per_folder_and_downloads_only_what_the_server_missed() {
+        let hex = |c: char| c.to_string().repeat(64);
+        let rc = Arc::new(Recording::new(move |method, p| {
+            if method != "operations/hashsum" {
+                return None;
+            }
+            let fs = p["fs"].as_str().unwrap();
+            let download = p["download"] == true;
+            let lines: Vec<String> = match (fs, download) {
+                (":local:/dest/a", false) => {
+                    vec![format!("{}  1", hex('a')), format!("{}  2", hex('b'))]
+                }
+                // The server hashes nothing in `b`: the next pass downloads.
+                (":local:/dest/b", false) => vec![],
+                (":local:/dest/b", true) => vec![format!("{}  3", hex('c'))],
+                _ => return Some(Err(TransportError::not_found("object not found"))),
+            };
+            Some(Ok(json!({ "hashsum": lines })))
+        }));
+        let t = RcloneTransport::new(rc.clone());
+        let paths: Vec<_> = ["a/1", "a/2", "b/3", "b/gone"]
+            .iter()
+            .map(|p| RemotePath::new(*p).unwrap())
+            .collect();
+        let got = t.hash_many(&dest(), &paths, HashAlgo::Sha256).await;
+        assert_eq!(got[0].as_ref().unwrap().bytes, vec![0xaa; 32]);
+        assert_eq!(got[2].as_ref().unwrap().bytes, vec![0xcc; 32]);
+        assert_eq!(got[3].as_ref().unwrap_err().kind, ErrorKind::NotFound);
+        // a; b, then b by download; then `hash` for the one path nobody answered.
+        let calls = rc.calls_to("operations/hashsum");
+        assert_eq!(calls.len(), 4, "{calls:#?}");
+        assert_eq!(calls[3]["fs"], ":local:/dest/b/gone");
+    }
 
     #[test]
     fn rate_strings() {
