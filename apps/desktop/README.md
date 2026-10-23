@@ -52,17 +52,22 @@ src-tauri/src/
   2. one connection gives the peer's pid (checked to be `filebridge-service`) and answers a
      `ping` on that same connection: when it already speaks the protocol (another window
      replaced it a moment ago) it is left alone and used;
-  3. how it was started is read (Linux: `/proc/PID/cmdline`, `environ`, `cgroup`). One run by
-     the systemd user unit `filebridge-service.service`, or started with arguments other than
-     `--data-dir`, `--rclone`, `--socket`, `--fake-transport` and `run`, is not replaced: the
-     error says why and what to do (for the unit: turn "Start the engine when I log in" off
-     and on again in Settings, or `systemctl --user restart …`; else quit it). Other Unixes
-     replace only a service started without arguments;
+  3. how it was started is read (Linux: `/proc/PID/cmdline`, `environ`, `cgroup`). One started
+     with arguments other than `--data-dir`, `--rclone`, `--socket`, `--fake-transport` and
+     `run` is not replaced: the error says why and to quit it. Other Unixes replace only a
+     service started without arguments;
   4. SIGTERM (running jobs are stored as they are and resume in the new service), up to 10 s
      for the socket to go quiet, then the new one starts with the same `--data-dir`, `--rclone`,
-     `--socket` and the old process's `FILEBRIDGE_*` variables (and none of this window's);
+     `--socket` and the old process's `FILEBRIDGE_*` variables (and none of this window's).
+     One run by the systemd user unit `filebridge-service.service` (its cgroup says so) is
+     instead restarted by systemd: the window runs `systemctl --user restart
+     filebridge-service.service` (up to 10 s), which stops it the same way and starts the
+     binary in the unit's `ExecStart` (the one an update of the app replaced), then waits up
+     to 5 s for the socket to answer, as for a service it starts;
   5. if the new one still speaks an older protocol, the binary on disk is old too: the window
-     remembers it and never stops and restarts it again (until it is reopened).
+     remembers it and never stops and restarts it again (until it is reopened). For the unit
+     the error names the old binary its `ExecStart` runs and says to use "Update" under
+     "Start the engine when I log in" in Settings, which points the unit at this app's service.
 
   From step 4 to the new one answering (up to 10 s plus 5 s) every command waits. The window
   emits `connection-changed { connected: false, replacing: true }` before step 4, and the

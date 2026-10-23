@@ -2,16 +2,18 @@
 //! service when nothing listens there, forward its events to the window and reconnect when the
 //! connection drops. A service from an older version of the app (an older protocol) is stopped
 //! and replaced, started again with the same data folder, rclone and socket; its running jobs
-//! resume in the new one. A newer one is never touched, and neither is one started by the
-//! systemd user unit or with arguments this app can't pass on: the user is told instead.
+//! resume in the new one. One run by the systemd user unit is restarted through systemd, which
+//! starts the binary the unit names (an update of the app replaced it). A newer one is never
+//! touched, and neither is one started with arguments this app can't pass on: the user is told
+//! instead.
 
 use std::ffi::OsString;
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use filebridge_ipc::{Client, Endpoint, ErrorBody, Operations, PROTOCOL_VERSION, Pong};
@@ -59,9 +61,9 @@ struct Inner {
     /// commands never start the service twice.
     current: Mutex<Option<(u64, Client)>>,
     generation: AtomicU64,
-    /// Set once a replacement still spoke an older protocol: the binary on disk is old too, so
-    /// replacing again would only stop and start it over and over.
-    gave_up_replacing: AtomicBool,
+    /// Set, to what the user can do, once a replacement still spoke an older protocol: the
+    /// binary on disk is old too, so replacing again would only stop and start it over and over.
+    gave_up_replacing: OnceLock<String>,
     /// An older service is being replaced right now.
     replacing: AtomicBool,
 }
@@ -80,7 +82,7 @@ impl Service {
             endpoint: endpoint(),
             current: Mutex::new(None),
             generation: Default::default(),
-            gave_up_replacing: AtomicBool::new(false),
+            gave_up_replacing: OnceLock::new(),
             replacing: AtomicBool::new(false),
         }))
     }
@@ -132,6 +134,7 @@ impl Service {
             endpoint: &self.0.endpoint,
             protocol: PROTOCOL_VERSION,
             find_binary: &find_service_binary,
+            unit_exec: &unit_exec,
             gave_up: &self.0.gave_up_replacing,
             on_replace: &on_replace,
         }
@@ -231,7 +234,10 @@ struct Starter<'a> {
     /// The protocol this app speaks.
     protocol: u32,
     find_binary: &'a (dyn Fn() -> Option<PathBuf> + Send + Sync),
-    gave_up: &'a AtomicBool,
+    /// The program the systemd user unit runs, for the error when it is old.
+    unit_exec: &'a (dyn Fn() -> Option<String> + Send + Sync),
+    /// Set, to what the user can do, once a replacement was just as old.
+    gave_up: &'a OnceLock<String>,
     /// Called once an older service is about to be stopped and replaced.
     on_replace: &'a (dyn Fn() + Send + Sync),
 }
@@ -255,10 +261,8 @@ impl Starter<'_> {
         drop(client);
         // Left running by an older version of the app: replace it, unless that was tried.
         let old = incompatible(&pong, self.protocol);
-        if self.gave_up.load(Ordering::Relaxed) {
-            return Err(incompatible_service(format!(
-                "{old}; the {SERVICE_BIN} this app starts is just as old: update it"
-            )));
+        if let Some(why) = self.gave_up.get() {
+            return Err(incompatible_service(format!("{old}; {why}")));
         }
         // Found before the old one is stopped: with nothing to start, it keeps running.
         let bin = (self.find_binary)().ok_or_else(|| {
@@ -274,6 +278,7 @@ impl Starter<'_> {
         (self.on_replace)();
         let launch = match stop_older(endpoint, self.protocol).await {
             Ok(Stopped::Replaced(launch)) => launch,
+            Ok(Stopped::Restarted) => return self.restarted_by_unit().await,
             // Another window replaced it in the meantime.
             Ok(Stopped::Current) => {
                 let client = Client::connect(endpoint)
@@ -290,9 +295,37 @@ impl Starter<'_> {
         };
         let (client, pong) = self.start(&bin, &launch).await?;
         if pong.protocol < self.protocol {
-            self.gave_up.store(true, Ordering::Relaxed);
+            return Err(self.give_up(
+                &pong,
+                format!("the {SERVICE_BIN} this app starts is just as old: update it"),
+            ));
         }
         check_protocol(client, &pong, self.protocol)
+    }
+
+    /// After `systemctl --user restart`: waits for the unit's new service, which runs the
+    /// binary its `ExecStart` names. Still older, that binary is not the updated one.
+    async fn restarted_by_unit(&self) -> Result<Client, ErrorBody> {
+        let (client, pong) = self
+            .wait_for_answer(&format!("the systemd user unit {UNIT_NAME}"))
+            .await?;
+        if pong.protocol < self.protocol {
+            let exec = (self.unit_exec)().unwrap_or_else(|| "the binary in its ExecStart".into());
+            return Err(self.give_up(
+                &pong,
+                format!(
+                    "the systemd user unit {UNIT_NAME} runs an old {exec}: in Settings, under \"Start the engine when I log in\", use \"Update\""
+                ),
+            ));
+        }
+        check_protocol(client, &pong, self.protocol)
+    }
+
+    /// Remembers `why` replacing is no use, and says it.
+    fn give_up(&self, pong: &Pong, why: String) -> ErrorBody {
+        let message = format!("{}; {why}", incompatible(pong, self.protocol));
+        let _ = self.gave_up.set(why);
+        incompatible_service(message)
     }
 
     /// Starts `bin` and waits until it answers.
@@ -301,10 +334,16 @@ impl Starter<'_> {
         bin: &std::path::Path,
         launch: &Launch,
     ) -> Result<(Client, Pong), ErrorBody> {
-        let endpoint = self.endpoint;
         tracing::info!("starting {}", bin.display());
         spawn_detached(bin, launch)
             .map_err(|e| unavailable(format!("could not start {}: {e}", bin.display())))?;
+        self.wait_for_answer(&bin.display().to_string()).await
+    }
+
+    /// Waits up to [`START_TIMEOUT`] for the service just started (named `what` in the error)
+    /// to answer.
+    async fn wait_for_answer(&self, what: &str) -> Result<(Client, Pong), ErrorBody> {
+        let endpoint = self.endpoint;
         let deadline = Instant::now() + START_TIMEOUT;
         loop {
             sleep(Duration::from_millis(100)).await;
@@ -315,8 +354,7 @@ impl Starter<'_> {
                 }
                 Err(e) if Instant::now() >= deadline => {
                     return Err(unavailable(format!(
-                        "{} did not answer on {} within {} s: {e}",
-                        bin.display(),
+                        "{what} did not answer on {} within {} s: {e}",
                         endpoint.display(),
                         START_TIMEOUT.as_secs()
                     )));
@@ -347,21 +385,29 @@ const SERVICE_VARS: [&str; 5] = [
 /// The systemd user unit `filebridge-service install-user-unit` writes.
 const UNIT_NAME: &str = "filebridge-service.service";
 
+/// How the old service was started, so that its replacement is started the same way.
+#[cfg(unix)]
+#[derive(Debug, PartialEq)]
+enum Started {
+    /// By this app or by hand: the replacement is started like this.
+    Spawned(Launch),
+    /// By the systemd user unit: systemd restarts it (stopping it from here would leave the
+    /// unit stopped and a copy outside it).
+    ByUnit,
+}
+
 /// How the old service was started, from its `/proc/PID/cmdline`, `environ` and `cgroup`
 /// (Linux), so that its replacement uses the same data folder, rclone and socket. Refused
-/// when the systemd user unit runs it (stopping it there would leave the unit stopped and a
-/// copy outside it), or when it has arguments this app doesn't know how to pass on.
+/// when it has arguments this app doesn't know how to pass on.
 #[cfg(unix)]
-fn launch_from(cmdline: &[u8], environ: &[u8], cgroup: &str) -> Result<Launch, String> {
+fn launch_from(cmdline: &[u8], environ: &[u8], cgroup: &str) -> Result<Started, String> {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
     if cgroup
         .lines()
         .any(|l| l.trim_end().ends_with(&format!("/{UNIT_NAME}")))
     {
-        return Err(format!(
-            "the systemd user unit {UNIT_NAME} runs it: in Settings turn \"Start the engine when I log in\" off and on again, or run `systemctl --user restart {UNIT_NAME}`"
-        ));
+        return Ok(Started::ByUnit);
     }
     let words: Vec<&[u8]> = cmdline
         .split(|b| *b == 0)
@@ -406,15 +452,15 @@ fn launch_from(cmdline: &[u8], environ: &[u8], cgroup: &str) -> Result<Launch, S
             })
         })
         .collect();
-    Ok(Launch {
+    Ok(Started::Spawned(Launch {
         args,
         env: Some(env),
-    })
+    }))
 }
 
 /// Linux: read from `/proc`.
 #[cfg(target_os = "linux")]
-fn launch_of(pid: i32) -> Result<Launch, String> {
+fn launch_of(pid: i32) -> Result<Started, String> {
     let read = |what: &str| {
         std::fs::read(format!("/proc/{pid}/{what}"))
             .map_err(|e| format!("could not read how process {pid} was started ({what}): {e}"))
@@ -426,7 +472,7 @@ fn launch_of(pid: i32) -> Result<Launch, String> {
 /// Other Unixes: only a service started without arguments is replaced (its environment can't
 /// be read; the replacement gets this app's).
 #[cfg(all(unix, not(target_os = "linux")))]
-fn launch_of(pid: i32) -> Result<Launch, String> {
+fn launch_of(pid: i32) -> Result<Started, String> {
     let out = Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "args="])
         .output()
@@ -434,7 +480,7 @@ fn launch_of(pid: i32) -> Result<Launch, String> {
     let args = String::from_utf8_lossy(&out.stdout);
     let args = args.trim();
     if args.ends_with(SERVICE_BIN) {
-        Ok(Launch::default())
+        Ok(Started::Spawned(Launch::default()))
     } else {
         Err(format!(
             "it was started with arguments ({args}): quit it, then open the app again"
@@ -447,6 +493,10 @@ fn launch_of(pid: i32) -> Result<Launch, String> {
 enum Stopped {
     /// Stopped; the replacement is started like this.
     Replaced(Launch),
+    /// Restarted by `systemctl --user restart` (the systemd user unit runs it): the new one is
+    /// starting.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Restarted,
     /// The service there already speaks the protocol (another window replaced it): left alone.
     Current,
 }
@@ -456,7 +506,8 @@ const PING_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Stops the service listening on `endpoint` if it speaks a protocol older than `protocol`:
 /// SIGTERM to the process at the other end of the socket (checked to be a
-/// `filebridge-service`), then waits until nothing answers there. The process is looked up and
+/// `filebridge-service`), then waits until nothing answers there; or, when the systemd user
+/// unit runs it, `systemctl --user restart`. The process is looked up and
 /// pinged on one connection, so a service that another window started in the meantime is never
 /// the one stopped.
 #[cfg(unix)]
@@ -492,7 +543,13 @@ async fn stop_older(endpoint: &Endpoint, protocol: u32) -> Result<Stopped, Strin
     if pong.protocol >= protocol {
         return Ok(Stopped::Current);
     }
-    let launch = launch_of(pid)?;
+    let launch = match launch_of(pid)? {
+        Started::Spawned(launch) => launch,
+        Started::ByUnit => {
+            restart_unit().await?;
+            return Ok(Stopped::Restarted);
+        }
+    };
     let status = Command::new("kill")
         .args(["-TERM", &pid.to_string()])
         .status()
@@ -508,6 +565,54 @@ async fn stop_older(endpoint: &Endpoint, protocol: u32) -> Result<Stopped, Strin
         sleep(Duration::from_millis(100)).await;
     }
     Ok(Stopped::Replaced(launch))
+}
+
+/// `systemctl --user restart` the unit: systemd stops the old service (SIGTERM, as above) and,
+/// once it is gone, starts the program the unit's `ExecStart` names.
+#[cfg(unix)]
+async fn restart_unit() -> Result<(), String> {
+    tracing::info!("restarting the systemd user unit {UNIT_NAME}");
+    let run = tokio::task::spawn_blocking(|| {
+        Command::new("systemctl")
+            .args(["--user", "restart", UNIT_NAME])
+            .stdin(Stdio::null())
+            .output()
+    });
+    let out = tokio::time::timeout(STOP_TIMEOUT, run)
+        .await
+        .map_err(|_| format!("systemctl --user restart {UNIT_NAME} did not finish"))?
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("could not run systemctl: {e}"))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!(
+            "systemctl --user restart {UNIT_NAME} failed: {}",
+            err.trim()
+        ));
+    }
+    Ok(())
+}
+
+/// The program the systemd user unit's `ExecStart` runs (`systemctl --user show`).
+fn unit_exec() -> Option<String> {
+    let out = Command::new("systemctl")
+        .args([
+            "--user",
+            "show",
+            "--property=ExecStart",
+            "--value",
+            UNIT_NAME,
+        ])
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    exec_start_path(&String::from_utf8_lossy(&out.stdout)).map(str::to_owned)
+}
+
+/// `{ path=/usr/bin/filebridge-service ; argv[]=… ; … }` → `/usr/bin/filebridge-service`.
+fn exec_start_path(show: &str) -> Option<&str> {
+    let path = show.split_once("path=")?.1.split(" ;").next()?.trim();
+    (!path.is_empty()).then_some(path)
 }
 
 /// Windows: the pipe doesn't name its process here; the user quits the old service.
@@ -682,12 +787,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (mut child, endpoint) = start_service(&bin, dir.path());
         wait_for(&endpoint).await;
-        let gave_up = AtomicBool::new(false);
+        let gave_up = OnceLock::new();
         let replaced = AtomicBool::new(false);
         let starter = Starter {
             endpoint: &endpoint,
             protocol: PROTOCOL_VERSION + 1,
             find_binary: &|| None,
+            unit_exec: &|| None,
             gave_up: &gave_up,
             on_replace: &|| replaced.store(true, Ordering::Relaxed),
         };
@@ -712,7 +818,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (mut child, endpoint) = start_service(&bin, dir.path());
         wait_for(&endpoint).await;
-        let gave_up = AtomicBool::new(false);
+        let gave_up = OnceLock::new();
         let found = bin.clone();
         let find = move || Some(found.clone());
         // The binary on disk speaks the same (here: "old") protocol as the running one.
@@ -721,6 +827,7 @@ mod tests {
             endpoint: &endpoint,
             protocol: PROTOCOL_VERSION + 1,
             find_binary: &find,
+            unit_exec: &|| None,
             gave_up: &gave_up,
             on_replace: &|| {
                 replacements.fetch_add(1, Ordering::Relaxed);
@@ -728,8 +835,9 @@ mod tests {
         };
         let err = starter.connect_or_start().await.err().unwrap();
         assert_eq!(err.code, "incompatible_service", "{}", err.message);
+        assert!(err.message.contains("just as old"), "{}", err.message);
         assert!(child.wait().unwrap().success(), "the first one was stopped");
-        assert!(gave_up.load(Ordering::Relaxed));
+        assert!(gave_up.get().is_some());
         assert_eq!(
             replacements.load(Ordering::Relaxed),
             1,
@@ -753,14 +861,96 @@ mod tests {
         ));
     }
 
+    /// What [`launch_from`] says for a service it would start again itself.
+    fn spawned(started: Result<Started, String>) -> Launch {
+        match started.unwrap() {
+            Started::Spawned(launch) => launch,
+            Started::ByUnit => panic!("not by the unit"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_unit_restarted_on_an_old_binary_is_left_with_how_to_update_it() {
+        let Some(bin) = service_binary() else {
+            eprintln!("skipped: build filebridge-service first");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        // Stands in for the one systemd started again: the same (here: "old") binary.
+        let (mut child, endpoint) = start_service(&bin, dir.path());
+        let gave_up = OnceLock::new();
+        let replacements = AtomicU64::new(0);
+        let starter = Starter {
+            endpoint: &endpoint,
+            protocol: PROTOCOL_VERSION + 1,
+            find_binary: &|| None,
+            unit_exec: &|| Some("/opt/old/filebridge-service".into()),
+            gave_up: &gave_up,
+            on_replace: &|| {
+                replacements.fetch_add(1, Ordering::Relaxed);
+            },
+        };
+        let err = starter.restarted_by_unit().await.err().unwrap();
+        assert_eq!(err.code, "incompatible_service", "{}", err.message);
+        for said in [UNIT_NAME, "/opt/old/filebridge-service", "\"Update\""] {
+            assert!(err.message.contains(said), "{said}: {}", err.message);
+        }
+        // From now on it is left alone, and the user is told the same.
+        let pid = peer(&endpoint).await;
+        let again = starter.connect_or_start().await.err().unwrap();
+        assert!(
+            again.message.contains("use \"Update\""),
+            "{}",
+            again.message
+        );
+        assert_eq!(peer(&endpoint).await, pid, "not stopped");
+        assert_eq!(replacements.load(Ordering::Relaxed), 0, "nor announced");
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_unit_restarted_on_the_updated_binary_is_used() {
+        let Some(bin) = service_binary() else {
+            eprintln!("skipped: build filebridge-service first");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (mut child, endpoint) = start_service(&bin, dir.path());
+        let gave_up = OnceLock::new();
+        let starter = Starter {
+            endpoint: &endpoint,
+            protocol: PROTOCOL_VERSION,
+            find_binary: &|| None,
+            unit_exec: &|| unreachable!("only asked when it is old"),
+            gave_up: &gave_up,
+            on_replace: &|| {},
+        };
+        assert!(starter.restarted_by_unit().await.is_ok());
+        assert!(gave_up.get().is_none());
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn the_units_exec_start_is_read() {
+        assert_eq!(
+            exec_start_path(
+                "{ path=/home/u/My Apps/filebridge-service ; argv[]=/home/u/My Apps/filebridge-service run ; ignore_errors=no ; pid=0 }\n"
+            ),
+            Some("/home/u/My Apps/filebridge-service")
+        );
+        // Not installed: nothing.
+        assert_eq!(exec_start_path(""), None);
+    }
+
     #[test]
     fn the_old_services_arguments_are_passed_on() {
-        let launch = launch_from(
+        let launch = spawned(launch_from(
             b"/opt/filebridge/filebridge-service\0--data-dir\0/srv/fb data\0--rclone=/opt/rclone\0--fake-transport\0run\0",
             b"HOME=/home/alice\0FILEBRIDGE_SOCKET=/run/user/1000/fb.sock\0PATH=/usr/bin\0",
             "0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-filebridge.scope\n",
-        )
-        .unwrap();
+        ));
         assert_eq!(
             launch.args,
             [
@@ -776,20 +966,37 @@ mod tests {
             [("FILEBRIDGE_SOCKET".into(), "/run/user/1000/fb.sock".into())]
         );
         // None at all: started like this app starts it.
-        let launch = launch_from(b"filebridge-service\0", b"", "0::/\n").unwrap();
+        let launch = spawned(launch_from(b"filebridge-service\0", b"", "0::/\n"));
         assert!(launch.args.is_empty());
         assert_eq!(launch.env, Some(vec![]));
     }
 
     #[test]
-    fn a_service_run_by_systemd_or_with_unknown_arguments_is_not_replaced() {
-        let err = launch_from(
+    fn a_service_run_by_systemd_is_restarted_by_it() {
+        let started = launch_from(
             b"/usr/bin/filebridge-service\0run\0",
             b"",
             "0::/user.slice/user-1000.slice/user@1000.service/app.slice/filebridge-service.service\n",
-        )
-        .unwrap_err();
-        assert!(err.contains("systemctl --user restart"), "{err}");
+        );
+        assert_eq!(started, Ok(Started::ByUnit));
+        // Whatever its arguments: systemd starts it again with the unit's.
+        let started = launch_from(
+            b"/usr/bin/filebridge-service\0--verbose\0",
+            b"",
+            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/filebridge-service.service\n",
+        );
+        assert_eq!(started, Ok(Started::ByUnit));
+        // A unit of another name is not the one this app installs.
+        let started = launch_from(
+            b"/usr/bin/filebridge-service\0run\0",
+            b"",
+            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/my-filebridge-service.service\n",
+        );
+        assert!(matches!(started, Ok(Started::Spawned(_))), "{started:?}");
+    }
+
+    #[test]
+    fn a_service_with_unknown_arguments_is_not_replaced() {
         for cmdline in [
             &b"filebridge-service\0status\0"[..],
             b"filebridge-service\0--verbose\0",
