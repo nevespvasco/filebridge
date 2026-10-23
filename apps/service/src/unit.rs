@@ -80,7 +80,38 @@ pub fn install(data_dir: Option<&Path>, rclone: Option<&Path>, start: bool) -> R
         systemctl(&["enable", UNIT_NAME])?;
     }
     println!("installed {}", path.display());
+    if let Some(hint) = agent_hint(
+        std::env::var_os("SSH_AUTH_SOCK").is_some(),
+        &manager_environment(),
+    ) {
+        eprintln!("{hint}");
+    }
     Ok(())
+}
+
+/// `systemctl --user show-environment`: what the unit's process starts with. Empty if it fails.
+fn manager_environment() -> String {
+    std::process::Command::new("systemctl")
+        .args(["--user", "show-environment"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+/// The unit only sees the user manager's environment: without `SSH_AUTH_SOCK` there, SSH
+/// destinations that sign in with the agent fail under it, though they work from this shell.
+fn agent_hint(shell_has_agent: bool, manager_env: &str) -> Option<String> {
+    let manager_has_agent = manager_env.lines().any(|l| l.starts_with("SSH_AUTH_SOCK="));
+    (shell_has_agent && !manager_has_agent).then(|| {
+        format!(
+            "! the service can't reach your SSH agent: SSH destinations that sign in with it \
+             will fail. Run `systemctl --user import-environment SSH_AUTH_SOCK` and \
+             `systemctl --user restart {UNIT_NAME}` (again after each login, or set it in \
+             ~/.config/environment.d/), or give those destinations filebridge's own key"
+        )
+    })
 }
 
 pub fn uninstall() -> Result<()> {
@@ -114,5 +145,21 @@ mod tests {
         assert!(unit.contains("Restart=on-failure"));
         assert!(unit.contains("WantedBy=default.target"));
         assert!(!unit.contains("--rclone"));
+    }
+
+    #[test]
+    fn warns_when_the_user_manager_has_no_agent() {
+        let env = "HOME=/home/u\nPATH=/usr/bin\n";
+        assert!(
+            agent_hint(true, env)
+                .unwrap()
+                .contains("import-environment SSH_AUTH_SOCK")
+        );
+        assert_eq!(
+            agent_hint(true, &format!("{env}SSH_AUTH_SOCK=/run/user/1000/ssh\n")),
+            None
+        );
+        // No agent in this shell either: nothing the unit could be given.
+        assert_eq!(agent_hint(false, env), None);
     }
 }
