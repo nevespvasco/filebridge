@@ -99,7 +99,7 @@ back mid-send; the Job resumes and the verification has zero differences.
 | Piece | Where |
 |---|---|
 | `RcCall` trait; `Rcd` (HTTP) and `Librclone` (FFI, feature `librclone`, loaded with `libloading`); both pass the transport contract suite | `crates/transport-rclone` |
-| librclone build: rclone's C shims with the local, SFTP and WebDAV backends only (~19 MB per ABI), plus `RcloneSetenv` | `sidecars/librclone/` |
+| librclone build: rclone's C shims with the local, SFTP, WebDAV and SMB backends only (~22 MB per ABI; SMB since ADR 0022, S3 left out), plus `RcloneSetenv` | `sidecars/librclone/` |
 | `TransportChoice::Librclone`, `Host::open_with_secrets` | `crates/host` |
 | The engine in the app under `cfg(mobile)`, same commands and events as the desktop's `Service`; the foreground service follows the busy Jobs | `apps/desktop/src-tauri/src/engine.rs` |
 | Phone-only commands (`platform`, `pick_folder`, `storage_access`, `request_storage_access`, `request_battery_exemption`, `set_send_notice_labels`) and the Keystore `SecretStore` | `apps/desktop/src-tauri/src/native.rs`, `commands.rs` |

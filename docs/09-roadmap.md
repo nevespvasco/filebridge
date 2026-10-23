@@ -91,7 +91,12 @@ How to run each gate against the real servers and the phone:
 
 ## Phase 3 — Scale (more destinations and tools)
 
-- [ ] New `Transport`s (SMB, S3).
+- [x] New destinations: **SMB** shares and **S3** buckets (AWS, MinIO and other compatible
+      servers), as rclone backends behind the same `Transport`
+      ([ADR 0022](adr/0022-smb-and-s3-as-rclone-backends.md)). Form in the window,
+      `filebridge profile add-smb` / `add-s3`; password or secret key in the keyring. The
+      contract suite passes against `rclone serve s3` and against Samba 4.23 in Docker; not yet
+      run against a real NAS or AWS. Phones get SMB (librclone), not S3.
 - [x] A second integration: **Immich** as an external library, files over SFTP (or into a local
       folder) and a library scan through its API after the send
       ([ADR 0020](adr/0020-immich-external-library.md), `crates/integration-immich`). Wizard in
@@ -119,7 +124,10 @@ How to run each gate against the real servers and the phone:
 **Gate (test):** a new plugin enters without changing `core`.
 
 > **Status (2026-10-23):** met for `integration-immich` (`git diff main -- crates/core` is
-> empty; see [03 — Extension contracts](03-extension-contracts.md#phase-3-acceptance-test)).
+> empty; see [03 — Extension contracts](03-extension-contracts.md#phase-3-acceptance-test)),
+> and for SMB and S3 after one contract fix that made `core` stop listing `Backend`'s variants
+> ([ADR 0022](adr/0022-smb-and-s3-as-rclone-backends.md)): the commit that adds them leaves
+> `crates/core` untouched.
 > Since then: the published CLI, login start on macOS and Windows and the Windows sidecar
 > script (below); the other Phase 3 items are still open.
 

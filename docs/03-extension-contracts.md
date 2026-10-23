@@ -5,7 +5,7 @@ tool lives behind them; `core` only knows the contracts.
 
 | Contract | Responsibility | v1 implementations | Future |
 |---|---|---|---|
-| `Transport` | Move bytes from source to a destination, with progress, resume and hashing | rclone (local, SFTP, WebDAV) | SMB, S3, Google Drive, another engine |
+| `Transport` | Move bytes from source to a destination, with progress, resume and hashing | rclone (local, SFTP, WebDAV; SMB and S3 in Phase 3: [ADR 0022](adr/0022-smb-and-s3-as-rclone-backends.md)) | Google Drive, another engine |
 | `NameRule` | Detect and fix name problems for a destination | NFC, forbidden characters, mojibake, length | Per-filesystem rules |
 | `Integration` | Validate before and update the tool after the send | Nextcloud; Immich (Phase 3, external library: [ADR 0020](adr/0020-immich-external-library.md)) | Jellyfin, Paperless, Seafile, Syncthing |
 
@@ -65,7 +65,7 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 | Type | Crate | Shape (first draft) |
 |---|---|---|
 | `TransportCaps` | transport-api | bitflags: `RESUME`, `HASH_SHA256`, `CHOWN`, `CHMOD`, `RENAME`, `PARTIAL_HIDDEN` |
-| `Destination` | transport-api | transport id + backend config (host, port, user, root path, WebDAV URL…) + keyring refs |
+| `Destination` | transport-api | transport id + backend config (host, port, user, root path, WebDAV URL, SMB share, S3 bucket…) + keyring refs |
 | `RemotePath` | transport-api | destination-relative path, always valid UTF-8 NFC |
 | `PreflightReport` | transport-api | `free_bytes: Option<u64>`, `writable: bool`, `latency_ms`, `checks: Vec<Check { id, status: Ok/Warn/Fail, message }>` |
 | `TransferJob` | transport-api | job id, list of `TransferItem { source: PathBuf (raw bytes OK), dest: RemotePath, size, expected_hash }`, options (concurrency; the bandwidth limit is app-wide, `Transport::set_bandwidth_limit`) |
@@ -87,6 +87,10 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 - **An integration receives the exact list of changed paths**, so it updates only those (the
   `files:scan --path` that was done by hand). A tool that can't update by path uses the list
   only for its report: Immich's API scans a whole library.
+- **`core` never lists the `Backend` variants.** What it needs of a destination's backend it
+  asks the backend: `kind()` (its name in reports) and `password_mut()` (the keyring slot of
+  the secret the user types, `None` without one). A new backend is a variant plus its adapter
+  code, never a change in `core` ([ADR 0022](adr/0022-smb-and-s3-as-rclone-backends.md)).
 - `Integration::required_caps` is checked against the chosen `Transport::capabilities` when a
   profile is created; incompatible combinations are rejected in the UI, not at send time.
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
@@ -110,7 +114,8 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
   overwrite, so nothing else calls it.
 - **Every `Transport` adapter runs the shared contract suite** (`filebridge_transport_api::
   contract::check`, and `check_move` for `MOVE`, feature `contract`): rclone against a real
-  `rclone rcd` (local, SFTP and WebDAV), the Nextcloud bulk upload in front of it (`rclone serve
+  `rclone rcd` (local, SFTP, WebDAV and S3 through `rclone serve`; SMB against a real Samba when
+  `FILEBRIDGE_TEST_SMB_*` is set), the Nextcloud bulk upload in front of it (`rclone serve
   webdav`, and a real Nextcloud when `FILEBRIDGE_TEST_NEXTCLOUD_*` is set), and the local-disk
   fake (`crates/transport-fake`) that `core`, `ipc` and the service tests use. A new adapter
   adds the same one-function test.
@@ -143,3 +148,12 @@ plugin-settings form. A diff touching `crates/core` fails the test.
 its profile wizard added what every wizard needs around them: one ipc operation (`add_immich`),
 its host side (`crates/host/src/immich.rs`), a CLI command, and a secret kind (`api-key`) in
 `crates/secrets`, which `core` deletes with the profile's other secrets without knowing it.
+
+**Passed for SMB and S3** (2026-10-23, [ADR 0022](adr/0022-smb-and-s3-as-rclone-backends.md)),
+after one contract fix. `core` matched on `Backend`'s variants in two places (where a profile's
+password goes, and the backend's name in a report), so any new variant was a `core` change: the
+contract was wrong. `Backend::kind()` and `Backend::password_mut()` now answer for it, and `core`
+calls them (one commit of its own). The SMB and S3 commit then leaves `crates/core` untouched:
+two `Backend` variants, their connection strings and error kinds in `transport-rclone`, the
+CLI's `add-smb` / `add-s3`, the window's form, and `smb` in phones' librclone. No new crate and
+no new `Registry` line: both are rclone backends behind the same `RcloneTransport`.

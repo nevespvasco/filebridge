@@ -391,7 +391,9 @@
       "nextcloud": "Nextcloud (modo direto): os ficheiros são copiados e depois indexados pelo Nextcloud",
       "nextcloudWebdav": "Nextcloud (WebDAV): os ficheiros passam pelo Nextcloud, que os indexa à chegada",
       "webdav": "Copiar por WebDAV",
-      "immich": "Immich (biblioteca externa): os ficheiros são copiados para a pasta da biblioteca e depois o Immich lê-a"
+      "immich": "Immich (biblioteca externa): os ficheiros são copiados para a pasta da biblioteca e depois o Immich lê-a",
+      "smb": "Cópia para uma partilha SMB",
+      "s3": "Cópia para um bucket S3"
     },
     "verify": "Verificar cada ficheiro no fim",
     "verifyHint": "Depois de copiar, o filebridge lê de novo cada ficheiro na origem e no destino e confirma que são idênticos (SHA-256). Demora mais, mas fica com a certeza de que nada se perdeu.",
@@ -590,13 +592,17 @@
       "sftp": "SFTP",
       "nextcloud": "Nextcloud",
       "webdav": "WebDAV",
-      "immich": "Immich"
+      "immich": "Immich",
+      "smb": "Partilha SMB",
+      "s3": "S3"
     },
     "kindsHint": {
       "local": "Um disco externo, uma pen USB ou outra pasta deste computador",
       "sftp": "Um servidor ou NAS a que acede por SSH (Synology, TrueNAS, Raspberry Pi…)",
       "nextcloud": "O seu Nextcloud, pela internet com uma palavra-passe de aplicação, ou diretamente no servidor",
-      "immich": "O seu servidor de fotos Immich: os ficheiros vão para uma pasta de uma biblioteca externa, que o Immich depois lê"
+      "immich": "O seu servidor de fotos Immich: os ficheiros vão para uma pasta de uma biblioteca externa, que o Immich depois lê",
+      "smb": "Uma pasta partilhada no Windows ou num NAS (Samba): \\\\nas\\backup",
+      "s3": "Um bucket S3: AWS, ou um servidor como MinIO, Ceph ou Garage"
     },
     "name": "Nome",
     "nameHintLocal": "Disco externo",
@@ -1325,5 +1331,60 @@
     "close": "Fechar",
     "unreachable": "Não foi possível verificar a chave do servidor: {error}",
     "checking": "A verificar a chave do servidor…"
+  },
+  "smb": {
+    "share": "Partilha",
+    "domain": "Domínio",
+    "folder": "Pasta na partilha",
+    "folderHint": "vazio = a própria partilha",
+    "help": {
+      "host": "O endereço do computador ou NAS que partilha a pasta: o nome dele na rede ou o endereço IP.",
+      "share": "O nome da pasta partilhada: o que vem depois do servidor em \\\\servidor\\nome. Num NAS é a pasta partilhada que criou (p. ex. “backup”).",
+      "port": "A porta SMB. Deixe 445, a não ser que quem configurou o servidor lhe tenha dito outra.",
+      "user": "O utilizador com que entra na partilha. Vazio entra como convidado, para partilhas abertas a todos.",
+      "domain": "O domínio ou grupo de trabalho do utilizador. Deixe vazio, a não ser que o servidor esteja num domínio Windows (em casa usa-se WORKGROUP).",
+      "password": "A palavra-passe desse utilizador no servidor. Fica guardada no cofre do sistema (Keychain, Gestor de Credenciais, GNOME Keyring), nunca nos ficheiros do filebridge.",
+      "folder": "Uma pasta dentro da partilha onde ficam as cópias, com “/” entre pastas. É criada no primeiro envio se não existir."
+    },
+    "hint": {
+      "share": "Só o nome, p. ex. backup",
+      "port": "Normalmente 445",
+      "user": "Vazio = convidado",
+      "domain": "Vazio = WORKGROUP",
+      "folder": "P. ex. Fotos/2026; vazio = diretamente na partilha"
+    }
+  },
+  "s3": {
+    "nameHint": "Bucket de cópias",
+    "endpoint": "Endereço do servidor",
+    "region": "Região",
+    "provider": "Tipo de servidor",
+    "providerOther": "Outro / genérico",
+    "bucket": "Bucket",
+    "bucketSlash": "Aqui só o nome do bucket; a pasta dentro dele vai em “Pasta no bucket”.",
+    "accessKeyId": "Id da chave de acesso",
+    "anonymous": "vazio = anónimo (bucket público)",
+    "secret": "Chave de acesso secreta",
+    "pathStyle": "Endereço por caminho (MinIO e a maioria dos servidores próprios)",
+    "https": "Use https://: os pedidos são assinados, mas os ficheiros viajariam sem cifra.",
+    "folder": "Pasta no bucket",
+    "folderHint": "vazio = o próprio bucket",
+    "help": {
+      "endpoint": "O endereço do servidor S3, com https:// e a porta, se tiver. Deixe vazio para o Amazon S3 (AWS).",
+      "region": "A região do bucket, p. ex. eu-west-1. Na AWS aparece junto ao bucket; a maioria dos servidores próprios aceita qualquer uma ou vazio.",
+      "provider": "Que servidor é, para respeitar as particularidades dele. Se o seu não estiver na lista, mantenha “Outro / genérico”.",
+      "bucket": "O bucket para onde vão as cópias. Tem de existir já, ou a chave tem de poder criá-lo.",
+      "accessKeyId": "O id da chave, criado na consola do servidor (AWS: IAM → Access keys; MinIO: Access Keys). Não é secreto; a chave secreta é.",
+      "secret": "O segredo da chave, mostrado uma única vez quando a chave é criada. Fica guardado no cofre do sistema (Keychain, Gestor de Credenciais, GNOME Keyring), nunca nos ficheiros do filebridge.",
+      "pathStyle": "Ligado: o endereço é servidor/bucket, como o MinIO e a maioria dos servidores próprios precisam. Desligado: bucket.servidor, para buckets da AWS e servidores que o peçam.",
+      "folder": "Uma pasta dentro do bucket onde ficam as cópias, com “/” entre pastas. O S3 não tem pastas vazias: aparece com o primeiro ficheiro."
+    },
+    "hint": {
+      "endpoint": "Vazio = Amazon S3 (AWS)",
+      "bucket": "Só o nome, p. ex. backup",
+      "region": "Vazio = a do servidor",
+      "accessKeyId": "Vazio = sem chave, para um bucket público",
+      "folder": "P. ex. backup/fotos; vazio = diretamente no bucket"
+    }
   }
 }

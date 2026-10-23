@@ -107,7 +107,7 @@ export function freeBytes(t: ProfileTest_Serialize | undefined): number | null {
 }
 
 /** What kind of destination a profile is, for labels and icons. */
-export function profileKind(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" | "immich" {
+export function profileKind(p: Profile_Serialize): "local" | "sftp" | "webdav" | "smb" | "s3" | "nextcloud" | "immich" {
   if (p.integration === "nextcloud") return "nextcloud";
   if (p.integration === "immich") return "immich";
   return p.destination.backend.kind;
@@ -168,7 +168,7 @@ export function sshKeyAction(p: Profile_Serialize): "install" | "remove" | null 
 }
 
 /** How a send reaches the destination, for the Review step: Nextcloud's two modes differ. */
-export function sendMode(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" | "nextcloudWebdav" | "immich" {
+export function sendMode(p: Profile_Serialize): "local" | "sftp" | "webdav" | "smb" | "s3" | "nextcloud" | "nextcloudWebdav" | "immich" {
   if (p.integration === "nextcloud" && p.destination.backend.kind === "webdav") return "nextcloudWebdav";
   return profileKind(p);
 }
@@ -181,5 +181,15 @@ export function profileWhere(p: Profile_Serialize): string {
     return `${user}${b.host}${port}:${p.destination.root}`;
   }
   if (b.kind === "webdav") return `${b.url}${p.destination.root}`;
+  if (b.kind === "smb") {
+    const user = b.user ? `${b.user}@` : "";
+    const port = b.port && b.port !== 445 ? `:${b.port}` : "";
+    const folder = p.destination.root ? `/${p.destination.root}` : "";
+    return `smb://${user}${b.host}${port}/${b.share}${folder}`;
+  }
+  if (b.kind === "s3") {
+    const folder = p.destination.root ? `/${p.destination.root}` : "";
+    return `s3://${b.bucket}${folder}${b.endpoint ? ` · ${b.endpoint}` : ""}`;
+  }
   return p.destination.root;
 }

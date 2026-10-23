@@ -29,7 +29,8 @@ pub const SERVICE: &str = "filebridge";
 /// What a profile's secret is for; part of its reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretKind {
-    /// A password: Nextcloud app password (WebDAV), or an SFTP password.
+    /// The secret the user types for the destination: a Nextcloud app password (WebDAV), an
+    /// SFTP or SMB password, or an S3 secret access key (ADR 0022).
     AppPassword,
     /// The private key filebridge generated for the profile (OpenSSH format).
     SshKey,

@@ -40,30 +40,40 @@ impl RcloneTransport {
         self
     }
 
-    /// The destination's secrets for one call, obscured by rclone, which only takes passwords
-    /// that way. Each value (clear and as rclone takes it) is scrubbed from every rclone message
-    /// while the `Creds` live.
+    /// The destination's secrets for one call, as rclone takes them: passwords obscured by
+    /// rclone itself, S3's secret key as it is. Each value (clear and as rclone takes it) is
+    /// scrubbed from every rclone message while the `Creds` live.
     async fn creds(&self, dest: &Destination) -> Result<Creds> {
-        let (password, key) = match &dest.backend {
-            Backend::Sftp { password, key, .. } => (password.clone(), key.clone()),
-            Backend::Webdav { password, .. } => (password.clone(), None),
-            Backend::Local => (None, None),
+        // rclone takes passwords obscured, and S3's secret key as it is.
+        let (password, key, obscure) = match &dest.backend {
+            Backend::Sftp { password, key, .. } => (password.clone(), key.clone(), true),
+            Backend::Webdav { password, .. } | Backend::Smb { password, .. } => {
+                (password.clone(), None, true)
+            }
+            Backend::S3 {
+                secret_access_key, ..
+            } => (secret_access_key.clone(), None, false),
+            Backend::Local => (None, None, false),
         };
         let scrubber = self.rc().scrubber();
         let mut creds = Creds::default();
         if let Some(r) = password {
             let clear = self.secret(&r).await?;
             creds.held.push(scrubber.hold(clear.expose()));
-            let obscured = self
-                .rc()
-                .call("core/obscure", json!({ "clear": clear.expose() }))
-                .await?;
-            let obscured = obscured
-                .get("obscured")
-                .and_then(Value::as_str)
-                .ok_or_else(|| TransportError::fatal("rclone rc core/obscure: no answer"))?;
-            creds.held.push(scrubber.hold(obscured));
-            creds.pass = Some(SecretValue::new(obscured.to_owned()));
+            creds.pass = Some(if obscure {
+                let obscured = self
+                    .rc()
+                    .call("core/obscure", json!({ "clear": clear.expose() }))
+                    .await?;
+                let obscured = obscured
+                    .get("obscured")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| TransportError::fatal("rclone rc core/obscure: no answer"))?;
+                creds.held.push(scrubber.hold(obscured));
+                SecretValue::new(obscured.to_owned())
+            } else {
+                clear
+            });
         }
         if let Some(r) = key {
             // rclone wants the PEM on one line, its line breaks written as `\n`.
@@ -184,7 +194,12 @@ impl RcloneTransport {
                 .await
                 .expect("semaphore is never closed");
             let rc = self.rc().clone();
-            let (folder, params) = (folder.to_owned(), json!({ "fs": dst_fs, "remote": folder }));
+            // Names only: S3 reads each object's modification time with a request of its own.
+            let params = json!({
+                "fs": dst_fs, "remote": folder,
+                "opt": { "noModTime": true, "noMimeType": true },
+            });
+            let folder = folder.to_owned();
             set.spawn(async move {
                 let _permit = permit;
                 (folder, rc.call("operations/list", params).await)
@@ -353,6 +368,43 @@ impl Transport for RcloneTransport {
                     message: "destination reachable".into(),
                 });
             }
+            // S3 can't tell its free space, and SMB can't for a folder that isn't there yet:
+            // listing the root still proves the address, the sign-in and the share or bucket.
+            Err(e) if matches!(e.kind, ErrorKind::Unsupported | ErrorKind::NotFound) => {
+                let listed = self
+                    .rc()
+                    .call(
+                        "operations/list",
+                        json!({
+                            "fs": dest_fs(dest, &creds, "")?,
+                            "remote": "",
+                            "opt": { "dirsOnly": true, "noModTime": true, "noMimeType": true },
+                        }),
+                    )
+                    .await;
+                report.latency_ms = Some(started.elapsed().as_millis() as u64);
+                report.checks.push(match listed {
+                    Ok(_) => Check {
+                        id: "connect".into(),
+                        status: CheckStatus::Ok,
+                        message: "destination reachable; it doesn't report its free space".into(),
+                    },
+                    Err(e) if e.kind == ErrorKind::NotFound => Check {
+                        id: "connect".into(),
+                        status: CheckStatus::Warn,
+                        message: format!(
+                            "destination reachable, but its folder isn't there yet; the first \
+                             send creates it ({})",
+                            e.message
+                        ),
+                    },
+                    Err(e) => Check {
+                        id: "connect".into(),
+                        status: CheckStatus::Fail,
+                        message: e.message,
+                    },
+                });
+            }
             Err(e) => report.checks.push(Check {
                 id: "connect".into(),
                 status: CheckStatus::Fail,
@@ -423,6 +475,17 @@ impl Transport for RcloneTransport {
         let mut out: Vec<RemoteEntry> = remote_entries(&v)
             .filter(|e| !dirs_only || e.is_dir)
             .collect();
+        // S3 has no folders, only names with `/` in them: one that holds nothing isn't there,
+        // and rclone lists it as empty instead of saying so (ADR 0022).
+        if let (Some(dir), Backend::S3 { .. }) = (dir, &dest.backend)
+            && out.is_empty()
+            // Folders only: it may still hold files.
+            && (!dirs_only || self.list(dest, Some(dir), false).await?.is_empty())
+        {
+            return Err(TransportError::not_found(format!(
+                "directory not found: {dir}"
+            )));
+        }
         out.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(out)
     }
@@ -478,9 +541,22 @@ impl Transport for RcloneTransport {
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest> {
         let creds = self.creds(dest).await?;
         let hash_type = hash_type(algo);
-        let fs = dest_fs(dest, &creds, path.as_str())?;
-        let params =
-            |download: bool| json!({ "fs": fs, "hashType": hash_type, "download": download });
+        // The file as an fs of its own; on S3 its folder, limited to its name ([`dest_fs`]).
+        let (fs, only) = match dest.backend {
+            Backend::S3 { .. } => (
+                dest_fs(dest, &creds, path.parent().unwrap_or(""))?,
+                Some(json!({ "IncludeRule": [format!("/{}", glob_escape(path.file_name()))] })),
+            ),
+            _ => (dest_fs(dest, &creds, path.as_str())?, None),
+        };
+        let params = |download: bool| {
+            let mut p = json!({ "fs": fs, "hashType": hash_type, "download": download });
+            if let Some(only) = &only {
+                p["_filter"] = only.clone();
+                p["_config"] = json!({ "MaxDepth": 1 });
+            }
+            p
+        };
         let first = |v: &Value| {
             hashsum_lines(v)
                 .next()
@@ -498,9 +574,12 @@ impl Transport for RcloneTransport {
         let bytes = match bytes {
             Some(b) => b,
             None => {
+                // Nothing hashed even by download: no file there. S3 can't tell a missing
+                // file from an empty folder, so rclone lists it as one instead of failing.
                 let v = self.rc().call("operations/hashsum", params(true)).await?;
-                first(&v)
-                    .ok_or_else(|| TransportError::fatal(format!("no hash returned for {path}")))?
+                first(&v).ok_or_else(|| {
+                    TransportError::not_found(format!("{path}: no file there to hash"))
+                })?
             }
         };
         Ok(Digest { algo, bytes })

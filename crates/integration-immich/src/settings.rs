@@ -63,10 +63,11 @@ impl ImmichSettings {
                 IntegrationError::fatal("the destination folder of an Immich profile is empty"),
             ),
             Backend::Sftp { .. } | Backend::Local => Ok(()),
-            Backend::Webdav { .. } => Err(IntegrationError::fatal(
+            other => Err(IntegrationError::fatal(format!(
                 "Immich reads an external library from a folder: send over SFTP or to a local \
-                 folder, not WebDAV",
-            )),
+                 folder, not {}",
+                other.kind()
+            ))),
         }
     }
 }

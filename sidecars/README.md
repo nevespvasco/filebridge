@@ -44,7 +44,8 @@ the pinned rclone version. **Landed in:** Phase 1; the CLI, the download and Win
 
 Phones can't run the sidecar, so they load rclone as a library ([ADR 0014](../docs/adr/0014-engine-in-the-app-on-phones.md)).
 `librclone/build.sh` clones rclone at the same pinned version and builds `librclone/shim`
-(rclone's own C shims with only the local, SFTP and WebDAV backends: ~19 MB instead of ~107 MB):
+(rclone's own C shims with only the local, SFTP, WebDAV and SMB backends: ~22 MB instead of
+~107 MB; not S3, which would add ~12 MB per ABI, [ADR 0022](../docs/adr/0022-smb-and-s3-as-rclone-backends.md)):
 
 - `librclone/build.sh android`: `librclone.so` for `arm64-v8a` and `x86_64` into the Android
   app's `jniLibs` (needs Go and the NDK).

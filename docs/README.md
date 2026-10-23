@@ -46,6 +46,7 @@ detail to build each crate on its own.
 | [0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md) | Personal use, the name stays `filebridge`; scheduled sends in Phase 3, copy-only continuous sync (never deletes at the destination) in Phase 5 |
 | [0020](adr/0020-immich-external-library.md) | Immich as an external library: files over SFTP (or into a local folder), then a library scan through its API; an `Integration`, not a `Transport` |
 | [0021](adr/0021-full-destination-pauses-the-job.md) | A full destination (`ErrorKind::Full`) pauses the job, resumable; free space is watched during a send |
+| [0022](adr/0022-smb-and-s3-as-rclone-backends.md) | SMB and S3 are `Backend` variants of `transport-rclone`; `Backend` answers its kind and password slot, so `core` never lists the variants |
 | [0028](adr/0028-login-start-on-every-desktop-os.md) | The engine starts at login from a per-user entry on every desktop OS: systemd unit, LaunchAgent, Run key value (through the app, so no console window) |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes

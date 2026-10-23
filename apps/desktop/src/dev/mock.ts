@@ -891,9 +891,12 @@ const handlers: Handlers = {
   setProfilePassword: (a) => {
     const p = profiles.find((x) => x.id === a.profileId);
     if (!p) throw fail("not_found", `no profile ${a.profileId as string}`);
-    if (p.destination.backend.kind === "local") throw fail("invalid", "a local folder has no password");
+    const b = p.destination.backend;
+    if (b.kind === "local") throw fail("invalid", "a local destination has no password");
     // Like the service: only the reference is kept; the mock forgets the value.
-    p.destination.backend.password = a.password ? `filebridge/${p.id}/app-password` : null;
+    const ref = a.password ? `filebridge/${p.id}/app-password` : null;
+    if (b.kind === "s3") b.secret_access_key = ref;
+    else b.password = ref;
     return p;
   },
   createRepairJob: (a) => {

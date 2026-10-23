@@ -84,7 +84,7 @@ impl ImmichWizard {
             }
             Backend::Local if password.is_none() => Backend::Local,
             Backend::Local => return Err(err("invalid", "a local folder has no password")),
-            Backend::Webdav { .. } => {
+            _ => {
                 return Err(err(
                     "invalid",
                     "Immich reads an external library from a folder: send over SFTP or to a \

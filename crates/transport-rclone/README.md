@@ -10,7 +10,20 @@
   types `known_hosts` holds for the host (`host_key_algorithms`, read with `russh`), since Go's SSH
   client otherwise fails with "key mismatch" when the server prefers a type that is not there.
 - Configure backends in memory (`config/create` or connection strings) — local, SFTP, WebDAV
-  (vendor `nextcloud`). No `rclone.conf` with secrets on disk.
+  (vendor `nextcloud`), SMB and S3 ([ADR 0022](../../docs/adr/0022-smb-and-s3-as-rclone-backends.md)).
+  No `rclone.conf` with secrets on disk. SMB's password goes obscured (`pass=`, like SFTP's and
+  WebDAV's), S3's secret access key as given (`secret_access_key=`); both are scrubbed from
+  rclone's messages by value and by parameter name.
+- SMB: `:smb,host=…,user=…,domain=…:share/folder` (no user = `guest`). S3:
+  `:s3,provider=…,endpoint=…,force_path_style=…:bucket/folder/`, a folder inside the bucket
+  ending in `/` so rclone doesn't first ask whether it is a file (with a refused key it takes the
+  refusal for "a file", and a wrong secret would read "is a file not a directory"); `hash` on
+  S3 hashes the file through its folder with an include rule, for the same reason. S3 has no
+  empty folders: `list` of a folder that holds nothing is `NotFound` (rclone lists it as empty).
+- Errors: S3's `InvalidAccessKeyId` / `SignatureDoesNotMatch` are `Auth` (they come with a 403,
+  which S3 also sends as `AccessDenied` for a bucket the key may not use: `Other`), `SlowDown` and
+  `ServiceUnavailable` `Transient`, MinIO's `XMinioStorageFull` `Full`; SMB's logon failure is
+  `Auth`, a share that isn't there (`Network Name Not Found`) `Other`.
 - `transfer`: copy each item to its **mapped destination name** (`operations/copyfile` per file,
   plan A, ADR 0007; plan B was removed).
   Each destination folder that two or more of the batch's files go to is listed once
@@ -28,7 +41,8 @@
   paying at 8 there (copyfile alone: 17 files/s at 4, 23 at 8, 20 at 16).
 - Poll `core/stats` / `job/status` and forward to `ProgressSink`.
 - `hash`: `operations/hashsum` (or SFTP remote `sha256sum`); when the server can't hash
-  (Nextcloud has no SHA-256), rclone downloads the file and hashes it.
+  (Nextcloud has no SHA-256, SMB no hash at all, S3 only MD5), rclone downloads the file and
+  hashes it.
 - `hash_many` (verify): one `operations/hashsum` per folder, limited to the asked names by
   `_filter` include rules (escaped globs) and `MaxDepth 1`. rclone lists a file's whole folder to
   find it, so asking per file cost one folder listing (twice: hash, then download) per file —
@@ -44,9 +58,30 @@
   most likely signed in with the account password (their send rate, 4–6 files/s, is what the
   account password gives on that server; an app password gives 23); with an app password the
   same verify takes 15–18 s (~70 files/s).
+- `preflight`: `operations/about` for the free space; where the backend can't tell (S3, or an
+  SMB folder that isn't there yet) the root is listed instead, so the test still proves the
+  address and the sign-in: a folder not there yet is a warning (the first send creates it).
 - Partial files hidden until complete.
 - `set_bandwidth_limit`: `core/bwlimit` with `"<n>B"` or `"off"`. It is global to the rcd, so it is
   one app-wide limit that applies to running transfers too (ADR 0010).
+
+## Tests
+- `tests/contract.rs`: the shared contract against `rclone rcd` on the local backend, and over
+  librclone with `--features librclone`.
+- `tests/sftp_password.rs`, `tests/webdav.rs`, `tests/s3.rs`: against `rclone serve sftp`,
+  `serve webdav` and `serve s3` on 127.0.0.1, secrets from a keyring: the contract, wrong secrets
+  as `Auth`, no secret in any message.
+- `tests/smb.rs`: rclone has no `serve smb`, so it runs only with `FILEBRIDGE_TEST_SMB_HOST`,
+  `_SHARE`, `_USER`, `_PASSWORD` (and `_PORT`, `_DOMAIN`). Passed 2026-10-23 against Samba 4.23
+  in Docker:
+
+  ```bash
+  docker run -d --rm --name fb-smb -p 127.0.0.1:14445:445 -e NAME=data -e USER=fbtest -e PASS=fbtest-pass dockurr/samba
+  FILEBRIDGE_TEST_SMB_HOST=127.0.0.1 FILEBRIDGE_TEST_SMB_PORT=14445 FILEBRIDGE_TEST_SMB_SHARE=data \
+    FILEBRIDGE_TEST_SMB_USER=fbtest FILEBRIDGE_TEST_SMB_PASSWORD=fbtest-pass \
+    cargo test -p filebridge-transport-rclone --test smb
+  docker stop fb-smb
+  ```
 
 ## Capabilities (expected)
 `RESUME`, `HASH_SHA256` (SFTP), `RENAME`, `PARTIAL_HIDDEN`; `CHOWN`/`CHMOD` not available over

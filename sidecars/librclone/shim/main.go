@@ -25,6 +25,7 @@ import (
 	// Backends a Destination can name (transport-api `Backend`).
 	_ "github.com/rclone/rclone/backend/local"
 	_ "github.com/rclone/rclone/backend/sftp"
+	_ "github.com/rclone/rclone/backend/smb"
 	_ "github.com/rclone/rclone/backend/webdav"
 
 	_ "github.com/rclone/rclone/fs/operations" // operations/* rc calls

@@ -68,7 +68,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 25: `service_log` (D07).
 /// 26: `last_target_dir` (D11).
 /// 27: `skip_entry` (D04).
-pub const PROTOCOL_VERSION: u32 = 27;
+/// 28: `Backend::Smb`, `Backend::S3` (ADR 0022).
+pub const PROTOCOL_VERSION: u32 = 28;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
