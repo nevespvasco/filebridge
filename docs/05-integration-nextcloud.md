@@ -74,6 +74,9 @@ The Nextcloud profile wizard detects the setup by itself:
      LXC or VM reached directly (e.g. over Tailscale), or a bare-metal server. Commands run there
      as they are; the SSH user must be root or have passwordless `sudo -n`. See
      [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md).
+   - Either way, SFTP writes the files **as the SSH user**, so that user (not sudo) must be able
+     to write to the user's `files` folder: the `writable` step checks it after `data-path`. In
+     practice the SSH user is root.
 3. **Read `datadirectory` from `config.php`** and confirm the path exists (inside the container and
    mapped to the host via the bind mount). This avoids the original "No such file or directory"
    error, when Nextcloud was still using the container's internal disk. On the SSH host itself

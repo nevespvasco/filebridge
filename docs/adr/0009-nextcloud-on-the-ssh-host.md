@@ -26,7 +26,7 @@ uid:gid, e.g. `33:33`).
   the same steps as the LXC detector, with the same helpers and step ids so the wizard shows them
   the same way: `host` (root, or passwordless `sudo -n`; needed for `chown` and `su`),
   `datadirectory` (Nextcloud's default `<install>/data` when `config.php` doesn't set it),
-  `data-path`, `occ`, `run-as`, `owner`.
+  `data-path`, `writable`, `occ`, `run-as`, `owner`.
 - Detectors now report whether they **apply**. `LxcDetector` doesn't apply when `pct` is missing:
   `pct list` exits 127 and `/usr/sbin/pct` doesn't exist (the second check keeps a non-root user
   whose `PATH` lacks `/usr/sbin` on the LXC path, retried with `sudo -n`). The wizard runs
@@ -41,6 +41,11 @@ uid:gid, e.g. `33:33`).
 - The wizard works when SSH reaches the Nextcloud LXC, VM or server directly; the UI's "Server"
   field takes either the Proxmox node or that machine.
 - On the SSH host, the SSH user must be root or have passwordless sudo, as on the Proxmox node.
+- *Amended 2026-10-23:* sudo is not enough on its own. SFTP writes the sent files **as the SSH
+  user**, so that user must also be able to write to `<data>/<user>/files`, which belongs to the
+  web server's user: in practice, log in as root. Both detectors check it as the SSH user itself
+  (`test -w`, never through sudo) in a `writable` step right after `data-path`, so the wizard
+  says so instead of the first send failing at preflight.
 - Docker, AIO and Snap remain out of scope: they would be further detectors (and runtimes), added
   the same way.
 - Rejected: a separate "connect to the container" toggle in the UI. Detection can tell the two

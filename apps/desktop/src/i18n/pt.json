@@ -676,6 +676,7 @@
       "pct-config": "Configuração do contentor",
       "datadirectory": "Pasta de dados",
       "data-path": "Caminho dos dados no anfitrião",
+      "writable": "Permissão de escrita por SFTP",
       "occ": "Comando occ",
       "run-as": "Utilizador do servidor web",
       "owner": "Dono dos ficheiros"
@@ -686,7 +687,7 @@
     "help": {
       "ncUser": "A conta do Nextcloud que recebe os ficheiros: o nome de login, não o nome que aparece.",
       "host": "O endereço do nó Proxmox que corre o contentor do Nextcloud, ou da máquina onde o Nextcloud corre (o contentor, VM ou servidor, p. ex. o endereço Tailscale).",
-      "sshUser": "O utilizador com que o filebridge entra por SSH nesse servidor. Tem de ser root ou ter sudo sem palavra-passe. Normalmente root.",
+      "sshUser": "O utilizador com que o filebridge entra por SSH nesse servidor. Os ficheiros são escritos como este utilizador, por isso ele tem de poder escrever na pasta de dados do Nextcloud: na prática, root.",
       "folder": "Uma pasta dentro dos ficheiros desse utilizador. Vazio põe os ficheiros no topo.",
       "ctid": "Só Proxmox: o número do contentor onde corre o Nextcloud. Deixe vazio e o filebridge encontra-o.",
       "installDir": "Onde o Nextcloud está instalado dentro do contentor. Deixe vazio e o filebridge encontra-a."

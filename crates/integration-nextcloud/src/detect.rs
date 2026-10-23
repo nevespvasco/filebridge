@@ -393,6 +393,7 @@ async fn detect_lxc(
         &host_files,
     )
     .await?;
+    check_writable(rec, &exec, &input.ssh.user, &host_files).await?;
 
     // 4–5. `occ`, the web-server user, and how to become it.
     let (occ, web_user) = find_occ(rec, &exec, &install_dir).await?;
@@ -513,6 +514,7 @@ async fn detect_host(
         &files,
     )
     .await?;
+    check_writable(rec, &exec, &input.ssh.user, &files).await?;
 
     // 3–4. `occ`, the web-server user, and how to become it.
     let (occ, web_user) = find_occ(rec, &exec, &install_dir).await?;
@@ -612,6 +614,38 @@ async fn check_dirs<const N: usize>(
 }
 
 /// Step `occ`: `occ` exists; the web-server user is the owner of `config.php`.
+/// The SSH user itself (never through sudo) can write to the user's files folder on the host:
+/// SFTP writes the sent files as that user, so `sudo -n` alone is not enough.
+async fn check_writable(
+    rec: &mut Recorder<'_>,
+    exec: &Exec,
+    ssh_user: &str,
+    files: &str,
+) -> Result<(), Failed> {
+    let plain = Exec {
+        host_sudo: false,
+        ..exec.clone()
+    };
+    let out = rec
+        .run_in("writable", plain.host(&["test", "-w", files]))
+        .await?;
+    if !out.success() {
+        return Err(rec.fail(
+            "writable",
+            format!(
+                "{ssh_user} cannot write to {files}: files are sent over SFTP as the SSH user \
+                 (sudo only sets their owner and runs occ), so log in as root"
+            ),
+        ));
+    }
+    rec.step(
+        "writable",
+        CheckStatus::Ok,
+        format!("{ssh_user} can write to {files}"),
+    );
+    Ok(())
+}
+
 async fn find_occ(
     rec: &mut Recorder<'_>,
     exec: &Exec,

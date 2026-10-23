@@ -73,6 +73,7 @@ fn authors_setup() -> FakeShell {
         .on("pct exec 105 -- test -d /mnt/ncdata", Output::ok(""))
         .on("test -d /tank/nextcloud-data", Output::ok(""))
         .on("test -d /tank/nextcloud-data/alice/files", Output::ok(""))
+        .on("test -w /tank/nextcloud-data/alice/files", Output::ok(""))
         .on("pct exec 105 -- test -f /var/www/nextcloud/occ", Output::ok(""))
         .on(
             "pct exec 105 -- stat -c %U /var/www/nextcloud/config/config.php",
@@ -107,6 +108,7 @@ async fn detects_the_authors_lxc() {
             ("pct-config".into(), CheckStatus::Ok),
             ("datadirectory".into(), CheckStatus::Ok),
             ("data-path".into(), CheckStatus::Ok),
+            ("writable".into(), CheckStatus::Ok),
             ("occ".into(), CheckStatus::Ok),
             ("run-as".into(), CheckStatus::Ok),
             ("owner".into(), CheckStatus::Ok),
@@ -135,7 +137,7 @@ async fn detects_the_authors_lxc() {
     );
     assert_eq!(d.containers.len(), 4);
     // Each step lists what it ran, for the Details panel.
-    let run_as = &d.steps[5];
+    let run_as = &d.steps[6];
     assert_eq!(
         run_as
             .commands
@@ -203,6 +205,10 @@ async fn data_on_a_storage_volume_is_resolved_with_pvesm() {
             Output::ok(""),
         )
         .on(
+            "test -w '/rpool/data/subvol-105-disk-1/nc data/alice/files'",
+            Output::ok(""),
+        )
+        .on(
             "stat -c %u:%g '/rpool/data/subvol-105-disk-1/nc data'",
             Output::ok("100033:100033\n"),
         );
@@ -229,6 +235,8 @@ async fn dedicated_user_with_sudo_and_custom_idmap() {
         .on("sudo -n pct exec 130 -- test -d /srv/nextcloud/data", Output::ok(""))
         .on("sudo -n test -d /mnt/pve/hdd/nextcloud", Output::ok(""))
         .on("sudo -n test -d /mnt/pve/hdd/nextcloud/ana/files", Output::ok(""))
+        // The data folder belongs to the `filebridge` user (the custom idmap), so it writes there.
+        .on("test -w /mnt/pve/hdd/nextcloud/ana/files", Output::ok(""))
         .on("sudo -n pct exec 130 -- test -f /var/www/html/occ", Output::ok(""))
         .on(
             "sudo -n pct exec 130 -- stat -c %U /var/www/html/config/config.php",
