@@ -11,8 +11,9 @@ use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
     EntryStatus, Event, FileCategory, IssueDecision, JobErrorCode, JobFilter, JobGroup, JobKind,
-    JobState, LocalClock, LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest,
-    ReportScope, SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec,
+    JobState, LocalClock, LogLevel, Profile, ReclaimBlocker, Registry, ReportChangeKind,
+    ReportFormat, ReportRequest, ReportScope, SealProblem, SendOptions, SendWindow, SourceProblem,
+    Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -855,6 +856,170 @@ async fn a_finished_transfer_exports_its_proof() {
     assert_eq!(v["entries"][0]["sha256"].as_str().unwrap().len(), 64);
     assert_eq!(v["destination"]["backend"], "local");
     assert_eq!(v["destination"]["profile"], "Test");
+}
+
+#[tokio::test]
+async fn a_sealed_report_shows_any_later_edit() {
+    let s = setup().await;
+    let job = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    let dir = s.dest.parent().unwrap();
+    let req = |path: &Path| ReportRequest {
+        format: ReportFormat::Sealed,
+        scope: ReportScope::All,
+        include_dirs: false,
+        path: path.display().to_string(),
+    };
+    assert!(
+        s.engine
+            .export_report(&job, req(&dir.join("proof.html")))
+            .await
+            .is_err(),
+        "the .html name is the readable copy's"
+    );
+    let json = dir.join("proof.json");
+    let done = s.engine.export_report(&job, req(&json)).await.unwrap();
+    assert_eq!(done.rows, 3);
+    let html = dir.join("proof.html");
+    assert_eq!(done.readable, Some(html.display().to_string()));
+    let seal = done.seal.expect("a seal");
+    assert_eq!(seal.len(), 64);
+    for p in [&json, &html] {
+        assert!(!Path::new(&format!("{}.part", p.display())).exists());
+    }
+
+    for path in [&json, &html] {
+        let c = s
+            .engine
+            .check_report(&path.display().to_string())
+            .await
+            .unwrap();
+        assert!(c.intact, "{c:?}");
+        assert_eq!(c.entries, 3);
+        assert_eq!(c.sha256.as_deref(), Some(seal.as_str()));
+        assert_eq!(c.readable, Some(html.display().to_string()));
+    }
+
+    // One entry's status edited in the JSON: pinned to it, and the copy no longer matches.
+    let text = std::fs::read_to_string(&json).unwrap();
+    std::fs::write(&json, text.replacen("\"verified\"", "\"different\"", 1)).unwrap();
+    let c = s
+        .engine
+        .check_report(&json.display().to_string())
+        .await
+        .unwrap();
+    assert!(!c.intact);
+    assert!(
+        matches!(
+            c.problems[..],
+            [SealProblem::Entry { index: 0, .. }, SealProblem::Readable]
+        ),
+        "{:?}",
+        c.problems
+    );
+
+    let mut out = Vec::new();
+    assert!(
+        s.engine
+            .write_report(
+                &job,
+                ReportFormat::Sealed,
+                ReportScope::All,
+                false,
+                &mut out
+            )
+            .await
+            .is_err(),
+        "two files, not one stream"
+    );
+}
+
+#[tokio::test]
+async fn two_runs_reports_are_compared() {
+    use ReportChangeKind::*;
+    let s = setup().await;
+    let first = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &first).await, JobState::Completed);
+
+    std::fs::remove_file(s.src.join("Fotos/Inverno.jpg")).unwrap();
+    std::fs::write(s.src.join("Fotos/Outono.jpg"), b"autumn").unwrap();
+    std::fs::write(s.src.join("Relato\u{301}rio.pdf"), b"report, v2").unwrap();
+    let draft = ready_job(
+        &s,
+        SendOptions {
+            verify: true,
+            ..SendOptions::default()
+        },
+    )
+    .await;
+    assert!(
+        s.engine
+            .diff_reports(&first, &draft, None, 100)
+            .await
+            .is_err(),
+        "only finished transfers"
+    );
+    assert_eq!(run_to_end(&s, &draft).await, JobState::Completed);
+
+    let d = s
+        .engine
+        .diff_reports(&first, &draft, None, 100)
+        .await
+        .unwrap();
+    assert!(d.same_sources && d.same_profile);
+    let count = |k| d.counts.iter().find(|c| c.kind == k).unwrap().files;
+    assert_eq!(
+        [Added, Removed, Changed, Renamed, NewlyVerified, NewProblem].map(count),
+        [1, 1, 1, 0, 2, 0]
+    );
+    assert_eq!(d.unchanged, 0);
+    let listed: Vec<(&str, &[ReportChangeKind])> = d
+        .changes
+        .iter()
+        .map(|c| (c.source_path.as_str(), c.kinds.as_slice()))
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            ("Acme/Fotos/Inverno.jpg", &[Removed][..]),
+            ("Acme/Fotos/Outono.jpg", &[Added][..]),
+            ("Acme/Fotos/Vera\u{303}o.jpg", &[NewlyVerified][..]),
+            ("Acme/Relato\u{301}rio.pdf", &[Changed, NewlyVerified][..]),
+        ],
+        "in source-path order"
+    );
+    let report = d.changes.last().unwrap();
+    assert_eq!(
+        (
+            report.a.as_ref().unwrap().size,
+            report.b.as_ref().unwrap().size
+        ),
+        (6, 10)
+    );
+
+    let only = s
+        .engine
+        .diff_reports(&first, &draft, Some(NewlyVerified), 1)
+        .await
+        .unwrap();
+    assert_eq!(only.changes.len(), 1);
+    assert!(only.more, "a second newly verified file wasn't listed");
+    assert_eq!(only.counts, d.counts, "counts stay over everything");
+
+    let same = s
+        .engine
+        .diff_reports(&draft, &draft, None, 100)
+        .await
+        .unwrap();
+    assert!(same.changes.is_empty());
+    assert_eq!(same.unchanged, 3);
 }
 
 /// Every file under `dir` with its bytes and modification time: to prove nothing changed.

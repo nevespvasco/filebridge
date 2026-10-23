@@ -12,10 +12,12 @@ import JobActions from "@/components/JobActions.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
+import CheckReportDialog from "@/components/CheckReportDialog.vue";
 import ReportDialog from "@/components/ReportDialog.vue";
 import SearchField from "@/components/SearchField.vue";
 import { useFmt } from "@/composables/useFmt";
 import { defaultLabel, jobLabel } from "@/lib/jobs";
+import { isMobile } from "@/lib/platform";
 import { PAGE_SIZE, RUNNING, useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
 
@@ -62,6 +64,7 @@ onMounted(() => void profiles.load());
 
 const groupChips = computed(() => GROUPS.map((g) => ({ value: g, label: t(`jobs.group.${g}`) })));
 const reportFor = ref<string | null>(null);
+const checking = ref(false);
 const filtered = computed(() => groups.value.length > 0 || !!profileId.value || !!search.value.trim());
 function clearFilters() {
   search.value = "";
@@ -76,7 +79,11 @@ function clearFilters() {
         <h1>{{ $t("jobs.title") }}</h1>
         <p class="lead-text">{{ $t("jobs.intro") }}</p>
       </div>
-      <button class="btn" :title="$t('jobs.refreshTip')" @click="jobs.loadPage()">{{ $t("common.refresh") }}</button>
+      <div class="head-actions">
+        <!-- Picking a file isn't possible on a phone: there, a report is checked with the CLI. -->
+        <button v-if="!isMobile()" class="btn" @click="checking = true"><AppIcon name="checksum" /> {{ $t("report.check.open") }}</button>
+        <button class="btn" :title="$t('jobs.refreshTip')" @click="jobs.loadPage()">{{ $t("common.refresh") }}</button>
+      </div>
     </header>
 
     <div class="toolbar">
@@ -185,6 +192,7 @@ function clearFilters() {
     </div>
 
     <ReportDialog :job-id="reportFor" @close="reportFor = null" />
+    <CheckReportDialog :open="checking" @close="checking = false" />
   </div>
 </template>
 
@@ -206,6 +214,7 @@ function clearFilters() {
 .table td.c-where { overflow: hidden; }
 .block { display: block; }
 .page-head .lead-text { margin-bottom: 0; }
+.head-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
 .empty p { margin: 0 0 0.5rem; }
 .empty-icon { color: var(--muted); }

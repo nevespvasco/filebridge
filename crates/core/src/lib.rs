@@ -33,9 +33,10 @@ pub use filebridge_model::{
     EntrySort, EntryStatus, EntryView, Event, ExportResult, Family, FileCategory, FolderNameCheck,
     InFlightView, IssueDecision, IssueSeverity, IssueView, JobErrorCode, JobFilter, JobGroup,
     JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile,
-    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, ReportFormat, ReportRequest,
-    ReportScope, RuleCount, SendOptions, SendWindow, SourceInfo, SourceProblem, StorageView,
-    TargetSpec, UnknownValue, job_operations,
+    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, ReportChange, ReportChangeCount,
+    ReportChangeKind, ReportCheck, ReportDiff, ReportFormat, ReportRequest, ReportScope,
+    ReportSide, RuleCount, SealProblem, SendOptions, SendWindow, SourceInfo, SourceProblem,
+    StorageView, TargetSpec, UnknownValue, job_operations,
 };
 pub use registry::Registry;
 pub use repair::MAX_REPAIR_ENTRIES;

@@ -483,6 +483,43 @@ impl Store {
         .await
     }
 
+    /// A page of a job's files (not directories) in source-path order (raw bytes, then `idx`),
+    /// after `after`: two jobs' pages are walked side by side to compare their reports.
+    pub async fn files_by_path(
+        &self,
+        job_id: &str,
+        after: Option<(Vec<u8>, u64)>,
+        limit: u32,
+    ) -> Result<Vec<EntryRow>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let (path, idx) = match after {
+                Some((p, i)) => (Some(p), Some(i as i64)),
+                None => (None, None),
+            };
+            let mut stmt = c.prepare_cached(&format!(
+                "SELECT {COLUMNS}, {RENAMED} AS renamed, {RANK} AS rank
+                 FROM manifest_entries m
+                 WHERE job_id = ?1 AND is_dir = 0
+                   AND (?2 IS NULL OR raw_path > ?2 OR (raw_path = ?2 AND idx > ?3))
+                 ORDER BY raw_path, idx LIMIT ?4"
+            ))?;
+            let rows = stmt.query_map(params![job_id, path, idx, limit], |r| {
+                Ok((from_row(r)?, r.get::<_, bool>(14)?, r.get::<_, u8>(15)?))
+            })?;
+            rows.map(|r| {
+                let (t, renamed, rank) = r?;
+                Ok(EntryRow {
+                    entry: parse(t)?,
+                    renamed,
+                    rank,
+                })
+            })
+            .collect()
+        })
+        .await
+    }
+
     /// Files per source position and `(transfer_state, verify_state)`: `(source, transfer,
     /// verify, files, bytes)`.
     pub async fn source_state_counts(
@@ -688,6 +725,42 @@ mod tests {
             category: "other".into(),
             ..file(idx, path, 0)
         }
+    }
+
+    #[tokio::test]
+    async fn files_page_in_source_path_order() {
+        let (store, job) = store_with_job().await;
+        store
+            .insert_entries(
+                &job,
+                vec![
+                    dir(0, b"Fotos"),
+                    file(1, b"Fotos/b.jpg", 1),
+                    file(2, b"Fotos/a.jpg", 1),
+                    file(3, b"Fotos/\xff.jpg", 1),
+                    file(4, b"A.txt", 1),
+                ],
+            )
+            .await
+            .unwrap();
+        let mut seen = Vec::new();
+        let mut after = None;
+        loop {
+            let page = store.files_by_path(&job, after, 2).await.unwrap();
+            let Some(last) = page.last() else { break };
+            after = Some((last.entry.entry.raw_path.clone(), last.entry.entry.idx));
+            seen.extend(page.into_iter().map(|r| r.entry.entry.raw_path));
+        }
+        assert_eq!(
+            seen,
+            [
+                b"A.txt".to_vec(),
+                b"Fotos/a.jpg".to_vec(),
+                b"Fotos/b.jpg".to_vec(),
+                b"Fotos/\xff.jpg".to_vec(),
+            ],
+            "byte order, files only"
+        );
     }
 
     #[tokio::test]

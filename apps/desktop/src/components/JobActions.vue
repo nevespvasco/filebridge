@@ -38,6 +38,7 @@ const items = computed<MenuItem[]>(() => {
   // A repair works on a folder of its own destination: it only runs again there.
   if (props.job.kind !== "repair") out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
   out.push({ id: "export", label: t("jobs.menu.export"), icon: "export", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
+  out.push({ id: "compare", label: t("report.compare.menu"), icon: "different", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
   out.push({ id: "copyId", label: t("jobs.menu.copyId"), icon: "copy" });
   if (can("cancel")) out.push({ id: "cancel", label: t("jobDetail.cancel"), icon: "close", danger: true });
   return out;
@@ -88,6 +89,8 @@ async function onSelect(id: string) {
       return;
     case "export":
       return emit("exportReport");
+    case "compare":
+      return void router.push({ name: "compare", params: { a: j.id } });
     case "copyId":
       return act(() => copyText(j.id));
     case "cancel":

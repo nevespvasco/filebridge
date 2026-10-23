@@ -40,6 +40,8 @@ import {
   type ImmichRequest_Deserialize,
   type NextcloudWebdavRequest,
   type ReclaimStatus_Serialize,
+  type ReportChange_Serialize,
+  type ReportChangeKind,
   type RecentSource,
   type StorageView_Serialize as StorageView,
   type Profile_Serialize,
@@ -96,6 +98,25 @@ const jobs: JobSummary_Serialize[] = [
     options: { verify: true, concurrency: 8, target_dir: null },
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
     label: "Documentos do escritório",
+    again_of: null,
+  },
+  // An earlier run of the same folder, without verify: something to compare "j-old" with.
+  {
+    id: "j-older",
+    kind: "transfer",
+    profile_id: "p-disk",
+    state: "completed",
+    error: null,
+    error_code: null,
+    attempt: 0,
+    next_retry_at: null,
+    created_at: now - 8 * 86_400_000,
+    updated_at: now - 8 * 86_400_000 + 3_600_000,
+    finished_at: now - 8 * 86_400_000 + 3_600_000,
+    sources: ["/home/demo/Documentos"],
+    options: { verify: false, concurrency: 8, target_dir: null },
+    counts: counts(1230, 4_490_000_000, 1),
+    label: null,
     again_of: null,
   },
 ];
@@ -1179,8 +1200,41 @@ const handlers: Handlers = {
       await sleep(250);
       send({ type: "report_progress", job_id: job.id, rows: Math.round((total * i) / 5), total });
     }
-    const req = a.req as { path: string };
-    return { path: req.path, rows: total, bytes: total * 142 };
+    const req = a.req as { path: string; format: string };
+    if (req.format !== "sealed") return { path: req.path, rows: total, bytes: total * 142, readable: null, seal: null };
+    const readable = req.path.replace(/\.json$/i, "") + ".html";
+    return { path: req.path, rows: total, bytes: total * 230, readable, seal: "5d1c0e7a".repeat(8) };
+  },
+  diffReports: async (a) => {
+    const [ja, jb] = [find(a.jobA), find(a.jobB)];
+    for (const j of [ja, jb]) {
+      if (!(JOB_OPERATIONS.export_report as readonly JobState[]).includes(j.state)) throw fail("invalid", `transfer ${j.id} hasn't finished: only finished transfers are compared`);
+    }
+    await sleep(300);
+    const all = ja.id === jb.id ? [] : demoChanges();
+    const kind = a.kind as ReportChangeKind | null;
+    const listed = kind ? all.filter((c) => c.kinds.includes(kind)) : all;
+    const kinds: ReportChangeKind[] = ["added", "removed", "changed", "renamed", "newly_verified", "new_problem"];
+    const changedPaths = new Set(all.filter((c) => c.a && c.b).map((c) => c.source_path));
+    return {
+      counts: kinds.map((k) => ({ kind: k, files: all.filter((c) => c.kinds.includes(k)).length })),
+      unchanged: Math.max(0, Math.min(ja.counts.files, jb.counts.files) - changedPaths.size),
+      changes: listed.slice(0, a.limit as number),
+      more: listed.length > (a.limit as number),
+      same_sources: ja.sources.join("\n") === jb.sources.join("\n"),
+      same_profile: ja.profile_id === jb.profile_id,
+    };
+  },
+  checkReport: async (a) => {
+    await sleep(400);
+    const path = (a.path as string).replace(/\.html$/i, ".json");
+    const readable = path.replace(/\.json$/i, ".html");
+    const seal = "5d1c0e7a".repeat(8);
+    // A name with "alterado" or "changed" plays an edited report.
+    if (/alterado|changed/i.test(path)) {
+      return { intact: false, path, readable, entries: 412, sha256: seal, more: 0, problems: [{ kind: "entry", index: 11, source_path: "Fotos/2023/IMG_0012.jpg" }, { kind: "readable" }] };
+    }
+    return { intact: true, path, readable, entries: 412, sha256: seal, problems: [], more: 0 };
   },
   activity: (a) => {
     const all: (LogEntry & { jobId: string | null })[] = [...logs.entries()].flatMap(([jobId, list]) => list.map((e) => ({ ...e, jobId })));
@@ -1287,6 +1341,27 @@ async function handle(cmd: string, a: Args): Promise<unknown> {
 }
 
 /** Asks for a path in a page dialog, with an example: a browser can't see real paths. */
+/** A fixed sample of what changed between two runs, for the Compare screen. */
+function demoChanges(): ReportChange_Serialize[] {
+  const side = (status: EntryStatus, extra: Partial<ReportChange_Serialize["b"] & object> = {}) => ({
+    destination_path: null,
+    size: 2_400_000,
+    status,
+    sha256: null,
+    renamed_by: [],
+    ...extra,
+  });
+  return [
+    { source_path: "Documentos/Ata: reunião.pdf", kinds: ["renamed", "newly_verified"], a: side("sent", { destination_path: "Documentos/Ata: reunião.pdf" }), b: side("verified", { destination_path: "Documentos/Ata_ reunião.pdf", renamed_by: ["forbidden-chars"] }) },
+    { source_path: "Documentos/Orçamento.xlsx", kinds: ["changed"], a: side("verified", { size: 48_211, sha256: "9f2c1a7e04bd".repeat(5) + "aaaa" }), b: side("verified", { size: 51_004, sha256: "1a7e9f2c04bd".repeat(5) + "bbbb" }) },
+    { source_path: "Fotos/2019/antiga.jpg", kinds: ["removed"], a: side("verified"), b: null },
+    { source_path: "Fotos/2023/IMG_0007.jpg", kinds: ["newly_verified"], a: side("sent"), b: side("verified") },
+    { source_path: "Fotos/2023/IMG_0008.jpg", kinds: ["newly_verified"], a: side("sent"), b: side("verified") },
+    { source_path: "Fotos/2024/IMG_0001.jpg", kinds: ["added"], a: null, b: side("verified") },
+    { source_path: "Música/faixa 03.flac", kinds: ["new_problem"], a: side("verified"), b: side("different") },
+  ];
+}
+
 function pickInPage(opts: PickOptions): Promise<string[]> {
   const example = opts.directory ? "/home/demo/Fotos" : "/home/demo/Documentos/relatório.pdf";
   const dialog = document.createElement("dialog");

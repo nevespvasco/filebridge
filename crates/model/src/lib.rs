@@ -10,6 +10,7 @@ mod entries;
 mod event;
 mod log;
 mod profile;
+mod report;
 mod rules;
 mod settings;
 mod state;
@@ -23,6 +24,10 @@ pub use entries::{
 pub use event::Event;
 pub use log::{ActivityItem, LogEntry, LogLevel, default_label, log_level};
 pub use profile::{Family, Profile, TargetSpec};
+pub use report::{
+    ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff, ReportSide,
+    SealProblem,
+};
 pub use rules::{JobGroup, Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use state::{JobKind, JobState};

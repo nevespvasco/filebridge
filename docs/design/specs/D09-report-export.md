@@ -122,6 +122,31 @@ crash never leaves a truncated report under the final name.
   are left to the entries (one pass, no extra query).
 - `Engine::write_report` writes to any `Write` (the CLI's stdout); `export_report` wraps it with
   `<path>.part` and a rename. The desktop gets `dialog:allow-save` for the save dialog.
+- **Comparing two reports** ([ADR 0025](../../adr/0025-report-diff-and-sealed-export.md)):
+  `diff_reports(job_a, job_b, kind, limit) -> ReportDiff`, finished jobs only. Files (not
+  folders) are matched by the source path's exact bytes and each difference gets one or more
+  kinds: `added`, `removed`, `changed` (size, or SHA-256 when both have one), `renamed` (another
+  destination path), `newly_verified`, `new_problem`. Counts are over everything; the list is
+  the first `limit` (at most 5 000) changes in source-path order, of one kind when asked.
+  `same_sources` / `same_profile` flag a comparison of unrelated jobs instead of refusing it.
+  Both jobs are walked a page at a time in path order (`Store::files_by_path`, index
+  `manifest_path`, migration 9). The window: **Compare with…** in a transfer's ⋮ menu opens
+  *Compare reports* (`/compare/:a/:b?`): two pickers (the second defaults to the next run of the
+  same folders, else the one before it, compared forward in time), a swap button, a chip per
+  kind (one at a time), and the changes with what each side says. The CLI:
+  `filebridge report diff <a> <b>`, each side a job or an exported JSON report; one
+  `kind<TAB>path<TAB>detail` line per change, totals on stderr, exit 1 when anything changed.
+- **Sealed export** (ADR 0025): `ReportFormat::Sealed` writes the JSON report with a SHA-256
+  digest chain (`chain` in each entry, `seal` at the end: scheme, header link, entries, final
+  SHA-256) plus a readable, self-contained HTML copy beside it (`<path>` with `.html`, no
+  script), both through `.part` files. `ExportResult` gains `readable` and `seal` (the final
+  SHA-256), shown after the export with "keep this code somewhere else". A plain digest, no
+  signing key (the user's choice). `check_report(path) -> ReportCheck` and
+  `filebridge report check <file>` take the JSON or the HTML, check the other one beside it
+  too, and name what changed: the header, an entry (by index and path), the end or the seal,
+  or the readable copy (rendered again from the JSON and compared byte for byte). Reordering or
+  reformatting the JSON's members doesn't break the seal; any content change does. The
+  window: **Check a report…** on Transfers (not on phones, which can't pick a file).
 
 ## States
 
@@ -137,11 +162,16 @@ crash never leaves a truncated report under the final name.
 
 ```rust
 #[derive(..., specta::Type)] #[serde(rename_all = "snake_case")]
-pub enum ReportFormat { Csv, Json }
+pub enum ReportFormat { Csv, Json, Sealed }
 #[derive(..., specta::Type)] #[serde(rename_all = "snake_case")]
 pub enum ReportScope { All, Problems, Renamed }
 pub struct ReportRequest { pub format: ReportFormat, pub scope: ReportScope, pub include_dirs: bool, pub path: String }
-pub struct ExportResult { pub path: String, pub rows: u64, pub bytes: u64 }
+pub struct ExportResult { pub path: String, pub rows: u64, pub bytes: u64,
+                          pub readable: Option<String>, pub seal: Option<String> }
+// report.rs (ADR 0025)
+pub enum ReportChangeKind { Added, Removed, Changed, Renamed, NewlyVerified, NewProblem }
+pub struct ReportDiff { counts, unchanged, changes: Vec<ReportChange>, more, same_sources, same_profile }
+pub struct ReportCheck { intact, path, readable, entries, sha256, problems: Vec<SealProblem>, more }
 
 // event.rs: progress while writing (advisory)
 ReportProgress { job_id: String, rows: u64, total: u64 },
@@ -152,6 +182,10 @@ ReportProgress { job_id: String, rows: u64, total: u64 },
 ```text
 /// Writes a job's report (terminal states only) to `req.path` on this machine.
 ExportReport export_report(job_id: String, req: ReportRequest) -> ExportResult;
+/// Two finished jobs' reports compared (ADR 0025). Protocol 25.
+DiffReports diff_reports(job_a: String, job_b: String, kind: Option<ReportChangeKind>, limit: u32) -> ReportDiff;
+/// A sealed report file on the service's machine checked (ADR 0025). Protocol 25.
+CheckReport check_report(path: String) -> ReportCheck;
 ```
 
 `Op::Export` is allowed in terminal states (rules.rs). The request runs to completion on the
@@ -173,7 +207,9 @@ transaction, in batches of 1 000 rows, using the same filter builder as `entries
 ### CLI
 
 ```text
-filebridge report <job> [--format csv|json] [--only problems|renamed] [--dirs] [-o FILE]
+filebridge report <job> [--format csv|json|sealed] [--only problems|renamed] [--dirs] [-o FILE]
+filebridge report diff <job-or-report.json> <job-or-report.json> [--only KIND]
+filebridge report check <report.json|report.html>
 ```
 
 Without `-o`, it writes to stdout (so `filebridge report 7f3c --only problems | less` works).
@@ -191,6 +227,9 @@ It shares `core::report` with the service.
 | `report.scope.renamed` | Only renamed ({n}) | Só os renomeados ({n}) |
 | `report.saved` | Report saved | Relatório guardado |
 | `report.notTerminal` | Available when the transfer has finished | Disponível quando a transferência terminar |
+| `report.sealed` | Sealed — JSON plus a readable HTML copy; any later change shows when checked | Selado — JSON e uma cópia HTML legível; qualquer alteração posterior aparece ao verificar |
+| `report.check.*` | Check a sealed report, and what changed | Verificar um relatório selado, e o que mudou |
+| `report.compare.*` | Compare reports: added, removed, changed, renamed, now verified, new problem | Comparar relatórios: novo, removido, alterado, renomeado, agora verificado, novo problema |
 
 The report's **content** (status words, column names, the `#` header keys) is always English,
 so files are comparable whatever the UI language was.
@@ -215,12 +254,12 @@ so files are comparable whatever the UI language was.
 
 ## Out of scope
 
-- PDF or HTML "certificates". CSV and JSON cover archiving and scripting, and a pretty report can
-  be generated from the JSON later.
-- Signing the report (a detached signature with the app's Ed25519 key would make it
-  tamper-evident). Interesting; later.
-- Comparing two reports ("what changed since the last send"). [D06](D06-transfers-list.md#send-again)
-  covers resending, and comparing could be a CLI subcommand later.
+- PDF "certificates". The sealed export's HTML copy is the readable form.
+- Signing the report. The sealed export is a plain digest chain
+  ([ADR 0025](../../adr/0025-report-diff-and-sealed-export.md)); a signature over its final
+  SHA-256 can come later as a new seal scheme without changing the chain.
+- Comparing a report with a Repair of the destination the files went to: a diff matches by
+  source path, and a Repair's sources are destination names.
 
 ## Open questions
 

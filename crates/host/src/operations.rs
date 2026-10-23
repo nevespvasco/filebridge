@@ -14,8 +14,8 @@ use filebridge_ipc::{
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest, IssueView,
     JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
-    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
-    SourceInfo, StorageView,
+    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportChangeKind, ReportCheck,
+    ReportDiff, ReportRequest, RuleCount, SendOptions, SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -331,6 +331,23 @@ impl Operations for EngineOperations {
             .export_report(&job_id, req)
             .await
             .map_err(to_error)
+    }
+
+    async fn diff_reports(
+        &self,
+        job_a: String,
+        job_b: String,
+        kind: Option<ReportChangeKind>,
+        limit: u32,
+    ) -> Res<ReportDiff> {
+        self.engine
+            .diff_reports(&job_a, &job_b, kind, limit.min(5000))
+            .await
+            .map_err(to_error)
+    }
+
+    async fn check_report(&self, path: String) -> Res<ReportCheck> {
+        self.engine.check_report(&path).await.map_err(to_error)
     }
 
     async fn activity(&self, before_id: Option<i64>, limit: u32) -> Res<Vec<ActivityItem>> {

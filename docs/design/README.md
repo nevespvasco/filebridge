@@ -114,6 +114,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `decide_many(job_id, issue_ids, decision) -> u64` | new | D08 |
 | `decide_all(…, query)`, `issues(…, query)`, `rule_counts(job_id, query)` | **changed**: optional path filter | D08 |
 | `export_report(job_id, req) -> ExportResult` | new | D09 |
+| `diff_reports(job_a, job_b, kind, limit) -> ReportDiff`, `check_report(path) -> ReportCheck` | new (protocol 25) | D09, [ADR 0025](../adr/0025-report-diff-and-sealed-export.md) |
 | `reclaim_status(job_id) -> ReclaimStatus` | new | D10 |
 | `recheck_sources(job_id) -> ReclaimStatus` | new | D10 |
 | `dismiss_reclaim(job_id, dismissed)` | new | D10 |

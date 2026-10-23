@@ -31,9 +31,10 @@ pub use filebridge_model::{
     Family, FolderNameCheck, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
     JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
     Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
-    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
-    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
-    StorageView, TargetSpec, job_operations,
+    RemoteEntryView, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff,
+    ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount, SOURCE_CHILDREN_CAP,
+    SealProblem, SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView,
+    StatusCount, StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -65,7 +66,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
 ///     destination pauses the job).
 /// 24: `add_immich` (ADR 0020).
-pub const PROTOCOL_VERSION: u32 = 24;
+/// 25: `diff_reports`, `check_report`; `ReportFormat::Sealed`, `ExportResult.readable`/`seal`
+///     (ADR 0025).
+pub const PROTOCOL_VERSION: u32 = 25;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

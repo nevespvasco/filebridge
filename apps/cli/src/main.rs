@@ -8,6 +8,7 @@ mod bench;
 mod fixture;
 mod prepare;
 mod profile_cmd;
+mod report_cmd;
 mod send_cmd;
 mod settings_cmd;
 
@@ -80,20 +81,8 @@ enum Cmd {
     /// One job's details.
     Job { job: String },
     /// A finished job's report: every file, both paths, status and checksum. To stdout by default.
-    Report {
-        job: String,
-        #[arg(long, value_enum, default_value_t = ReportFormatArg::Csv)]
-        format: ReportFormatArg,
-        /// Only the problems, or only the renamed files.
-        #[arg(long, value_enum)]
-        only: Option<ReportOnly>,
-        /// Folders too.
-        #[arg(long)]
-        dirs: bool,
-        /// Write to this file instead of stdout.
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-    },
+    /// `report diff` compares two; `report check` checks a sealed one.
+    Report(report_cmd::ReportArgs),
     /// List the names the NFC rule would correct. Read-only.
     Scan {
         source: PathBuf,
@@ -141,27 +130,9 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Settings { cmd } => settings_cmd::run(g, cmd).await,
         Cmd::Jobs { limit } => send_cmd::jobs(g, limit).await,
         Cmd::Job { job } => send_cmd::show(g, &job).await,
-        Cmd::Report {
-            job,
-            format,
-            only,
-            dirs,
-            output,
-        } => send_cmd::report(g, &job, format, only, dirs, output).await,
+        Cmd::Report(args) => report_cmd::run(g, args).await,
         Cmd::Scan { source, show } => prepare::print_scan(&source, show),
         Cmd::Fixture(args) => fixture::run(&args),
         Cmd::Bench(args) => bench::run(args, g.rclone.as_deref()).await,
     }
-}
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum ReportFormatArg {
-    Csv,
-    Json,
-}
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum ReportOnly {
-    Problems,
-    Renamed,
 }
