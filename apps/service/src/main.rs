@@ -76,12 +76,19 @@ fn endpoint(cli: &Cli) -> Endpoint {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("FILEBRIDGE_LOG")
-                .unwrap_or_else(|_| "info".into()),
+    // stderr (the journal under systemd) with `FILEBRIDGE_LOG`'s filter, and the recent lines
+    // that Settings → About → "Copy log" reads (`service_log`).
+    use tracing_subscriber::prelude::*;
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_filter(
+                    tracing_subscriber::EnvFilter::try_from_env("FILEBRIDGE_LOG")
+                        .unwrap_or_else(|_| "info".into()),
+                ),
         )
-        .with_writer(std::io::stderr)
+        .with(filebridge_host::RecentLog::global().layer())
         .init();
     let cli = Cli::parse();
     match cli.cmd {

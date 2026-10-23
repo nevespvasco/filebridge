@@ -151,6 +151,11 @@ export const commands = {
 	getSettings: () => typedError<AppSettings_Serialize, ErrorBody>(__TAURI_INVOKE("get_settings")),
 	/**  Validates, saves and applies them at once, to running sends too. */
 	saveSettings: (settings: AppSettings_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("save_settings", { settings })),
+	/**
+	 *  The engine's recent log lines (info and above, at most 2000, oldest first), with
+	 *  secrets scrubbed: Settings → About → "Copy log", for bug reports.
+	 */
+	serviceLog: () => typedError<string[], ErrorBody>(__TAURI_INVOKE("service_log")),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
 	serviceEndpoint: () => __TAURI_INVOKE<string>("service_endpoint"),
 	/**
@@ -189,7 +194,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 24 as const;
+export const PROTOCOL_VERSION = 25 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 

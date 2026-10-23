@@ -1256,6 +1256,10 @@ const handlers: Handlers = {
     return list.filter((e) => a.beforeId == null || e.id < (a.beforeId as number)).reverse().slice(0, limit);
   },
   getSettings: () => settings,
+  serviceLog: () => [
+    `${new Date(now - 60_000).toISOString()}  INFO filebridge_service: filebridge-service 0.0.1 ready`,
+    `${new Date(now - 30_000).toISOString()}  WARN filebridge_core::run: retrying in 2 min attempt=1`,
+  ],
   saveSettings: (a) => {
     const s = a.settings as AppSettings_Serialize;
     const w = s.send_window;

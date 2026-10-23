@@ -8,6 +8,7 @@
 mod access;
 mod host_keys;
 mod immich;
+mod log;
 mod nextcloud;
 mod operations;
 
@@ -24,6 +25,7 @@ use filebridge_transport_fake::FakeTransport;
 use filebridge_transport_nextcloud::NextcloudBulk;
 use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport};
 
+pub use log::{RECENT_LINES, RecentLog};
 pub use operations::EngineOperations;
 
 use immich::ImmichWizard;

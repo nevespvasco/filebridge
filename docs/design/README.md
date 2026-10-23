@@ -111,6 +111,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `send_again(job_id, profile_id) -> String` | new | D06 |
 | `job_log(job_id, after_id, before_id, limit) -> Vec<LogEntry>` | new (the docs/06 draft `get_job_log`) | D07 |
 | `activity(before_id, limit) -> Vec<ActivityItem>` | new | D07 |
+| `service_log() -> Vec<String>` | new (protocol 25): Settings → "Copy log" | D07 |
 | `decide_many(job_id, issue_ids, decision) -> u64` | new | D08 |
 | `decide_all(…, query)`, `issues(…, query)`, `rule_counts(job_id, query)` | **changed**: optional path filter | D08 |
 | `export_report(job_id, req) -> ExportResult` | new | D09 |

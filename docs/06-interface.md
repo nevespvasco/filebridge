@@ -75,4 +75,5 @@ apps/desktop/src/
 | `list_jobs()` / `get_job(job_id)` / `get_job_log(job_id, page)` | Jobs screens (the log is `job_log(job_id, after_id, before_id, limit)`, implemented: design D07) |
 | `create_repair_job(profile_id, dir)` (as built; then `analyse`, the decisions and `start`, like a send), `planned_renames(job_id)` (what the confirmation counts) | Repair destination; "Continue" and "Send again" on a repair open this page, never the New transfer wizard |
 | `get_settings()` / `save_settings(settings)` | Settings: app-wide bandwidth limit and send window (implemented) |
+| `service_log()` | Settings → "Copy log": the engine's recent log lines, secrets scrubbed, for bug reports (implemented: design D07) |
 | `remove_access(profile_id)` | "Remove access" wizard |

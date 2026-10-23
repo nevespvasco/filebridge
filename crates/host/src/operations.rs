@@ -435,6 +435,10 @@ impl Operations for EngineOperations {
     async fn save_settings(&self, settings: AppSettings) -> Res<()> {
         self.engine.save_settings(settings).await.map_err(to_error)
     }
+
+    async fn service_log(&self) -> Res<Vec<String>> {
+        Ok(crate::RecentLog::global().lines())
+    }
 }
 
 impl Handler for EngineOperations {

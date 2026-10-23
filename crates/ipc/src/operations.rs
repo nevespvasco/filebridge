@@ -123,6 +123,9 @@ macro_rules! for_each_operation {
             GetSettings get_settings() -> $crate::AppSettings;
             /// Validates, saves and applies them at once, to running sends too.
             SaveSettings save_settings(settings: $crate::AppSettings) -> ();
+            /// The engine's recent log lines (info and above, at most 2000, oldest first), with
+            /// secrets scrubbed: Settings → About → "Copy log", for bug reports.
+            ServiceLog service_log() -> Vec<String>;
         }
     };
 }

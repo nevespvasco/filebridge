@@ -190,6 +190,26 @@ one informative line, never state. `send_window_wait` is best effort (a failed a
 stops the wait). `finished` carries `{ state, warnings, error }` (the counts are on the job). `profile`
 events are appended by `save_profile`/`delete_profile` in the engine adapter.
 
+### Copy log (Settings → About)
+
+**As built.** The service card of Settings (its "About": state, version, socket) has **Copy log**,
+next to the job log's own Copy log. It copies the engine's recent log lines with a header line
+(version, socket, time) and confirms with a short "Log copied to the clipboard." status line
+(`role="status"`, gone after 4 s: the app has no toast component, and this is the same inline
+confirmation as the Log tab's).
+
+- `service_log() -> Vec<String>` (protocol 25): the last 2 000 lines that `tracing` prints at info
+  level and above, oldest first, as plain text. They are kept in memory by a layer of the
+  process's subscriber (`filebridge_host::RecentLog`): the service installs it beside stderr,
+  and so does the app on phones, where the engine runs in the app (ADR 0014). Nothing is written
+  to disk; a restart starts an empty log (the journal still has stderr under systemd).
+- Secrets: what reaches `tracing` is already free of them (ADR 0004: `Redacted<T>`, rclone's
+  errors and stderr lines scrubbed of the values in use). Each kept line also goes through
+  rclone's connection-string redaction (`pass=…`, `key_pem=…` → `***`) once more, and lines over
+  4 KB are cut.
+- This answers the open question below with tracing lines rather than new `events` rows: the
+  service's start, the jobs it resumed and every warning are already logged there.
+
 ## i18n
 
 Namespace `log.*`, one key per `kind` (plus variants):
@@ -236,3 +256,5 @@ Namespace `log.*`, one key per `kind` (plus variants):
 - Should the service also record **app-level** events (service started, upgraded, rclone
   restarted) for troubleshooting? They would go in `events` with `job_id = NULL` and never show
   in Activity. The proposal is yes, behind the "Copy log" of Settings → About, later.
+  **As built:** Settings → About's Copy log carries the service's own log lines instead (see
+  [Copy log](#copy-log-settings--about)), so no app-level `events` rows were needed.

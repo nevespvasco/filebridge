@@ -8,7 +8,7 @@ import HelpTip from "@/components/HelpTip.vue";
 import SegmentedControl from "@/components/SegmentedControl.vue";
 import { LOCALES } from "@/i18n";
 import { api, errorMessage } from "@/lib/api";
-import { isMobile } from "@/lib/platform";
+import { copyText, isMobile } from "@/lib/platform";
 import { minutesToTime, timeToMinutes } from "@/lib/format";
 import { useConnection } from "@/stores/connection";
 import { THEMES, useSettings } from "@/stores/settings";
@@ -132,6 +132,27 @@ watch(draft, () => {
   saved.value = false;
   saveError.value = null;
 });
+
+// "Copy log" (docs/design/specs/D07): the engine's recent lines, already scrubbed of secrets by
+// the engine, with a header saying which version and engine they come from.
+const logStatus = ref<{ ok: boolean; text: string } | null>(null);
+let logStatusTimer: ReturnType<typeof setTimeout> | undefined;
+async function copyLog() {
+  clearTimeout(logStatusTimer);
+  try {
+    const lines = await api.serviceLog();
+    if (!lines.length) {
+      logStatus.value = { ok: false, text: t("settings.logEmpty") };
+    } else {
+      const header = `filebridge ${conn.version ?? "?"} · ${conn.endpoint || "?"} · ${new Date().toISOString()}`;
+      await copyText([header, "", ...lines].join("\n"));
+      logStatus.value = { ok: true, text: t("settings.logCopied") };
+    }
+  } catch (e) {
+    logStatus.value = { ok: false, text: errorMessage(e) };
+  }
+  logStatusTimer = setTimeout(() => (logStatus.value = null), 4000);
+}
 
 async function save() {
   if (!draft.value.settings) return;
@@ -266,7 +287,16 @@ async function save() {
           <dd class="mono">{{ conn.endpoint || "—" }}</dd>
         </dl>
         <p class="small muted">{{ $t("settings.serviceHint") }}</p>
-        <button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button>
+        <div class="row">
+          <button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button>
+          <button class="btn btn-small" :disabled="!conn.connected" :title="$t('settings.copyLogHint')" @click="copyLog()">
+            <AppIcon name="copy" /> {{ $t("settings.copyLog") }}
+          </button>
+          <span role="status" class="small" :class="logStatus?.ok ? 'ok-text' : 'error'">
+            <template v-if="logStatus"><AppIcon v-if="logStatus.ok" name="check" /> {{ logStatus.text }}</template>
+          </span>
+        </div>
+        <p class="small muted">{{ $t("settings.copyLogHint") }}</p>
       </section>
     </div>
 

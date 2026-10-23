@@ -95,13 +95,21 @@ pub fn run() {
 
 fn tracing_init() {
     // Logs go to stderr (`RUST_LOG=debug`); the service keeps its own log. On Android stderr
-    // is not shown: `adb logcat` has what the WebView and the plugin log.
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
+    // is not shown: `adb logcat` has what the WebView and the plugin log, and the engine in the
+    // app keeps its recent lines for "Copy log" (`service_log`) as the service does.
+    use tracing_subscriber::prelude::*;
+    let stderr = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
+        .with_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        );
+    #[cfg(mobile)]
+    let _ = tracing_subscriber::registry()
+        .with(stderr)
+        .with(filebridge_host::RecentLog::global().layer())
         .try_init();
+    #[cfg(desktop)]
+    let _ = tracing_subscriber::registry().with(stderr).try_init();
 }
 
 #[cfg(test)]
