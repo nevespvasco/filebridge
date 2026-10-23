@@ -22,6 +22,7 @@ use crate::engine::PREFLIGHT_TIMEOUT;
 use crate::inhibit::{SleepGuard, inhibit};
 use crate::lifecycle::Outcome;
 use crate::repair::RepairEnd;
+use crate::sources::source_unavailable;
 use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOptions};
 use filebridge_model::{JobErrorCode, Op};
 
@@ -36,9 +37,9 @@ enum StageEnd<T> {
     Cancelled,
     /// Transfer only: the send window closed; wait for it to open again.
     Held,
-    /// Transfer only: the destination is full. The job pauses: trying again won't help until
-    /// someone frees space.
-    Full(String),
+    /// The job pauses: trying again won't help until someone acts. The transfer's destination
+    /// is full (someone frees space), or a source can't be read (its disk is plugged back in).
+    Pause(String, JobErrorCode),
 }
 
 struct Ctx {
@@ -126,13 +127,7 @@ impl Engine {
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
                     StageEnd::Held => JobState::Waiting,
-                    StageEnd::Full(e) => {
-                        tracing::warn!(job = job_id, "the destination is full: {e}");
-                        let mut job = self.begin(job_id, Op::Run).await?;
-                        return job
-                            .go_coded(JobState::Paused, e, JobErrorCode::DestinationFull)
-                            .await;
-                    }
+                    StageEnd::Pause(e, code) => return self.pause_for(job_id, e, code).await,
                 },
                 JobState::Verifying => match self.verify_stage(&mut ctx).await? {
                     StageEnd::Done(mismatched) if mismatched.is_empty() => JobState::Integrating,
@@ -172,9 +167,8 @@ impl Engine {
                     }
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
-                    StageEnd::Held | StageEnd::Full(_) => {
-                        unreachable!("only the transfer waits for the window or fills the disk")
-                    }
+                    StageEnd::Pause(e, code) => return self.pause_for(job_id, e, code).await,
+                    StageEnd::Held => unreachable!("only the transfer waits for the window"),
                 },
                 JobState::Integrating => match self.integrate_stage(&mut ctx).await? {
                     StageEnd::Done(()) => {
@@ -199,8 +193,8 @@ impl Engine {
                     }
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
-                    StageEnd::Held | StageEnd::Full(_) => {
-                        unreachable!("only the transfer waits for the window or fills the disk")
+                    StageEnd::Held | StageEnd::Pause(..) => {
+                        unreachable!("the tool's update reads no source and sends no file")
                     }
                 },
                 other => {
@@ -215,6 +209,17 @@ impl Engine {
             job.go_with(next, None, outcome).await?;
             state = job.state();
         }
+    }
+
+    /// Pauses the job with an error the UI words itself; Resume carries on where it stopped.
+    async fn pause_for(&self, job_id: &str, error: String, code: JobErrorCode) -> Result<()> {
+        tracing::warn!(
+            job = job_id,
+            code = code.as_str(),
+            "the job pauses: {error}"
+        );
+        let mut job = self.begin(job_id, Op::Run).await?;
+        job.go_coded(JobState::Paused, error, code).await
     }
 
     fn keep_awake(&self, ctx: &mut Ctx) {
@@ -324,7 +329,11 @@ impl Engine {
                     }
                     Sent::Full(e) => {
                         self.log_round(&ctx.job_id, &tally).await?;
-                        return Ok(StageEnd::Full(e));
+                        return Ok(StageEnd::Pause(e, JobErrorCode::DestinationFull));
+                    }
+                    Sent::SourceGone(e) => {
+                        self.log_round(&ctx.job_id, &tally).await?;
+                        return Ok(StageEnd::Pause(e, JobErrorCode::SourceUnavailable));
                     }
                     Sent::Retry(e) => return Ok(StageEnd::Retry(e)),
                     Sent::Stopped(Stop::Cancelled) => return Ok(StageEnd::Cancelled),
@@ -455,8 +464,25 @@ impl Engine {
                 let remote =
                     transport.hash_many(&ctx.profile.destination, &remote_paths, HashAlgo::Sha256);
                 let (local, remote) = tokio::join!(local, remote);
-                let local = local
-                    .map_err(|err| CoreError::Invalid(format!("hash task failed: {err}")))??;
+                let local = match local
+                    .map_err(|err| CoreError::Invalid(format!("hash task failed: {err}")))?
+                {
+                    Ok(local) => local,
+                    // A source that can't be read any more pauses the job, like in the transfer.
+                    Err(err) => {
+                        let sources = ctx.sources.clone();
+                        let gone = tokio::task::spawn_blocking(move || {
+                            sources.iter().find_map(|s| source_unavailable(s))
+                        })
+                        .await
+                        .ok()
+                        .flatten();
+                        return match gone {
+                            Some(why) => Ok(StageEnd::Pause(why, JobErrorCode::SourceUnavailable)),
+                            None => Err(err),
+                        };
+                    }
+                };
                 if remote.len() != batch.len() {
                     return Err(CoreError::Invalid(format!(
                         "the transport answered {} hashes for {} files",

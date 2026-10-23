@@ -10,6 +10,7 @@ mod events;
 mod issues;
 mod jobs;
 mod manifest;
+mod pins;
 mod profiles;
 mod schema;
 mod settings;
@@ -28,6 +29,7 @@ pub use jobs::{JobOrder, JobQuery, JobRow, NewJob, RecentSourceRow, StateChange}
 pub use manifest::{
     EntryKey, EntryOrder, EntryQuery, EntryRow, EntryState, ManifestCounts, ManifestEntry, NewEntry,
 };
+pub use pins::PinnedSourceRow;
 pub use profiles::{ProfileRow, StoredTest};
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;

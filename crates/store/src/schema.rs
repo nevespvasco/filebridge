@@ -138,6 +138,14 @@ ALTER TABLE profiles ADD COLUMN deleted_at INTEGER;
     r#"
 ALTER TABLE jobs ADD COLUMN error_code TEXT;
 "#,
+    // 9: folders and files pinned in step 1, to add them again in one click
+    // (docs/design/specs/D02). The path as the user picked it.
+    r#"
+CREATE TABLE pinned_sources (
+    path      TEXT PRIMARY KEY,
+    pinned_at INTEGER NOT NULL
+);
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

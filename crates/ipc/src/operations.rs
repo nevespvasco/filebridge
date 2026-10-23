@@ -110,6 +110,21 @@ macro_rules! for_each_operation {
             PlannedRenames planned_renames(job_id: String) -> u64;
             /// What each chosen source is and what is wrong with it, without reading contents.
             InspectSources inspect_sources(paths: Vec<String>) -> Vec<$crate::SourceInfo>;
+            /// The pinned sources, in the order they were pinned, each checked for whether it is
+            /// there now.
+            PinnedSources pinned_sources() -> Vec<$crate::PinnedSource>;
+            /// Pins an absolute path (it needn't exist now), or unpins it. At most 100 pins.
+            PinSource pin_source(path: String, pinned: bool) -> ();
+            /// The disks mounted on the service's computer that files can be sent from (external
+            /// and removable disks, memory cards, disks under `/media` or `/mnt`).
+            Volumes volumes() -> Vec<$crate::VolumeView>;
+            /// Measures a folder: files and bytes of each item directly inside it, most bytes
+            /// first. `scan_id` (the caller's) names it in the `folder_sizes_progress` events
+            /// sent while it runs and for `cancel_folder_sizes`; cancelled, it answers with what
+            /// it counted (`complete: false`). At most 4 run at once.
+            FolderSizes folder_sizes(scan_id: String, path: String) -> $crate::FolderSizes;
+            /// Stops a `folder_sizes` measurement; nothing happens if it already ended.
+            CancelFolderSizes cancel_folder_sizes(scan_id: String) -> ();
             /// One page of a job's files, filtered and sorted (at most 500).
             Entries entries(job_id: String, filter: $crate::EntryFilter, after: Option<$crate::EntryCursor>, limit: u32) -> $crate::EntryPage;
             /// Counts for the Files tab's filter chips, over the whole job.

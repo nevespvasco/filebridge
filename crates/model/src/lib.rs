@@ -12,6 +12,7 @@ mod log;
 mod profile;
 mod rules;
 mod settings;
+mod sources;
 mod state;
 mod views;
 
@@ -25,6 +26,9 @@ pub use log::{ActivityItem, LogEntry, LogLevel, default_label, log_level};
 pub use profile::{Family, Profile, TargetSpec};
 pub use rules::{JobGroup, Op, can_go, job_operations};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
+pub use sources::{
+    FOLDER_SIZES_LISTED, FolderSize, FolderSizes, MAX_PINNED_SOURCES, PinnedSource, VolumeView,
+};
 pub use state::{JobKind, JobState};
 pub use views::{
     AnalysisSummary, BlockerView, BrowseResult, BrowseTarget, CategoryCount, CheckView, Counts,

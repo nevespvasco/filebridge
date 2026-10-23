@@ -91,6 +91,8 @@ pub struct Engine {
     running: Mutex<HashMap<String, Running>>,
     generation: AtomicU64,
     pub(crate) locks: JobLocks,
+    /// Folder size measurements running now (`sizes.rs`).
+    pub(crate) sizes: crate::sizes::Scans,
 }
 
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
@@ -117,6 +119,7 @@ impl Engine {
             running: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             locks: JobLocks::default(),
+            sizes: crate::sizes::Scans::default(),
         })
     }
 

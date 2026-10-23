@@ -136,6 +136,27 @@ export const commands = {
 	plannedRenames: (jobId: string) => typedError<number, ErrorBody>(__TAURI_INVOKE("planned_renames", { jobId })),
 	/**  What each chosen source is and what is wrong with it, without reading contents. */
 	inspectSources: (paths: string[]) => typedError<SourceInfo_Serialize[], ErrorBody>(__TAURI_INVOKE("inspect_sources", { paths })),
+	/**
+	 *  The pinned sources, in the order they were pinned, each checked for whether it is
+	 *  there now.
+	 */
+	pinnedSources: () => typedError<PinnedSource[], ErrorBody>(__TAURI_INVOKE("pinned_sources")),
+	/**  Pins an absolute path (it needn't exist now), or unpins it. At most 100 pins. */
+	pinSource: (path: string, pinned: boolean) => typedError<null, ErrorBody>(__TAURI_INVOKE("pin_source", { path, pinned })),
+	/**
+	 *  The disks mounted on the service's computer that files can be sent from (external
+	 *  and removable disks, memory cards, disks under `/media` or `/mnt`).
+	 */
+	volumes: () => typedError<VolumeView_Serialize[], ErrorBody>(__TAURI_INVOKE("volumes")),
+	/**
+	 *  Measures a folder: files and bytes of each item directly inside it, most bytes
+	 *  first. `scan_id` (the caller's) names it in the `folder_sizes_progress` events
+	 *  sent while it runs and for `cancel_folder_sizes`; cancelled, it answers with what
+	 *  it counted (`complete: false`). At most 4 run at once.
+	 */
+	folderSizes: (scanId: string, path: string) => typedError<FolderSizes_Serialize, ErrorBody>(__TAURI_INVOKE("folder_sizes", { scanId, path })),
+	/**  Stops a `folder_sizes` measurement; nothing happens if it already ended. */
+	cancelFolderSizes: (scanId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("cancel_folder_sizes", { scanId })),
 	/**  One page of a job's files, filtered and sorted (at most 500). */
 	entries: (jobId: string, filter: EntryFilter_Deserialize, after: EntryCursor | null, limit: number) => typedError<EntryPage_Serialize, ErrorBody>(__TAURI_INVOKE("entries", { jobId, filter, after, limit })),
 	/**  Counts for the Files tab's filter chips, over the whole job. */
@@ -189,7 +210,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 24 as const;
+export const PROTOCOL_VERSION = 25 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -736,7 +757,12 @@ in_flight: InFlightView_Deserialize[] } |
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current?: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
-waiting?: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path?: string | null } | { type: "job_finished"; job_id: string; state: JobState; error?: string | null };
+waiting?: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path?: string | null } | { type: "job_finished"; job_id: string; state: JobState; error?: string | null } | 
+/**
+ *  A folder's size measured so far, for the `folder_sizes` call `scan_id` names
+ *  (advisory: the call answers with the whole result). Not about a job.
+ */
+{ type: "folder_sizes_progress"; scan_id: string; sizes: FolderSizes_Deserialize };
 
 export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null; 
 /**  Files in flight now (at most the job's concurrency), in the order they started. */
@@ -762,7 +788,12 @@ in_flight: InFlightView_Serialize[] } |
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
-waiting: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path: string | null } | { type: "job_finished"; job_id: string; state: JobState; error: string | null };
+waiting: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path: string | null } | { type: "job_finished"; job_id: string; state: JobState; error: string | null } | 
+/**
+ *  A folder's size measured so far, for the `folder_sizes` call `scan_id` names
+ *  (advisory: the call answers with the whole result). Not about a job.
+ */
+{ type: "folder_sizes_progress"; scan_id: string; sizes: FolderSizes_Serialize };
 
 export type ExportResult = {
 	path: string,
@@ -794,6 +825,94 @@ export type FolderNameCheck_Serialize = {
 	proposed: string | null,
 	/**  i18n key of the first rule that changed it. */
 	message_key: string | null,
+};
+
+/**
+ *  What one item directly inside the measured folder holds: a folder with everything below it,
+ *  or a file.
+ */
+export type FolderSize = FolderSize_Serialize | FolderSize_Deserialize;
+
+/**
+ *  What one item directly inside the measured folder holds: a folder with everything below it,
+ *  or a file.
+ */
+export type FolderSize_Deserialize = {
+	/**  Its name, lossily decoded for display. */
+	name: string,
+	/**  Absolute path, to measure it in turn; `None` when the name isn't valid text. */
+	path?: string | null,
+	is_dir: boolean,
+	/**  Files inside (1 for a file). */
+	files: number,
+	bytes: number,
+};
+
+/**
+ *  What one item directly inside the measured folder holds: a folder with everything below it,
+ *  or a file.
+ */
+export type FolderSize_Serialize = {
+	/**  Its name, lossily decoded for display. */
+	name: string,
+	/**  Absolute path, to measure it in turn; `None` when the name isn't valid text. */
+	path: string | null,
+	is_dir: boolean,
+	/**  Files inside (1 for a file). */
+	files: number,
+	bytes: number,
+};
+
+/**
+ *  A folder's size, split by what is directly inside it, most bytes first
+ *  (docs/design/specs/D02). Symbolic links are not followed or counted, as in the analysis.
+ */
+export type FolderSizes = FolderSizes_Serialize | FolderSizes_Deserialize;
+
+/**
+ *  A folder's size, split by what is directly inside it, most bytes first
+ *  (docs/design/specs/D02). Symbolic links are not followed or counted, as in the analysis.
+ */
+export type FolderSizes_Deserialize = {
+	/**  The measured folder, as given. */
+	path: string,
+	/**  At most [`FOLDER_SIZES_LISTED`], most bytes first. */
+	items: FolderSize_Deserialize[],
+	/**  Items left out of `items`: how many, and their files and bytes. */
+	rest_items: number,
+	rest_files: number,
+	rest_bytes: number,
+	/**  The whole folder so far. */
+	files: number,
+	dirs: number,
+	bytes: number,
+	/**  Entries that couldn't be read (permissions, a disk unplugged); not counted. */
+	errors: number,
+	/**  Every entry was counted. `false` while it runs, and when it was cancelled. */
+	complete: boolean,
+};
+
+/**
+ *  A folder's size, split by what is directly inside it, most bytes first
+ *  (docs/design/specs/D02). Symbolic links are not followed or counted, as in the analysis.
+ */
+export type FolderSizes_Serialize = {
+	/**  The measured folder, as given. */
+	path: string,
+	/**  At most [`FOLDER_SIZES_LISTED`], most bytes first. */
+	items: FolderSize_Serialize[],
+	/**  Items left out of `items`: how many, and their files and bytes. */
+	rest_items: number,
+	rest_files: number,
+	rest_bytes: number,
+	/**  The whole folder so far. */
+	files: number,
+	dirs: number,
+	bytes: number,
+	/**  Entries that couldn't be read (permissions, a disk unplugged); not counted. */
+	errors: number,
+	/**  Every entry was counted. `false` while it runs, and when it was cancelled. */
+	complete: boolean,
 };
 
 export type HashView = {
@@ -1011,7 +1130,12 @@ export type JobErrorCode =
  *  The destination has no room left (a full disk, a quota reached): the job paused, and
  *  resumes once space is freed (docs/design/specs/D03).
  */
-"destination_full";
+"destination_full" | 
+/**
+ *  A source can't be read any more (a disk unplugged, a network share gone): the job
+ *  paused, and resumes once it is back (docs/design/specs/D02).
+ */
+"source_unavailable";
 
 /**  Which jobs the Transfers list shows (docs/design/specs/D06). */
 export type JobFilter = JobFilter_Serialize | JobFilter_Deserialize;
@@ -1160,6 +1284,16 @@ export type NextcloudWebdavRequest = {
  *  shows it, so neither does any request, envelope or log line that carries one.
  */
 export type Password = string;
+
+/**  A folder or file the user pinned, to add it again in one click. */
+export type PinnedSource = {
+	/**  Absolute path as it was pinned. */
+	path: string,
+	/**  Unix ms. */
+	pinned_at: number,
+	/**  Whether it is there now (a disk may be unplugged, a folder renamed). */
+	exists: boolean,
+};
 
 /**  Where the app runs, for what the UI shows (no tray, service or drag & drop on a phone). */
 export type Platform = "desktop" | "android" | "ios";
@@ -1622,6 +1756,44 @@ export type UserUnit = {
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };
+
+/**
+ *  A disk (or partition) mounted on the service's computer that files can be sent from: an
+ *  external or removable disk, a memory card, or a disk mounted under `/media` or `/mnt`.
+ */
+export type VolumeView = VolumeView_Serialize | VolumeView_Deserialize;
+
+/**
+ *  A disk (or partition) mounted on the service's computer that files can be sent from: an
+ *  external or removable disk, a memory card, or a disk mounted under `/media` or `/mnt`.
+ */
+export type VolumeView_Deserialize = {
+	/**  Where it is mounted: what is added as a source, or where the folder picker opens. */
+	path: string,
+	/**  Its name as the system shows it (the mount folder's name, usually the disk's label). */
+	label: string,
+	/**  The disk can be unplugged (USB, a memory card), as far as the system says. */
+	removable: boolean,
+	/**  Bytes, when the system reports them. */
+	total_bytes?: number | null,
+	free_bytes?: number | null,
+};
+
+/**
+ *  A disk (or partition) mounted on the service's computer that files can be sent from: an
+ *  external or removable disk, a memory card, or a disk mounted under `/media` or `/mnt`.
+ */
+export type VolumeView_Serialize = {
+	/**  Where it is mounted: what is added as a source, or where the folder picker opens. */
+	path: string,
+	/**  Its name as the system shows it (the mount folder's name, usually the disk's label). */
+	label: string,
+	/**  The disk can be unplugged (USB, a memory card), as far as the system says. */
+	removable: boolean,
+	/**  Bytes, when the system reports them. */
+	total_bytes: number | null,
+	free_bytes: number | null,
+};
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

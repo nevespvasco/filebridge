@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DoneView, InFlightView, JobState};
+use crate::{DoneView, FolderSizes, InFlightView, JobState};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -102,11 +102,15 @@ pub enum Event {
         state: JobState,
         error: Option<String>,
     },
+    /// A folder's size measured so far, for the `folder_sizes` call `scan_id` names
+    /// (advisory: the call answers with the whole result). Not about a job.
+    FolderSizesProgress { scan_id: String, sizes: FolderSizes },
 }
 
 impl Event {
-    pub fn job_id(&self) -> &str {
-        match self {
+    /// The job the event is about; `None` for the few that aren't about one.
+    pub fn job_id(&self) -> Option<&str> {
+        Some(match self {
             Self::JobStateChanged { job_id, .. }
             | Self::ScanProgress { job_id, .. }
             | Self::TransferProgress { job_id, .. }
@@ -121,6 +125,7 @@ impl Event {
             | Self::IntegrationProgress { job_id, .. }
             | Self::IntegrationProblem { job_id, .. }
             | Self::JobFinished { job_id, .. } => job_id,
-        }
+            Self::FolderSizesProgress { .. } => return None,
+        })
     }
 }
