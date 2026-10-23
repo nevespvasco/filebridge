@@ -9,13 +9,13 @@
 # (ANDROID_NDK_HOME, else the newest under ~/Android/Sdk/ndk).
 set -euo pipefail
 
-# Same version as the desktop's rclone sidecar.
-RCLONE_VERSION="v1.75.2"
-# Lowest Android API the app supports (tauri.conf.json `bundle.android.minSdkVersion`).
-ANDROID_API=26
-
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
+
+# Same version as the desktop's rclone sidecar (sidecars/prepare-desktop.sh).
+RCLONE_VERSION="$(tr -d '[:space:]' < "$root/sidecars/RCLONE_VERSION")"
+# Lowest Android API the app supports (tauri.conf.json `bundle.android.minSdkVersion`).
+ANDROID_API=26
 src="$root/sidecars/bin/librclone/src-$RCLONE_VERSION"
 jni="$root/apps/desktop/src-tauri/gen/android/app/src/main/jniLibs"
 

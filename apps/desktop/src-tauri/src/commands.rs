@@ -6,6 +6,7 @@ use filebridge_ipc::{ErrorBody, Operations};
 use serde::Serialize;
 use tauri::State;
 
+use crate::autostart::Autostart;
 use crate::native::Native;
 use crate::service::Service;
 
@@ -39,6 +40,8 @@ macro_rules! service_commands {
                 request_storage_access,
                 request_battery_exemption,
                 set_send_notice_labels,
+                autostart,
+                set_autostart,
             ]
         }
     };
@@ -148,4 +151,19 @@ pub fn set_send_notice_labels(
     #[cfg(desktop)]
     let _ = (svc, title, one, many);
     Ok(())
+}
+
+/// "Start the engine when I log in": whether it is on, and what turning it on writes.
+#[tauri::command]
+#[specta::specta]
+pub async fn autostart() -> Res<Autostart> {
+    crate::autostart::status().await
+}
+
+/// Turns "Start the engine when I log in" on or off; answers how it stands after. The UI shows
+/// what it will do (from `autostart`) and asks first.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_autostart(on: bool) -> Res<Autostart> {
+    crate::autostart::set(on).await
 }

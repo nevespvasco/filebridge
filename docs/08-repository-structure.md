@@ -28,7 +28,8 @@ filebridge/
 │   ├── transport-rclone/        # implementation over rclone's rc API
 │   ├── integration-api/         # Integration trait + types
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules
-├── sidecars/                    # rclone binaries per platform; librclone/ builds rclone as a library
+├── sidecars/                    # desktop sidecars (prepare-desktop.sh → bin/, not committed),
+│                                #   RCLONE_VERSION, licenses/; librclone/ builds rclone as a library
 └── docs/
 ```
 
@@ -83,6 +84,11 @@ flowchart TB
   ([ADR 0014](adr/0014-engine-in-the-app-on-phones.md)).
 - The interface talks only through typed Tauri commands and events (generated with `specta`), so
   the TS types come from Rust and never drift.
+- The desktop app runs the `filebridge-service` binary (to start it, and its `show-user-unit`,
+  `install-user-unit` and `uninstall-user-unit` behind Settings → "Start the engine when I log
+  in") but never links it. The installers carry it and the pinned rclone as Tauri sidecars
+  (`apps/desktop/src-tauri/tauri.bundle.conf.json`, filled by `sidecars/prepare-desktop.sh`),
+  installed beside the app's binary, which is where the window and the service look first.
 
 Enforce in CI (Phase 1): a `cargo deny`/`cargo-depgraph` check or a small script that fails if
 `crates/core/Cargo.toml` lists a `transport-*`/`integration-*` implementation crate.

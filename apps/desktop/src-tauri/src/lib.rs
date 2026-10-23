@@ -4,6 +4,7 @@
 //! `../src/bindings/` are generated from the commands by tauri-specta (`pnpm bindings`, or any
 //! debug run of the app on desktop).
 
+mod autostart;
 mod commands;
 mod native;
 #[cfg(mobile)]

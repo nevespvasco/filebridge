@@ -22,7 +22,8 @@ struct Cli {
     /// Where the database lives. Default: `$FILEBRIDGE_DATA_DIR`, else the OS data directory.
     #[arg(long, global = true, env = "FILEBRIDGE_DATA_DIR")]
     data_dir: Option<PathBuf>,
-    /// rclone binary. Default: next to this program, `rclone` on PATH, or `~/.local/bin/rclone`.
+    /// rclone binary. Default: `filebridge-rclone` (the installed app's) or `rclone` next to
+    /// this program, `rclone` on PATH, or `~/.local/bin/rclone`.
     #[arg(long, global = true, env = "FILEBRIDGE_RCLONE")]
     rclone: Option<PathBuf>,
     /// Socket path. Default: `$XDG_RUNTIME_DIR/filebridge/service.sock` (a named pipe on
@@ -58,6 +59,12 @@ enum Cmd {
     },
     /// Linux: stop, disable and remove the `systemd --user` unit.
     UninstallUserUnit,
+    /// Linux: the `systemd --user` unit as it is and as `install-user-unit` would write it.
+    ShowUserUnit {
+        /// As JSON (`filebridge_ipc::UserUnit`), for the app's Settings.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn endpoint(cli: &Cli) -> Endpoint {
@@ -84,6 +91,21 @@ async fn main() -> Result<()> {
             unit::install(cli.data_dir.as_deref(), cli.rclone.as_deref(), !no_start)
         }
         Some(Cmd::UninstallUserUnit) => unit::uninstall(),
+        Some(Cmd::ShowUserUnit { json }) => {
+            let unit = unit::show(cli.data_dir.as_deref(), cli.rclone.as_deref())?;
+            if json {
+                println!("{}", serde_json::to_string(&unit)?);
+            } else {
+                let state = match (unit.installed, unit.enabled, unit.current) {
+                    (false, _, _) => "not installed",
+                    (true, false, _) => "installed, not enabled",
+                    (true, true, false) => "enabled, but runs another binary or other options",
+                    (true, true, true) => "enabled",
+                };
+                println!("{}: {state}\n\n{}", unit.path, unit.contents);
+            }
+            Ok(())
+        }
     }
 }
 

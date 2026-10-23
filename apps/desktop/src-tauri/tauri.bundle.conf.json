@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "bash ../../sidecars/prepare-desktop.sh && pnpm build"
+  },
+  "bundle": {
+    "externalBin": [
+      "../../../sidecars/bin/filebridge-service",
+      "../../../sidecars/bin/filebridge-rclone"
+    ],
+    "resources": {
+      "../../../sidecars/licenses/rclone-COPYING.txt": "licenses/rclone-COPYING.txt"
+    }
+  }
+}

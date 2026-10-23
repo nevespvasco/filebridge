@@ -360,7 +360,7 @@ fn launch_from(cmdline: &[u8], environ: &[u8], cgroup: &str) -> Result<Launch, S
         .any(|l| l.trim_end().ends_with(&format!("/{UNIT_NAME}")))
     {
         return Err(format!(
-            "the systemd user unit {UNIT_NAME} runs it: update the binary it runs, then `systemctl --user restart {UNIT_NAME}`"
+            "the systemd user unit {UNIT_NAME} runs it: in Settings turn \"Start the engine when I log in\" off and on again, or run `systemctl --user restart {UNIT_NAME}`"
         ));
     }
     let words: Vec<&[u8]> = cmdline
@@ -516,9 +516,10 @@ async fn stop_older(_endpoint: &Endpoint, _protocol: u32) -> Result<Stopped, Str
     Err("quit the running filebridge-service and try again".into())
 }
 
-/// `FILEBRIDGE_SERVICE`, then next to this executable (the bundled sidecar, and
-/// `target/<profile>/` in development), then `PATH`.
-fn find_service_binary() -> Option<PathBuf> {
+/// `FILEBRIDGE_SERVICE`, then next to this executable (the bundled sidecar, which Tauri's
+/// `externalBin` installs beside the app: `/usr/bin` in the .deb and .rpm; `target/<profile>/`
+/// in development), then `PATH`.
+pub(crate) fn find_service_binary() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("FILEBRIDGE_SERVICE") {
         return Some(PathBuf::from(path));
     }

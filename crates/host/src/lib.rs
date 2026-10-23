@@ -33,7 +33,7 @@ pub const LOCK_FILE: &str = "filebridge.lock";
 pub struct HostOptions {
     /// Default: the OS data directory (see [`default_data_dir`]).
     pub data_dir: Option<PathBuf>,
-    /// The rclone binary (default: `rclone` on PATH, else `~/.local/bin/rclone`), or with
+    /// The rclone binary (default: see [`find_rclone`]), or with
     /// [`TransportChoice::Librclone`] the library (default: `librclone.so`, found by the
     /// system loader).
     pub rclone: Option<PathBuf>,
@@ -254,8 +254,17 @@ pub fn default_data_dir() -> Result<PathBuf> {
     dir.context("cannot find a data directory; pass --data-dir")
 }
 
-/// The rclone binary: `explicit`, else a sidecar next to the current executable (installed
-/// app), else `rclone` on PATH, else `~/.local/bin/rclone`.
+/// The name the installed app gives its rclone sidecar: in `/usr/bin` a plain `rclone` would
+/// clash with the distribution's package and shadow the user's own.
+pub const RCLONE_SIDECAR: &str = if cfg!(windows) {
+    "filebridge-rclone.exe"
+} else {
+    "filebridge-rclone"
+};
+
+/// The rclone binary: `explicit`, else the sidecar next to the current executable
+/// ([`RCLONE_SIDECAR`], the installed app's), else an `rclone` next to it, else `rclone` on
+/// PATH, else `~/.local/bin/rclone`.
 pub fn find_rclone(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(p) = explicit {
         return Ok(p.to_path_buf());
@@ -265,9 +274,12 @@ pub fn find_rclone(explicit: Option<&Path>) -> Result<PathBuf> {
     } else {
         "rclone"
     };
-    let beside = std::env::current_exe()
+    let dir = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join(exe)));
+        .and_then(|p| p.parent().map(Path::to_path_buf));
+    let beside = dir
+        .into_iter()
+        .flat_map(|d| [d.join(RCLONE_SIDECAR), d.join(exe)]);
     let on_path = std::env::var_os("PATH")
         .map(|paths| {
             std::env::split_paths(&paths)
@@ -277,7 +289,6 @@ pub fn find_rclone(explicit: Option<&Path>) -> Result<PathBuf> {
         .unwrap_or_default();
     let local_bin = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/bin").join(exe));
     beside
-        .into_iter()
         .chain(on_path)
         .chain(local_bin)
         .find(|c| c.is_file())
