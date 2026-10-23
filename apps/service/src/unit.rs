@@ -110,10 +110,7 @@ impl Agent {
             });
         let reach = if pin.is_some() {
             UnitAgent::Pinned
-        } else if manager_env
-            .lines()
-            .any(|l| l.starts_with("SSH_AUTH_SOCK="))
-        {
+        } else if manager_env.lines().any(|l| l.starts_with("SSH_AUTH_SOCK=")) {
             UnitAgent::Manager
         } else {
             UnitAgent::Missing
