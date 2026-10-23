@@ -9,7 +9,6 @@ use filebridge_model::{
     EntryStatus, ExportResult, FileCategory, Op, ReportFormat, ReportRequest, ReportScope,
 };
 use filebridge_store::{EntryOrder, EntryQuery, EntryRow, JobRow};
-use filebridge_transport_api::Backend;
 use serde::Serialize;
 
 use crate::{CoreError, Engine, Event, Profile, Result};
@@ -34,11 +33,7 @@ impl ReportDestination {
         Self {
             profile: p.name.clone(),
             transport: p.destination.transport.clone(),
-            backend: match p.destination.backend {
-                Backend::Local => "local",
-                Backend::Sftp { .. } => "sftp",
-                Backend::Webdav { .. } => "webdav",
-            },
+            backend: p.destination.backend.kind(),
             root: p.destination.root.clone(),
             integration: p.integration.clone(),
         }

@@ -2,7 +2,6 @@
 //! reference. Set from the window or the CLI, read by the transport when it connects.
 
 use filebridge_secrets::{SecretKind, reference};
-use filebridge_transport_api::Backend;
 
 use crate::{CoreError, Engine, Profile, Result};
 
@@ -18,11 +17,12 @@ impl Engine {
     ) -> Result<Profile> {
         let mut profile = self.get_profile(id).await?;
         let password = password.filter(|p| !p.is_empty());
-        let slot = match &mut profile.destination.backend {
-            Backend::Sftp { password, .. } | Backend::Webdav { password, .. } => password,
-            Backend::Local => {
-                return Err(CoreError::Invalid("a local folder has no password".into()));
-            }
+        let backend = &mut profile.destination.backend;
+        let kind = backend.kind();
+        let Some(slot) = backend.password_mut() else {
+            return Err(CoreError::Invalid(format!(
+                "a {kind} destination has no password"
+            )));
         };
         let r = reference(id, SecretKind::AppPassword);
         *slot = password.is_some().then(|| r.clone());

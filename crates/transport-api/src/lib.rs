@@ -163,6 +163,29 @@ pub enum Backend {
     },
 }
 
+impl Backend {
+    /// The backend's kind, as its `kind` tag says it (`local`, `sftp`, `webdav`, …): for
+    /// reports and labels, so callers never list the variants (ADR 0022).
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Backend::Local => "local",
+            Backend::Sftp { .. } => "sftp",
+            Backend::Webdav { .. } => "webdav",
+        }
+    }
+
+    /// Where the backend keeps the reference to the secret the user types for it (a password,
+    /// an app password); `None` for backends that sign in without one. The secret's value is
+    /// in the keyring (ADR 0004); `core` sets and clears this through it, so it never lists the
+    /// variants and a new backend leaves `core` alone (ADR 0022).
+    pub fn password_mut(&mut self) -> Option<&mut Option<KeyringRef>> {
+        match self {
+            Backend::Local => None,
+            Backend::Sftp { password, .. } | Backend::Webdav { password, .. } => Some(password),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct Destination {
     pub transport: String,

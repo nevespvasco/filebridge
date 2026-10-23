@@ -87,6 +87,10 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 - **An integration receives the exact list of changed paths**, so it updates only those (the
   `files:scan --path` that was done by hand). A tool that can't update by path uses the list
   only for its report: Immich's API scans a whole library.
+- **`core` never lists the `Backend` variants.** What it needs of a destination's backend it
+  asks the backend: `kind()` (its name in reports) and `password_mut()` (the keyring slot of
+  the secret the user types, `None` without one). A new backend is a variant plus its adapter
+  code, never a change in `core` ([ADR 0022](adr/0022-smb-and-s3-as-rclone-backends.md)).
 - `Integration::required_caps` is checked against the chosen `Transport::capabilities` when a
   profile is created; incompatible combinations are rejected in the UI, not at send time.
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
