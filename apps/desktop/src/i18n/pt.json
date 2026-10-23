@@ -486,7 +486,9 @@
       "waiting-for-disk": "à espera do disco…"
     },
     "immich": {
-      "scan": "A pedir ao Immich que leia a biblioteca"
+      "scan": "A pedir ao Immich que leia a biblioteca",
+      "wait": "O Immich está a ler a biblioteca",
+      "queue-paused": "As tarefas de biblioteca do Immich estão em pausa (Administração → Tarefas)"
     }
   },
   "counts": {
@@ -801,11 +803,13 @@
       "api-key": "Chave API",
       "library": "Biblioteca externa",
       "import-path": "Pasta da biblioteca",
-      "readable": "O Immich consegue ler"
+      "readable": "O Immich consegue ler",
+      "same-folder": "O Immich vê esta pasta"
     },
+    "sameFolderFail": "O Immich não vê os ficheiros enviados para {folder}: um ficheiro de teste escrito lá não estava em “{importPath}” tal como o Immich o vê. Se o Immich corre em Docker, escreva em “Esta pasta vista pelo Immich” o caminho que o contentor usa para esta pasta; caso contrário, envie para a pasta que a biblioteca importa. (O ficheiro de teste foi apagado.)",
     "help": {
       "server": "O endereço onde abre o Immich no navegador, por exemplo photos.example.com. Tem de usar https:// (por exemplo atrás de um proxy com certificado); http:// simples só funciona neste computador.",
-      "apiKey": "Crie uma no Immich, com sessão de administrador: Definições da conta → Chaves API → Nova chave API. Dê-lhe pelo menos library.read e library.update (ou todas as permissões). O filebridge guarda-a no cofre do sistema.",
+      "apiKey": "Crie uma no Immich, com sessão de administrador: Definições da conta → Chaves API → Nova chave API. Dê-lhe pelo menos library.read, library.update e queue.read (job.read antes do Immich 2), ou todas as permissões. O filebridge guarda-a no cofre do sistema.",
       "importPath": "Se o Immich corre em Docker, vê a pasta noutro caminho (por exemplo /mnt/photos para /srv/photos no servidor): escreva aqui esse caminho. Vazio = o mesmo caminho da pasta acima.",
       "library": "A biblioteca externa que importa esta pasta (Administração → Bibliotecas externas). Vazio = o filebridge encontra-a pela pasta."
     },
@@ -963,6 +967,7 @@
       "other": "Terminada"
     },
     "unknown": "Evento: {kind}",
+    "integrationCheckpoint": "Ferramenta do destino: progresso do passo guardado",
     "createdRepair": "Reparação de {folder} em {destination} criada",
     "entrySkipped": "Saltado a seu pedido: {path}"
   },

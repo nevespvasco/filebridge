@@ -486,7 +486,9 @@
       "waiting-for-disk": "waiting for the disk…"
     },
     "immich": {
-      "scan": "Asking Immich to scan the library"
+      "scan": "Asking Immich to scan the library",
+      "wait": "Immich is scanning the library",
+      "queue-paused": "Immich's library jobs are paused (Administration → Jobs)"
     }
   },
   "counts": {
@@ -801,11 +803,13 @@
       "api-key": "API key",
       "library": "External library",
       "import-path": "Library folder",
-      "readable": "Immich can read it"
+      "readable": "Immich can read it",
+      "same-folder": "Immich sees this folder"
     },
+    "sameFolderFail": "Immich doesn't see the files sent to {folder}: a test file written there wasn't in “{importPath}” as Immich sees it. If Immich runs in Docker, type in “This folder as Immich sees it” the path its container uses for this folder; otherwise send to the folder the library imports. (The test file was removed.)",
     "help": {
       "server": "The address where Immich opens in the browser, e.g. photos.example.com. It must use https:// (for example behind a reverse proxy with a certificate); plain http:// works only on this computer.",
-      "apiKey": "Create one in Immich, signed in as an administrator: Account settings → API keys → New API key. Give it at least library.read and library.update (or all permissions). filebridge keeps it in the system keyring.",
+      "apiKey": "Create one in Immich, signed in as an administrator: Account settings → API keys → New API key. Give it at least library.read, library.update and queue.read (job.read before Immich 2), or all permissions. filebridge keeps it in the system keyring.",
       "importPath": "If Immich runs in Docker, it sees the folder under another path (e.g. /mnt/photos for /srv/photos on the server): type that path here. Empty = the same path as the folder above.",
       "library": "The external library that imports this folder (Administration → External libraries). Empty = filebridge finds it by the folder."
     },
@@ -963,6 +967,7 @@
       "other": "Finished"
     },
     "unknown": "Event: {kind}",
+    "integrationCheckpoint": "Destination tool: step progress saved",
     "createdRepair": "Repair of {folder} on {destination} created",
     "entrySkipped": "Skipped at your request: {path}"
   },

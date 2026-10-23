@@ -454,6 +454,17 @@ impl Transport for RcloneTransport {
         Ok(())
     }
 
+    async fn remove_file_unchecked(&self, dest: &Destination, path: &RemotePath) -> Result<()> {
+        let creds = self.creds(dest).await?;
+        self.rc()
+            .call(
+                "operations/deletefile",
+                json!({ "fs": dest_fs(dest, &creds, "")?, "remote": path.as_str() }),
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn list(
         &self,
         dest: &Destination,

@@ -26,6 +26,9 @@ function stepLabel(id: string) {
   return te(key) ? t(key) : id;
 }
 
+/** Immich doesn't see the destination folder where the form says (the probe file wasn't there). */
+const notSameFolder = computed(() => props.result?.steps.some((s) => s.id === "same-folder" && s.status === "fail") ?? false);
+
 /** The libraries the service listed, as `<id> <name> (<import paths>)`. */
 const libraries = computed(() =>
   (props.result?.profile ? [] : props.result?.containers ?? []).map((line) => {
@@ -72,6 +75,9 @@ const libraries = computed(() =>
           <span><strong>{{ stepLabel(s.id) }}</strong> <span class="muted">{{ s.message }}</span></span>
         </li>
       </ol>
+      <p v-if="notSameFolder" class="small warn-text" role="alert">
+        {{ $t("immich.sameFolderFail", { folder: folder.trim(), importPath: fields.importPath.trim() || folder.trim() }) }}
+      </p>
       <div v-if="libraries.length" class="libraries">
         <p class="small">{{ $t("immich.pickLibrary") }}</p>
         <button v-for="l in libraries" :key="l.id" type="button" class="btn btn-small" :aria-pressed="fields.libraryId === l.id" @click="fields.libraryId = l.id">

@@ -274,6 +274,20 @@ impl RemotePath {
     }
 }
 
+/// The name every probe file starts with ([`Transport::remove_probe`]): a hidden name no
+/// sent file ever has.
+pub const PROBE_PREFIX: &str = ".filebridge-probe-";
+
+/// Whether `path` is a probe file: directly in the destination's root, named [`PROBE_PREFIX`]
+/// and something more.
+pub fn is_probe(path: &RemotePath) -> bool {
+    path.parent().is_none()
+        && path
+            .as_str()
+            .strip_prefix(PROBE_PREFIX)
+            .is_some_and(|rest| !rest.is_empty())
+}
+
 impl TryFrom<String> for RemotePath {
     type Error = TransportError;
     fn try_from(s: String) -> Result<Self> {
@@ -552,6 +566,25 @@ pub trait Transport: Send + Sync {
             "renaming at the destination is not supported by this transport",
         ))
     }
+    /// Removes a probe file the app wrote at the destination to test it (e.g. that Immich sees
+    /// the same folder): only a path [`is_probe`] accepts, refused before the destination is
+    /// touched otherwise, so nothing a user sent can go through it. `NotFound` when it isn't
+    /// there. Adapters that implement [`Transport::remove_file_unchecked`] get this for free.
+    async fn remove_probe(&self, dest: &Destination, path: &RemotePath) -> Result<()> {
+        if !is_probe(path) {
+            return Err(TransportError::fatal(format!(
+                "{path} is not a probe file: only names starting with {PROBE_PREFIX} at the \
+                 destination's root are removed"
+            )));
+        }
+        self.remove_file_unchecked(dest, path).await
+    }
+    /// Removes one file, with **no** checks. Only [`Transport::remove_probe`] calls it.
+    async fn remove_file_unchecked(&self, _dest: &Destination, _path: &RemotePath) -> Result<()> {
+        Err(TransportError::unsupported(
+            "removing a file at the destination is not supported by this transport",
+        ))
+    }
     /// The most this transport may use, in bytes per second across all its transfers at once,
     /// including ones already running; `None` lifts the limit. Default: no limit to apply.
     async fn set_bandwidth_limit(&self, _bytes_per_sec: Option<u64>) -> Result<()> {
@@ -722,6 +755,20 @@ mod tests {
         assert_eq!(p.parent(), Some("Fotos/Verão"));
         assert_eq!(p.file_name(), "praia.jpg");
         assert_eq!(RemotePath::new("top").unwrap().parent(), None);
+    }
+
+    #[test]
+    fn only_probe_names_at_the_root_are_probes() {
+        let p = |s: &str| RemotePath::new(s).unwrap();
+        assert!(is_probe(&p(".filebridge-probe-1f2e")));
+        for not in [
+            ".filebridge-probe-",
+            "a/.filebridge-probe-1f2e",
+            "filebridge-probe-1f2e",
+            "IMG_0001.jpg",
+        ] {
+            assert!(!is_probe(&p(not)), "{not:?}");
+        }
     }
 
     #[test]

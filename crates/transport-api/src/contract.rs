@@ -428,3 +428,49 @@ pub async fn check_move(transport: &dyn Transport, dest: &Destination, scratch: 
         .unwrap_err();
     assert_eq!(missing.kind, ErrorKind::NotFound);
 }
+
+/// The promise of [`Transport::remove_probe`]: a probe file sent to the destination's root goes
+/// away, a second removal is `NotFound`, and a name that isn't a probe's is refused and stays.
+pub async fn check_probe(transport: &dyn Transport, dest: &Destination, scratch: &Path) {
+    let src = scratch.join("contract-probe-src");
+    tokio::fs::create_dir_all(&src).await.unwrap();
+    let probe = RemotePath::new(format!("{}contract", crate::PROBE_PREFIX)).unwrap();
+    let kept = RemotePath::new("probe-kept.txt").unwrap();
+    let mut items = Vec::new();
+    for (name, to) in [("p", &probe), ("k", &kept)] {
+        tokio::fs::write(src.join(name), b"probe").await.unwrap();
+        items.push(TransferItem {
+            root: 0,
+            source: name.into(),
+            dest: to.clone(),
+            size: 5,
+            expected_hash: None,
+        });
+    }
+    let job = TransferJob {
+        id: "contract-probe".into(),
+        source_roots: vec![src],
+        items,
+        options: TransferOptions::default(),
+    };
+    transport
+        .transfer(dest, &job, ProgressSink::noop())
+        .await
+        .unwrap();
+
+    let refused = transport.remove_probe(dest, &kept).await.unwrap_err();
+    assert_ne!(refused.kind, ErrorKind::NotFound, "{refused}");
+    let kept_there = match transport.list(dest, None, false).await {
+        Ok(entries) => entries.iter().any(|e| e.name == kept.as_str()),
+        Err(_) => transport.hash(dest, &kept, HashAlgo::Sha256).await.is_ok(),
+    };
+    assert!(kept_there, "a name that isn't a probe's stays");
+
+    transport.remove_probe(dest, &probe).await.unwrap();
+    if let Ok(entries) = transport.list(dest, None, false).await {
+        assert!(!entries.iter().any(|e| e.name == probe.as_str()));
+        assert!(entries.iter().any(|e| e.name == kept.as_str()));
+    }
+    let again = transport.remove_probe(dest, &probe).await.unwrap_err();
+    assert_eq!(again.kind, ErrorKind::NotFound, "{again}");
+}

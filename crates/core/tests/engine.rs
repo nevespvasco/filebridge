@@ -35,6 +35,10 @@ struct FakeIntegration {
     hang_preflight: std::sync::atomic::AtomicBool,
     /// What `preflight` says is free, like a Nextcloud user's quota in direct mode.
     free: Mutex<Option<u64>>,
+    /// File names `will_skip` reports.
+    skip: Mutex<Vec<String>>,
+    /// `JobContext::checkpoint` as each `after_transfer` call found it.
+    checkpoints: Mutex<Vec<Option<serde_json::Value>>>,
 }
 
 #[async_trait]
@@ -88,12 +92,37 @@ impl Integration for FakeIntegration {
         })
     }
 
-    async fn after_transfer(
+    async fn will_skip(
         &self,
         _ctx: &JobContext,
+        files: &[RemotePath],
+    ) -> filebridge_integration_api::Result<Vec<Problem>> {
+        let skip = self.skip.lock().unwrap().clone();
+        Ok(files
+            .iter()
+            .filter(|f| skip.iter().any(|s| s == f.file_name()))
+            .map(|f| Problem {
+                code: "fake.unsupported".into(),
+                message: "not taken".into(),
+                path: Some(f.to_string()),
+                retryable: false,
+                fix: None,
+            })
+            .collect())
+    }
+
+    async fn after_transfer(
+        &self,
+        ctx: &JobContext,
         changed: &[RemotePath],
         progress: IntegrationSink,
     ) -> filebridge_integration_api::Result<AfterTransferReport> {
+        let run = {
+            let mut seen = self.checkpoints.lock().unwrap();
+            seen.push(ctx.checkpoint.clone());
+            seen.len()
+        };
+        assert!(progress.checkpoint(serde_json::json!({ "run": run })).await);
         if self.hang.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
@@ -1649,6 +1678,51 @@ async fn integration_problems_are_warnings() {
 }
 
 #[tokio::test]
+async fn files_the_integration_skips_are_a_preflight_warning() {
+    let s = setup().await;
+    s.integration
+        .skip
+        .lock()
+        .unwrap()
+        .push("Inverno.jpg".into());
+    let job = s
+        .engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    let summary = s.engine.analyse(&job).await.unwrap();
+    assert_eq!(
+        summary.state,
+        JobState::Ready,
+        "warnings don't hold the send"
+    );
+    let integration = summary
+        .preflight
+        .iter()
+        .find(|v| v.source == "integration")
+        .unwrap();
+    let skipped = integration
+        .checks
+        .iter()
+        .find(|c| c.id == "skipped")
+        .expect("a skipped check");
+    assert_eq!(skipped.status, "warn");
+    assert!(
+        skipped.message.starts_with("1 of the 3 files")
+            && skipped
+                .message
+                .contains("Acme/Fotos/Inverno.jpg (not taken)"),
+        "{}",
+        skipped.message
+    );
+    // The destination's kept test is about the destination, not this job's files.
+    let kept = s.store.profile_test(&s.profile_id).await.unwrap().last;
+    let kept = kept.expect("the analysis keeps its test").0.to_string();
+    assert!(!kept.contains("skipped"), "{kept}");
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+}
+
+#[tokio::test]
 async fn cancel_is_final() {
     let s = setup().await;
     let job = ready_job(&s, SendOptions::default()).await;
@@ -2805,6 +2879,11 @@ async fn warnings_of_earlier_stages_survive_a_restart() {
     assert_eq!(state, JobState::CompletedWithWarnings);
     let error = engine.job(&job).await.unwrap().error.unwrap_or_default();
     assert!(error.contains("could not be verified"), "{error}");
+    // The step that "died" had saved a checkpoint; the resumed one was handed it.
+    assert_eq!(
+        *s.integration.checkpoints.lock().unwrap(),
+        [None, Some(serde_json::json!({ "run": 1 }))]
+    );
 }
 
 #[tokio::test]

@@ -68,6 +68,7 @@ fn ctx(root: &str, caps: TransportCaps) -> JobContext {
             settings: serde_json::to_value(NextcloudSettings::Direct(Box::new(profile()))).unwrap(),
         },
         caps,
+        checkpoint: None,
     }
 }
 

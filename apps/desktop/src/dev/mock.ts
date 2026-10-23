@@ -480,6 +480,10 @@ function runTransfer(job: JobSummary_Serialize) {
         setState(job, "integrating");
         send({ type: "integration_progress", job_id: job.id, step: "immich.scan", done: 0, total: 0, items: 0, current: null, waiting: null });
         await sleep(600);
+        for (let n = 0; n <= 2; n++) {
+          send({ type: "integration_progress", job_id: job.id, step: "immich.wait", done: 0, total: 0, items: n * 12, current: null, waiting: null });
+          await sleep(500);
+        }
       }
       job.counts.pending = 0;
       setState(job, "completed");
@@ -921,6 +925,12 @@ const handlers: Handlers = {
     }
     steps.push(step("import-path", "ok", importPath === lib.path ? `the destination is the library's folder ${lib.path}` : `the destination ${importPath} is inside the library's folder ${lib.path}`));
     steps.push(step("readable", "ok", `Immich can read ${lib.path}`));
+    // Demo: a folder under /srv/other is not the one Immich's container mounts.
+    if (root.startsWith("/srv/other")) {
+      steps.push(step("same-folder", "fail", `Immich doesn't see the files sent to ${root}: a test file written there is not in ${importPath} as Immich sees it`));
+      return { detector: "immich", steps, containers: [], profile: null, server_setup: [] };
+    }
+    steps.push(step("same-folder", "ok", `Immich sees ${root} as ${importPath}`));
     const id = newId("p");
     const b = req.destination.backend;
     const profile: Profile_Serialize = {

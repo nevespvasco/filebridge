@@ -11,7 +11,7 @@ use std::fmt;
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 pub use filebridge_names::NameRule;
 pub use filebridge_transport_api::{
@@ -82,6 +82,12 @@ pub struct JobContext {
     pub profile: ProfileView,
     /// Capabilities of the transport used for this job.
     pub caps: TransportCaps,
+    /// What [`Integration::after_transfer`] last saved with [`IntegrationSink::checkpoint`] for
+    /// this job, when the step runs again (a retry, or the job resumed after a stop); `None` the
+    /// first time. Lets the step pick up where it was, e.g. not ask a tool twice for the same
+    /// thing.
+    #[serde(default)]
+    pub checkpoint: Option<serde_json::Value>,
 }
 
 impl JobContext {
@@ -141,26 +147,72 @@ pub enum IntegrationEvent {
     Problem(Problem),
 }
 
+/// A state [`IntegrationSink::checkpoint`] asks the host to keep, and how it says it has.
+#[derive(Debug)]
+pub struct Checkpoint {
+    pub state: serde_json::Value,
+    /// Answered once `state` is persisted; dropped without an answer if it couldn't be.
+    pub saved: oneshot::Sender<()>,
+}
+
 /// Cloneable, cheap-to-call handle for integration events. Dropped events are fine: progress is
-/// advisory, the returned report is authoritative.
+/// advisory, the returned report is authoritative. Checkpoints are not advisory: see
+/// [`IntegrationSink::checkpoint`].
 #[derive(Debug, Clone, Default)]
-pub struct IntegrationSink(Option<mpsc::UnboundedSender<IntegrationEvent>>);
+pub struct IntegrationSink {
+    events: Option<mpsc::UnboundedSender<IntegrationEvent>>,
+    checkpoints: Option<mpsc::UnboundedSender<Checkpoint>>,
+}
 
 impl IntegrationSink {
+    /// A sink whose checkpoints go nowhere ([`IntegrationSink::checkpoint`] returns `false`).
     pub fn channel() -> (Self, mpsc::UnboundedReceiver<IntegrationEvent>) {
         let (tx, rx) = mpsc::unbounded_channel();
-        (Self(Some(tx)), rx)
+        let sink = Self {
+            events: Some(tx),
+            checkpoints: None,
+        };
+        (sink, rx)
+    }
+
+    /// A sink with events and checkpoints, for a host that persists the checkpoints.
+    pub fn with_checkpoints() -> (
+        Self,
+        mpsc::UnboundedReceiver<IntegrationEvent>,
+        mpsc::UnboundedReceiver<Checkpoint>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (ctx, crx) = mpsc::unbounded_channel();
+        let sink = Self {
+            events: Some(tx),
+            checkpoints: Some(ctx),
+        };
+        (sink, rx, crx)
     }
 
     /// A sink that discards everything.
     pub fn noop() -> Self {
-        Self(None)
+        Self::default()
     }
 
     pub fn send(&self, event: IntegrationEvent) {
-        if let Some(tx) = &self.0 {
+        if let Some(tx) = &self.events {
             let _ = tx.send(event);
         }
+    }
+
+    /// Asks the host to keep `state` for this job, and returns once it is persisted (`true`) or
+    /// can't be (`false`: no host listens, or saving failed). The next run of the step finds it
+    /// in [`JobContext::checkpoint`]; a later checkpoint replaces it.
+    pub async fn checkpoint(&self, state: serde_json::Value) -> bool {
+        let Some(tx) = &self.checkpoints else {
+            return false;
+        };
+        let (saved, done) = oneshot::channel();
+        if tx.send(Checkpoint { state, saved }).is_err() {
+            return false;
+        }
+        done.await.is_ok()
     }
 }
 
@@ -208,6 +260,14 @@ pub trait Integration: Send + Sync {
         Ok(())
     }
     async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport>;
+    /// Which of the files a send is about to write (destination paths) the tool won't take,
+    /// e.g. a type it doesn't import, each as a [`Problem`] with its path. Only a warning: the
+    /// files are still sent. Asked once the job's names are known, for its preflight. The
+    /// default skips nothing.
+    async fn will_skip(&self, ctx: &JobContext, files: &[RemotePath]) -> Result<Vec<Problem>> {
+        let _ = (ctx, files);
+        Ok(Vec::new())
+    }
     /// Updates the tool for exactly the `changed` paths. Problems that don't stop the step go in
     /// the report; `Err` means the step itself failed.
     async fn after_transfer(
@@ -237,6 +297,7 @@ mod tests {
                 settings,
             },
             caps: TransportCaps::RESUME,
+            checkpoint: None,
         }
     }
 
@@ -273,5 +334,28 @@ mod tests {
         assert_eq!(rx.recv().await, Some(IntegrationEvent::Stage("x".into())));
         assert_eq!(rx.recv().await, None);
         IntegrationSink::noop().send(IntegrationEvent::Waiting("y".into()));
+    }
+
+    #[tokio::test]
+    async fn a_checkpoint_returns_once_saved() {
+        assert!(
+            !IntegrationSink::noop()
+                .checkpoint(serde_json::json!(1))
+                .await
+        );
+        let (plain, _rx) = IntegrationSink::channel();
+        assert!(!plain.checkpoint(serde_json::json!(1)).await);
+
+        let (sink, _rx, mut saves) = IntegrationSink::with_checkpoints();
+        let host = tokio::spawn(async move {
+            let c = saves.recv().await.unwrap();
+            assert_eq!(c.state, serde_json::json!({ "scan": true }));
+            c.saved.send(()).unwrap();
+            // The second one fails to save: dropped without an answer.
+            drop(saves.recv().await.unwrap());
+        });
+        assert!(sink.checkpoint(serde_json::json!({ "scan": true })).await);
+        assert!(!sink.checkpoint(serde_json::json!(2)).await);
+        host.await.unwrap();
     }
 }

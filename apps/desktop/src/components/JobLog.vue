@@ -208,6 +208,8 @@ function describe(e: LogEntry): Line {
         repair: repairFolder(d),
       };
     }
+    case "integration_checkpoint":
+      return { icon: "info", text: t("joblog.integrationCheckpoint") };
     case "finished": {
       const state = str(e, "state");
       const icon: IconName = state === "completed" ? "checkCircle" : state === "failed" ? "failCircle" : state === "cancelled" ? "close" : "warning";

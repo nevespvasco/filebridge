@@ -451,6 +451,7 @@ async fn the_wizard_falls_back_to_the_host_when_pct_is_missing() {
             settings: parts.settings,
         },
         caps: TransportCaps::empty(),
+        checkpoint: None,
     };
     let report = nextcloud.preflight(&ctx).await.unwrap();
     let failed: Vec<_> = report

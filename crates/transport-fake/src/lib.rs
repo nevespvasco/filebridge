@@ -243,6 +243,11 @@ impl Transport for FakeTransport {
             .map_err(|e| io_error("move", e))
     }
 
+    async fn remove_file_unchecked(&self, dest: &Destination, path: &RemotePath) -> Result<()> {
+        std::fs::remove_file(Path::new(&dest.root).join(path.as_str()))
+            .map_err(|e| io_error("remove", e))
+    }
+
     async fn list(
         &self,
         dest: &Destination,

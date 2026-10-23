@@ -1,14 +1,18 @@
 //! The integration against `MockImmich`, a local HTTP server that answers like Immich's API.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use filebridge_integration_api::{
     CheckStatus, Integration, IntegrationEvent, IntegrationSink, JobContext, ProfileView,
     RemotePath,
 };
-use filebridge_integration_immich::fake::MockImmich;
-use filebridge_integration_immich::{Immich, ImmichSettings, SCAN_STEP, SetupRequest};
+use filebridge_integration_immich::fake::{MockImmich, QueueApi};
+use filebridge_integration_immich::{
+    Immich, ImmichSettings, QUEUE_PAUSED, SAME_FOLDER, SCAN_NOT_FOLLOWED, SCAN_STEP,
+    SCAN_UNFINISHED, ScanWait, SetupRequest, WAIT_STEP,
+};
 use filebridge_transport_api::{
     Backend, Destination, KeyringRef, SecretResolver, SecretValue, TransportCaps, TransportError,
 };
@@ -33,8 +37,55 @@ impl SecretResolver for OneKey {
     }
 }
 
+/// Follows scans every few milliseconds, for a second at most.
 fn immich(key: Option<&'static str>) -> Immich {
-    Immich::new(Arc::new(OneKey(key)))
+    Immich::new(Arc::new(OneKey(key))).with_scan_wait(ScanWait {
+        first_poll: Duration::from_millis(5),
+        max_poll: Duration::from_millis(20),
+        timeout: Duration::from_secs(1),
+    })
+}
+
+fn settings(server: &str, import_path: &str) -> ImmichSettings {
+    ImmichSettings {
+        server: server.into(),
+        api_key: key_ref(),
+        library_id: LIB.into(),
+        import_path: import_path.into(),
+    }
+}
+
+fn paths(v: &[&str]) -> Vec<RemotePath> {
+    v.iter().map(|p| RemotePath::new(*p).unwrap()).collect()
+}
+
+/// The events and the checkpoints an `after_transfer` call left; checkpoints are "saved".
+async fn drain(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<IntegrationEvent>,
+    saves: tokio::task::JoinHandle<Vec<serde_json::Value>>,
+) -> (Vec<IntegrationEvent>, Vec<serde_json::Value>) {
+    let mut events = Vec::new();
+    while let Some(e) = rx.recv().await {
+        events.push(e);
+    }
+    (events, saves.await.unwrap())
+}
+
+fn checkpointing_sink() -> (
+    IntegrationSink,
+    tokio::sync::mpsc::UnboundedReceiver<IntegrationEvent>,
+    tokio::task::JoinHandle<Vec<serde_json::Value>>,
+) {
+    let (sink, rx, mut saves) = IntegrationSink::with_checkpoints();
+    let kept = tokio::spawn(async move {
+        let mut kept = Vec::new();
+        while let Some(c) = saves.recv().await {
+            kept.push(c.state);
+            let _ = c.saved.send(());
+        }
+        kept
+    });
+    (sink, rx, kept)
 }
 
 fn key_ref() -> KeyringRef {
@@ -58,12 +109,7 @@ fn destination() -> Destination {
 }
 
 fn ctx(server: &str, import_path: &str) -> JobContext {
-    let settings = ImmichSettings {
-        server: server.into(),
-        api_key: key_ref(),
-        library_id: LIB.into(),
-        import_path: import_path.into(),
-    };
+    let settings = settings(server, import_path);
     JobContext {
         job_id: "job-1".into(),
         profile: ProfileView {
@@ -73,6 +119,7 @@ fn ctx(server: &str, import_path: &str) -> JobContext {
             settings: serde_json::to_value(settings).unwrap(),
         },
         caps: TransportCaps::RESUME,
+        checkpoint: None,
     }
 }
 
@@ -357,6 +404,224 @@ async fn after_the_send_the_library_is_scanned() {
         rx.recv().await,
         Some(IntegrationEvent::Stage(SCAN_STEP.into()))
     );
+}
+
+#[tokio::test]
+async fn the_step_follows_the_scan_until_immich_is_done() {
+    let mock = server().await;
+    mock.set_scan_polls(4);
+    mock.set_imported_per_scan(2);
+    let (sink, rx, saves) = checkpointing_sink();
+    let changed = paths(&["2024/a.jpg", "2024/b.heic"]);
+    let report = immich(Some(KEY))
+        .after_transfer(&ctx(mock.url(), "/mnt/photos/Holidays"), &changed, sink)
+        .await
+        .unwrap();
+    assert!(report.is_clean(), "{:?}", report.problems);
+    let (events, kept) = drain(rx, saves).await;
+    assert_eq!(
+        kept,
+        [serde_json::json!({ "scan_requested": true, "assets_before": 42 })],
+        "saved once Immich accepted the scan"
+    );
+    assert!(events.contains(&IntegrationEvent::Stage(WAIT_STEP.into())));
+    let looks = mock
+        .requests()
+        .iter()
+        .filter(|r| r.path == "/api/queues/library")
+        .count();
+    assert_eq!(looks, 4, "until the queue is idle");
+    let imported: Vec<u64> = events
+        .iter()
+        .filter_map(|e| match e {
+            IntegrationEvent::Progress(p) if p.step == WAIT_STEP => Some(p.items),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(imported, [0, 0, 0], "{events:?}");
+    assert_eq!(mock.scans().len(), 1);
+}
+
+#[tokio::test]
+async fn an_older_immich_is_followed_through_its_jobs_api() {
+    let mock = server().await;
+    mock.set_queue_api(QueueApi::Legacy);
+    mock.set_scan_polls(3);
+    let report = immich(Some(KEY))
+        .after_transfer(
+            &ctx(mock.url(), "/mnt/photos"),
+            &paths(&["a.jpg"]),
+            IntegrationSink::noop(),
+        )
+        .await
+        .unwrap();
+    assert!(report.is_clean(), "{:?}", report.problems);
+    let jobs = mock
+        .requests()
+        .iter()
+        .filter(|r| r.path == "/api/jobs")
+        .count();
+    assert_eq!(jobs, 3);
+}
+
+#[tokio::test]
+async fn a_resumed_step_waits_for_its_scan_instead_of_asking_again() {
+    let mock = server().await;
+    // The first run asked for the scan and saved that, then the app stopped; Immich scans on.
+    mock.start_scan(LIB, 3);
+    let mut c = ctx(mock.url(), "/mnt/photos");
+    c.checkpoint = Some(serde_json::json!({ "scan_requested": true, "assets_before": 40 }));
+    let (sink, rx, saves) = checkpointing_sink();
+    let report = immich(Some(KEY))
+        .after_transfer(&c, &paths(&["a.jpg"]), sink)
+        .await
+        .unwrap();
+    assert!(report.is_clean(), "{:?}", report.problems);
+    assert!(mock.scans().is_empty(), "no second scan");
+    let (events, kept) = drain(rx, saves).await;
+    assert!(kept.is_empty());
+    assert!(!events.contains(&IntegrationEvent::Stage(SCAN_STEP.into())));
+    assert!(
+        events.iter().any(|e| matches!(e,
+            IntegrationEvent::Progress(p) if p.step == WAIT_STEP && p.items == 2)),
+        "42 assets now, 40 before: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_scan_that_doesnt_finish_in_time_is_a_problem_not_a_failure() {
+    let mock = server().await;
+    mock.set_queue_paused(true);
+    let (sink, rx, saves) = checkpointing_sink();
+    let report = immich(Some(KEY))
+        .after_transfer(&ctx(mock.url(), "/mnt/photos"), &paths(&["a.jpg"]), sink)
+        .await
+        .unwrap();
+    let codes: Vec<_> = report.problems.iter().map(|p| p.code.as_str()).collect();
+    assert_eq!(codes, [SCAN_UNFINISHED]);
+    assert!(
+        report.problems[0].message.contains("1 min"),
+        "{:?}",
+        report.problems
+    );
+    let (events, _) = drain(rx, saves).await;
+    assert!(events.contains(&IntegrationEvent::Waiting(QUEUE_PAUSED.into())));
+}
+
+#[tokio::test]
+async fn a_key_that_may_not_read_the_queue_says_so() {
+    let mock = server().await;
+    mock.set_queue_api(QueueApi::Status(403));
+    let report = immich(Some(KEY))
+        .after_transfer(
+            &ctx(mock.url(), "/mnt/photos"),
+            &paths(&["a.jpg"]),
+            IntegrationSink::noop(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.problems.len(), 1);
+    assert_eq!(report.problems[0].code, SCAN_NOT_FOLLOWED);
+    assert!(report.problems[0].message.contains("queue.read"));
+    assert_eq!(mock.scans().len(), 1, "the scan was still asked for");
+}
+
+#[tokio::test]
+async fn files_immich_will_skip_are_listed_before_and_after() {
+    let mock = server().await;
+    mock.set_exclusion_patterns(LIB, &["**/@eaDir/**", "**/Private/**"]);
+    let c = ctx(mock.url(), "/mnt/photos/Holidays");
+    let files = paths(&[
+        "2024/a.jpg",
+        "2024/a.xmp",
+        "2024/notes.txt",
+        "2024/clip.MOV",
+        "Private/b.jpg",
+        "@eaDir/a.jpg@SYNOPHOTO_THUMB_M.jpg",
+        ".thumbs/c.jpg",
+        "2024/scan.tiff",
+    ]);
+    let im = immich(Some(KEY));
+    let skipped = im.will_skip(&c, &files).await.unwrap();
+    let got: Vec<_> = skipped
+        .iter()
+        .map(|p| (p.path.as_deref().unwrap(), p.code.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("2024/notes.txt", "immich.unsupported"),
+            ("Private/b.jpg", "immich.excluded"),
+            ("@eaDir/a.jpg@SYNOPHOTO_THUMB_M.jpg", "immich.excluded"),
+            (".thumbs/c.jpg", "immich.hidden"),
+            // The mock's media types don't list .tiff.
+            ("2024/scan.tiff", "immich.unsupported"),
+        ]
+    );
+
+    // An Immich without /server/media-types: Immich's own lists, which have .tiff.
+    mock.set_no_media_types();
+    let skipped = im.will_skip(&c, &files).await.unwrap();
+    assert_eq!(skipped.len(), 4, "{skipped:?}");
+
+    let report = im
+        .after_transfer(&c, &files, IntegrationSink::noop())
+        .await
+        .unwrap();
+    assert_eq!(report.problems.len(), 4, "{:?}", report.problems);
+    assert_eq!(report.items, 4, "the files Immich takes");
+    assert_eq!(mock.scans().len(), 1, "skipped files don't stop the scan");
+}
+
+#[tokio::test]
+async fn the_probe_file_shows_whether_immich_sees_the_folder() {
+    let mock = server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let probe = RemotePath::new(".filebridge-probe-0d1e").unwrap();
+    std::fs::write(dir.path().join(probe.as_str()), b"probe").unwrap();
+    let im = immich(Some(KEY));
+    let s = settings(mock.url(), "/mnt/photos/Holidays");
+
+    // Immich's container mounts this folder at /mnt/photos/Holidays.
+    mock.mount("/mnt/photos/Holidays", dir.path());
+    let check = im
+        .same_folder(&s, KEY, "/srv/photos/Holidays", &probe)
+        .await;
+    assert_eq!(check.id, SAME_FOLDER);
+    assert_eq!(check.status, CheckStatus::Ok, "{}", check.message);
+
+    // It mounts another folder there: the probe isn't where Immich looks.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let mock = server().await;
+    mock.mount("/mnt/photos/Holidays", elsewhere.path());
+    let s = settings(mock.url(), "/mnt/photos/Holidays");
+    let check = im
+        .same_folder(&s, KEY, "/srv/photos/Holidays", &probe)
+        .await;
+    assert_eq!(check.status, CheckStatus::Fail);
+    assert!(
+        check.message.contains("/srv/photos/Holidays") && check.message.contains("/mnt/photos"),
+        "{}",
+        check.message
+    );
+    let validated = mock
+        .requests()
+        .into_iter()
+        .rfind(|r| r.path.ends_with("/validate"))
+        .unwrap();
+    assert!(
+        validated
+            .body
+            .contains("/mnt/photos/Holidays/.filebridge-probe-0d1e"),
+        "{}",
+        validated.body
+    );
+
+    // Immich doesn't answer the question: can't tell, a warning.
+    let check = im
+        .same_folder(&s, "wrong", "/srv/photos/Holidays", &probe)
+        .await;
+    assert_eq!(check.status, CheckStatus::Warn);
 }
 
 #[tokio::test]

@@ -33,6 +33,30 @@ impl Store {
         .await
     }
 
+    /// The newest event of `kind` for a job, if any.
+    pub async fn last_event(&self, job_id: &str, kind: &str) -> Result<Option<EventRow>> {
+        let (job_id, kind) = (job_id.to_owned(), kind.to_owned());
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT id, job_id, at, kind, data FROM events
+                 WHERE job_id = ?1 AND kind = ?2 ORDER BY id DESC LIMIT 1",
+            )?;
+            let mut rows = stmt.query(params![job_id, kind])?;
+            let Some(r) = rows.next()? else {
+                return Ok(None);
+            };
+            let data: String = r.get(4)?;
+            Ok(Some(EventRow {
+                id: r.get(0)?,
+                job_id: r.get(1)?,
+                at: r.get(2)?,
+                kind: r.get(3)?,
+                data: serde_json::from_str(&data)?,
+            }))
+        })
+        .await
+    }
+
     /// A job's events in order, after `after_id`.
     pub async fn events_page(
         &self,
@@ -194,6 +218,9 @@ mod tests {
             .unwrap();
         assert_eq!(older.len(), 1);
         assert_eq!(older[0].id, first);
+        let last = store.last_event(&job, "state").await.unwrap().unwrap();
+        assert_eq!(last.data["to"], "ready");
+        assert!(store.last_event(&job, "nothing").await.unwrap().is_none());
     }
 
     #[tokio::test]
