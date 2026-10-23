@@ -24,8 +24,11 @@ pub struct SetupRequest {
     pub ctid: Option<u32>,
     /// Nextcloud install dir where it runs; when absent, the usual places are tried.
     pub install_dir: Option<String>,
-    /// Octal modes applied after a send; default `750` / `640`.
+    /// Octal modes applied after a send; default `750` / `640` (`770` / `660` for a dedicated
+    /// user).
     pub modes: Option<(String, String)>,
+    /// Sign in as a dedicated user instead of root (ADR 0024).
+    pub dedicated_user: bool,
 }
 
 /// A destination and this integration's settings for it, ready to save as a profile.
@@ -173,6 +176,7 @@ impl Nextcloud {
             nextcloud_user: req.nextcloud_user.clone(),
             ctid: req.ctid,
             install_dir: req.install_dir.clone(),
+            dedicated_user: req.dedicated_user,
         };
         let mut steps = Vec::new();
         let mut last = None;

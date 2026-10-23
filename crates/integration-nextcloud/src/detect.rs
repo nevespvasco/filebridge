@@ -12,7 +12,7 @@ use filebridge_integration_api::{Check, CheckStatus};
 use serde::{Deserialize, Serialize};
 
 use crate::parse::{self, LxcConfig, LxcContainer, MountSource};
-use crate::profile::{Exec, NextcloudDirectProfile, Owner, RunAs, Runtime, path_join};
+use crate::profile::{Access, Exec, NextcloudDirectProfile, Owner, RunAs, Runtime, path_join};
 use crate::shell::{Output, RemoteShell, SshTarget};
 
 /// What the wizard knows before detection.
@@ -26,6 +26,10 @@ pub struct DetectInput {
     pub ctid: Option<u32>,
     /// Nextcloud install dir where it runs; when absent, the usual places are tried.
     pub install_dir: Option<String>,
+    /// Sign in as a dedicated user instead of root (ADR 0024): on the machine Nextcloud runs on,
+    /// in the web server's group, running `occ` through a sudoers rule limited to it.
+    #[serde(default)]
+    pub dedicated_user: bool,
 }
 
 /// A command a step ran, for the Details panel.
@@ -59,6 +63,10 @@ pub struct Detection {
     /// writing the files folder), rather than no usable Nextcloud.
     #[serde(default)]
     pub lacks_rights: bool,
+    /// For a dedicated user: the commands the user runs as root on the server, for them to read
+    /// first (`crate::dedicated::server_setup`). filebridge never runs them.
+    #[serde(default)]
+    pub server_setup: Vec<String>,
 }
 
 #[async_trait]
@@ -105,6 +113,7 @@ struct Recorder<'a> {
     steps: Vec<DetectStep>,
     pending: Vec<RanCommand>,
     lacks_rights: bool,
+    server_setup: Vec<String>,
 }
 
 /// A failed step: message for the user. The step is recorded before returning it.
@@ -117,6 +126,7 @@ impl<'a> Recorder<'a> {
             steps: Vec::new(),
             pending: Vec::new(),
             lacks_rights: false,
+            server_setup: Vec::new(),
         }
     }
 
@@ -193,6 +203,18 @@ impl Detector for LxcDetector {
     async fn detect(&self, shell: &dyn RemoteShell, input: &DetectInput) -> Detection {
         let mut rec = Recorder::new(shell);
         let mut containers = Vec::new();
+        if input.dedicated_user {
+            // `pct` needs root: a dedicated user signs in to the Nextcloud machine itself.
+            return Detection {
+                detector: Self::ID.to_string(),
+                applies: false,
+                lacks_rights: false,
+                server_setup: Vec::new(),
+                steps: Vec::new(),
+                containers,
+                profile: None,
+            };
+        }
         let (applies, profile) = match detect_lxc(&mut rec, input, &mut containers).await {
             Ok(Some(p)) => (true, Some(p)),
             Ok(None) => (false, None),
@@ -202,6 +224,7 @@ impl Detector for LxcDetector {
             detector: Self::ID.to_string(),
             applies,
             lacks_rights: rec.lacks_rights,
+            server_setup: rec.server_setup,
             steps: rec.steps,
             containers,
             profile,
@@ -217,11 +240,16 @@ impl Detector for HostDetector {
 
     async fn detect(&self, shell: &dyn RemoteShell, input: &DetectInput) -> Detection {
         let mut rec = Recorder::new(shell);
-        let profile = detect_host(&mut rec, input).await.ok();
+        let profile = if input.dedicated_user {
+            detect_dedicated(&mut rec, input).await.ok()
+        } else {
+            detect_host(&mut rec, input).await.ok()
+        };
         Detection {
             detector: Self::ID.to_string(),
             applies: true,
             lacks_rights: rec.lacks_rights,
+            server_setup: rec.server_setup,
             steps: rec.steps,
             containers: Vec::new(),
             profile,
@@ -449,6 +477,7 @@ async fn detect_lxc(
         owner,
         dir_mode: NextcloudDirectProfile::DEFAULT_DIR_MODE.into(),
         file_mode: NextcloudDirectProfile::DEFAULT_FILE_MODE.into(),
+        access: Access::Root,
     }))
 }
 
@@ -554,6 +583,246 @@ async fn detect_host(
         owner,
         dir_mode: NextcloudDirectProfile::DEFAULT_DIR_MODE.into(),
         file_mode: NextcloudDirectProfile::DEFAULT_FILE_MODE.into(),
+        access: Access::Root,
+    })
+}
+
+/// A dedicated user on the machine Nextcloud runs on (ADR 0024): not root, in the web server's
+/// group, `occ` through a sudoers rule limited to it. Each step that finds a right missing fails
+/// with [`Detection::lacks_rights`], and [`Detection::server_setup`] holds what to run on the
+/// server, built from what was found so far.
+async fn detect_dedicated(
+    rec: &mut Recorder<'_>,
+    input: &DetectInput,
+) -> Result<NextcloudDirectProfile, Failed> {
+    let exec = Exec {
+        host_sudo: false,
+        runtime: Runtime::Host,
+    };
+    let ssh_user = input.ssh.user.as_str();
+
+    // 1. Not root, and the groups it is in.
+    let out = rec.run_in("host", exec.host(&["id", "-u"])).await?;
+    if out.stdout.trim() == "0" {
+        return Err(rec.fail(
+            "host",
+            format!(
+                "{ssh_user} is root; a dedicated user is not: sign in as that user, or turn off \
+                 \"dedicated user\""
+            ),
+        ));
+    }
+    let groups = rec.run_in("host", exec.host(&["id", "-G"])).await?;
+    let groups: Vec<u32> = groups
+        .stdout
+        .split_whitespace()
+        .filter_map(|g| g.parse().ok())
+        .collect();
+    rec.step(
+        "host",
+        CheckStatus::Ok,
+        format!("signed in as {ssh_user}, not root: a dedicated user"),
+    );
+
+    // 2. `occ`, the web user who owns it, and php by its full path (for the rule).
+    let install_dir = match &input.install_dir {
+        Some(d) => d.trim_end_matches('/').to_string(),
+        None => {
+            let mut argv = vec!["ls".to_string(), "-d".to_string()];
+            argv.extend(INSTALL_DIRS.iter().map(|d| format!("{d}/occ")));
+            let out = rec.run_in("occ", exec.host(&argv)).await?;
+            let found = out.stdout.lines().map(str::trim).find(|l| !l.is_empty());
+            match found.and_then(|l| l.strip_suffix("/occ")) {
+                Some(d) => d.to_string(),
+                None => {
+                    return Err(rec.fail(
+                        "occ",
+                        format!(
+                            "no occ on this machine in {}; set the install directory by hand",
+                            INSTALL_DIRS.join(", ")
+                        ),
+                    ));
+                }
+            }
+        }
+    };
+    let occ = path_join(&install_dir, "occ");
+    let out = rec
+        .run_in("occ", exec.host(&["stat", "-c", "%U", &occ]))
+        .await?;
+    let name = out.stdout.trim();
+    let web_user = if out.success() && !name.is_empty() && name != "root" {
+        name.to_string()
+    } else {
+        DEFAULT_WEB_USER.to_string()
+    };
+    let out = rec
+        .run_in("occ", exec.host(&["sh", "-c", "command -v php"]))
+        .await?;
+    let php = out.stdout.trim().to_string();
+    if !out.success() || !php.starts_with('/') {
+        return Err(rec.fail("occ", "php was not found on this machine"));
+    }
+    let (uid, gid) = web_user_ids(rec, &exec, &web_user).await?;
+    let out = rec
+        .run_in("occ", exec.host(&["id", "-gn", &web_user]))
+        .await?;
+    let web_group = match out.stdout.trim() {
+        g if out.success() && !g.is_empty() => g.to_string(),
+        _ => gid.to_string(),
+    };
+    rec.step(
+        "occ",
+        CheckStatus::Ok,
+        format!("{occ}, run as {web_user} with {php}"),
+    );
+    let setup = |files_dir: Option<&str>| {
+        crate::dedicated::server_setup(&crate::dedicated::SetupFacts {
+            ssh_user,
+            web_user: &web_user,
+            web_group: &web_group,
+            php: &php,
+            occ: &occ,
+            nextcloud_user: &input.nextcloud_user,
+            files_dir,
+        })
+    };
+    rec.server_setup = setup(None);
+
+    // 3. In the web server's group: reads config.php, and may hand files to the group.
+    if !groups.contains(&gid) {
+        return Err(rec.fail_rights(
+            "group",
+            format!(
+                "{ssh_user} is not in {web_user}'s group {web_group}: add it (step 1 of the \
+                 server setup), then sign in again"
+            ),
+        ));
+    }
+    rec.step(
+        "group",
+        CheckStatus::Ok,
+        format!("{ssh_user} is in the group {web_group}"),
+    );
+
+    // 4. `datadirectory`, read through the group.
+    let config_php = path_join(&install_dir, "config/config.php");
+    let out = rec
+        .run_in(
+            "datadirectory",
+            exec.host(&["grep", "-F", "datadirectory", &config_php]),
+        )
+        .await?;
+    if out.status >= 2 {
+        return Err(rec.fail_rights(
+            "datadirectory",
+            format!(
+                "{ssh_user} cannot read {config_php} ({}): it must be readable by the group \
+                 {web_group}",
+                out.short_error()
+            ),
+        ));
+    }
+    let data_dir = match parse::datadirectory(&out.stdout) {
+        Some(d) => d,
+        None => path_join(&install_dir, "data"),
+    };
+    rec.step("datadirectory", CheckStatus::Ok, data_dir.clone());
+    let user = &input.nextcloud_user;
+    let files = path_join(&path_join(&data_dir, user), "files");
+    rec.server_setup = setup(Some(&files));
+    check_dirs(
+        rec,
+        [
+            (exec.host(&["test", "-d", &data_dir]), data_dir.clone()),
+            (exec.host(&["test", "-d", &files]), files.clone()),
+        ],
+        &files,
+    )
+    .await?;
+
+    // 5. Writes the files folder itself (SFTP writes as this user).
+    let out = rec
+        .run_in("writable", exec.host(&["test", "-w", &files]))
+        .await?;
+    if !out.success() {
+        return Err(rec.fail_rights(
+            "writable",
+            format!(
+                "{ssh_user} cannot write to {files}: make it writable by the group {web_group} \
+                 (step 2 of the server setup)"
+            ),
+        ));
+    }
+    rec.step(
+        "writable",
+        CheckStatus::Ok,
+        format!("{ssh_user} can write to {files}"),
+    );
+
+    // 6. `occ` through the rule.
+    let out = rec
+        .run_in(
+            "run-as",
+            exec.occ(
+                RunAs::SudoRule,
+                &web_user,
+                &php,
+                &occ,
+                &["status", "--output=json"],
+                false,
+            ),
+        )
+        .await?;
+    match parse::occ_status(&out.stdout) {
+        Some(s) if out.success() && s.installed => rec.step(
+            "run-as",
+            if s.maintenance {
+                CheckStatus::Warn
+            } else {
+                CheckStatus::Ok
+            },
+            format!(
+                "Nextcloud {} answers through the sudoers rule for occ{}",
+                s.versionstring,
+                if s.maintenance {
+                    "; maintenance mode is on"
+                } else {
+                    ""
+                }
+            ),
+        ),
+        _ => {
+            return Err(rec.fail_rights(
+                "run-as",
+                format!(
+                    "sudo did not run occ as {web_user} for {ssh_user} ({}): add the sudoers \
+                     rule (step 3 of the server setup)",
+                    out.short_error()
+                ),
+            ));
+        }
+    }
+
+    // 7. Sent files get the web server's group; the folder's owner says whose they are.
+    let owner = Owner { uid, gid };
+    check_owner(rec, &exec, owner, &data_dir, &web_user).await?;
+
+    Ok(NextcloudDirectProfile {
+        ssh: input.ssh.clone(),
+        host_sudo: false,
+        runtime: Runtime::Host,
+        install_dir,
+        php,
+        run_as: RunAs::SudoRule,
+        web_user,
+        host_data_dir: data_dir.clone(),
+        data_dir,
+        user: user.clone(),
+        owner,
+        dir_mode: NextcloudDirectProfile::DEDICATED_DIR_MODE.into(),
+        file_mode: NextcloudDirectProfile::DEDICATED_FILE_MODE.into(),
+        access: Access::Dedicated,
     })
 }
 
@@ -730,6 +999,7 @@ async fn find_run_as(
                     match run_as {
                         RunAs::Sudo => "sudo".to_string(),
                         RunAs::Su => format!("su (no sudo {})", place(exec)),
+                        RunAs::SudoRule => "sudo (a rule for occ only)".to_string(),
                     },
                     if s.maintenance {
                         "; maintenance mode is on"

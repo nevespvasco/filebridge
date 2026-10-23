@@ -39,6 +39,7 @@ fn setup_request(req: &DetectNextcloudRequest, modes: Option<(String, String)>) 
         ctid: req.ctid,
         install_dir: req.install_dir.clone(),
         modes,
+        dedicated_user: req.dedicated_user,
     }
 }
 
@@ -104,6 +105,7 @@ async fn detect_nextcloud(
         steps,
         containers,
         profile,
+        server_setup: setup.detection.server_setup.clone(),
     })
 }
 
@@ -257,6 +259,7 @@ async fn add_webdav(
                 steps,
                 containers: Vec::new(),
                 profile: None,
+                server_setup: Vec::new(),
             });
         }
     }
@@ -315,5 +318,6 @@ async fn add_webdav(
         steps,
         containers: Vec::new(),
         profile: Some(profile),
+        server_setup: Vec::new(),
     })
 }

@@ -58,6 +58,9 @@ fn all_profiles() -> Vec<NextcloudDirectProfile> {
             }
         }
     }
+    // A dedicated user (ADR 0024): the watcher runs outside `sudo`, which runs only `php occ`.
+    // (The stub `sudo` execs its command, so this proves the plumbing, not sudo's relaying.)
+    out.push(profile(Runtime::Host, RunAs::SudoRule, false));
     out
 }
 
@@ -114,6 +117,7 @@ fn profile(runtime: Runtime, run_as: RunAs, host_sudo: bool) -> NextcloudDirectP
         },
         dir_mode: "750".into(),
         file_mode: "640".into(),
+        access: Default::default(),
     }
 }
 
@@ -139,6 +143,7 @@ fn occ_receives_exact_arguments() {
         (RunAs::Sudo, false),
         (RunAs::Su, true),
         (RunAs::Sudo, true),
+        (RunAs::SudoRule, false),
     ];
     // Through `pct exec` on a Proxmox node, and on the machine Nextcloud runs on.
     let runtimes = [Runtime::ProxmoxLxc { ctid: 105 }, Runtime::Host];

@@ -160,5 +160,11 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
 
 See [07 — Security](07-security-reliability.md#security) and
 [ADR 0012](adr/0012-own-ssh-key-with-restrict.md): filebridge's own key (in the keyring, installed
-with `restrict` for both the SFTP and the SSH user), and "Remove access". A dedicated user with a
-`sudoers` rule limited to `occ` is not built.
+with `restrict` for both the SFTP and the SSH user), and "Remove access". A **dedicated user** instead of root is
+an opt-in ([ADR 0024](adr/0024-nextcloud-mode-advice-and-occ-user.md)): on the machine Nextcloud
+runs on, in the web server's group (it hands what it sends to that group with `chgrp`, modes
+`770`/`660`, so it needs no root), with one `sudoers` line that allows only the `occ` commands
+direct mode runs, as the web user. Detection as that user writes out the server setup
+(`usermod -a -G`, `chmod -R g+rwX` on the files folder, the sudoers line with `visudo -cf`) for
+the user to read and run; filebridge never runs it. A step that finds a right missing (`group`,
+`datadirectory`, `writable`, `run-as`) fails and names the setup step to run.

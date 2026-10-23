@@ -3,6 +3,7 @@
 //!
 //! See `docs/05-integration-nextcloud.md`.
 
+pub mod dedicated;
 pub mod detect;
 pub mod direct;
 pub mod fake;
@@ -26,7 +27,7 @@ use filebridge_integration_api::{
 
 pub use detect::{DetectInput, Detection, Detector, HostDetector, LxcDetector};
 pub use direct::DirectOptions;
-pub use profile::{NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
+pub use profile::{Access, NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
 pub use rules::{NextcloudNfc, NextcloudReserved};
 pub use setup::{Advice, AdviceReason, Mode, ProfileParts, Setup, SetupError, SetupRequest};
 pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};

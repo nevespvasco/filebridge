@@ -50,6 +50,7 @@ fn profile() -> NextcloudDirectProfile {
         },
         dir_mode: "750".into(),
         file_mode: "640".into(),
+        access: Default::default(),
     }
 }
 
@@ -738,4 +739,46 @@ mod on_a_real_disk {
         assert_eq!((fotos, new, file), (0o775, 0o755, 0o640));
         assert_eq!(chowned, "-h -- 100033:100033 Fotos/2026/a.jpg\n");
     }
+}
+
+#[tokio::test]
+async fn a_dedicated_user_hands_files_to_the_group_without_root() {
+    // ADR 0024: it owns what it sends, so `chgrp` to the web server's group and group-writable
+    // modes need no root; `occ` goes through the rule.
+    let (shell, _, nc) = setup();
+    let mut p = profile();
+    p.ssh.user = "filebridge".into();
+    p.runtime = Runtime::Host;
+    p.data_dir = "/tank/nextcloud-data".into();
+    p.run_as = RunAs::SudoRule;
+    p.php = "/usr/bin/php".into();
+    p.owner = Owner { uid: 33, gid: 33 };
+    p.dir_mode = "770".into();
+    p.file_mode = "660".into();
+    p.access = filebridge_integration_nextcloud::Access::Dedicated;
+    let mut c = ctx(FILES, TransportCaps::RESUME);
+    c.profile.settings =
+        serde_json::to_value(NextcloudSettings::Direct(Box::new(p.clone()))).unwrap();
+    let cmds = [
+        "id -u".to_string(),
+        format!("find {FILES}/Fotos -maxdepth 0 -type d -user 1001 -exec chmod 770 '{{}}' +"),
+        format!("find {FILES}/Fotos -maxdepth 0 -type d -user 1001 -exec chgrp -h 33 '{{}}' +"),
+        format!("chgrp -h -- 33 {FILES}/Fotos/a.jpg"),
+        format!("find {FILES}/Fotos/a.jpg -maxdepth 0 -type f -exec chmod 660 '{{}}' +"),
+    ];
+    shell.on("id -u", Output::ok("1001\n"));
+    for cmd in &cmds[1..] {
+        shell.on(cmd.clone(), Output::ok(""));
+    }
+    let scan = p.occ_cmd_stop_on_eof(&["files:scan", "-v", "--path=alice/files"]);
+    assert!(scan.starts_with("sh -c "), "{scan}");
+    shell
+        .on(count_cmd(&[("", 2)]), Output::ok("1\n"))
+        .on(scan, Output::ok(""));
+    nc.after_transfer(&c, &paths(&["Fotos/a.jpg"]), IntegrationSink::noop())
+        .await
+        .unwrap();
+    assert_eq!(shell.unexpected(), Vec::<String>::new());
+    assert_eq!(shell.ran()[..cmds.len()], cmds[..]);
+    assert!(shell.ran().iter().all(|c| !c.contains("chown")));
 }

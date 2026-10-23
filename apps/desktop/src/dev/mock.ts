@@ -685,7 +685,36 @@ const handlers: Handlers = {
           { id: "pct-list", status: "ok", message: "no `pct` here, so this is not a Proxmox node: looking for Nextcloud on this machine itself", commands: ["pct list  (exit 127)", "test -x /usr/sbin/pct  (exit 1)"] },
           { id: "host", status: "ok", message: "not in a Proxmox container; commands run as root", commands: ["id -u  (exit 0)"] },
         ];
-    if (proxmox && req.ctid == null) return { detector, steps, containers: ["105 nextcloud (running)", "112 nextcloud-test (running)"], profile: null };
+    if (proxmox && req.ctid == null) return { detector, steps, containers: ["105 nextcloud (running)", "112 nextcloud-test (running)"], profile: null, server_setup: [] };
+    if ((a.req as { dedicated_user?: boolean }).dedicated_user) {
+      // A dedicated user whose sudoers rule isn't there yet: the setup to run by hand.
+      const files = `/mnt/ncdata/${req.nextcloud_user}/files`;
+      const rule = `${req.user} ALL=(www-data) NOPASSWD: /usr/bin/php /var/www/nextcloud/occ status --output\\=json, /usr/bin/php /var/www/nextcloud/occ user\\:info ${req.nextcloud_user} --output\\=json, /usr/bin/php /var/www/nextcloud/occ files\\:scan *`;
+      return {
+        detector: "host",
+        steps: [
+          { id: "host", status: "ok", message: `signed in as ${req.user}, not root: a dedicated user`, commands: ["id -u  (exit 0)", "id -G  (exit 0)"] },
+          { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data with /usr/bin/php", commands: [] },
+          { id: "group", status: "ok", message: `${req.user} is in the group www-data`, commands: [] },
+          { id: "run-as", status: "fail", message: `sudo did not run occ as www-data for ${req.user} (sudo: a password is required): add the sudoers rule (step 3 of the server setup)`, commands: [] },
+        ],
+        containers: [],
+        profile: null,
+        server_setup: [
+          "# Read these, then run them yourself as root on the machine Nextcloud runs on.",
+          "# filebridge never runs them and never changes sudoers itself.",
+          "# 1. The dedicated user, in the web server's group (www-data):",
+          `id ${req.user} >/dev/null 2>&1 || useradd --create-home --shell /bin/sh ${req.user}`,
+          `usermod -a -G www-data ${req.user}`,
+          "# 2. The folder filebridge sends into, writable by that group:",
+          `chmod -R g+rwX ${files}`,
+          "# 3. occ as www-data, and nothing else (visudo checks the file):",
+          `printf '%s\\n' '${rule}' > /etc/sudoers.d/filebridge`,
+          "chmod 0440 /etc/sudoers.d/filebridge",
+          "visudo -cf /etc/sudoers.d/filebridge",
+        ],
+      };
+    }
     const run = (cmd: string) => (proxmox ? `pct exec ${req.ctid} -- ${cmd}` : cmd);
     const data = proxmox ? "/srv/ncdata" : "/mnt/ncdata";
     const files = `${data}/${req.nextcloud_user}/files`;
@@ -712,7 +741,7 @@ const handlers: Handlers = {
       target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);
-    return { detector, steps, containers: [], profile };
+    return { detector, steps, containers: [], profile, server_setup: [] };
   },
   probeNextcloud: async (a) => {
     await sleep(900);
@@ -775,7 +804,7 @@ const handlers: Handlers = {
     // Demo: any app password shorter than 10 characters is refused, like a mistyped one.
     if (req.app_password.length < 10) {
       steps.push({ id: "sign-in", status: "fail", message: `Nextcloud refused ${req.user} with this app password (401 Unauthorized)`, commands: [] });
-      return { detector: "webdav", steps, containers: [], profile: null };
+      return { detector: "webdav", steps, containers: [], profile: null, server_setup: [] };
     }
     steps.push({ id: "sign-in", status: "ok", message: `signed in as ${req.user}`, commands: [] });
     if (req.folder) steps.push({ id: "folder", status: "warn", message: `folder ${req.folder} doesn't exist yet: the first send creates it`, commands: [] });
@@ -790,7 +819,7 @@ const handlers: Handlers = {
       target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);
-    return { detector: "webdav", steps, containers: [], profile };
+    return { detector: "webdav", steps, containers: [], profile, server_setup: [] };
   },
   addImmich: async (a) => {
     const req = a.req as ImmichRequest_Deserialize;
@@ -805,7 +834,7 @@ const handlers: Handlers = {
     // Demo: any API key shorter than 20 characters is refused, like a mistyped one.
     if (req.api_key.length < 20) {
       steps.push(step("api-key", "fail", "Immich refused the API key (Immich answered 401 Unauthorized: Invalid API key)"));
-      return { detector: "immich", steps, containers: [], profile: null };
+      return { detector: "immich", steps, containers: [], profile: null, server_setup: [] };
     }
     steps.push(step("api-key", "ok", "the API key signs in as an Immich administrator"));
     // Demo: two libraries, /mnt/photos and /mnt/scans.
@@ -816,12 +845,12 @@ const handlers: Handlers = {
     const lib = req.library_id ? libraries.find((l) => l.id === req.library_id) : libraries.find((l) => importPath === l.path || importPath.startsWith(`${l.path}/`));
     if (!lib) {
       steps.push(step("library", "fail", `no external library imports ${importPath}; Immich has ${libraries.map((l) => `${l.name} (${l.id}: ${l.path})`).join("; ")}`));
-      return { detector: "immich", steps, containers: libraries.map((l) => `${l.id} ${l.name} (${l.path})`), profile: null };
+      return { detector: "immich", steps, containers: libraries.map((l) => `${l.id} ${l.name} (${l.path})`), profile: null, server_setup: [] };
     }
     steps.push(step("library", "ok", `library ${lib.name} (1204 assets) imports ${lib.path}`));
     if (importPath !== lib.path && !importPath.startsWith(`${lib.path}/`)) {
       steps.push(step("import-path", "fail", `${importPath} is outside the library ${lib.name}, which imports ${lib.path}`));
-      return { detector: "immich", steps, containers: [], profile: null };
+      return { detector: "immich", steps, containers: [], profile: null, server_setup: [] };
     }
     steps.push(step("import-path", "ok", importPath === lib.path ? `the destination is the library's folder ${lib.path}` : `the destination ${importPath} is inside the library's folder ${lib.path}`));
     steps.push(step("readable", "ok", `Immich can read ${lib.path}`));
@@ -843,7 +872,7 @@ const handlers: Handlers = {
       target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);
-    return { detector: "immich", steps, containers: [], profile };
+    return { detector: "immich", steps, containers: [], profile, server_setup: [] };
   },
   installAppKey: async (a) => {
     const p = profiles.find((x) => x.id === a.profileId);

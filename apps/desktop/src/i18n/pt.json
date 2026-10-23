@@ -685,7 +685,8 @@
       "writable": "Permissão de escrita por SFTP",
       "occ": "Comando occ",
       "run-as": "Utilizador do servidor web",
-      "owner": "Dono dos ficheiros"
+      "owner": "Dono dos ficheiros",
+      "group": "Grupo do servidor web"
     },
     "done": "Concluir",
     "advancedHint": "só se a deteção o pedir",
@@ -696,7 +697,8 @@
       "sshUser": "O utilizador com que o filebridge entra por SSH nesse servidor. Os ficheiros são escritos como este utilizador, por isso ele tem de poder escrever na pasta de dados do Nextcloud: na prática, root.",
       "folder": "Uma pasta dentro dos ficheiros desse utilizador. Vazio põe os ficheiros no topo.",
       "ctid": "Só Proxmox: o número do contentor onde corre o Nextcloud. Deixe vazio e o filebridge encontra-o.",
-      "installDir": "Onde o Nextcloud está instalado dentro do contentor. Deixe vazio e o filebridge encontra-a."
+      "installDir": "Onde o Nextcloud está instalado dentro do contentor. Deixe vazio e o filebridge encontra-a.",
+      "dedicated": "Em vez de root, o filebridge entra com um utilizador próprio: no grupo do servidor web (para entregar ao Nextcloud os ficheiros que envia sem precisar de root), e autorizado por uma linha de sudoers a correr apenas o occ do Nextcloud. O filebridge mostra os comandos para preparar isto; é o utilizador que os corre."
     },
     "hint": {
       "host": "O nó Proxmox ou o próprio servidor do Nextcloud",
@@ -714,7 +716,13 @@
       "not_found": "Não foi encontrado por SSH nenhum Nextcloud utilizável neste servidor. O WebDAV só precisa do endereço do Nextcloud e de uma palavra-passe de aplicação.",
       "untrusted": "A chave do servidor não foi aceite, por isso o filebridge não entrou. O WebDAV só precisa do endereço do Nextcloud e de uma palavra-passe de aplicação.",
       "override": "Pode escolher o outro modo acima na mesma."
-    }
+    },
+    "dedicated": "Utilizador dedicado em vez de root",
+    "dedicatedHint": "Use esse utilizador como utilizador SSH. Entra na máquina onde o Nextcloud corre (não no nó Proxmox).",
+    "serverSetup": "Preparação do servidor para o utilizador dedicado",
+    "serverSetupHint": "O filebridge nunca corre estes comandos nem altera o sudoers. Leia-os, corra-os como root no servidor e depois carregue outra vez em Detetar.",
+    "copySetup": "Copiar",
+    "copied": "Copiado"
   },
   "immich": {
     "intro": "O filebridge copia os ficheiros para uma pasta de uma biblioteca externa do Immich (por SFTP, ou para uma pasta deste computador) e depois pede ao Immich que leia essa biblioteca. O Immich só lê a pasta: nunca move nem apaga os seus ficheiros.",

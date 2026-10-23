@@ -135,6 +135,7 @@ impl ImmichWizard {
                 steps,
                 containers,
                 profile: None,
+                server_setup: Vec::new(),
             })
         };
 
@@ -223,6 +224,7 @@ impl ImmichWizard {
                 steps,
                 containers: libraries,
                 profile: Some(profile),
+                server_setup: Vec::new(),
             }),
             Err(e) => {
                 forget().await;

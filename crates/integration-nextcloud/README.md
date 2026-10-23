@@ -112,12 +112,27 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
    `nextcloud.incompatible-encoding` problem with `RepairDestination`; scan errors and non-zero
    exits → `nextcloud.scan-error` / `nextcloud.scan-failed` problems with `Retry`.
 
+**Detection, a dedicated user** (`HostDetector` with `DetectInput::dedicated_user`, ADR 0024;
+`LxcDetector` doesn't apply, `pct` needs root):
+1. `host` — `id -u` is not 0; `id -G` gives its groups.
+2. `occ` — `occ` in the install dir (`ls -d` over the usual ones: `config/` may not be readable
+   yet), its owner as the web user, `command -v php` (a rule names php by its full path), `id`
+   and `id -gn` of the web user.
+3. `group` — the SSH user is in the web user's group (else the setup's `usermod`).
+4. `datadirectory` — read through the group; a `grep` error (exit 2) fails instead of being taken
+   for "no line". `data-path`, then `writable` (else the setup's `chmod -R g+rwX`).
+5. `run-as` — `sudo -n -u <web> <php> occ status --output=json` through the rule (else the
+   setup's sudoers line).
+6. `owner` — as for the host.
+`Detection::server_setup` (`dedicated::server_setup`) holds the commands for the user to run as
+root, built from what was found (placeholders for what wasn't); filebridge never runs them. The
+profile: `Access::Dedicated`, `RunAs::SudoRule`, no host sudo, modes `770`/`660`. After a
+transfer it uses `chgrp -h -- <gid>` instead of `chown`; long `occ` commands run as
+`sh -c '<watcher around: sudo -n -u <web> php occ …>'`.
+
 ## Not yet
 - Encrypted key files (load them into the SSH agent instead).
-- SSH straight into the container (no `pct`), with the scoped `sudoers` rule from docs/07: a
-  second `Runtime` variant. A rule limited to `php occ files:scan` does not allow the
-  `sh -c '<script>'` above; there the watcher has to run outside `sudo` (which relays SIGTERM to
-  `occ`).
+- A dedicated user on a Proxmox node (`pct` needs root) or in Docker (the `docker` group is root).
 
 ## Allowed dependencies
 `integration-api`, `transport-api`, `names`, `russh`, `serde`, `serde_json`, `tokio`, `tracing`,

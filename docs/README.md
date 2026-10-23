@@ -46,7 +46,7 @@ detail to build each crate on its own.
 | [0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md) | Personal use, the name stays `filebridge`; scheduled sends in Phase 3, copy-only continuous sync (never deletes at the destination) in Phase 5 |
 | [0020](adr/0020-immich-external-library.md) | Immich as an external library: files over SFTP (or into a local folder), then a library scan through its API; an `Integration`, not a `Transport` |
 | [0021](adr/0021-full-destination-pauses-the-job.md) | A full destination (`ErrorKind::Full`) pauses the job, resumable; free space is watched during a send |
-| [0024](adr/0024-nextcloud-mode-advice-and-occ-user.md) | The Nextcloud wizard probes the server and recommends direct mode or WebDAV, with the reason |
+| [0024](adr/0024-nextcloud-mode-advice-and-occ-user.md) | The Nextcloud wizard probes the server and recommends direct mode or WebDAV, with the reason; an opt-in dedicated user in the web server's group, `occ` through a sudoers rule the user adds by hand |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

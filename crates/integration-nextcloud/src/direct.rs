@@ -577,7 +577,9 @@ async fn fix_permissions(
     opts: &DirectOptions,
 ) -> Result<()> {
     let base = profile.host_files_dir();
-    let owner = profile.owner.chown_spec();
+    // `chown -h -- uid:gid` as root, `chgrp -h -- gid` as a dedicated user.
+    let owner_argv = profile.owner_argv();
+    let [set_owner, _, _, owner] = &owner_argv;
     let dirs: Vec<String> = parent_dirs(files_rel)
         .iter()
         .map(|p| path_join(&base, p))
@@ -596,7 +598,7 @@ async fn fix_permissions(
                 "-exec",
             ];
             let set_mode = ["chmod", profile.dir_mode.as_str(), "{}", "+"];
-            let set_owner = ["chown", "-h", owner.as_str(), "{}", "+"];
+            let set_owner = [set_owner.as_str(), "-h", owner.as_str(), "{}", "+"];
             let fixed = profile.host_cmd(&["find"]).len() + join(&select).len() + 32;
             for chunk in chunks(&dirs, fixed, opts.max_command_bytes) {
                 for (on, tail) in [(chmod, &set_mode[..]), (chown, &set_owner[..])] {
@@ -629,11 +631,10 @@ async fn fix_permissions(
         "{}",
         "+",
     ];
-    let fixed =
-        profile.host_cmd(&["chown", "-h", "--", &owner]).len() + join(&chmod_tail).len() + 16;
+    let fixed = profile.host_cmd(&owner_argv).len() + join(&chmod_tail).len() + 16;
     for chunk in chunks(&files, fixed, opts.max_command_bytes) {
         if chown {
-            let mut argv = vec!["chown", "-h", "--", &owner];
+            let mut argv: Vec<&str> = owner_argv.iter().map(String::as_str).collect();
             argv.extend(chunk.iter().map(String::as_str));
             crate::shell::run_ok(shell, &profile.host_cmd(&argv), "setting the owner").await?;
         }

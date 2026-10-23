@@ -500,6 +500,11 @@ export type DetectNextcloudRequest_Deserialize = {
 	folder: string,
 	ctid?: number | null,
 	install_dir?: string | null,
+	/**
+	 *  Sign in as a dedicated user instead of root (ADR 0024): on the machine Nextcloud runs on,
+	 *  in the web server's group, `occ` through a sudoers rule limited to it.
+	 */
+	dedicated_user?: boolean,
 };
 
 /**
@@ -519,6 +524,11 @@ export type DetectNextcloudRequest_Serialize = {
 	folder: string,
 	ctid: number | null,
 	install_dir: string | null,
+	/**
+	 *  Sign in as a dedicated user instead of root (ADR 0024): on the machine Nextcloud runs on,
+	 *  in the web server's group, `occ` through a sudoers rule limited to it.
+	 */
+	dedicated_user: boolean,
 };
 
 export type DetectNextcloudResponse = DetectNextcloudResponse_Serialize | DetectNextcloudResponse_Deserialize;
@@ -534,6 +544,11 @@ export type DetectNextcloudResponse_Deserialize = {
 	containers: string[],
 	/**  The saved profile, when every step passed. */
 	profile?: Profile_Deserialize | null,
+	/**
+	 *  For a dedicated user: the commands to run as root on the server, for the user to read and
+	 *  run themselves (filebridge never runs them, nor edits sudoers).
+	 */
+	server_setup?: string[],
 };
 
 export type DetectNextcloudResponse_Serialize = {
@@ -547,6 +562,11 @@ export type DetectNextcloudResponse_Serialize = {
 	containers: string[],
 	/**  The saved profile, when every step passed. */
 	profile: Profile_Serialize | null,
+	/**
+	 *  For a dedicated user: the commands to run as root on the server, for the user to read and
+	 *  run themselves (filebridge never runs them, nor edits sudoers).
+	 */
+	server_setup: string[],
 };
 
 export type DetectStepView = {

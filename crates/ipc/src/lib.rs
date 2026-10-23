@@ -65,7 +65,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
 ///     destination pauses the job).
 /// 24: `add_immich` (ADR 0020).
-/// 25: `probe_nextcloud` (ADR 0024).
+/// 25: `probe_nextcloud`; `DetectNextcloudRequest.dedicated_user`,
+///     `DetectNextcloudResponse.server_setup` (ADR 0024).
 pub const PROTOCOL_VERSION: u32 = 25;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
@@ -229,6 +230,10 @@ pub struct DetectNextcloudRequest {
     pub folder: String,
     pub ctid: Option<u32>,
     pub install_dir: Option<String>,
+    /// Sign in as a dedicated user instead of root (ADR 0024): on the machine Nextcloud runs on,
+    /// in the web server's group, `occ` through a sudoers rule limited to it.
+    #[serde(default)]
+    pub dedicated_user: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -252,6 +257,10 @@ pub struct DetectNextcloudResponse {
     pub containers: Vec<String>,
     /// The saved profile, when every step passed.
     pub profile: Option<Profile>,
+    /// For a dedicated user: the commands to run as root on the server, for the user to read and
+    /// run themselves (filebridge never runs them, nor edits sudoers).
+    #[serde(default)]
+    pub server_setup: Vec<String>,
 }
 
 /// The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024).

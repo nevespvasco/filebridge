@@ -35,6 +35,24 @@ pub enum RunAs {
     Sudo,
     /// `su -s /bin/bash <web_user> -c 'php occ …'` (machines without sudo).
     Su,
+    /// `sudo -n -u <web_user> <php> occ …` allowed by a sudoers rule that names only `occ`
+    /// (a dedicated user, [`Access::Dedicated`]): long commands watch the SSH channel outside
+    /// `sudo`, which relays the SIGTERM to `occ`.
+    SudoRule,
+}
+
+/// How the SSH user gets the rights direct mode needs where Nextcloud runs (ADR 0024).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Access {
+    /// Root, or passwordless `sudo -n` for every host command: sent files get the owner.
+    #[default]
+    Root,
+    /// A dedicated user in the web server's group, never root: it owns what it sends and gives
+    /// it the web server's group and group-writable modes (`chgrp`, no `chown`), and runs `occ`
+    /// through a sudoers rule limited to it ([`RunAs::SudoRule`]). Only on the machine Nextcloud
+    /// runs on ([`Runtime::Host`]).
+    Dedicated,
 }
 
 /// Numeric owner on the SSH host (after the container's idmap, for [`Runtime::ProxmoxLxc`]).
@@ -73,11 +91,17 @@ pub struct NextcloudDirectProfile {
     /// Octal modes applied after the transfer, e.g. `"750"` and `"640"`.
     pub dir_mode: String,
     pub file_mode: String,
+    /// Root (the default, also for profiles saved before this field) or a dedicated user.
+    #[serde(default)]
+    pub access: Access,
 }
 
 impl NextcloudDirectProfile {
     pub const DEFAULT_DIR_MODE: &'static str = "750";
     pub const DEFAULT_FILE_MODE: &'static str = "640";
+    /// A dedicated user shares the files with the web server through the group.
+    pub const DEDICATED_DIR_MODE: &'static str = "770";
+    pub const DEDICATED_FILE_MODE: &'static str = "660";
 
     /// Rejects values that would make a command wrong (modes, empty paths, NUL bytes).
     pub fn validate(&self) -> Result<()> {
@@ -106,6 +130,20 @@ impl NextcloudDirectProfile {
                 self.host_data_dir, self.data_dir
             )));
         }
+        if self.access == Access::Dedicated {
+            if self.runtime != Runtime::Host || self.host_sudo || self.run_as != RunAs::SudoRule {
+                return Err(IntegrationError::fatal(
+                    "a dedicated user signs in to the machine Nextcloud runs on, without sudo for \
+                     host commands, and runs occ through its sudoers rule",
+                ));
+            }
+            if !self.php.starts_with('/') {
+                return Err(IntegrationError::fatal(format!(
+                    "a sudoers rule names php by its full path, not {:?}",
+                    self.php
+                )));
+            }
+        }
         if self.user.is_empty() || self.user.contains('/') || self.user.starts_with('.') {
             return Err(IntegrationError::fatal(format!(
                 "invalid Nextcloud user {:?}",
@@ -126,6 +164,25 @@ impl NextcloudDirectProfile {
             ));
         }
         Ok(())
+    }
+
+    /// What gives sent paths the web server's ownership: `chown -h -- uid:gid` as root, `chgrp
+    /// -h -- gid` as a dedicated user (who may only hand its files to a group it is in).
+    pub fn owner_argv(&self) -> [String; 4] {
+        match self.access {
+            Access::Root => [
+                "chown".into(),
+                "-h".into(),
+                "--".into(),
+                self.owner.chown_spec(),
+            ],
+            Access::Dedicated => [
+                "chgrp".into(),
+                "-h".into(),
+                "--".into(),
+                self.owner.gid.to_string(),
+            ],
+        }
     }
 
     /// `<host_data_dir>/<user>/files`, where Nextcloud keeps the user's files.
@@ -252,6 +309,16 @@ impl Exec {
                 // `su -c` hands the string to bash: quote it as a command line, then as one word.
                 self.container(&["su", "-s", "/bin/bash", web_user, "-c", &line()])
             }
+            RunAs::SudoRule => {
+                // The rule allows `php occ …` and nothing else, so the watcher stays outside.
+                let mut argv = vec!["sudo", "-n", "-u", web_user];
+                argv.extend(&occ_argv);
+                if stop_on_eof {
+                    self.container(&["sh", "-c", &self::stop_on_eof(&argv)])
+                } else {
+                    self.container(&argv)
+                }
+            }
         }
     }
 }
@@ -323,7 +390,84 @@ pub(crate) mod tests {
             },
             dir_mode: "750".into(),
             file_mode: "640".into(),
+            access: Access::Root,
         }
+    }
+
+    pub fn sample_dedicated() -> NextcloudDirectProfile {
+        NextcloudDirectProfile {
+            ssh: SshTarget {
+                user: "filebridge".into(),
+                ..sample_host().ssh
+            },
+            php: "/usr/bin/php".into(),
+            run_as: RunAs::SudoRule,
+            dir_mode: "770".into(),
+            file_mode: "660".into(),
+            access: Access::Dedicated,
+            ..sample_host()
+        }
+    }
+
+    #[test]
+    fn dedicated_user_runs_only_php_occ_through_sudo() {
+        use crate::quote::tests::split;
+        let p = sample_dedicated();
+        assert!(p.validate().is_ok());
+        assert_eq!(
+            p.occ_cmd(&["status", "--output=json"]),
+            "sudo -n -u www-data /usr/bin/php /var/www/nextcloud/occ status --output=json"
+        );
+        // The watcher runs as the SSH user; sudo gets exactly `php occ …`.
+        let path = "--path=alice/files/O'Neil";
+        let words = split(&p.occ_cmd_stop_on_eof(&["files:scan", path]));
+        assert_eq!(words[..2], ["sh", "-c"]);
+        assert_eq!(
+            words[2],
+            stop_on_eof(&[
+                "sudo",
+                "-n",
+                "-u",
+                "www-data",
+                "/usr/bin/php",
+                "/var/www/nextcloud/occ",
+                "files:scan",
+                path
+            ])
+        );
+        assert_eq!(
+            p.owner_argv(),
+            ["chgrp", "-h", "--", "33"].map(String::from)
+        );
+        assert_eq!(
+            sample().owner_argv(),
+            ["chown", "-h", "--", "100033:100033"].map(String::from)
+        );
+    }
+
+    #[test]
+    fn dedicated_user_only_on_the_nextcloud_machine_without_sudo() {
+        let mut p = sample_dedicated();
+        p.runtime = Runtime::ProxmoxLxc { ctid: 105 };
+        p.host_data_dir = "/tank/nextcloud-data".into();
+        assert!(p.validate().is_err());
+        let mut p = sample_dedicated();
+        p.host_sudo = true;
+        assert!(p.validate().is_err());
+        let mut p = sample_dedicated();
+        p.php = "php".into();
+        assert!(p.validate().is_err());
+        let mut p = sample_dedicated();
+        p.run_as = RunAs::Sudo;
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn profiles_saved_before_access_are_root() {
+        let mut v = serde_json::to_value(sample()).unwrap();
+        v.as_object_mut().unwrap().remove("access");
+        let p: NextcloudDirectProfile = serde_json::from_value(v).unwrap();
+        assert_eq!(p.access, Access::Root);
     }
 
     #[test]

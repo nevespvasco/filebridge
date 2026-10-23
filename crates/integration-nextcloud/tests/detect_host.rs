@@ -41,6 +41,7 @@ fn input(user: &str) -> DetectInput {
         nextcloud_user: "demo".into(),
         ctid: None,
         install_dir: None,
+        dedicated_user: false,
     }
 }
 
@@ -207,6 +208,7 @@ async fn root_on_the_nextcloud_lxc_runs_occ_through_su() {
             owner: Owner { uid: 33, gid: 33 },
             dir_mode: "750".into(),
             file_mode: "640".into(),
+            access: Default::default(),
         })
     );
     let run_as = d.steps.iter().find(|s| s.check.id == "run-as").unwrap();
@@ -363,6 +365,7 @@ fn setup_request(folder: &str) -> SetupRequest {
         ctid: None,
         install_dir: None,
         modes: None,
+        dedicated_user: false,
     }
 }
 
