@@ -127,8 +127,11 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
 
 - **WebDAV mode:** nothing to do — Nextcloud indexes on upload.
 - **Direct mode:**
-  1. Apply owner/mode if the transport couldn't (`chown -R 100033:100033`, dirs `750`, files `640`)
-     — only on changed paths.
+  1. Apply owner/mode if the transport couldn't (`100033:100033`, dirs `750`, files `640`) — only
+     on the files this job sent and the folders the transfer created. A folder that was already
+     there keeps its owner and mode. New folders are the parents still owned by the SSH user
+     (SFTP creates them as that user; Nextcloud's own belong to the web user), and each gets its
+     mode before its owner, so a resumed job finds exactly the ones still to fix.
   2. Scan **only the sent files**, never what was already in the destination: a folder that holds
      nothing but sent files is scanned recursively; in a folder that also holds other files, the
      sent files are scanned one by one (many of them: `--shallow` on the folder) and its

@@ -88,10 +88,15 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
 
 **After transfer** (`changed` is relative to the destination root, which must be inside
 `<datadir>/<user>/files`, host or container view):
-1. Unless the transport has `CHOWN`/`CHMOD`: `chown -h uid:gid` and
-   `find … -maxdepth 0 -type d -exec chmod 750 {} + -o -type f -exec chmod 640 {} +` on the changed
-   paths and the directories between them and `files/` (new directories need the owner too);
-   batched under 96 KiB per command line. Failure is a fatal error (Nextcloud couldn't read the
+1. Unless the transport has `CHOWN`/`CHMOD`: the sent files get `chown -h uid:gid` and
+   `find … -maxdepth 0 -type f -exec chmod 640 {} +`. The folders between them and `files/` change
+   only if the transfer created them: SFTP makes folders as the SSH user (`id -u`), Nextcloud's
+   own belong to the web user, so `find … -maxdepth 0 -type d -user <ssh uid>` picks the new ones
+   (mode `750` first, then the owner). Folders that were there keep their owner and mode. The
+   owner is the server-side record of what is done, so a resumed job or a retried step fixes the
+   same folders and nothing it already fixed; nothing is kept in the job. When the SSH user is
+   the owner the profile wants, new folders can't be told apart and are left as they are.
+   Batched under 96 KiB per command line. Failure is a fatal error (Nextcloud couldn't read the
    files).
 2. Scan only what was sent, never files that were already there. Starting at the destination
    root, one remote command per level counts the files in each folder (`find -type f | head -n

@@ -256,12 +256,11 @@ async fn scan_targets(
     Ok(targets)
 }
 
-/// Every changed path plus each directory between it and the files folder, files-relative.
-/// Directories the transfer created get the owner too; existing ones already have it.
-fn permission_targets(files_rel: &[String]) -> Vec<String> {
+/// Each directory between a changed path and the files folder, files-relative, once. Only those
+/// the transfer created get the owner and mode: [`fix_permissions`] tells them apart on the server.
+fn parent_dirs(files_rel: &[String]) -> Vec<String> {
     let mut all = BTreeSet::new();
     for p in files_rel {
-        all.insert(p.clone());
         let mut dir = parent(p);
         while !dir.is_empty() {
             if !all.insert(dir.to_string()) {
@@ -560,6 +559,15 @@ pub async fn after_transfer(
     Ok(report)
 }
 
+/// Sets the owner and mode of the sent files and of the folders the transfer created; folders
+/// that were there before keep theirs.
+///
+/// SFTP creates folders as the SSH user, while Nextcloud's own belong to the web user: a parent
+/// folder still owned by the SSH user is one a send made and nobody fixed yet. Each such folder
+/// gets its mode before its owner, so the owner is the record that it is done, kept on the
+/// server: a resumed job (or a retried step) finds the same folders still to fix, and none it
+/// already fixed. When the SSH user is the owner the profile wants, nothing tells new folders from
+/// old ones, and folders are left as they are.
 async fn fix_permissions(
     profile: &NextcloudDirectProfile,
     shell: &dyn RemoteShell,
@@ -569,22 +577,50 @@ async fn fix_permissions(
     opts: &DirectOptions,
 ) -> Result<()> {
     let base = profile.host_files_dir();
-    let paths: Vec<String> = permission_targets(files_rel)
+    let owner = profile.owner.chown_spec();
+    let dirs: Vec<String> = parent_dirs(files_rel)
         .iter()
         .map(|p| path_join(&base, p))
         .collect();
-    let owner = profile.owner.chown_spec();
+    if !dirs.is_empty() {
+        let sftp_uid = sftp_uid(shell).await?;
+        if sftp_uid != profile.owner.uid {
+            let uid = sftp_uid.to_string();
+            let select = [
+                "-maxdepth",
+                "0",
+                "-type",
+                "d",
+                "-user",
+                uid.as_str(),
+                "-exec",
+            ];
+            let set_mode = ["chmod", profile.dir_mode.as_str(), "{}", "+"];
+            let set_owner = ["chown", "-h", owner.as_str(), "{}", "+"];
+            let fixed = profile.host_cmd(&["find"]).len() + join(&select).len() + 32;
+            for chunk in chunks(&dirs, fixed, opts.max_command_bytes) {
+                for (on, tail) in [(chmod, &set_mode[..]), (chown, &set_owner[..])] {
+                    if on {
+                        let mut argv = vec!["find"];
+                        argv.extend(chunk.iter().map(String::as_str));
+                        argv.extend(select);
+                        argv.extend(tail);
+                        crate::shell::run_ok(
+                            shell,
+                            &profile.host_cmd(&argv),
+                            "setting folders' owner and mode",
+                        )
+                        .await?;
+                    }
+                }
+            }
+        }
+    }
+
+    let files: Vec<String> = files_rel.iter().map(|p| path_join(&base, p)).collect();
     let chmod_tail = [
         "-maxdepth",
         "0",
-        "-type",
-        "d",
-        "-exec",
-        "chmod",
-        &profile.dir_mode,
-        "{}",
-        "+",
-        "-o",
         "-type",
         "f",
         "-exec",
@@ -595,14 +631,14 @@ async fn fix_permissions(
     ];
     let fixed =
         profile.host_cmd(&["chown", "-h", "--", &owner]).len() + join(&chmod_tail).len() + 16;
-    for chunk in chunks(&paths, fixed, opts.max_command_bytes) {
+    for chunk in chunks(&files, fixed, opts.max_command_bytes) {
         if chown {
             let mut argv = vec!["chown", "-h", "--", &owner];
             argv.extend(chunk.iter().map(String::as_str));
             crate::shell::run_ok(shell, &profile.host_cmd(&argv), "setting the owner").await?;
         }
         if chmod {
-            // `find -maxdepth 0` tells files from directories without descending into them.
+            // `find -maxdepth 0 -type f` leaves out anything that is not a plain file.
             let mut argv = vec!["find"];
             argv.extend(chunk.iter().map(String::as_str));
             argv.extend(chmod_tail);
@@ -610,6 +646,18 @@ async fn fix_permissions(
         }
     }
     Ok(())
+}
+
+/// The SSH user's uid on the SSH host: the owner SFTP gives what it creates.
+async fn sftp_uid(shell: &dyn RemoteShell) -> Result<u32> {
+    let out =
+        crate::shell::run_ok(shell, &join(&["id", "-u"]), "reading the SSH user's uid").await?;
+    out.stdout.trim().parse().map_err(|_| {
+        IntegrationError::retryable(format!(
+            "reading the SSH user's uid: unexpected answer {:?}",
+            out.stdout
+        ))
+    })
 }
 
 struct Scan<'a> {
@@ -832,10 +880,10 @@ mod tests {
     }
 
     #[test]
-    fn permission_targets_include_parents_once() {
+    fn parent_dirs_once_without_the_files() {
         assert_eq!(
-            permission_targets(&strs(&["A/B/x.jpg", "A/B/y.jpg", "A/z.jpg", "c.txt"])),
-            ["A", "A/B", "A/B/x.jpg", "A/B/y.jpg", "A/z.jpg", "c.txt"]
+            parent_dirs(&strs(&["A/B/x.jpg", "A/B/y.jpg", "A/z.jpg", "c.txt"])),
+            ["A", "A/B"]
         );
     }
 
