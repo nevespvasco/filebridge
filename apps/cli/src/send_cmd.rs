@@ -33,6 +33,7 @@ pub struct SendArgs {
     /// Compare SHA-256 of every file at the end and resend any that differ.
     #[arg(long)]
     verify: bool,
+    /// Files in flight at once.
     #[arg(long, default_value_t = 8)]
     concurrency: u32,
     /// A folder under the destination's root to send into (created by the send).

@@ -14,7 +14,8 @@ pub struct Global {
     /// Where the database lives. Default: `$FILEBRIDGE_DATA_DIR`, else the OS data directory.
     #[arg(long, global = true, env = "FILEBRIDGE_DATA_DIR")]
     pub data_dir: Option<PathBuf>,
-    /// rclone binary. Default: `rclone` on PATH, else `~/.local/bin/rclone`.
+    /// rclone binary. Default: `filebridge-rclone` (the installed app's) or `rclone` next to this
+    /// program, `rclone` on PATH, or `~/.local/bin/rclone`.
     #[arg(long, global = true, env = "FILEBRIDGE_RCLONE")]
     pub rclone: Option<PathBuf>,
 }

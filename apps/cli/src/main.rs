@@ -1,7 +1,8 @@
 //! filebridge CLI: the same engine as the app, without a UI (servers, scripts).
 //!
 //! Engine commands (`profile`, `send`, `settings`, `jobs`, …) run `core` in-process. The Phase 0
-//! commands (`scan`, `fixture`, `bench`) stay for benchmarking rename-in-transit.
+//! commands (`scan`, `fixture`, `bench`) stay for benchmarking rename-in-transit. `completions`
+//! and `man` print what an install puts in place for the shell and `man` (apps/cli/README.md).
 
 mod app;
 mod bench;
@@ -11,12 +12,32 @@ mod profile_cmd;
 mod send_cmd;
 mod settings_cmd;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use anyhow::Context;
+use clap::{CommandFactory, Parser, Subcommand};
+
+/// The crate version and `git describe` of the build (build.rs).
+const VERSION: &str = env!("FILEBRIDGE_VERSION");
+
+const AFTER_HELP: &str = "\
+Job ids accept a unique prefix (the 8 characters `filebridge jobs` prints).
+
+Environment:
+  FILEBRIDGE_DATA_DIR  the data folder (default: the OS one, ~/.local/share/filebridge)
+  FILEBRIDGE_RCLONE    the rclone binary (default: see --rclone)
+  FILEBRIDGE_LOG       log filter, e.g. debug or rclone=debug (default: warn)
+
+Changing commands refuse to run while filebridge-service holds the data folder.";
 
 #[derive(Parser)]
-#[command(name = "filebridge", version, about)]
+#[command(
+    name = "filebridge",
+    version = VERSION,
+    about = "Send files and folders to SFTP, Nextcloud, Immich or a local folder, fixing names \
+             in transit; never changes or deletes the source",
+    after_help = AFTER_HELP
+)]
 struct Cli {
     #[command(flatten)]
     global: app::Global,
@@ -106,6 +127,19 @@ enum Cmd {
     /// Compare a plain `sync/copy` (baseline) with plan A (one `copyfile` per file, under the
     /// corrected name) and the engine. Never writes to the source.
     Bench(bench::Args),
+    /// Print the shell completion script, e.g. `filebridge completions bash >
+    /// ~/.local/share/bash-completion/completions/filebridge`.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+    /// Print the man page, or write one per command (filebridge.1, filebridge-send.1, …) into a
+    /// folder, e.g. `filebridge man --dir ~/.local/share/man/man1`.
+    Man {
+        /// Write every page here (created if missing) instead of printing filebridge.1.
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -151,7 +185,47 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Scan { source, show } => prepare::print_scan(&source, show),
         Cmd::Fixture(args) => fixture::run(&args),
         Cmd::Bench(args) => bench::run(args, g.rclone.as_deref()).await,
+        Cmd::Completions { shell } => {
+            clap_complete::generate(
+                shell,
+                &mut Cli::command(),
+                "filebridge",
+                &mut std::io::stdout(),
+            );
+            Ok(())
+        }
+        Cmd::Man { dir: None } => {
+            clap_mangen::Man::new(Cli::command()).render(&mut std::io::stdout())?;
+            Ok(())
+        }
+        Cmd::Man { dir: Some(dir) } => write_man_pages(&dir),
     }
+}
+
+/// One page per command and subcommand, named the way `man filebridge-profile-add-sftp` finds it.
+fn write_man_pages(dir: &Path) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+    let mut cmd = Cli::command();
+    // Gives each subcommand its full name, `filebridge-profile-add-sftp`.
+    cmd.build();
+    write_page(&cmd, dir)
+}
+
+/// `cmd`'s page and its subcommands', without `help`'s, which only repeat them.
+fn write_page(cmd: &clap::Command, dir: &Path) -> anyhow::Result<()> {
+    let name = cmd.get_display_name().unwrap_or(cmd.get_name());
+    let path = dir.join(format!("{name}.1"));
+    let mut out = std::fs::File::create(&path)
+        .map(std::io::BufWriter::new)
+        .with_context(|| format!("write {}", path.display()))?;
+    clap_mangen::Man::new(cmd.clone()).render(&mut out)?;
+    std::io::Write::flush(&mut out)?;
+    for sub in cmd.get_subcommands() {
+        if sub.get_name() != "help" && !sub.is_hide_set() {
+            write_page(sub, dir)?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -164,4 +238,56 @@ pub enum ReportFormatArg {
 pub enum ReportOnly {
     Problems,
     Renamed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_command_line_is_consistent() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn the_version_names_the_build() {
+        assert!(VERSION.starts_with(env!("CARGO_PKG_VERSION")));
+        let cli = Cli::command();
+        assert_eq!(cli.get_version(), Some(VERSION));
+    }
+
+    #[test]
+    fn completions_cover_every_shell() {
+        for shell in [
+            clap_complete::Shell::Bash,
+            clap_complete::Shell::Zsh,
+            clap_complete::Shell::Fish,
+            clap_complete::Shell::PowerShell,
+            clap_complete::Shell::Elvish,
+        ] {
+            let mut out = Vec::new();
+            clap_complete::generate(shell, &mut Cli::command(), "filebridge", &mut out);
+            let script = String::from_utf8(out).unwrap();
+            assert!(script.contains("decide-all"), "{shell}");
+        }
+    }
+
+    #[test]
+    fn man_pages_are_one_per_command() {
+        let dir = tempfile::tempdir().unwrap();
+        write_man_pages(dir.path()).unwrap();
+        for page in [
+            "filebridge.1",
+            "filebridge-send.1",
+            "filebridge-profile-add-sftp.1",
+        ] {
+            let text = std::fs::read_to_string(dir.path().join(page)).unwrap();
+            assert!(text.starts_with(".ie"), "{page}");
+        }
+        let top = std::fs::read_to_string(dir.path().join("filebridge.1")).unwrap();
+        assert!(top.contains("FILEBRIDGE_DATA_DIR"));
+        let pages = std::fs::read_dir(dir.path()).unwrap().count();
+        assert!(!dir.path().join("filebridge-help.1").exists());
+        assert!(pages > 20, "{pages}");
+    }
 }

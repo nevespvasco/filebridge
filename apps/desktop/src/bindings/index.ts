@@ -297,18 +297,20 @@ export type AppSettings_Serialize = {
 export type Autostart = 
 /**  Not possible here: the switch is hidden, or shown off with the reason. */
 { kind: "unsupported"; reason: AutostartUnsupported } | 
-/**  The systemd user unit as it is, and the file turning it on writes. */
+/**  The login entry as it is, and what turning it on writes. */
 { kind: "unit"; unit: UserUnit };
 
 export type AutostartUnsupported = 
-/**  Not done yet on this OS (Windows, macOS), and never on a phone. */
+/**  Not on this OS: phones. */
 "os" | 
 /**  The app runs from an AppImage, whose files are gone once it exits. */
 "app_image" | 
 /**  No `filebridge-service` next to the app, in `FILEBRIDGE_SERVICE` or on `PATH`. */
 "no_service" | 
 /**  `systemctl --user` doesn't answer (no systemd user session). */
-"no_systemd";
+"no_systemd" | 
+/**  `launchctl` doesn't answer for this user's desktop session (macOS). */
+"no_launchd";
 
 export type Backend = Backend_Serialize | Backend_Deserialize;
 
@@ -1135,6 +1137,15 @@ export type LogEntry = {
 
 export type LogLevel = "info" | "warn" | "error";
 
+/**  The mechanism each desktop OS starts a user's programs from at login. */
+export type LoginEntry = 
+/**  Linux: a `systemd --user` unit, enabled for `default.target`. */
+"systemd_unit" | 
+/**  macOS: a LaunchAgent plist in `~/Library/LaunchAgents`, loaded by launchd at login. */
+"launch_agent" | 
+/**  Windows: a value under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`. */
+"run_key";
+
 /**
  *  Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
  *  password, which goes to the OS keyring and nowhere else.
@@ -1573,51 +1584,72 @@ export type TargetSpec_Serialize = {
 };
 
 /**
- *  How the engine started by the systemd user unit finds the SSH agent (`SSH_AUTH_SOCK`), which
- *  SFTP and Nextcloud destinations without filebridge's own key, a key file or a password sign
- *  in with. The unit's process starts with the user manager's environment, not the session's.
+ *  How the engine started by the login entry finds the SSH agent (`SSH_AUTH_SOCK`), which SFTP
+ *  and Nextcloud destinations without filebridge's own key, a key file or a password sign in
+ *  with. The entry's process starts with the login manager's environment (systemd's user
+ *  manager, launchd), not the session's.
  */
 export type UnitAgent = 
 /**  No SSH agent here: nothing to pass on. */
 "none" | 
 /**
  *  The agent's socket is at a fixed per-user path (under the runtime directory or home): the
- *  unit sets `SSH_AUTH_SOCK` to it.
+ *  entry sets `SSH_AUTH_SOCK` to it.
  */
 "pinned" | 
-/**  The user manager's environment has `SSH_AUTH_SOCK`: the unit's process inherits it. */
+/**
+ *  The login manager's environment has `SSH_AUTH_SOCK` (systemd's user manager; launchd,
+ *  which runs macOS's own agent; on Windows the entry starts with the session's
+ *  environment): the entry's process inherits it.
+ */
 "manager" | 
 /**
- *  The agent's socket changes at each login and the user manager doesn't have it: SSH
- *  destinations that sign in with the agent fail under the unit.
+ *  The agent's socket changes at each login and the login manager doesn't have it: SSH
+ *  destinations that sign in with the agent fail under the entry.
  */
 "missing";
 
 /**
- *  The `systemd --user` unit that starts `filebridge-service` at login (Linux), as
- *  `filebridge-service show-user-unit --json` prints it. The window reads it for the Settings
- *  switch "Start the engine when I log in" and shows it before changing anything. Not an ipc
- *  request: the window runs the service binary, so it works with no service running.
+ *  The per-user entry that starts `filebridge-service` at login, as `filebridge-service
+ *  show-user-unit --json` prints it: the `systemd --user` unit (Linux), a LaunchAgent (macOS) or
+ *  a Run key value (Windows), see [`LoginEntry`]. The window reads it for the Settings switch
+ *  "Start the engine when I log in" and shows it before changing anything. Not an ipc request:
+ *  the window runs the service binary, so it works with no service running.
  */
 export type UserUnit = {
-	/**  The unit file: `~/.config/systemd/user/filebridge-service.service`. */
+	/**  Which kind of entry this is. */
+	kind: LoginEntry,
+	/**
+	 *  Where it lives: the unit file (`~/.config/systemd/user/filebridge-service.service`), the
+	 *  plist (`~/Library/LaunchAgents/app.filebridge.service.plist`) or the registry value
+	 *  (`HKEY_CURRENT_USER\…\Run\filebridge-service`).
+	 */
 	path: string,
-	/**  The program the unit runs, or would run once installed: this service binary. */
+	/**
+	 *  The program the entry runs, or would run once installed: this service binary, or on
+	 *  Windows the app that starts it without a console window.
+	 */
 	exec: string,
-	/**  The unit file is there. */
+	/**  The entry is there. */
 	installed: boolean,
-	/**  systemd starts it at login (`systemctl --user is-enabled`). */
+	/**
+	 *  The OS starts it at login: `systemctl --user is-enabled`, not disabled in launchd, not
+	 *  turned off in Task Manager's Startup apps.
+	 */
 	enabled: boolean,
 	/**
-	 *  The file there is the one installing would write now. `false` when it runs another
+	 *  The entry there is the one installing would write now. `false` when it runs another
 	 *  binary (an earlier install from elsewhere) or other options.
 	 */
 	current: boolean,
-	/**  `systemctl --user` answers: without it nothing can be installed. */
-	systemd: boolean,
-	/**  The file installing writes. */
+	/**
+	 *  The OS's login manager answers (`systemctl --user`; `launchctl` in a desktop session;
+	 *  always on Windows): without it nothing can be installed.
+	 */
+	manager: boolean,
+	/**  What installing writes: the unit file, the plist, or the Run value's command line. */
 	contents: string,
-	/**  Whether the engine the unit starts can reach the SSH agent this program sees. */
+	/**  Whether the engine the entry starts can reach the SSH agent this program sees. */
 	agent: UnitAgent,
 };
 

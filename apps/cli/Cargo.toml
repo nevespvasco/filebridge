@@ -13,6 +13,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, features = ["env"] }
+clap_complete = "4.6"
+clap_mangen = "0.3"
 filebridge-core.workspace = true
 filebridge-host.workspace = true
 filebridge-integration-nextcloud.workspace = true

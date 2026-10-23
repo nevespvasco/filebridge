@@ -756,15 +756,24 @@
     "autostartWhy": {
       "app_image": "Não está disponível com o filebridge a correr a partir de uma AppImage. Instale o pacote .deb ou .rpm para o usar.",
       "no_service": "O filebridge-service não foi encontrado junto à aplicação, por isso isto não pode ser configurado.",
-      "no_systemd": "Precisa de uma sessão de utilizador do systemd, que este computador não tem."
+      "no_systemd": "Precisa de uma sessão de utilizador do systemd, que este computador não tem.",
+      "no_launchd": "Tem de correr na sua sessão do macOS, onde o launchd o inicia ao entrar."
     },
     "autostartOutdated": "Está configurado para iniciar outra cópia do motor. Atualize-o para iniciar esta ({exec}).",
     "autostartUpdate": "Atualizar",
-    "autostartFile": "Mostrar o ficheiro",
+    "autostartFile": {
+      "systemd_unit": "Mostrar o ficheiro",
+      "launch_agent": "Mostrar o ficheiro",
+      "run_key": "Mostrar o comando"
+    },
     "autostartOn": {
       "title": "Iniciar o motor ao entrar na sessão?",
       "update": "Atualizar o arranque na sessão?",
-      "write": "Escreve {path}, que diz ao systemd para executar {exec} sempre que entra na sessão.",
+      "write": {
+        "systemd_unit": "Escreve {path}, que diz ao systemd para executar {exec} sempre que entra na sessão.",
+        "launch_agent": "Escreve {path}, que diz ao macOS (launchd) para executar {exec} sempre que entra na sessão.",
+        "run_key": "Acrescenta {path} ao registo do Windows, que executa {exec} sempre que entra na sessão. Inicia o motor de cópia sem abrir nenhuma janela."
+      },
       "login": "A partir da próxima sessão o motor de cópia corre antes de abrir o filebridge, e os envios por acabar continuam sozinhos.",
       "now": "O motor de cópia que está a correr agora continua: nada para.",
       "undo": "Pode desligar isto aqui quando quiser.",
@@ -775,9 +784,17 @@
     },
     "autostartOff": {
       "title": "Deixar de iniciar o motor ao entrar na sessão?",
-      "remove": "Desliga-o no systemd e apaga {path}.",
+      "remove": {
+        "systemd_unit": "Desliga-o no systemd e apaga {path}.",
+        "launch_agent": "Para-o no launchd e apaga {path}.",
+        "run_key": "Apaga {path} do registo do Windows."
+      },
       "login": "A partir da próxima sessão o motor de cópia só arranca quando abrir o filebridge.",
-      "now": "Se o motor de cópia que está a correr foi iniciado pelo systemd, para e o filebridge volta a iniciá-lo logo: os envios em curso param um momento e continuam.",
+      "now": {
+        "systemd_unit": "Se o motor de cópia que está a correr foi iniciado pelo systemd, para e o filebridge volta a iniciá-lo logo: os envios em curso param um momento e continuam.",
+        "launch_agent": "Se o motor de cópia que está a correr foi iniciado pelo launchd, para e o filebridge volta a iniciá-lo logo: os envios em curso param um momento e continuam.",
+        "run_key": "O motor de cópia que está a correr agora continua: nada para."
+      },
       "confirm": "Desligar"
     },
     "sending": "Envios",

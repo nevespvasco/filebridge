@@ -53,6 +53,18 @@ pub fn export_bindings(builder: &Builder<tauri::Wry>) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_init();
+    // At login on Windows (the Run value, ADR 0028): start the engine, open nothing.
+    #[cfg(desktop)]
+    {
+        let mut args = std::env::args_os().skip(1);
+        if args.next().as_deref() == Some(filebridge_ipc::START_ENGINE_ARG.as_ref()) {
+            if let Err(e) = service::start_engine(args.collect()) {
+                tracing::error!("--start-engine: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+    }
     let builder = specta_builder();
     #[cfg(all(debug_assertions, desktop))]
     if let Err(e) = export_bindings(&builder) {

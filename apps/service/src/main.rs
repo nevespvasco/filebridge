@@ -5,6 +5,9 @@
 //! Stopping the service (Ctrl-C, SIGTERM, logout) leaves running jobs as they are stored; the
 //! next start resumes them.
 
+mod launch_agent;
+mod login;
+mod run_key;
 mod unit;
 
 use std::path::PathBuf;
@@ -51,20 +54,44 @@ enum Cmd {
     Run,
     /// Whether the service is running, and its active jobs.
     Status,
-    /// Linux: install and start a `systemd --user` unit that runs this binary.
+    /// Start this binary at each login, and now: a `systemd --user` unit (Linux), a LaunchAgent
+    /// (macOS) or a per-user Run key value (Windows, from the next login only).
     InstallUserUnit {
         /// Install and enable, but don't start it now.
         #[arg(long)]
         no_start: bool,
+        #[command(flatten)]
+        launcher: Launcher,
     },
-    /// Linux: stop, disable and remove the `systemd --user` unit.
+    /// Stop starting it at login: remove the unit, LaunchAgent or Run value. The unit and the
+    /// LaunchAgent also stop the engine they started.
     UninstallUserUnit,
-    /// Linux: the `systemd --user` unit as it is and as `install-user-unit` would write it.
+    /// The login entry as it is and as `install-user-unit` would write it.
     ShowUserUnit {
         /// As JSON (`filebridge_ipc::UserUnit`), for the app's Settings.
         #[arg(long)]
         json: bool,
+        #[command(flatten)]
+        launcher: Launcher,
     },
+}
+
+#[derive(clap::Args)]
+struct Launcher {
+    /// Windows: the Run value starts this program with `--start-engine` instead of this console
+    /// binary, which would keep a console window open (the app passes itself).
+    #[arg(long)]
+    launcher: Option<PathBuf>,
+}
+
+impl Cli {
+    fn login<'a>(&'a self, launcher: &'a Launcher) -> login::Options<'a> {
+        login::Options {
+            data_dir: self.data_dir.as_deref(),
+            rclone: self.rclone.as_deref(),
+            launcher: launcher.launcher.as_deref(),
+        }
+    }
 }
 
 fn endpoint(cli: &Cli) -> Endpoint {
@@ -87,12 +114,13 @@ async fn main() -> Result<()> {
     match cli.cmd {
         None | Some(Cmd::Run) => run(&cli).await,
         Some(Cmd::Status) => status(&cli).await,
-        Some(Cmd::InstallUserUnit { no_start }) => {
-            unit::install(cli.data_dir.as_deref(), cli.rclone.as_deref(), !no_start)
-        }
-        Some(Cmd::UninstallUserUnit) => unit::uninstall(),
-        Some(Cmd::ShowUserUnit { json }) => {
-            let unit = unit::show(cli.data_dir.as_deref(), cli.rclone.as_deref())?;
+        Some(Cmd::InstallUserUnit {
+            no_start,
+            ref launcher,
+        }) => login::install(&cli.login(launcher), !no_start),
+        Some(Cmd::UninstallUserUnit) => login::uninstall(),
+        Some(Cmd::ShowUserUnit { json, ref launcher }) => {
+            let unit = login::show(&cli.login(launcher))?;
             if json {
                 println!("{}", serde_json::to_string(&unit)?);
             } else {
@@ -103,7 +131,7 @@ async fn main() -> Result<()> {
                     (true, true, true) => "enabled",
                 };
                 println!("{}: {state}\n\n{}", unit.path, unit.contents);
-                if let Some(hint) = unit::agent_hint(unit.agent) {
+                if let Some(hint) = login::agent_hint(unit.kind, unit.agent) {
                     eprintln!("{hint}");
                 }
             }

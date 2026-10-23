@@ -21,6 +21,10 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+# The per-user Run key that starts the engine at login (src/run_key.rs).
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"
+
 [dev-dependencies]
 filebridge-host.workspace = true
 filebridge-transport-api.workspace = true

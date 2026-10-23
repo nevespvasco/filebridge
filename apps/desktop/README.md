@@ -8,8 +8,8 @@ Tauri 2 + Vue 3 + TypeScript + Vite desktop app. **Landed in:** Phase 1 (Wave 3,
 - `src-tauri/` — Tauri commands and events. **A thin client of `filebridge-service`** over
   `crates/ipc` ([ADR 0008](../../docs/adr/0008-service-ipc.md)): no business logic here. Starts the
   service if its socket is missing, manages the tray icon and the "Start the engine when I log
-  in" switch. The installed app carries `filebridge-service` and rclone as sidecars
-  ([Bundle](#bundle-one-install-no-terminal)).
+  in" switch. The installed app carries `filebridge-service`, the `filebridge` CLI and rclone as
+  sidecars ([Bundle](#bundle-one-install-no-terminal)).
 
 ## Rules
 - All Rust ↔ TS types come from `tauri-specta` into `src/bindings/` — never hand-written.
@@ -88,57 +88,77 @@ src-tauri/src/
 - Commands (camelCase in TS): `ping`, `listProfiles`, `saveProfile`, `deleteProfile`,
   `testProfile`, `detectNextcloud`, `createJob`, `setOptions`, `analyse`, `ruleCounts`, `issues`,
   `decide`, `decideAll`, `start`, `pause`, `resume`, `cancel`, `listJobs`, `job`, plus window-only `serviceEndpoint`,
-  `serviceReplacing`, `setTrayLabels`, `autostart` and `setAutostart`. They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
+  `serviceReplacing`, `setTrayLabels`, `autostart` and `setAutostart`. Started with
+  `--start-engine` the app only starts the service and exits (the Windows login entry). They return `{ status: "ok", data } | { status: "error", error: ErrorBody }`;
   `api.*` in `src/lib/api.ts` turns that into a value or a thrown `ServiceError` with its `code`.
 
 ## Start the engine when I log in
-A switch in Settings (pt/en). On **Linux** it is the `systemd --user` unit
-`~/.config/systemd/user/filebridge-service.service`, and the service binary is what writes and
-removes it: the window's `autostart` / `setAutostart` commands (`src-tauri/src/autostart.rs`)
-run the same `filebridge-service` the window would start, with `show-user-unit --json`
-(`filebridge_ipc::UserUnit`: path, the binary it runs, installed, enabled, current, the file),
+A switch in Settings (pt/en), backed by the per-user login entry of each desktop OS
+([ADR 0028](../../docs/adr/0028-login-start-on-every-desktop-os.md)): the `systemd --user` unit
+`~/.config/systemd/user/filebridge-service.service` on **Linux**, the LaunchAgent
+`~/Library/LaunchAgents/app.filebridge.service.plist` on **macOS**, the value
+`filebridge-service` under `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`
+on **Windows**. The service binary is what writes and removes it: the window's `autostart` /
+`setAutostart` commands (`src-tauri/src/autostart.rs`) run the same `filebridge-service` the
+window would start, with `show-user-unit --json` (`filebridge_ipc::UserUnit`: which `kind`,
+where it lives, the program it runs, installed, enabled, current, its contents),
 `install-user-unit --no-start` and `uninstall-user-unit`. Not an ipc request: it works with no
-service running, and the window never touches the unit file itself.
-- Turning it **on** shows the file's path, the binary it runs and the file itself, then writes
-  and enables it. Not `--now`: the engine running now holds the data folder and keeps running;
-  systemd starts it from the next login.
-- Turning it **off** says what stops, then runs `uninstall-user-unit` (`disable --now`, delete
-  the file). If the unit ran the engine, it stops (jobs stay stored) and the window starts its
-  own at once, as after any dropped connection.
-- A unit that runs another binary or other options (installed earlier from a terminal, or from
-  another build) shows "Update", which rewrites it.
+service running, and the window never touches the entry itself.
+- Turning it **on** shows where the entry goes, the program it runs and the entry itself (the
+  unit file, the plist, or the Run value's command line), then writes and enables it. Not
+  started now: the engine running now holds the data folder and keeps running; the OS starts
+  it from the next login.
+- Turning it **off** says what stops, then runs `uninstall-user-unit`. On Linux and macOS
+  systemd / launchd stop the engine they started (jobs stay stored) and the window starts its
+  own at once, as after any dropped connection; on Windows removing the Run value stops
+  nothing.
+- An entry that runs another binary or other options (installed earlier from a terminal, or
+  from another build) shows "Update", which rewrites it.
+- **Windows:** the service is a console program, so the window passes itself as `--launcher`
+  and the Run value starts the app with `--start-engine` (`filebridge_ipc::START_ENGINE_ARG`,
+  handled first thing in `lib.rs`): it starts the service as the window would
+  (`service::start_engine`, no window, nothing if one already answers) and exits.
 - Shown off with the reason when it can't work: an **AppImage** (its files are gone once it
-  exits, so the unit would point nowhere; the service refuses too), no `filebridge-service`
-  found, or no systemd user session. Hidden on phones.
-- **Windows and macOS: not done.** `autostart` answers `unsupported { reason: "os" }` there and
-  the switch is hidden. TODO: a per-user Run key or Task Scheduler entry on Windows, a
-  LaunchAgent on macOS, written by the service binary in the same way (tracked in
-  [docs/09](../../docs/09-roadmap.md), Phase 3 "Signed installers").
+  exits, so the entry would point nowhere; the service refuses too), no `filebridge-service`
+  found, no systemd user session, or no launchd desktop session. Hidden on phones.
+- *macOS and Windows are unit-tested but not yet run on those systems.*
 
 ## Bundle: one install, no terminal
 `pnpm bundle` (`tauri build --config src-tauri/tauri.bundle.conf.json`) makes the installers
-(`.deb`, `.rpm`, AppImage on Linux) with two sidecars beside the app's own binary:
+(`.deb` and `.rpm` on Linux; Tauri's defaults on Windows and macOS) with three sidecars beside
+the app's own binary:
 - **`filebridge-service`**, built in release for the target;
+- **`filebridge`**, the CLI ([apps/cli](../cli/README.md)), at `/usr/bin/filebridge` in the
+  packages, which also install its man pages and bash/zsh/fish completions
+  (`bundle.linux.deb.files` / `rpm.files`);
 - **rclone** as `filebridge-rclone`, the version pinned in
   [`sidecars/RCLONE_VERSION`](../../sidecars/RCLONE_VERSION) (the one librclone is built from on
   phones). Its own name because Tauri installs sidecars in `/usr/bin`, where `rclone` would
   clash with the distribution's package and shadow the user's own. Its MIT licence goes in the bundle as
   `licenses/rclone-COPYING.txt` (a resource: `/usr/lib/filebridge/licenses/` in the .deb).
 
-`tauri.bundle.conf.json` adds `bundle.externalBin`, `bundle.resources` and a
-`beforeBuildCommand` that runs [`sidecars/prepare-desktop.sh`](../../sidecars/prepare-desktop.sh)
-before `pnpm build`. The script builds the service and copies the pinned rclone (from `RCLONE`,
-`PATH` or `~/.local/bin`, after checking `rclone version`) to `sidecars/bin/<name>-<target
-triple>`, the names Tauri looks for. They live in a separate config on purpose: tauri-build
+`tauri.bundle.conf.json` adds `bundle.externalBin`, `bundle.resources`, the packages' extra
+files and a `beforeBuildCommand` that runs `scripts/prepare-sidecars.mjs` before `pnpm build`:
+[`sidecars/prepare-desktop.sh`](../../sidecars/prepare-desktop.sh), or `prepare-desktop.ps1` on
+Windows. The script builds the service and the CLI and copies the pinned rclone (downloaded and
+checked against its release's `SHA256SUMS` with `RCLONE_DOWNLOAD=1`, else from `RCLONE`, `PATH`
+or `~/.local/bin` after checking `rclone version`; see [sidecars](../../sidecars/README.md)) to
+`sidecars/bin/<name>-<target triple>`, the names Tauri looks for. They live in a separate config on purpose: tauri-build
 copies every `externalBin` into `target/` on each `cargo build`, so in `tauri.conf.json` they
 would make `cargo test`, clippy and `tauri dev` need the files and overwrite the
 `target/debug/filebridge-service` that `tauri dev` builds.
 
 ```bash
-pnpm bundle                       # every Linux format (AppImage needs Tauri's linuxdeploy download)
-pnpm bundle --bundles deb,rpm     # just the packages
+pnpm bundle                       # .deb and .rpm (tauri.linux.conf.json)
+RCLONE_DOWNLOAD=1 pnpm bundle     # the same, with the pinned rclone downloaded and checked
 sudo apt install ../../target/release/bundle/deb/filebridge_0.0.1_amd64.deb
 ```
+**No AppImage.** `tauri.linux.conf.json` limits the Linux targets to `deb` and `rpm`. Tauri
+builds an AppImage only after downloading linuxdeploy, its AppRun and its GTK plugin from
+GitHub (the moving `continuous` releases, with no checksum) and running them, so it can't be
+built offline and would run unverified tools, against the rule the rclone download follows.
+And an AppImage can't start the engine at login (its files are gone once it exits). `pnpm
+bundle --bundles appimage` still asks Tauri for one, on a machine where that is acceptable.
 After installing, filebridge opens from the app menu; it starts the service by itself, and
 Settings → "Start the engine when I log in" keeps it running across logins.
 
