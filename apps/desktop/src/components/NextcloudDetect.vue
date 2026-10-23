@@ -8,28 +8,32 @@ import { computed, reactive, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
-import { pickPaths } from "@/lib/platform";
+import { copyText, pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import StatusIcon from "./StatusIcon.vue";
 import DetailsPanel from "./DetailsPanel.vue";
 import HelpTip from "./HelpTip.vue";
 import HostKeyPrompt from "./HostKeyPrompt.vue";
+import type { AdvisorFields } from "./NextcloudModeAdvisor.vue";
 
+/** What the mode advisor was given, so it isn't typed twice. */
+const props = defineProps<{ initial?: AdvisorFields | null }>();
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const { t, te } = useI18n();
 const profiles = useProfiles();
 
 const form = reactive({
   name: "Nextcloud",
-  host: "",
-  port: 22,
-  user: "root",
+  host: props.initial?.host ?? "",
+  port: props.initial?.port ?? 22,
+  user: props.initial?.user ?? "root",
   key_file: "",
   known_hosts_file: "",
-  nextcloud_user: "",
+  nextcloud_user: props.initial?.nextcloud_user ?? "",
   folder: "",
   ctid: "",
   install_dir: "",
+  dedicated_user: false,
 });
 const running = ref(false);
 const error = ref<string | null>(null);
@@ -52,6 +56,18 @@ const commands = computed(() => result.value?.steps.flatMap((s) => [`# ${s.id}`,
 const folderLooksLikeHostPath = computed(() =>
   /^\/(mnt|srv|var|home|media|opt|data|tank|rpool|storage|root|usr|etc)(\/|$)/i.test(form.folder.trim()),
 );
+/** The dedicated user's server setup (ADR 0024), for the user to read and run themselves. */
+const setupText = computed(() => result.value?.server_setup.join("\n") ?? "");
+const copied = ref(false);
+async function copySetup() {
+  try {
+    await copyText(setupText.value);
+    copied.value = true;
+    setTimeout(() => (copied.value = false), 2000);
+  } catch {
+    copied.value = false;
+  }
+}
 const runtimeKey = computed(() => `nextcloud.runtime.${result.value?.detector ?? ""}`);
 
 function stepLabel(id: string) {
@@ -93,6 +109,7 @@ async function detect() {
       folder: trimBoth(form.folder.trim(), "/"),
       ctid: ctid != null && Number.isInteger(ctid) ? ctid : null,
       install_dir: form.install_dir.trim() || null,
+      dedicated_user: form.dedicated_user,
     });
   } catch (e) {
     error.value = errorMessage(e);
@@ -187,6 +204,14 @@ function chooseContainer(c: string) {
         </span>
         <input v-model="form.install_dir" spellcheck="false" :placeholder="$t('nextcloud.auto')" />
       </label>
+      <label class="field wide check">
+        <span class="label-line">
+          <input v-model="form.dedicated_user" type="checkbox" />
+          {{ $t("nextcloud.dedicated") }}
+          <HelpTip :text="$t('nextcloud.help.dedicated')" :label="$t('nextcloud.dedicated')" />
+        </span>
+        <span v-if="form.dedicated_user" class="hint">{{ $t("nextcloud.dedicatedHint") }}</span>
+      </label>
     </div>
 
     <div class="actions">
@@ -211,6 +236,12 @@ function chooseContainer(c: string) {
         <p class="small">{{ $t("nextcloud.pickContainer") }}</p>
         <button v-for="c in result.containers" :key="c" type="button" class="btn btn-small" @click="chooseContainer(c)">{{ c }}</button>
       </div>
+      <div v-if="setupText" class="server-setup">
+        <p class="small"><strong>{{ $t("nextcloud.serverSetup") }}</strong></p>
+        <p class="small muted">{{ $t("nextcloud.serverSetupHint") }}</p>
+        <pre><code>{{ setupText }}</code></pre>
+        <button type="button" class="btn btn-small" @click="copySetup">{{ copied ? $t("nextcloud.copied") : $t("nextcloud.copySetup") }}</button>
+      </div>
       <p v-if="result.profile && te(runtimeKey)" class="small muted">{{ t(runtimeKey) }}</p>
       <div v-if="result.profile" class="saved">
         <p class="ok-text small">{{ $t("nextcloud.saved", { name: result.profile.name }) }}</p>
@@ -233,5 +264,8 @@ function chooseContainer(c: string) {
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; }
 .saved { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
 .containers { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.check .label-line { display: flex; gap: 0.4rem; align-items: center; }
+.server-setup { margin-top: 0.75rem; }
+.server-setup pre { overflow-x: auto; font-size: 0.8rem; line-height: 1.5; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; }
 .link { all: unset; cursor: pointer; color: var(--accent); margin: 0.75rem 0 0.5rem; display: inline-block; }
 </style>

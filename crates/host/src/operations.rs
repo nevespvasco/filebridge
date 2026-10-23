@@ -15,10 +15,10 @@ use filebridge_ipc::{
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     EntryThumbnail, ErrorBody, ExportResult, FolderNameCheck, FolderSizes, Handler, HostKeyView,
-    ImmichRequest, IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest,
-    Operations, PROTOCOL_VERSION, PinnedSource, Pong, Profile, ProfileTest, RecentSource,
-    ReclaimStatus, ReportChangeKind, ReportCheck, ReportDiff, ReportRequest, RuleCount,
-    SendOptions, SourceInfo, StorageView, VolumeView,
+    ImmichRequest, IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudAdvice,
+    NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, PinnedSource, Pong, Profile, ProfileTest,
+    RecentSource, ReclaimStatus, ReportChangeKind, ReportCheck, ReportDiff, ReportRequest,
+    RuleCount, SendOptions, SourceInfo, StorageView, VolumeView,
 };
 use filebridge_thumbnail::{Lookup, Thumbnails};
 use tokio::sync::{Semaphore, broadcast};
@@ -150,6 +150,16 @@ impl Operations for EngineOperations {
     async fn detect_nextcloud(&self, req: DetectNextcloudRequest) -> Res<DetectNextcloudResponse> {
         match &self.nextcloud {
             Some(wizard) => wizard.run(&self.engine, req, None).await,
+            None => Err(ErrorBody {
+                code: "unsupported".into(),
+                message: "this service has no Nextcloud support".into(),
+            }),
+        }
+    }
+
+    async fn probe_nextcloud(&self, req: DetectNextcloudRequest) -> Res<NextcloudAdvice> {
+        match &self.nextcloud {
+            Some(wizard) => Ok(wizard.probe(req).await),
             None => Err(ErrorBody {
                 code: "unsupported".into(),
                 message: "this service has no Nextcloud support".into(),

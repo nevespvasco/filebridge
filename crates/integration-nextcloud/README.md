@@ -9,7 +9,7 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 - Profile detection: pluggable `Detector`s (`Nextcloud::detectors()`, tried until one applies);
   `LxcDetector` for Nextcloud in a Proxmox LXC reached through the node, `HostDetector` for
   Nextcloud on the SSH host itself (its LXC or VM reached directly, bare metal; ADR 0009);
-  Docker/AIO/Snap later.
+  `DockerDetector` (official image, AIO) and `SnapDetector`, tried between the two.
 - Name rules: `nextcloud-nfc`, `nextcloud-reserved` (`.htaccess`, `.part`, `.filepart`).
 - Preflight and after-transfer for direct mode.
 
@@ -23,11 +23,12 @@ First `Integration`: **Nextcloud**. **Lands in:** Phase 1 (direct mode), Phase 2
 | `fake` | `FakeShell` (answers keyed by exact command string, records what ran) and `FakeConnector`, public for `core`/CLI tests |
 | `quote` | POSIX `sh` quoting; every command is built with it |
 | `profile` | `NextcloudSettings` (tagged `mode: "direct"`), `NextcloudDirectProfile`, command builders (`host_cmd`, `container_cmd`, `occ_cmd`) |
-| `detect` | `Detector`, `LxcDetector`, `HostDetector`, `DetectInput`, `Detection` (steps with the commands they ran; whether the detector applies) |
-| `parse` | `pct list`, `pct config`, `config.php`, `id`, `stat`, `df`, `occ status`, `occ files:scan` output |
+| `detect` | `Detector`, `LxcDetector`, `DockerDetector`, `SnapDetector`, `HostDetector`, `DetectInput`, `Detection` (steps with the commands they ran; whether the detector applies; whether a step failed for want of rights; a dedicated user's server setup) |
+| `parse` | `pct list`, `pct config`, `docker ps`, `docker inspect` mounts, `config.php`, `id`, `stat`, `df`, `occ status`, `occ files:scan` output |
+| `dedicated` | The server setup for a dedicated user (ADR 0024): `useradd`/`usermod`, `chmod -R g+rwX`, the sudoers line (`sudoers_rule`, escaped; none when a name can't be held), for the user to run |
 | `direct` | preflight, owner/mode fix, sent-only scan plan, scan with progress |
 | `rules` | `NextcloudNfc`, `NextcloudReserved` |
-| `setup` | The profile wizard, `Nextcloud::set_up(req, transport)`: connect with the integration's own `ShellConnector`, run each detector, build the destination (SFTP to the SSH host, rooted at the user's files folder) and settings. `check_direct` is what every saved profile must pass (valid settings, same host for SFTP and SSH, root inside the files folder); `Integration::check_profile` runs it on every save |
+| `setup` | `Nextcloud::advise(req)`: the wizard's mode recommendation (ADR 0024), detection without saving → `Advice { mode, reason, message, detection }`. The profile wizard, `Nextcloud::set_up(req, transport)`: connect with the integration's own `ShellConnector`, run each detector, build the destination (SFTP to the SSH host, rooted at the user's files folder) and settings. `check_direct` is what every saved profile must pass (valid settings, same host for SFTP and SSH, root inside the files folder); `Integration::check_profile` runs it on every save |
 
 ## Direct mode
 **Commands.** The SSH host is the Proxmox node (`Runtime::ProxmoxLxc`) or the machine Nextcloud
@@ -88,10 +89,15 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
 
 **After transfer** (`changed` is relative to the destination root, which must be inside
 `<datadir>/<user>/files`, host or container view):
-1. Unless the transport has `CHOWN`/`CHMOD`: `chown -h uid:gid` and
-   `find … -maxdepth 0 -type d -exec chmod 750 {} + -o -type f -exec chmod 640 {} +` on the changed
-   paths and the directories between them and `files/` (new directories need the owner too);
-   batched under 96 KiB per command line. Failure is a fatal error (Nextcloud couldn't read the
+1. Unless the transport has `CHOWN`/`CHMOD`: the sent files get `chown -h uid:gid` and
+   `find … -maxdepth 0 -type f -exec chmod 640 {} +`. The folders between them and `files/` change
+   only if the transfer created them: SFTP makes folders as the SSH user (`id -u`), Nextcloud's
+   own belong to the web user, so `find … -maxdepth 0 -type d -user <ssh uid>` picks the new ones
+   (mode `750` first, then the owner). Folders that were there keep their owner and mode. The
+   owner is the server-side record of what is done, so a resumed job or a retried step fixes the
+   same folders and nothing it already fixed; nothing is kept in the job. When the SSH user is
+   the owner the profile wants, new folders can't be told apart and are left as they are.
+   Batched under 96 KiB per command line. Failure is a fatal error (Nextcloud couldn't read the
    files).
 2. Scan only what was sent, never files that were already there. Starting at the destination
    root, one remote command per level counts the files in each folder (`find -type f | head -n
@@ -107,12 +113,50 @@ installed, not in maintenance, no pending DB upgrade; free bytes from `df -Pk`.
    `nextcloud.incompatible-encoding` problem with `RepairDestination`; scan errors and non-zero
    exits → `nextcloud.scan-error` / `nextcloud.scan-failed` problems with `Retry`.
 
+**Detection, Docker** (`DockerDetector`, `Runtime::Docker { container }`):
+1. `docker` — `docker ps --format '{{.Names}} {{.Image}}'` (retried with `sudo -n`). Not
+   installed (127): the detector doesn't apply, nothing said. Unusable: a warning, and the next
+   detector looks. The one running container named `nextcloud-aio-nextcloud` (AIO) or from an
+   image named `nextcloud`; none → doesn't apply; several → fails naming them.
+2. `mounts` — `docker inspect --format '{{json .Mounts}}' <container>`.
+3. `datadirectory` — `config.php` in `/var/www/html` (official, AIO), `/app/www/public` or
+   `/config/www/nextcloud` (linuxserver.io); `datadirectory` (or `<install>/data`) mapped to the
+   host through the mount holding it (longest `Destination`). None → fails: the data is in the
+   container's own layer. `data-path`, `writable` as for the LXC.
+4. `occ`, `run-as` — `occ` and the owner of `config.php` in the container; `docker exec -u
+   <web user> <container> php occ status --output=json`.
+5. `owner` — `id <web user>` in the container, the same numbers on the host (no user namespace),
+   cross-checked with `stat` (AIO's `33:0` warns).
+Container commands are `docker exec <container> argv…`; long `occ` commands
+`docker exec -i -u <web user> <container> sh -c '<watcher>'` (`-i` hands the SSH channel in).
+
+**Detection, the snap** (`SnapDetector`, `Runtime::Snap`): `snap` — `snap list nextcloud`
+(missing: doesn't apply); `host` — root or `sudo -n`; `datadirectory` — from the snap's
+`config.php`, else `/var/snap/nextcloud/common/nextcloud/data`; `data-path`, `writable`;
+`run-as` — `/snap/bin/nextcloud.occ status --output=json`; `owner` — the data folder's own
+(`stat`, `0:0` as the snap runs Nextcloud as root).
+
+**Detection, a dedicated user** (`HostDetector` with `DetectInput::dedicated_user`, ADR 0024;
+`LxcDetector` doesn't apply, `pct` needs root):
+1. `host` — `id -u` is not 0; `id -G` gives its groups.
+2. `occ` — `occ` in the install dir (`ls -d` over the usual ones: `config/` may not be readable
+   yet), its owner as the web user, `command -v php` (a rule names php by its full path), `id`
+   and `id -gn` of the web user.
+3. `group` — the SSH user is in the web user's group (else the setup's `usermod`).
+4. `datadirectory` — read through the group; a `grep` error (exit 2) fails instead of being taken
+   for "no line". `data-path`, then `writable` (else the setup's `chmod -R g+rwX`).
+5. `run-as` — `sudo -n -u <web> <php> occ status --output=json` through the rule (else the
+   setup's sudoers line).
+6. `owner` — as for the host.
+`Detection::server_setup` (`dedicated::server_setup`) holds the commands for the user to run as
+root, built from what was found (placeholders for what wasn't); filebridge never runs them. The
+profile: `Access::Dedicated`, `RunAs::SudoRule`, no host sudo, modes `770`/`660`. After a
+transfer it uses `chgrp -h -- <gid>` instead of `chown`; long `occ` commands run as
+`sh -c '<watcher around: sudo -n -u <web> php occ …>'`.
+
 ## Not yet
 - Encrypted key files (load them into the SSH agent instead).
-- SSH straight into the container (no `pct`), with the scoped `sudoers` rule from docs/07: a
-  second `Runtime` variant. A rule limited to `php occ files:scan` does not allow the
-  `sh -c '<script>'` above; there the watcher has to run outside `sudo` (which relays SIGTERM to
-  `occ`).
+- A dedicated user on a Proxmox node (`pct` needs root) or in Docker (the `docker` group is root).
 
 ## Allowed dependencies
 `integration-api`, `transport-api`, `names`, `russh`, `serde`, `serde_json`, `tokio`, `tracing`,

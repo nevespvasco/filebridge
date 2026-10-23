@@ -34,8 +34,11 @@ network (like the 500 GB initial migration).
   password in the OS keyring under a fresh profile id, signs in (lists the user's files), looks
   at the folder (missing = created by the first send) and the quota, and saves the profile only
   when sign-in works; a refused sign-in removes the password again.
-- Preflight adds nothing to the transport's (sign-in, quota); after the transfer there is nothing
-  to do. Verification hashes by download (Nextcloud can't give SHA-256), so it costs a second
+- Preflight adds nothing to the transport's (sign-in, quota: `transport-nextcloud` reads the
+  user's WebDAV quota properties and reports them when tighter than rclone's numbers, so the
+  "may run out of space" warning during a send uses the quota); after the transfer there is
+  nothing to do. In direct mode the quota comes from `occ user:info` in the integration's
+  preflight, asked once per transfer stage (D03). Verification hashes by download (Nextcloud can't give SHA-256), so it costs a second
   pass over the data.
 - A wrong app password is an `Auth` error (WebDAV's 401), not a retry; the transfer stops at the
   first one instead of signing in once per file (Nextcloud's brute-force protection counts
@@ -52,14 +55,25 @@ network (like the 500 GB initial migration).
   offers it (`transport-nextcloud`, [ADR 0016](adr/0016-nextcloud-bulk-upload.md)): the same
   1,200 files in 7.6 s, and 14 s even with the account password. Bigger files, and anything the
   bulk upload doesn't take, go through rclone.
-- Mode auto-selection below is not built: the user picks the mode in the wizard.
+- Mode auto-selection is built as advice in the wizard (below); the send-size threshold is not.
 
 ### Mode auto-selection
 
-- Profile has only WebDAV credentials → WebDAV.
-- Profile has direct mode configured **and** the server is reachable (preflight) **and** the send
-  is above a threshold (default 20 GB or 50 000 files, configurable) → suggest direct mode.
-- The user can always override in step 4 of the wizard.
+The wizard recommends a mode from the server itself ([ADR 0024](adr/0024-nextcloud-mode-advice-and-occ-user.md)):
+"Not sure which to pick? Let filebridge check the server" asks for the SSH server, port and user
+and the Nextcloud user, and `probe_nextcloud` (`Nextcloud::advise`) runs direct mode's detection
+without saving anything.
+
+- Every step passes → **direct mode**: SSH reaches the machine Nextcloud runs on with the rights
+  it needs.
+- SSH doesn't connect, or the server's key isn't trusted → **WebDAV**.
+- Nextcloud is there but the SSH user lacks root (or `sudo -n`) or can't write the files folder
+  → **WebDAV**, saying which right is missing.
+- No usable Nextcloud found over SSH → **WebDAV**.
+
+The window moves the mode control to the recommendation, explains it (pt and en, with the step's
+own message), fills the chosen form with what was typed, and the user can still pick the other
+mode. Not built: suggesting direct mode only above a send size (20 GB or 50 000 files).
 
 ## Profile detection wizard
 
@@ -99,10 +113,24 @@ the host follow it, so the panel shows which setup was found.
 v1 targets **Nextcloud in a Proxmox LXC** (the author's setup), reached either through the Proxmox
 node (`LxcDetector`, `Runtime::ProxmoxLxc`) or directly over SSH, and more generally **Nextcloud
 on the SSH host** — an LXC, a VM or a bare-metal server with a package or tarball install
-(`HostDetector`, `Runtime::Host`; [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md)). Docker, AIO
-and Snap differ in `occ` invocation and data paths; the detector grows case by case (see
-[10 — Risks](10-risks-and-open-decisions.md)). Detection is structured as a list of `Detector`s,
-tried until one applies, so adding `DockerDetector` doesn't change the wizard.
+(`HostDetector`, `Runtime::Host`; [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md)), and
+**Docker, AIO and the snap** on the SSH host. Detection is a list of `Detector`s tried in order
+until one applies — Proxmox node, Docker, snap, then Nextcloud installed on the host — so each
+of these was added without changing the wizard:
+
+| Setup | Found by | `occ` | Data folder (container → host) | Owner of sent files |
+|---|---|---|---|---|
+| Proxmox LXC | `pct list` | `pct exec <id> -- su/sudo -u www-data php occ` | `datadirectory`, through the `mpN` bind mount | the container's web user through the idmap (`100033`) |
+| Installed on the host | (the fallback) | `su`/`sudo -u www-data php occ` | `datadirectory` (or `<install>/data`), same path | the web user (`33:33`) |
+| Docker, official image | `docker ps`: an image named `nextcloud` | `docker exec -u www-data <container> php /var/www/html/occ` | `datadirectory` (`/var/www/html/data`), through the volume or bind mount that holds it (`docker inspect` `.Mounts`, longest match) | the web user's ids in the container (`33:33`; no user namespace) |
+| Nextcloud AIO | `docker ps`: the container `nextcloud-aio-nextcloud` (AIO's other containers are left out) | as Docker | `/mnt/ncdata` → the `nextcloud_aio_nextcloud_data` volume (or `NEXTCLOUD_DATADIR`'s bind mount) | as Docker; AIO's data folder is `33:0`, so the owner check warns |
+| Snap | `snap list nextcloud` | `/snap/bin/nextcloud.occ`, as root | `datadirectory` from `/var/snap/nextcloud/current/nextcloud/config/config.php`, else `/var/snap/nextcloud/common/nextcloud/data` | the data folder's own owner (`0:0`: the snap runs Nextcloud as root) |
+
+Docker needs root or the `docker` group (`docker ps` is retried with `sudo -n`); Docker present
+but unusable is a warning and detection looks further. Long `occ` commands in Docker run as
+`docker exec -i … sh -c '<watcher>'`, so the scan still dies with the SSH connection. Not yet:
+choosing between several Nextcloud containers on one host (detection stops and names them),
+and Docker with user-namespace remapping (the owner check warns).
 
 The wizard lives in the plugin (`Nextcloud::set_up`): it detects over the integration's own
 `ShellConnector` (so it is tested with the fake shell) and builds the whole profile: SFTP to the
@@ -127,8 +155,11 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
 
 - **WebDAV mode:** nothing to do — Nextcloud indexes on upload.
 - **Direct mode:**
-  1. Apply owner/mode if the transport couldn't (`chown -R 100033:100033`, dirs `750`, files `640`)
-     — only on changed paths.
+  1. Apply owner/mode if the transport couldn't (`100033:100033`, dirs `750`, files `640`) — only
+     on the files this job sent and the folders the transfer created. A folder that was already
+     there keeps its owner and mode. New folders are the parents still owned by the SSH user
+     (SFTP creates them as that user; Nextcloud's own belong to the web user), and each gets its
+     mode before its owner, so a resumed job finds exactly the ones still to fix.
   2. Scan **only the sent files**, never what was already in the destination: a folder that holds
      nothing but sent files is scanned recursively; in a folder that also holds other files, the
      sent files are scanned one by one (many of them: `--shallow` on the folder) and its
@@ -146,5 +177,11 @@ files folder, valid settings), whether the wizard, the CLI or the UI saves it.
 
 See [07 — Security](07-security-reliability.md#security) and
 [ADR 0012](adr/0012-own-ssh-key-with-restrict.md): filebridge's own key (in the keyring, installed
-with `restrict` for both the SFTP and the SSH user), and "Remove access". A dedicated user with a
-`sudoers` rule limited to `occ` is not built.
+with `restrict` for both the SFTP and the SSH user), and "Remove access". A **dedicated user** instead of root is
+an opt-in ([ADR 0024](adr/0024-nextcloud-mode-advice-and-occ-user.md)): on the machine Nextcloud
+runs on, in the web server's group (it hands what it sends to that group with `chgrp`, modes
+`770`/`660`, so it needs no root), with one `sudoers` line that allows only the `occ` commands
+direct mode runs, as the web user. Detection as that user writes out the server setup
+(`usermod -a -G`, `chmod -R g+rwX` on the files folder, the sudoers line with `visudo -cf`) for
+the user to read and run; filebridge never runs it. A step that finds a right missing (`group`,
+`datadirectory`, `writable`, `run-as`) fails and names the setup step to run.

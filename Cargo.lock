@@ -1918,6 +1918,7 @@ dependencies = [
  "filebridge-names",
  "filebridge-secrets",
  "filebridge-transport-api",
+ "filebridge-transport-fake",
  "filebridge-transport-rclone",
  "getrandom 0.3.4",
  "md5",

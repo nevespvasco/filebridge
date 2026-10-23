@@ -3,6 +3,7 @@
 //!
 //! See `docs/05-integration-nextcloud.md`.
 
+pub mod dedicated;
 pub mod detect;
 pub mod direct;
 pub mod fake;
@@ -24,11 +25,13 @@ use filebridge_integration_api::{
     NameRule, PreflightReport, RemotePath, Result, TransportCaps,
 };
 
-pub use detect::{DetectInput, Detection, Detector, HostDetector, LxcDetector};
+pub use detect::{
+    DetectInput, Detection, Detector, DockerDetector, HostDetector, LxcDetector, SnapDetector,
+};
 pub use direct::DirectOptions;
-pub use profile::{NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
+pub use profile::{Access, NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
 pub use rules::{NextcloudNfc, NextcloudReserved};
-pub use setup::{ProfileParts, Setup, SetupError, SetupRequest};
+pub use setup::{Advice, AdviceReason, Mode, ProfileParts, Setup, SetupError, SetupRequest};
 pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};
 pub use ssh::{SshConnector, SshShell};
 pub use webdav::NextcloudWebdavProfile;
@@ -60,9 +63,15 @@ impl Nextcloud {
     }
 
     /// Detectors the profile wizard tries, in order, until one applies: a Proxmox node (`pct`)
-    /// first, else Nextcloud on the SSH host itself.
+    /// first, then a Docker container (the official image or AIO), the snap, and else Nextcloud
+    /// installed on the SSH host itself.
     pub fn detectors() -> Vec<Box<dyn Detector>> {
-        vec![Box::new(LxcDetector), Box::new(HostDetector)]
+        vec![
+            Box::new(LxcDetector),
+            Box::new(DockerDetector),
+            Box::new(SnapDetector),
+            Box::new(HostDetector),
+        ]
     }
 
     fn settings(ctx: &JobContext) -> Result<NextcloudSettings> {

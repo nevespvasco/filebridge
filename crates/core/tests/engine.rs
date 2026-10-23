@@ -33,6 +33,8 @@ struct FakeIntegration {
     hang: std::sync::atomic::AtomicBool,
     /// `preflight` never returns, as if the server or the SSH agent stopped answering.
     hang_preflight: std::sync::atomic::AtomicBool,
+    /// What `preflight` says is free, like a Nextcloud user's quota in direct mode.
+    free: Mutex<Option<u64>>,
 }
 
 #[async_trait]
@@ -80,7 +82,10 @@ impl Integration for FakeIntegration {
         if self.hang_preflight.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
-        Ok(PreflightReport::default())
+        Ok(PreflightReport {
+            free_bytes: *self.free.lock().unwrap(),
+            ..PreflightReport::default()
+        })
     }
 
     async fn after_transfer(
@@ -389,6 +394,57 @@ async fn the_send_warns_when_the_destination_may_run_out_of_space() {
     assert_eq!(low.len(), 1, "logged once: {log:?}");
     assert_eq!(low[0].level, LogLevel::Warn);
     assert_eq!(low[0].data["left_bytes"], 18);
+}
+
+#[tokio::test]
+async fn the_integrations_quota_counts_in_the_space_warning() {
+    // The disk has room; the integration (a Nextcloud quota) has 30 bytes for 38 to send. It is
+    // asked once, and what is sent after counts against it.
+    let s = setup().await;
+    for i in 0..20 {
+        std::fs::write(s.src.join(format!("f{i:02}.txt")), b"x").unwrap();
+    }
+    let engine = engine_with_batch(
+        s.store.clone(),
+        s.transport.clone(),
+        s.integration.clone(),
+        100,
+    );
+    *s.transport.free.lock().unwrap() = Some(1 << 30);
+    *s.integration.free.lock().unwrap() = Some(30);
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(40);
+    let mut events = engine.subscribe();
+    let job = engine
+        .create_job(vec![s.src.clone()], &s.profile_id, SendOptions::default())
+        .await
+        .unwrap();
+    engine.analyse(&job).await.unwrap();
+    engine.start(&job).await.unwrap();
+    let seen = tokio::time::timeout(Duration::from_secs(20), async {
+        let mut seen = Vec::new();
+        loop {
+            match events.recv().await {
+                Ok(Event::DestinationSpace {
+                    free_bytes,
+                    left_bytes,
+                    ..
+                }) => seen.push((free_bytes, left_bytes)),
+                Ok(Event::JobStateChanged { to, .. }) if to.is_terminal() => return seen,
+                Ok(_) => {}
+                Err(_) => return seen,
+            }
+        }
+    })
+    .await
+    .expect("the job ends");
+    assert_eq!(seen[0], (30, 38), "the quota, not the disk: {seen:?}");
+    // Each later check: the quota at the start less what was sent since.
+    for &(free, left) in &seen {
+        assert_eq!(free, 30 - (38 - left), "{seen:?}");
+    }
+    assert!(seen.iter().any(|&(_, left)| left < 38), "{seen:?}");
+    let log = engine.job_log(&job, Some(0), None, 500).await.unwrap();
+    assert_eq!(log.iter().filter(|e| e.kind == "space_low").count(), 1);
 }
 
 #[tokio::test]

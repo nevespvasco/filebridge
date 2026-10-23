@@ -20,6 +20,7 @@ tracing.workspace = true
 [dev-dependencies]
 filebridge-secrets.workspace = true
 filebridge-transport-api = { workspace = true, features = ["contract"] }
+filebridge-transport-fake.workspace = true
 filebridge-transport-rclone.workspace = true
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread"] }

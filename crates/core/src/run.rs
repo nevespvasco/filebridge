@@ -11,9 +11,7 @@ use std::time::Duration;
 
 use filebridge_integration_api::{IntegrationEvent, IntegrationSink};
 use filebridge_store::{EntryState, now_ms};
-use filebridge_transport_api::{
-    Destination, ErrorKind, HashAlgo, RemotePath, Transport, TransportCaps,
-};
+use filebridge_transport_api::{ErrorKind, HashAlgo, RemotePath, Transport, TransportCaps};
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
 
@@ -365,7 +363,7 @@ impl Engine {
             self.log_round(&ctx.job_id, &tally).await?;
             Ok(StageEnd::Done(()))
         };
-        let watch = self.watch_space(&ctx.job_id, transport.as_ref(), &ctx.profile.destination);
+        let watch = self.watch_space(&ctx.job_id, transport.as_ref(), &ctx.profile);
         tokio::select! {
             end = batches => end,
             never = watch => match never {},
@@ -377,31 +375,60 @@ impl Engine {
     /// send (`Event::DestinationSpace`); the first time they don't fit, the job log says so too.
     /// Only warns: the transfer goes on. A destination that doesn't report its space, or doesn't
     /// answer, is passed over until the next check. Never ends: it runs beside the transfer.
+    ///
+    /// The profile's integration may know a tighter limit than the transport (a Nextcloud
+    /// user's quota, through `occ` in direct mode): its `preflight` is asked once, at the start,
+    /// and what this stage sends since then counts against it. The smaller of the two is the
+    /// destination's free space.
     async fn watch_space(
         &self,
         job_id: &str,
         transport: &dyn Transport,
-        dest: &Destination,
+        profile: &Profile,
     ) -> std::convert::Infallible {
+        let dest = &profile.destination;
         let mut warned = false;
+        // The integration's free bytes and the bytes left to send, both at the start.
+        let mut tool: Option<(u64, u64)> = None;
+        if let Some(id) = &profile.integration
+            && let Ok(integration) = self.registry.integration(id)
+            && let Ok(job_ctx) = self.job_context(job_id, profile)
+            && let Ok(Ok(report)) =
+                tokio::time::timeout(PREFLIGHT_TIMEOUT, integration.preflight(&job_ctx)).await
+            && let Some(free) = report.free_bytes
+            && let Ok(counts) = self.store.manifest_counts(job_id).await
+        {
+            tool = Some((free, counts.bytes_left));
+        }
         loop {
             let measured = tokio::time::timeout(PREFLIGHT_TIMEOUT, transport.preflight(dest)).await;
-            if let Ok(Ok(report)) = measured
-                && let Some(free_bytes) = report.free_bytes
-                && let Ok(counts) = self.store.manifest_counts(job_id).await
-            {
+            let transport_free = match measured {
+                Ok(Ok(report)) => report.free_bytes,
+                _ => None,
+            };
+            if let Ok(counts) = self.store.manifest_counts(job_id).await {
                 let left_bytes = counts.bytes_left;
-                self.emit(Event::DestinationSpace {
-                    job_id: job_id.to_owned(),
-                    free_bytes,
-                    left_bytes,
+                let tool_free = tool.map(|(free, left_at_start)| {
+                    free.saturating_sub(left_at_start.saturating_sub(left_bytes))
                 });
-                if free_bytes < left_bytes && !warned {
-                    warned = true;
-                    let data =
-                        serde_json::json!({ "free_bytes": free_bytes, "left_bytes": left_bytes });
-                    if let Err(e) = self.log(Some(job_id), "space_low", data).await {
-                        tracing::warn!(job = job_id, "cannot log the low space: {e}");
+                let free = match (transport_free, tool_free) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                };
+                if let Some(free_bytes) = free {
+                    self.emit(Event::DestinationSpace {
+                        job_id: job_id.to_owned(),
+                        free_bytes,
+                        left_bytes,
+                    });
+                    if free_bytes < left_bytes && !warned {
+                        warned = true;
+                        let data = serde_json::json!({
+                            "free_bytes": free_bytes, "left_bytes": left_bytes,
+                        });
+                        if let Err(e) = self.log(Some(job_id), "space_low", data).await {
+                            tracing::warn!(job = job_id, "cannot log the low space: {e}");
+                        }
                     }
                 }
             }

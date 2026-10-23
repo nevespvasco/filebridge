@@ -41,6 +41,7 @@ fn input(user: &str) -> DetectInput {
         nextcloud_user: "demo".into(),
         ctid: None,
         install_dir: None,
+        dedicated_user: false,
     }
 }
 
@@ -65,7 +66,16 @@ fn no_pct(shell: &FakeShell) {
             "pct list",
             Output::fail(127, "bash: line 1: pct: command not found\n"),
         )
-        .on("test -x /usr/sbin/pct", Output::fail(1, ""));
+        .on("test -x /usr/sbin/pct", Output::fail(1, ""))
+        // Nor Docker or the snap: Nextcloud is installed on the machine itself.
+        .on(
+            "docker ps --format '{{.Names}} {{.Image}}'",
+            Output::fail(127, "bash: line 1: docker: command not found\n"),
+        )
+        .on(
+            "snap list nextcloud",
+            Output::fail(127, "bash: line 1: snap: command not found\n"),
+        );
 }
 
 /// The reporter's setup: root over Tailscale straight into the Nextcloud LXC, which (like most
@@ -207,6 +217,7 @@ async fn root_on_the_nextcloud_lxc_runs_occ_through_su() {
             owner: Owner { uid: 33, gid: 33 },
             dir_mode: "750".into(),
             file_mode: "640".into(),
+            access: Default::default(),
         })
     );
     let run_as = d.steps.iter().find(|s| s.check.id == "run-as").unwrap();
@@ -363,6 +374,7 @@ fn setup_request(folder: &str) -> SetupRequest {
         ctid: None,
         install_dir: None,
         modes: None,
+        dedicated_user: false,
     }
 }
 
@@ -473,4 +485,80 @@ async fn a_proxmox_node_still_uses_the_lxc_detector() {
     assert!(setup.profile.is_none());
     assert_eq!(setup.detection.detector, LxcDetector::ID);
     assert_eq!(shell.ran(), ["pct list"]);
+}
+
+/// The wizard's recommendation (ADR 0024) for each kind of server.
+mod advice {
+    use super::*;
+    use filebridge_integration_nextcloud::{AdviceReason, Mode};
+
+    async fn advise(shell: FakeShell, user: &str) -> filebridge_integration_nextcloud::Advice {
+        let shell = Arc::new(shell);
+        let nc = Nextcloud::new(Arc::new(FakeConnector::new(shell.clone())));
+        let req = SetupRequest {
+            ssh: ssh(user),
+            ..setup_request("")
+        };
+        let advice = nc.advise(&req).await;
+        // Advising saves nothing and changes nothing: only detection's own reads ran.
+        assert!(
+            shell
+                .ran()
+                .iter()
+                .all(|c| !c.contains("chown") && !c.contains("chmod")),
+            "{:?}",
+            shell.ran()
+        );
+        advice
+    }
+
+    #[tokio::test]
+    async fn direct_mode_when_ssh_has_the_rights() {
+        let a = advise(root_without_sudo(), "root").await;
+        assert_eq!((a.mode, a.reason), (Mode::Direct, AdviceReason::Ready));
+        assert!(a.detection.unwrap().profile.is_some());
+    }
+
+    #[tokio::test]
+    async fn webdav_when_the_ssh_user_lacks_root() {
+        let shell = FakeShell::new();
+        no_pct(&shell);
+        shell.on("id -u", Output::ok("1000\n")).on(
+            "sudo -n true",
+            Output::fail(1, "sudo: a password is required\n"),
+        );
+        let a = advise(shell, "alice").await;
+        assert_eq!((a.mode, a.reason), (Mode::Webdav, AdviceReason::Rights));
+        assert!(a.message.contains("needs root"), "{}", a.message);
+    }
+
+    #[tokio::test]
+    async fn webdav_when_the_files_folder_is_not_writable() {
+        let shell = root_without_sudo();
+        shell.on(format!("test -w {FILES}"), Output::fail(1, ""));
+        let a = advise(shell, "root").await;
+        assert_eq!((a.mode, a.reason), (Mode::Webdav, AdviceReason::Rights));
+    }
+
+    #[tokio::test]
+    async fn webdav_when_no_nextcloud_is_there() {
+        let shell = FakeShell::new();
+        no_pct(&shell);
+        shell
+            .on("id -u", Output::ok("0\n"))
+            .on(LS_INSTALL, Output::fail(2, "ls: cannot access …\n"));
+        let a = advise(shell, "root").await;
+        assert_eq!((a.mode, a.reason), (Mode::Webdav, AdviceReason::NotFound));
+    }
+
+    #[tokio::test]
+    async fn webdav_when_ssh_does_not_connect() {
+        let nc = Nextcloud::new(Arc::new(FakeConnector::refusing()));
+        let a = nc.advise(&setup_request("")).await;
+        assert_eq!(
+            (a.mode, a.reason),
+            (Mode::Webdav, AdviceReason::Unreachable)
+        );
+        assert!(a.detection.is_none());
+    }
 }

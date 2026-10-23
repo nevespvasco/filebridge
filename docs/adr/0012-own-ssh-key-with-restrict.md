@@ -64,5 +64,6 @@ allows only SFTP and the exact commands filebridge runs.
 - Deleting a destination that has the key forgets it locally but can't reach the server: the
   delete dialog says so and offers Remove access first.
 - Rejected for now: B (creates users and sudoers rules on the user's Proxmox host or container,
-  more ways to break), C (fragile: every change to filebridge's commands needs the gate updated on
+  more ways to break). *Amended 2026-10-23:* offered as an opt-in the user sets up by hand from a
+  generated setup ([ADR 0024](0024-nextcloud-mode-advice-and-occ-user.md)), C (fragile: every change to filebridge's commands needs the gate updated on
   each server).

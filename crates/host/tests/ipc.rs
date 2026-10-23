@@ -144,6 +144,7 @@ async fn client_drives_a_job_over_the_socket() {
             folder: String::new(),
             ctid: None,
             install_dir: None,
+            dedicated_user: false,
         })
         .await
         .unwrap_err();

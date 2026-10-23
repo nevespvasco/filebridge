@@ -50,6 +50,7 @@ fn profile() -> NextcloudDirectProfile {
         },
         dir_mode: "750".into(),
         file_mode: "640".into(),
+        access: Default::default(),
     }
 }
 
@@ -223,19 +224,22 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
         "Fotos/Viagem a Óbidos/mapa.pdf",
         "Fotos/capa.jpg",
     ]);
-    // Exact command lines: paths with spaces, quotes and accents are single-quoted.
-    let targets = "/tank/nextcloud-data/alice/files/Fotos \
+    // Exact command lines: paths with spaces, quotes and accents are single-quoted. Parent
+    // folders change only while the SSH user (uid 0, as SFTP made them) still owns them, mode
+    // before owner; the sent files always.
+    let dirs = "/tank/nextcloud-data/alice/files/Fotos \
         /tank/nextcloud-data/alice/files/Fotos/2024 \
+        '/tank/nextcloud-data/alice/files/Fotos/Viagem a Óbidos'";
+    let files = "/tank/nextcloud-data/alice/files/Fotos/2024/IMG_0001.jpg \
         '/tank/nextcloud-data/alice/files/Fotos/2024/IMG 0002 (cópia).jpg' \
-        /tank/nextcloud-data/alice/files/Fotos/2024/IMG_0001.jpg \
-        '/tank/nextcloud-data/alice/files/Fotos/Viagem a Óbidos' \
         '/tank/nextcloud-data/alice/files/Fotos/Viagem a Óbidos/O'\\''Brien \"festa\".jpg' \
         '/tank/nextcloud-data/alice/files/Fotos/Viagem a Óbidos/mapa.pdf' \
         /tank/nextcloud-data/alice/files/Fotos/capa.jpg";
-    let chown = format!("chown -h -- 100033:100033 {targets}");
-    let find = format!(
-        "find {targets} -maxdepth 0 -type d -exec chmod 750 '{{}}' + -o -type f -exec chmod 640 '{{}}' +"
-    );
+    let dir_mode = format!("find {dirs} -maxdepth 0 -type d -user 0 -exec chmod 750 '{{}}' +");
+    let dir_owner =
+        format!("find {dirs} -maxdepth 0 -type d -user 0 -exec chown -h 100033:100033 '{{}}' +");
+    let chown = format!("chown -h -- 100033:100033 {files}");
+    let find = format!("find {files} -maxdepth 0 -type f -exec chmod 640 '{{}}' +");
     // `occ` runs in the background; a watcher on the SSH channel (stdin) stops it on EOF.
     let scan = "pct exec 105 -- su -s /bin/bash www-data -c 'exec 3<&0; \
         php /var/www/nextcloud/occ files:scan -v --path=alice/files/Fotos </dev/null & p=$!; w=; \
@@ -247,6 +251,9 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
     let count_root = count_cmd(&[("", 6)]);
     let count_fotos = count_cmd(&[("Fotos", 6)]);
     shell
+        .on("id -u", Output::ok("0\n"))
+        .on(dir_mode.clone(), Output::ok(""))
+        .on(dir_owner.clone(), Output::ok(""))
         .on(chown.clone(), Output::ok(""))
         .on(find.clone(), Output::ok(""))
         .on(count_root.clone(), Output::ok("6\n"))
@@ -262,6 +269,9 @@ async fn after_transfer_fixes_owner_and_scans_minimal_folders() {
     assert_eq!(
         shell.ran(),
         [
+            "id -u",
+            dir_mode.as_str(),
+            dir_owner.as_str(),
             chown.as_str(),
             find.as_str(),
             count_root.as_str(),
@@ -317,11 +327,19 @@ async fn destination_subfolder_and_failed_scans() {
     let root = format!("{FILES}/Migração 2024");
     let changed = paths(&["Docs/IRS/2023.pdf", "Música/fado.flac"]);
     shell
+        .on("id -u", Output::ok("0\n"))
         .on(
             format!(
-                "chown -h -- 100033:100033 '{FILES}/Migração 2024' '{FILES}/Migração 2024/Docs' \
-                 '{FILES}/Migração 2024/Docs/IRS' '{FILES}/Migração 2024/Docs/IRS/2023.pdf' \
-                 '{FILES}/Migração 2024/Música' '{FILES}/Migração 2024/Música/fado.flac'"
+                "find '{FILES}/Migração 2024' '{FILES}/Migração 2024/Docs' \
+                 '{FILES}/Migração 2024/Docs/IRS' '{FILES}/Migração 2024/Música' \
+                 -maxdepth 0 -type d -user 0 -exec chown -h 100033:100033 '{{}}' +"
+            ),
+            Output::ok(""),
+        )
+        .on(
+            format!(
+                "chown -h -- 100033:100033 '{FILES}/Migração 2024/Docs/IRS/2023.pdf' \
+                 '{FILES}/Migração 2024/Música/fado.flac'"
             ),
             Output::ok(""),
         )
@@ -499,4 +517,268 @@ async fn slow_disk_shows_waiting_then_progress() {
         .iter()
         .any(|e| matches!(e, IntegrationEvent::Progress(p) if p.items == 100 && p.done == 0));
     assert!(mid, "progress every 100 files: {events:?}");
+}
+
+/// The SSH user `ssh_uid` and the sent `files`, with each parent folder's commands.
+fn permission_cmds(ssh_uid: u32, dirs: &[&str], files: &[&str]) -> Vec<String> {
+    let q = |v: &[&str]| -> String {
+        v.iter()
+            .map(|p| {
+                filebridge_integration_nextcloud::quote::quote(&format!("{FILES}/{p}")).into_owned()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let mut out = vec!["id -u".to_string()];
+    if !dirs.is_empty() && ssh_uid != 100_033 {
+        let d = q(dirs);
+        out.push(format!(
+            "find {d} -maxdepth 0 -type d -user {ssh_uid} -exec chmod 750 '{{}}' +"
+        ));
+        out.push(format!(
+            "find {d} -maxdepth 0 -type d -user {ssh_uid} -exec chown -h 100033:100033 '{{}}' +"
+        ));
+    }
+    let f = q(files);
+    out.push(format!("chown -h -- 100033:100033 {f}"));
+    out.push(format!(
+        "find {f} -maxdepth 0 -type f -exec chmod 640 '{{}}' +"
+    ));
+    out
+}
+
+#[tokio::test]
+async fn a_resumed_job_fixes_the_same_folders_and_nothing_else() {
+    // Folders already fixed belong to 100033 now, so the server's `-user` test skips them: the
+    // integration keeps no list, and a second run (a resumed job) sends the same commands.
+    let (shell, _, nc) = setup();
+    let cmds = permission_cmds(0, &["Fotos", "Fotos/2026"], &["Fotos/2026/a.jpg"]);
+    for c in &cmds[1..] {
+        shell.on(c.clone(), Output::ok(""));
+    }
+    shell.on("id -u", Output::ok("0\n"));
+    shell
+        .on(count_cmd(&[("", 2)]), Output::ok("1\n"))
+        .on(scan_cmd("alice/files"), Output::ok(""));
+    let changed = paths(&["Fotos/2026/a.jpg"]);
+    let c = ctx(FILES, TransportCaps::RESUME);
+    nc.after_transfer(&c, &changed, IntegrationSink::noop())
+        .await
+        .unwrap();
+    let first = shell.ran();
+    nc.after_transfer(&c, &changed, IntegrationSink::noop())
+        .await
+        .unwrap();
+    assert_eq!(shell.unexpected(), Vec::<String>::new());
+    assert_eq!(shell.ran()[first.len()..], first[..]);
+    assert_eq!(first[..cmds.len()], cmds[..]);
+}
+
+#[tokio::test]
+async fn ssh_user_as_the_owner_leaves_folders_alone() {
+    // Nothing tells the folders a send made from the old ones: all of them stay as they are.
+    let (shell, _, nc) = setup();
+    let cmds = permission_cmds(100_033, &["Docs"], &["Docs/a.pdf"]);
+    assert_eq!(cmds.len(), 3);
+    shell.on("id -u", Output::ok("100033\n"));
+    for c in &cmds[1..] {
+        shell.on(c.clone(), Output::ok(""));
+    }
+    shell
+        .on(count_cmd(&[("", 2)]), Output::ok("1\n"))
+        .on(scan_cmd("alice/files"), Output::ok(""));
+    nc.after_transfer(
+        &ctx(FILES, TransportCaps::RESUME),
+        &paths(&["Docs/a.pdf"]),
+        IntegrationSink::noop(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(shell.unexpected(), Vec::<String>::new());
+    assert!(!shell.ran().iter().any(|c| c.contains("-type d")));
+}
+
+#[tokio::test]
+async fn unreadable_ssh_uid_stops_before_any_change() {
+    let (shell, _, nc) = setup();
+    shell.on("id -u", Output::ok("root\n"));
+    let err = nc
+        .after_transfer(
+            &ctx(FILES, TransportCaps::RESUME),
+            &paths(&["Docs/a.pdf"]),
+            IntegrationSink::noop(),
+        )
+        .await
+        .unwrap_err();
+    assert!(err.retryable, "{err}");
+    assert_eq!(shell.ran(), ["id -u"]);
+}
+
+/// The same commands through a real `sh` on a temporary folder: real `find` and `chmod`, with
+/// `id` answering a chosen uid, `chown` only logging (changing owners needs root) and `occ`
+/// doing nothing.
+#[cfg(unix)]
+mod on_a_real_disk {
+    use super::*;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::{Path, PathBuf};
+
+    use async_trait::async_trait;
+    use filebridge_integration_nextcloud::RemoteShell;
+
+    struct LocalShell {
+        path: String,
+        uid: u32,
+        log: PathBuf,
+    }
+
+    #[async_trait]
+    impl RemoteShell for LocalShell {
+        async fn run(&self, cmd: &str) -> filebridge_integration_api::Result<Output> {
+            let out = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(cmd)
+                .env("PATH", &self.path)
+                .env("FAKE_UID", self.uid.to_string())
+                .env("CHOWN_LOG", &self.log)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            Ok(Output {
+                status: out.status.code().unwrap_or(-1),
+                stdout: String::from_utf8_lossy(&out.stdout).into(),
+                stderr: String::from_utf8_lossy(&out.stderr).into(),
+            })
+        }
+    }
+
+    struct LocalConnector(Arc<LocalShell>);
+
+    #[async_trait]
+    impl filebridge_integration_nextcloud::ShellConnector for LocalConnector {
+        async fn connect(
+            &self,
+            _: &SshTarget,
+        ) -> filebridge_integration_api::Result<Arc<dyn RemoteShell>> {
+            Ok(self.0.clone())
+        }
+    }
+
+    fn mode(p: &Path) -> u32 {
+        std::fs::metadata(p).unwrap().permissions().mode() & 0o7777
+    }
+
+    fn set_mode(p: &Path, m: u32) {
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(m)).unwrap();
+    }
+
+    /// Runs the step over `files` (one existing folder `Fotos`, a new `Fotos/2026`) with `id -u`
+    /// answering `uid`; returns the folders' modes and what `chown` was given.
+    async fn run(uid_of: impl Fn(u32) -> u32) -> (u32, u32, u32, String) {
+        let tmp = tempfile::tempdir().unwrap();
+        let bin = tmp.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        for (name, body) in [
+            ("id", "echo \"$FAKE_UID\"\n"),
+            ("chown", "printf '%s\\n' \"$*\" >> \"$CHOWN_LOG\"\n"),
+            ("sudo", "exit 0\n"),
+        ] {
+            let p = bin.join(name);
+            std::fs::write(&p, format!("#!/bin/sh\n{body}")).unwrap();
+            set_mode(&p, 0o755);
+        }
+        let data = tmp.path().join("data");
+        let files = data.join("alice/files");
+        let fotos = files.join("Fotos");
+        let new = fotos.join("2026");
+        std::fs::create_dir_all(&new).unwrap();
+        set_mode(&fotos, 0o775);
+        set_mode(&new, 0o755);
+        std::fs::write(new.join("a.jpg"), b"x").unwrap();
+        set_mode(&new.join("a.jpg"), 0o644);
+        let mine = std::fs::metadata(&fotos).unwrap().uid();
+
+        let mut p = profile();
+        p.runtime = Runtime::Host;
+        p.run_as = RunAs::Sudo;
+        p.data_dir = data.to_str().unwrap().into();
+        p.host_data_dir = p.data_dir.clone();
+        let mut c = ctx(files.to_str().unwrap(), TransportCaps::RESUME);
+        c.profile.settings = serde_json::to_value(NextcloudSettings::Direct(Box::new(p))).unwrap();
+
+        let log = tmp.path().join("chown.log");
+        let shell = Arc::new(LocalShell {
+            path: format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+            uid: uid_of(mine),
+            log: log.clone(),
+        });
+        let nc = Nextcloud::new(Arc::new(LocalConnector(shell)));
+        nc.after_transfer(&c, &paths(&["Fotos/2026/a.jpg"]), IntegrationSink::noop())
+            .await
+            .unwrap();
+        let chowned = std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .replace(&format!("{}/", files.display()), "");
+        (mode(&fotos), mode(&new), mode(&new.join("a.jpg")), chowned)
+    }
+
+    #[tokio::test]
+    async fn folders_owned_by_the_ssh_user_are_fixed() {
+        let (fotos, new, file, chowned) = run(|mine| mine).await;
+        assert_eq!((fotos, new, file), (0o750, 0o750, 0o640));
+        assert_eq!(
+            chowned,
+            "-h 100033:100033 Fotos Fotos/2026\n-h -- 100033:100033 Fotos/2026/a.jpg\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn folders_owned_by_someone_else_keep_owner_and_mode() {
+        // The SSH user is not who owns these folders: they were there before the send.
+        let (fotos, new, file, chowned) = run(|mine| mine + 1).await;
+        assert_eq!((fotos, new, file), (0o775, 0o755, 0o640));
+        assert_eq!(chowned, "-h -- 100033:100033 Fotos/2026/a.jpg\n");
+    }
+}
+
+#[tokio::test]
+async fn a_dedicated_user_hands_files_to_the_group_without_root() {
+    // ADR 0024: it owns what it sends, so `chgrp` to the web server's group and group-writable
+    // modes need no root; `occ` goes through the rule.
+    let (shell, _, nc) = setup();
+    let mut p = profile();
+    p.ssh.user = "filebridge".into();
+    p.runtime = Runtime::Host;
+    p.data_dir = "/tank/nextcloud-data".into();
+    p.run_as = RunAs::SudoRule;
+    p.php = "/usr/bin/php".into();
+    p.owner = Owner { uid: 33, gid: 33 };
+    p.dir_mode = "770".into();
+    p.file_mode = "660".into();
+    p.access = filebridge_integration_nextcloud::Access::Dedicated;
+    let mut c = ctx(FILES, TransportCaps::RESUME);
+    c.profile.settings =
+        serde_json::to_value(NextcloudSettings::Direct(Box::new(p.clone()))).unwrap();
+    let cmds = [
+        "id -u".to_string(),
+        format!("find {FILES}/Fotos -maxdepth 0 -type d -user 1001 -exec chmod 770 '{{}}' +"),
+        format!("find {FILES}/Fotos -maxdepth 0 -type d -user 1001 -exec chgrp -h 33 '{{}}' +"),
+        format!("chgrp -h -- 33 {FILES}/Fotos/a.jpg"),
+        format!("find {FILES}/Fotos/a.jpg -maxdepth 0 -type f -exec chmod 660 '{{}}' +"),
+    ];
+    shell.on("id -u", Output::ok("1001\n"));
+    for cmd in &cmds[1..] {
+        shell.on(cmd.clone(), Output::ok(""));
+    }
+    let scan = p.occ_cmd_stop_on_eof(&["files:scan", "-v", "--path=alice/files"]);
+    assert!(scan.starts_with("sh -c "), "{scan}");
+    shell
+        .on(count_cmd(&[("", 2)]), Output::ok("1\n"))
+        .on(scan, Output::ok(""));
+    nc.after_transfer(&c, &paths(&["Fotos/a.jpg"]), IntegrationSink::noop())
+        .await
+        .unwrap();
+    assert_eq!(shell.unexpected(), Vec::<String>::new());
+    assert_eq!(shell.ran()[..cmds.len()], cmds[..]);
+    assert!(shell.ran().iter().all(|c| !c.contains("chown")));
 }

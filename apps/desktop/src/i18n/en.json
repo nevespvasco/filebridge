@@ -719,7 +719,9 @@
     "saved": "Destination “{name}” saved.",
     "runtime": {
       "proxmox-lxc": "Nextcloud runs in a container on this Proxmox host.",
-      "host": "Nextcloud runs on this machine itself (no Proxmox container)."
+      "host": "Nextcloud runs on this machine itself (no Proxmox container).",
+      "docker": "Nextcloud runs in a Docker container on this machine (the official image or Nextcloud AIO).",
+      "snap": "Nextcloud runs as a snap on this machine."
     },
     "steps": {
       "ssh": "SSH connection",
@@ -731,7 +733,11 @@
       "writable": "Write access over SFTP",
       "occ": "occ command",
       "run-as": "Web server user",
-      "owner": "File owner"
+      "owner": "File owner",
+      "group": "Web server's group",
+      "docker": "Docker container",
+      "mounts": "Container volumes",
+      "snap": "Nextcloud snap"
     },
     "done": "Done",
     "advancedHint": "only if the detection asks for it",
@@ -742,12 +748,32 @@
       "sshUser": "The user filebridge logs in with over SSH on that server. Files are written as this user, so it must be able to write to Nextcloud's data folder: in practice, root.",
       "folder": "A folder inside that user's files. Empty puts the files at the top.",
       "ctid": "Proxmox only: the number of the container where Nextcloud runs. Leave empty and filebridge finds it.",
-      "installDir": "Where Nextcloud is installed inside the container. Leave empty and filebridge finds it."
+      "installDir": "Where Nextcloud is installed inside the container. Leave empty and filebridge finds it.",
+      "dedicated": "Instead of root, filebridge signs in as a user of its own: in the web server's group (so it can hand the files it sends to Nextcloud without root), allowed by one sudoers line to run only Nextcloud's occ. filebridge shows the commands to set this up; you run them yourself."
     },
     "hint": {
       "host": "The Proxmox node or the Nextcloud server itself",
       "sshUser": "Usually root"
-    }
+    },
+    "advice": {
+      "title": "Not sure which to pick? Let filebridge check the server",
+      "intro": "filebridge signs in over SSH and looks for Nextcloud as direct mode would, then recommends a mode. Nothing is changed on the server and nothing is saved.",
+      "check": "Check the server",
+      "checking": "Checking…",
+      "recommended": "Recommended: {mode}",
+      "ready": "SSH reaches the machine Nextcloud runs on with the rights direct mode needs, so big sends can go straight into its data folder.",
+      "unreachable": "SSH did not connect to this server, so direct mode can't work from here. WebDAV needs only Nextcloud's address and an app password.",
+      "rights": "Nextcloud is there, but this SSH user lacks the rights direct mode needs (root or passwordless sudo, and writing the user's files folder). WebDAV needs none of that.",
+      "not_found": "No usable Nextcloud was found on this server over SSH. WebDAV needs only Nextcloud's address and an app password.",
+      "untrusted": "The server's key was not trusted, so filebridge did not sign in. WebDAV needs only Nextcloud's address and an app password.",
+      "override": "You can still pick the other mode above."
+    },
+    "dedicated": "Dedicated user instead of root",
+    "dedicatedHint": "Use that user as the SSH user. It signs in to the machine Nextcloud runs on (not the Proxmox node).",
+    "serverSetup": "Server setup for the dedicated user",
+    "serverSetupHint": "filebridge never runs these and never changes sudoers. Read them, run them yourself as root on the server, then press Detect again.",
+    "copySetup": "Copy",
+    "copied": "Copied"
   },
   "immich": {
     "intro": "filebridge copies the files into a folder of an Immich external library (over SFTP, or into a folder of this computer), then asks Immich to scan that library. Immich only reads the folder: it never moves or deletes your files.",

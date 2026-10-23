@@ -77,7 +77,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 30: `entry_thumbnail` (ADR 0027).
 /// 31: `diff_reports`, `check_report`; `ReportFormat::Sealed`, `ExportResult.readable`/`seal`
 ///     (ADR 0025).
-pub const PROTOCOL_VERSION: u32 = 31;
+/// 32: `probe_nextcloud`; `DetectNextcloudRequest.dedicated_user`,
+///     `DetectNextcloudResponse.server_setup` (ADR 0024).
+pub const PROTOCOL_VERSION: u32 = 32;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -240,6 +242,10 @@ pub struct DetectNextcloudRequest {
     pub folder: String,
     pub ctid: Option<u32>,
     pub install_dir: Option<String>,
+    /// Sign in as a dedicated user instead of root (ADR 0024): on the machine Nextcloud runs on,
+    /// in the web server's group, `occ` through a sudoers rule limited to it.
+    #[serde(default)]
+    pub dedicated_user: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -263,6 +269,28 @@ pub struct DetectNextcloudResponse {
     pub containers: Vec<String>,
     /// The saved profile, when every step passed.
     pub profile: Option<Profile>,
+    /// For a dedicated user: the commands to run as root on the server, for the user to read and
+    /// run themselves (filebridge never runs them, nor edits sudoers).
+    #[serde(default)]
+    pub server_setup: Vec<String>,
+}
+
+/// The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct NextcloudAdvice {
+    /// `direct` when SSH reaches the machine Nextcloud runs on with the rights direct mode needs,
+    /// else `webdav`.
+    pub mode: String,
+    /// Why: `ready`, `unreachable` (SSH didn't connect), `rights` (the SSH user lacks root,
+    /// `sudo -n` or writing the files folder) or `not_found` (no usable Nextcloud there). The
+    /// window's i18n key is `nextcloud.advice.<reason>`.
+    pub reason: String,
+    /// The message of the step (or the connection error) that decided it, untranslated.
+    pub message: String,
+    /// The setup detection found (`proxmox-lxc`, `host`, …); empty when SSH didn't connect.
+    pub detector: String,
+    /// What detection did, for the Details panel.
+    pub steps: Vec<DetectStepView>,
 }
 
 /// The per-user entry that starts `filebridge-service` at login, as `filebridge-service

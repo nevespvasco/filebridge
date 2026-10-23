@@ -42,6 +42,7 @@ fn input() -> DetectInput {
         nextcloud_user: "alice".into(),
         ctid: None,
         install_dir: None,
+        dedicated_user: false,
     }
 }
 
@@ -133,6 +134,7 @@ async fn detects_the_authors_lxc() {
             },
             dir_mode: "750".into(),
             file_mode: "640".into(),
+            access: Default::default(),
         })
     );
     assert_eq!(d.containers.len(), 4);
@@ -263,6 +265,7 @@ async fn dedicated_user_with_sudo_and_custom_idmap() {
         nextcloud_user: "ana".into(),
         ctid: Some(130),
         install_dir: Some("/var/www/html/".into()),
+        dedicated_user: false,
     };
     let d = LxcDetector.detect(&shell, &input).await;
     assert_eq!(shell.unexpected(), Vec::<String>::new());
@@ -367,6 +370,7 @@ fn setup_request(folder: &str) -> SetupRequest {
         ctid: None,
         install_dir: None,
         modes: None,
+        dedicated_user: false,
     }
 }
 

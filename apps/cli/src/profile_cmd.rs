@@ -190,12 +190,19 @@ pub enum ProfileCmd {
         /// Nextcloud install dir where it runs (default: the usual places).
         #[arg(long)]
         install_dir: Option<String>,
-        /// Permissions of the folders a send creates there (octal).
-        #[arg(long, default_value = NextcloudDirectProfile::DEFAULT_DIR_MODE)]
-        dir_mode: String,
-        /// Permissions of the files a send writes there (octal).
-        #[arg(long, default_value = NextcloudDirectProfile::DEFAULT_FILE_MODE)]
-        file_mode: String,
+        /// Permissions of the folders a send creates there (octal; default 750, or 770 for a
+        /// dedicated user).
+        #[arg(long)]
+        dir_mode: Option<String>,
+        /// Permissions of the files a send writes there (octal; default 640, or 660 for a
+        /// dedicated user).
+        #[arg(long)]
+        file_mode: Option<String>,
+        /// Sign in as a dedicated user instead of root (ADR 0024): on the machine Nextcloud
+        /// runs on, in the web server's group, `occ` through a sudoers rule limited to it.
+        /// Prints the server setup to run by hand; filebridge never changes sudoers.
+        #[arg(long)]
+        dedicated_user: bool,
         /// Print every command detection ran.
         #[arg(long)]
         verbose: bool,
@@ -474,6 +481,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             install_dir,
             dir_mode,
             file_mode,
+            dedicated_user,
             verbose,
         } => {
             let app = App::open(g, Access::Exclusive, true).await?;
@@ -495,10 +503,28 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 folder,
                 ctid,
                 install_dir,
+                dedicated_user,
+            };
+            let modes = match (dir_mode, file_mode) {
+                (None, None) => None,
+                (d, f) => {
+                    let (dd, df) = if dedicated_user {
+                        (
+                            NextcloudDirectProfile::DEDICATED_DIR_MODE,
+                            NextcloudDirectProfile::DEDICATED_FILE_MODE,
+                        )
+                    } else {
+                        (
+                            NextcloudDirectProfile::DEFAULT_DIR_MODE,
+                            NextcloudDirectProfile::DEFAULT_FILE_MODE,
+                        )
+                    };
+                    Some((d.unwrap_or(dd.into()), f.unwrap_or(df.into())))
+                }
             };
             let res = app
                 .host
-                .detect_nextcloud(req, Some((dir_mode, file_mode)))
+                .detect_nextcloud(req, modes)
                 .await
                 .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
             for step in &res.steps {
@@ -514,6 +540,14 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                     }
                 }
             }
+            if !res.server_setup.is_empty() {
+                println!(
+                    "server setup for the dedicated user (read it, then run it as root yourself):"
+                );
+                for line in &res.server_setup {
+                    println!("    {line}");
+                }
+            }
             let Some(saved) = res.profile else {
                 if res.containers.len() > 1 {
                     println!("containers found: {}", res.containers.join(", "));
@@ -525,6 +559,8 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 "{}",
                 match res.detector.as_str() {
                     "host" => "Nextcloud runs on the SSH host itself",
+                    "docker" => "Nextcloud runs in a Docker container on the SSH host",
+                    "snap" => "Nextcloud runs as a snap on the SSH host",
                     _ => "Nextcloud runs in a container on the Proxmox node",
                 }
             );

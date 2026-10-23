@@ -33,6 +33,9 @@ macro_rules! for_each_operation {
             /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or
             /// Nextcloud on the SSH host itself). Saves the profile when every step passes.
             DetectNextcloud detect_nextcloud(req: $crate::DetectNextcloudRequest) -> $crate::DetectNextcloudResponse;
+            /// Which Nextcloud mode suits this server (ADR 0024): detection over SSH as for
+            /// `detect_nextcloud`, but nothing is saved; `name` and `folder` are not used.
+            ProbeNextcloud probe_nextcloud(req: $crate::DetectNextcloudRequest) -> $crate::NextcloudAdvice;
             /// Nextcloud WebDAV-mode profile wizard: checks the address, the sign-in, the folder
             /// and the space, and saves the profile (its app password in the keyring) when they
             /// pass. Same answer as `detect_nextcloud`.

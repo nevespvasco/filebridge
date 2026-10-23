@@ -7,10 +7,10 @@ use std::sync::Arc;
 use filebridge_core::{Engine, PreflightView, Profile, TargetSpec};
 use filebridge_integration_nextcloud::webdav::{self, NextcloudWebdavProfile};
 use filebridge_integration_nextcloud::{
-    INTEGRATION_ID, Nextcloud, NextcloudSettings, SetupError, SetupRequest, SshTarget,
+    Detection, INTEGRATION_ID, Nextcloud, NextcloudSettings, SetupError, SetupRequest, SshTarget,
 };
 use filebridge_ipc::{
-    DetectNextcloudRequest, DetectNextcloudResponse, DetectStepView, ErrorBody,
+    DetectNextcloudRequest, DetectNextcloudResponse, DetectStepView, ErrorBody, NextcloudAdvice,
     NextcloudWebdavRequest,
 };
 use filebridge_secrets::{SecretKind, reference};
@@ -23,41 +23,29 @@ fn err(code: &str, message: impl Into<String>) -> ErrorBody {
     }
 }
 
-/// Runs the wizard and, when every step passes, saves the profile with `transport`. `modes`
-/// overrides the default `750`/`640` (the CLI exposes it; the app keeps the defaults).
-async fn detect_nextcloud(
-    engine: &Engine,
-    nextcloud: &Nextcloud,
-    transport: &str,
-    req: DetectNextcloudRequest,
-    modes: Option<(String, String)>,
-) -> Result<DetectNextcloudResponse, ErrorBody> {
-    let setup = nextcloud
-        .set_up(
-            &SetupRequest {
-                ssh: SshTarget {
-                    host: req.host,
-                    port: req.port,
-                    user: req.user,
-                    key_file: req.key_file.map(PathBuf::from),
-                    known_hosts_file: req.known_hosts_file.map(PathBuf::from),
-                    key: None,
-                },
-                nextcloud_user: req.nextcloud_user,
-                folder: req.folder,
-                ctid: req.ctid,
-                install_dir: req.install_dir,
-                modes,
-            },
-            transport,
-        )
-        .await
-        .map_err(|e| match e {
-            SetupError::Connect(m) => err("ssh", m),
-            SetupError::Invalid(m) => err("invalid", m),
-        })?;
-    let steps = setup
-        .detection
+/// The plugin's input for a direct-mode request.
+fn setup_request(req: &DetectNextcloudRequest, modes: Option<(String, String)>) -> SetupRequest {
+    SetupRequest {
+        ssh: SshTarget {
+            host: req.host.clone(),
+            port: req.port,
+            user: req.user.clone(),
+            key_file: req.key_file.clone().map(PathBuf::from),
+            known_hosts_file: req.known_hosts_file.clone().map(PathBuf::from),
+            key: None,
+        },
+        nextcloud_user: req.nextcloud_user.clone(),
+        folder: req.folder.clone(),
+        ctid: req.ctid,
+        install_dir: req.install_dir.clone(),
+        modes,
+        dedicated_user: req.dedicated_user,
+    }
+}
+
+/// Detection steps for the window.
+fn step_views(detection: &Detection) -> Vec<DetectStepView> {
+    detection
         .steps
         .iter()
         .map(|s| DetectStepView {
@@ -70,7 +58,26 @@ async fn detect_nextcloud(
                 .map(|c| format!("{}  (exit {})", c.command, c.status))
                 .collect(),
         })
-        .collect();
+        .collect()
+}
+
+/// Runs the wizard and, when every step passes, saves the profile with `transport`. `modes`
+/// overrides the default `750`/`640` (the CLI exposes it; the app keeps the defaults).
+async fn detect_nextcloud(
+    engine: &Engine,
+    nextcloud: &Nextcloud,
+    transport: &str,
+    req: DetectNextcloudRequest,
+    modes: Option<(String, String)>,
+) -> Result<DetectNextcloudResponse, ErrorBody> {
+    let setup = nextcloud
+        .set_up(&setup_request(&req, modes), transport)
+        .await
+        .map_err(|e| match e {
+            SetupError::Connect(m) => err("ssh", m),
+            SetupError::Invalid(m) => err("invalid", m),
+        })?;
+    let steps = step_views(&setup.detection);
     let containers = setup
         .detection
         .containers
@@ -98,7 +105,28 @@ async fn detect_nextcloud(
         steps,
         containers,
         profile,
+        server_setup: setup.detection.server_setup.clone(),
     })
+}
+
+/// The wizard's recommendation: detection without saving (ADR 0024).
+async fn probe_nextcloud(nextcloud: &Nextcloud, req: DetectNextcloudRequest) -> NextcloudAdvice {
+    let advice = nextcloud.advise(&setup_request(&req, None)).await;
+    NextcloudAdvice {
+        mode: advice.mode.as_str().into(),
+        reason: advice.reason.as_str().into(),
+        message: advice.message,
+        detector: advice
+            .detection
+            .as_ref()
+            .map(|d| d.detector.clone())
+            .unwrap_or_default(),
+        steps: advice
+            .detection
+            .as_ref()
+            .map(step_views)
+            .unwrap_or_default(),
+    }
 }
 
 /// The Nextcloud plugin this host registered, and the transport its profiles use.
@@ -114,6 +142,10 @@ impl NextcloudWizard {
         req: NextcloudWebdavRequest,
     ) -> Result<DetectNextcloudResponse, ErrorBody> {
         add_webdav(engine, self.transport, req).await
+    }
+
+    pub(crate) async fn probe(&self, req: DetectNextcloudRequest) -> NextcloudAdvice {
+        probe_nextcloud(&self.nextcloud, req).await
     }
 
     pub(crate) async fn run(
@@ -227,6 +259,7 @@ async fn add_webdav(
                 steps,
                 containers: Vec::new(),
                 profile: None,
+                server_setup: Vec::new(),
             });
         }
     }
@@ -285,5 +318,6 @@ async fn add_webdav(
         steps,
         containers: Vec::new(),
         profile: Some(profile),
+        server_setup: Vec::new(),
     })
 }

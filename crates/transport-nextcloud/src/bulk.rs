@@ -179,6 +179,29 @@ pub(crate) fn answers(v: &Value) -> HashMap<String, Option<String>> {
         .collect()
 }
 
+/// The `PROPFIND` body asking for a folder's quota (RFC 4331).
+pub(crate) const QUOTA_PROPFIND: &str = "<?xml version=\"1.0\"?>\
+<d:propfind xmlns:d=\"DAV:\"><d:prop><d:quota-available-bytes/><d:quota-used-bytes/></d:prop>\
+</d:propfind>";
+
+/// A user's quota from a `PROPFIND` answer: `(available, used)` bytes. `None` when there is no
+/// limit: Nextcloud answers a negative `quota-available-bytes` (`-3` unlimited, `-2` unknown,
+/// `-1` not computed yet), or leaves it out.
+pub(crate) fn quota(multistatus: &str) -> Option<(u64, u64)> {
+    // `<d:quota-available-bytes>123</d:quota-available-bytes>`, any namespace prefix; the empty
+    // `<d:quota-available-bytes/>` of a 404 propstat doesn't match.
+    let value = |name: &str| -> Option<i64> {
+        let at = multistatus.find(&format!("{name}>"))? + name.len() + 1;
+        let rest = &multistatus[at..];
+        rest[..rest.find('<')?].trim().parse().ok()
+    };
+    let available = u64::try_from(value("quota-available-bytes")?).ok()?;
+    let used = value("quota-used-bytes")
+        .and_then(|u| u64::try_from(u).ok())
+        .unwrap_or(0);
+    Some((available, used))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +284,29 @@ mod tests {
         }));
         assert_eq!(a["/a.txt"], None);
         assert_eq!(a["/b.txt"].as_deref(), Some("Could not create path"));
+    }
+
+    #[test]
+    fn quota_from_a_propfind_answer() {
+        let answer = |available: &str| {
+            format!(
+                "<?xml version=\"1.0\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:s=\"http://sabredav.org/ns\">\
+                 <d:response><d:href>/remote.php/dav/files/alice/</d:href><d:propstat><d:prop>\
+                 <d:quota-available-bytes>{available}</d:quota-available-bytes>\
+                 <d:quota-used-bytes>524288000</d:quota-used-bytes>\
+                 </d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"
+            )
+        };
+        assert_eq!(quota(&answer("1048576")), Some((1_048_576, 524_288_000)));
+        assert_eq!(quota(&answer("-3")), None, "unlimited");
+        assert_eq!(quota(&answer("-2")), None, "unknown");
+        let missing = "<d:multistatus xmlns:d=\"DAV:\"><d:response><d:propstat><d:prop>\
+            <d:quota-available-bytes/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status>\
+            </d:propstat></d:response></d:multistatus>";
+        assert_eq!(quota(missing), None);
+        assert_eq!(
+            quota(&answer("1024").replace("d:", "D:")),
+            Some((1024, 524_288_000))
+        );
     }
 }
