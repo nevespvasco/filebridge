@@ -226,6 +226,29 @@ pub struct DetectNextcloudResponse {
     pub profile: Option<Profile>,
 }
 
+/// The `systemd --user` unit that starts `filebridge-service` at login (Linux), as
+/// `filebridge-service show-user-unit --json` prints it. The window reads it for the Settings
+/// switch "Start the engine when I log in" and shows it before changing anything. Not an ipc
+/// request: the window runs the service binary, so it works with no service running.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct UserUnit {
+    /// The unit file: `~/.config/systemd/user/filebridge-service.service`.
+    pub path: String,
+    /// The program the unit runs, or would run once installed: this service binary.
+    pub exec: String,
+    /// The unit file is there.
+    pub installed: bool,
+    /// systemd starts it at login (`systemctl --user is-enabled`).
+    pub enabled: bool,
+    /// The file there is the one installing would write now. `false` when it runs another
+    /// binary (an earlier install from elsewhere) or other options.
+    pub current: bool,
+    /// `systemctl --user` answers: without it nothing can be installed.
+    pub systemd: bool,
+    /// The file installing writes.
+    pub contents: String,
+}
+
 /// Where the service listens: a socket file, or a named pipe on Windows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Endpoint {

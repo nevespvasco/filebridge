@@ -329,7 +329,8 @@ not be technical).
   short, offset-paged `<table>`s. `CategoryBar`, `Notice`, `StatTile` and `Toast` are inline
   styles or messages, not components, because each has only one or two uses so far.
 - The sidebar notice slot holds low destination space (D03) and reclaimable space (D10); the
-  "service not installed as a user unit" notice isn't built.
+  "service not installed as a user unit" notice isn't built. What it would open exists:
+  Settings → "Start the engine when I log in".
 
 ## Acceptance criteria
 

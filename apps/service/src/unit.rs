@@ -1,8 +1,10 @@
-//! `systemd --user` unit (Linux): replaces running sends inside `tmux` (docs/07).
+//! `systemd --user` unit (Linux): replaces running sends inside `tmux` (docs/07), and is what
+//! the app's Settings switch "Start the engine when I log in" installs and removes.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use filebridge_ipc::UserUnit;
 
 pub const UNIT_NAME: &str = "filebridge-service.service";
 
@@ -64,11 +66,53 @@ fn systemctl(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// This binary, as the unit runs it. Refused inside an AppImage: what runs there lives in a
+/// mount that is gone once the AppImage exits.
+fn this_exe() -> Result<PathBuf> {
+    if std::env::var_os("APPIMAGE").is_some() {
+        bail!(
+            "running from an AppImage, whose files are gone once it exits: install the .deb or .rpm to start the engine at login"
+        );
+    }
+    Ok(std::env::current_exe()?.canonicalize()?)
+}
+
+/// The unit as it is and as installing would write it, for `show-user-unit`.
+pub fn show(data_dir: Option<&Path>, rclone: Option<&Path>) -> Result<UserUnit> {
+    if !cfg!(target_os = "linux") {
+        bail!("the systemd user unit is Linux-only");
+    }
+    let exe = this_exe()?;
+    let path = unit_path()?;
+    let contents = render(&exe, data_dir, rclone);
+    let on_disk = std::fs::read_to_string(&path).ok();
+    let answers = |args: &[&str]| {
+        std::process::Command::new("systemctl")
+            .arg("--user")
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    // Succeeds only with a user manager to talk to.
+    let systemd = answers(&["show-environment"]);
+    Ok(UserUnit {
+        path: path.display().to_string(),
+        exec: exe.display().to_string(),
+        installed: on_disk.is_some(),
+        enabled: systemd && answers(&["is-enabled", "--quiet", UNIT_NAME]),
+        current: on_disk.as_deref() == Some(contents.as_str()),
+        systemd,
+        contents,
+    })
+}
+
 pub fn install(data_dir: Option<&Path>, rclone: Option<&Path>, start: bool) -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("the systemd user unit is Linux-only; on this OS the app starts the service");
     }
-    let exe = std::env::current_exe()?.canonicalize()?;
+    let exe = this_exe()?;
     let path = unit_path()?;
     std::fs::create_dir_all(path.parent().expect("has a parent"))?;
     std::fs::write(&path, render(&exe, data_dir, rclone))

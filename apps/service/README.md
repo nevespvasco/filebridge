@@ -10,6 +10,7 @@ filebridge-service [run]              # foreground; default
 filebridge-service status             # running? version, active jobs (exit 3 if not running)
 filebridge-service install-user-unit [--no-start]   # Linux: ~/.config/systemd/user/filebridge-service.service
 filebridge-service uninstall-user-unit
+filebridge-service show-user-unit [--json]          # Linux: the unit as it is and as install would write it
 ```
 Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
 (`FILEBRIDGE_RCLONE`), `--socket` (`FILEBRIDGE_SOCKET`). Logs: `FILEBRIDGE_LOG`, default
@@ -25,7 +26,10 @@ Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
   macOS/Windows).
 - **systemd unit:** `Restart=on-failure`, `WantedBy=default.target`. It runs this exact binary
   with any `--data-dir` / `--rclone` given at install time. Installing changes your user's
-  systemd config, so it is never done automatically.
+  systemd config, so it is never done automatically: from the terminal, or from the app's
+  Settings → "Start the engine when I log in", which runs these same commands (`--no-start`)
+  after showing `show-user-unit --json` (`filebridge_ipc::UserUnit`). Refused when run from an
+  AppImage, whose files are gone once it exits.
 
 ## Tests
 `tests/service.rs` runs the real binary with real rclone (skipped if rclone is missing):
@@ -37,4 +41,4 @@ Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
 
 ## Allowed dependencies
 `core`, `ipc`, `host` (which wires `transport-rclone` and `integration-nextcloud`), `tokio`,
-`clap`, `tracing-subscriber`, `anyhow`.
+`clap`, `tracing-subscriber`, `anyhow`, `serde_json`.

@@ -60,6 +60,11 @@ flowchart TB
       ([D07](design/specs/D07-job-log-and-activity.md)).
 - [x] App-wide bandwidth limit and daily send window in Settings and the CLI
       ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
+- [x] One install, no terminal: the installers carry `filebridge-service` and the pinned rclone
+      as Tauri sidecars (`pnpm bundle`, [apps/desktop](../apps/desktop/README.md#bundle-one-install-no-terminal)),
+      and Settings → "Start the engine when I log in" installs or removes the `systemd --user`
+      unit after showing what it writes. *Linux only; on Windows and macOS the app still starts
+      the service when it opens (autostart there is listed under Phase 3).*
 
 **Gate:** send three real folders — a large work folder, a code repository and one with a comma in its name — without opening the terminal.
 
@@ -81,7 +86,8 @@ flowchart TB
 
 - [ ] New `Transport`s (SMB, S3) and a second integration (e.g. Immich).
 - [ ] Scheduled sends and published CLI.
-- [ ] Signed installers and automatic updates.
+- [ ] Signed installers and automatic updates; "Start the engine when I log in" on Windows (Run
+      key or Task Scheduler) and macOS (LaunchAgent), and the sidecar script for those builds.
 
 **Gate (test):** a new plugin enters without changing `core`.
 
