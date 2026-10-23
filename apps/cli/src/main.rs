@@ -103,8 +103,8 @@ enum Cmd {
     },
     /// Create a synthetic test tree where some names are NFD. Refuses a non-empty folder.
     Fixture(fixture::Args),
-    /// Compare a plain `sync/copy` (baseline) with plan A (per-file rename) and plan B
-    /// (temp folder + batch rename + move). Never writes to the source.
+    /// Compare a plain `sync/copy` (baseline) with plan A (one `copyfile` per file, under the
+    /// corrected name) and the engine. Never writes to the source.
     Bench(bench::Args),
 }
 
@@ -150,7 +150,7 @@ async fn main() -> anyhow::Result<()> {
         } => send_cmd::report(g, &job, format, only, dirs, output).await,
         Cmd::Scan { source, show } => prepare::print_scan(&source, show),
         Cmd::Fixture(args) => fixture::run(&args),
-        Cmd::Bench(args) => bench::run(args).await,
+        Cmd::Bench(args) => bench::run(args, g.rclone.as_deref()).await,
     }
 }
 

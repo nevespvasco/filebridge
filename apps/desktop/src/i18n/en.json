@@ -676,6 +676,7 @@
       "pct-config": "Container configuration",
       "datadirectory": "Data directory",
       "data-path": "Data path on the host",
+      "writable": "Write access over SFTP",
       "occ": "occ command",
       "run-as": "Web server user",
       "owner": "File owner"
@@ -686,7 +687,7 @@
     "help": {
       "ncUser": "The Nextcloud account that receives the files: the login name, not the display name.",
       "host": "The address of the Proxmox node that runs the Nextcloud container, or of the machine Nextcloud runs on (its container, VM or server, e.g. its Tailscale address).",
-      "sshUser": "The user filebridge logs in with over SSH on that server. It must be root or have passwordless sudo. Usually root.",
+      "sshUser": "The user filebridge logs in with over SSH on that server. Files are written as this user, so it must be able to write to Nextcloud's data folder: in practice, root.",
       "folder": "A folder inside that user's files. Empty puts the files at the top.",
       "ctid": "Proxmox only: the number of the container where Nextcloud runs. Leave empty and filebridge finds it.",
       "installDir": "Where Nextcloud is installed inside the container. Leave empty and filebridge finds it."

@@ -14,10 +14,12 @@ detail to build each crate on its own.
 7. [06 — Interface](06-interface.md): the wizard, screens and UX principles.
 8. [07 — Security & reliability](07-security-reliability.md): resume, sleep inhibit, keys, keyring.
 9. [08 — Repository structure](08-repository-structure.md): monorepo layout and dependency rules.
-10. [09 — Roadmap](09-roadmap.md): phases 0–4 and the gate that closes each one.
+10. [09 — Roadmap](09-roadmap.md): phases 0–5 and the gate that closes each one.
 11. [10 — Risks & open decisions](10-risks-and-open-decisions.md).
 12. [11 — Mobile](11-mobile.md): Android (built), then iOS, with the phone as a Source.
-13. [Design](design/README.md): review of reference designs, the design system, navigation and
+13. [Runbook: real-server tests](runbooks/real-server-tests.md): how to run each gate against
+    the real servers and a phone, and what to send back.
+14. [Design](design/README.md): review of reference designs, the design system, navigation and
     feature specs D01–D11 (all *Proposed*).
 
 ## Architecture decision records
@@ -34,12 +36,14 @@ detail to build each crate on its own.
 | [0008](adr/0008-service-ipc.md) | Engine in `filebridge-service`; window ↔ service IPC over a local socket |
 | [0009](adr/0009-nextcloud-on-the-ssh-host.md) | Nextcloud direct mode also on the SSH host itself (no `pct`), not only through the Proxmox node |
 | [0010](adr/0010-bandwidth-limit-and-send-window.md) | One app-wide bandwidth limit and a daily send window (transfer waits outside it) |
-| [0011](adr/0011-reclaimable-source-is-shown-never-freed.md) | *Proposed:* a reclaimable source is shown and opened in the file manager, never freed by the app |
+| [0011](adr/0011-reclaimable-source-is-shown-never-freed.md) | A reclaimable source is shown and opened in the file manager, never freed by the app |
 | [0012](adr/0012-own-ssh-key-with-restrict.md) | filebridge's own SSH key in the keyring, installed with `restrict`; "Remove access" deletes it and proves it no longer signs in |
 | [0013](adr/0013-phones-as-a-source-android-first.md) | On phones filebridge sends the phone's own files; Android first, iOS after, personal builds |
 | [0014](adr/0014-engine-in-the-app-on-phones.md) | On phones the engine runs in the app (Android foreground service) and rclone is linked in as librclone |
 | [0015](adr/0015-trust-unknown-host-key-in-the-app.md) | An unknown SSH host key is trusted in the wizard after the user checks its fingerprint; a changed key never is |
 | [0016](adr/0016-nextcloud-bulk-upload.md) | Small files to Nextcloud go by its bulk upload (`transport-nextcloud`, in front of rclone); the rest through rclone |
+| [0017](adr/0017-sha256-for-the-manifest.md) | The manifest uses SHA-256, on the source and at the destination; no xxHash |
+| [0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md) | Personal use, the name stays `filebridge`; scheduled sends in Phase 3, copy-only continuous sync (never deletes at the destination) in Phase 5 |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

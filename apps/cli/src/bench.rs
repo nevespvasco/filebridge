@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -58,11 +58,9 @@ pub struct Args {
     /// Files in flight (rclone --transfers for sync/copy, parallel copyfile calls for plan A).
     #[arg(long, default_value_t = 8)]
     concurrency: usize,
-    /// Write results as JSON here.
+    /// Write results as JSON here (its folder is created first).
     #[arg(long)]
     json: Option<PathBuf>,
-    #[arg(long, default_value = "rclone")]
-    rclone: PathBuf,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum, Serialize)]
@@ -97,13 +95,28 @@ struct Run {
     mb_per_sec: f64,
     stages: Vec<(String, f64)>,
     failed: usize,
+    /// Files left out because their name needed a decision (`engine` only): not sent, and not
+    /// counted in `files`.
+    skipped: usize,
     /// Expected destination paths not found after the run.
     missing: usize,
     /// Destination paths that were not expected (e.g. a name left uncorrected).
     unexpected: usize,
 }
 
-pub async fn run(args: Args) -> Result<()> {
+/// `rclone`: the global `--rclone` (or `FILEBRIDGE_RCLONE`); found like the engine commands'
+/// when absent.
+pub async fn run(args: Args, rclone: Option<&Path>) -> Result<()> {
+    // The JSON is written at the end: a missing folder must not lose a long run.
+    if let Some(dir) = args
+        .json
+        .as_deref()
+        .and_then(Path::parent)
+        .filter(|d| !d.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("create {} for --json", dir.display()))?;
+    }
     let prepared = prepare(&args.source)?;
     let (rf, rd) = prepared.renamed_nodes();
     eprintln!(
@@ -118,7 +131,7 @@ pub async fn run(args: Args) -> Result<()> {
         bail!("--concurrency must be at least 1");
     }
 
-    let rcd = Arc::new(Rcd::start(&args.rclone).await?);
+    let rcd = Arc::new(Rcd::start(&filebridge_host::find_rclone(rclone)?).await?);
     let rc = RcClient::from(rcd.clone());
     let version = rc.call("core/version", json!({})).await?;
     let version = version["version"].as_str().unwrap_or("?").to_owned();
@@ -160,10 +173,12 @@ pub async fn run(args: Args) -> Result<()> {
         runs.push(run);
     }
 
-    println!("\nmode      files     MB        s   files/s    MB/s  failed missing unexpected");
+    println!(
+        "\nmode      files     MB        s   files/s    MB/s  failed missing unexpected skipped"
+    );
     for r in &runs {
         println!(
-            "{:<8} {:>6} {:>8.1} {:>8.1} {:>9.1} {:>7.1} {:>7} {:>7} {:>10}",
+            "{:<8} {:>6} {:>8.1} {:>8.1} {:>9.1} {:>7.1} {:>7} {:>7} {:>10} {:>7}",
             r.mode.dir(),
             r.files,
             r.bytes as f64 / 1e6,
@@ -172,7 +187,8 @@ pub async fn run(args: Args) -> Result<()> {
             r.mb_per_sec,
             r.failed,
             r.missing,
-            r.unexpected
+            r.unexpected,
+            r.skipped
         );
         for (stage, secs) in &r.stages {
             println!("           {stage}: {secs:.1} s");
@@ -214,7 +230,7 @@ async fn run_mode(
     let printer = tokio::spawn(print_progress(mode, rx));
     let started = Instant::now();
 
-    let (files, bytes, failed, expected) = match mode {
+    let (files, bytes, failed, skipped, expected) = match mode {
         Mode::Baseline => {
             let group = format!("bench-{stamp}-baseline");
             let totals = (p.files() as u64, p.scan.total_bytes());
@@ -246,7 +262,7 @@ async fn run_mode(
                 .files()
                 .filter_map(|e| String::from_utf8(e.raw_path.clone()).ok())
                 .collect::<BTreeSet<_>>();
-            (totals.0 as usize, totals.1, 0, expected)
+            (totals.0 as usize, totals.1, 0, 0, expected)
         }
         Mode::PlanA => {
             let transport = RcloneTransport::new(rcd.clone());
@@ -260,12 +276,17 @@ async fn run_mode(
             };
             let res = transport.transfer(dest, &job, sink.clone()).await?;
             let expected = p.items.iter().map(|i| i.dest.as_str().to_owned()).collect();
-            (p.items.len(), res.bytes, res.failed(), expected)
+            (p.items.len(), res.bytes, res.failed(), 0, expected)
         }
         Mode::Engine => through_engine(rcd, dest, args, stamp, &sink).await?,
     };
     let seconds = started.elapsed().as_secs_f64();
     drop(sink);
+    if skipped > 0 {
+        eprintln!(
+            "  {skipped} files skipped: their names need a decision; not sent, not in files/s"
+        );
+    }
     let stage_starts = tokio::time::timeout(Duration::from_secs(5), printer)
         .await
         .ok()
@@ -313,20 +334,23 @@ async fn run_mode(
         mb_per_sec: bytes as f64 / 1e6 / seconds,
         stages,
         failed,
+        skipped,
         missing,
         unexpected,
     })
 }
 
 /// Sends the source with a fresh Engine (its database in a private temp directory, removed on
-/// every return path) and reports progress into `sink`. Name decisions that would block the send are skipped.
+/// every return path) and reports progress into `sink`. Name decisions that would block the send
+/// are skipped. Returns the files sent, their bytes, failed and skipped files, and the expected
+/// destination paths.
 async fn through_engine(
     rcd: &Arc<Rcd>,
     dest: &Destination,
     args: &Args,
     stamp: u64,
     sink: &ProgressSink,
-) -> Result<(usize, u64, usize, BTreeSet<String>)> {
+) -> Result<(usize, u64, usize, usize, BTreeSet<String>)> {
     let tmp = tempfile::Builder::new()
         .prefix(&format!("filebridge-bench-{stamp}-"))
         .tempdir()
@@ -416,9 +440,10 @@ async fn through_engine(
     }
     drop(engine);
     Ok((
-        summary.counts.files as usize,
+        summary.counts.done as usize,
         summary.counts.bytes_done,
         summary.counts.failed as usize,
+        summary.counts.skipped as usize,
         expected,
     ))
 }

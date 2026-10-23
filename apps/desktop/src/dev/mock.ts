@@ -684,6 +684,7 @@ const handlers: Handlers = {
     steps.push(
       { id: "datadirectory", status: "ok", message: proxmox ? `/mnt/ncdata in the container is ${data} on the host` : data, commands: [`${run("grep -F datadirectory /var/www/nextcloud/config/config.php")}  (exit 0)`] },
       { id: "data-path", status: "ok", message: `${files} exists`, commands: [`test -d ${files}  (exit 0)`] },
+      { id: "writable", status: "ok", message: `${req.user} can write to ${files}`, commands: [`test -w ${files}  (exit 0)`] },
       { id: "occ", status: "ok", message: "/var/www/nextcloud/occ, run as www-data", commands: [`${run("test -f /var/www/nextcloud/occ")}  (exit 0)`] },
       { id: "run-as", status: "ok", message: `Nextcloud 29.0.4 answers through su (no sudo ${proxmox ? "in the container" : "on this machine"})`, commands: [`${run("su -s /bin/bash www-data -c 'php /var/www/nextcloud/occ status --output=json'")}  (exit 0)`] },
       { id: "owner", status: "ok", message: proxmox ? "files will be owned by 100033:100033 (www-data 33:33 in the container)" : "files will be owned by 33:33 (www-data)", commands: [`stat -c %u:%g ${data}  (exit 0)`] },

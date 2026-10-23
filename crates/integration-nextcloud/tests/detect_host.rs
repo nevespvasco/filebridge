@@ -89,6 +89,7 @@ fn root_without_sudo() -> FakeShell {
         )
         .on("test -d /mnt/ncdata", Output::ok(""))
         .on(format!("test -d {FILES}"), Output::ok(""))
+        .on(format!("test -w {FILES}"), Output::ok(""))
         .on("test -f /var/www/nextcloud/occ", Output::ok(""))
         .on(
             "stat -c %U /var/www/nextcloud/config/config.php",
@@ -108,7 +109,8 @@ fn root_without_sudo() -> FakeShell {
 }
 
 /// A VM or bare-metal server: a non-root SSH user with passwordless sudo, Nextcloud under
-/// /var/www/html served by `nginx`.
+/// /var/www/html served by `nginx`. The user can write to the files folder itself (say, through
+/// an ACL), since SFTP writes as that user.
 fn sudo_user_on_a_server() -> FakeShell {
     let shell = FakeShell::new();
     no_pct(&shell);
@@ -132,6 +134,7 @@ fn sudo_user_on_a_server() -> FakeShell {
             "sudo -n test -d /srv/nextcloud/data/ana/files",
             Output::ok(""),
         )
+        .on("test -w /srv/nextcloud/data/ana/files", Output::ok(""))
         .on("sudo -n test -f /var/www/html/occ", Output::ok(""))
         .on(
             "sudo -n stat -c %U /var/www/html/config/config.php",
@@ -182,6 +185,7 @@ async fn root_on_the_nextcloud_lxc_runs_occ_through_su() {
             "host",
             "datadirectory",
             "data-path",
+            "writable",
             "occ",
             "run-as",
             "owner"
@@ -269,6 +273,7 @@ async fn default_data_folder_when_config_php_has_none() {
         )
         .on("test -d /var/www/nextcloud/data", Output::ok(""))
         .on("test -d /var/www/nextcloud/data/demo/files", Output::ok(""))
+        .on("test -w /var/www/nextcloud/data/demo/files", Output::ok(""))
         .on(
             "stat -c %u:%g /var/www/nextcloud/data",
             Output::ok("33:33\n"),
@@ -282,6 +287,32 @@ async fn default_data_folder_when_config_php_has_none() {
         .find(|s| s.check.id == "datadirectory")
         .unwrap();
     assert!(step.check.message.contains("default"));
+}
+
+#[tokio::test]
+async fn a_sudo_user_who_cannot_write_the_files_folder_is_told_to_use_root() {
+    let shell = sudo_user_on_a_server();
+    shell.on("test -w /srv/nextcloud/data/ana/files", Output::fail(1, ""));
+    let input = DetectInput {
+        nextcloud_user: "ana".into(),
+        ..input("deploy")
+    };
+    let d = HostDetector.detect(&shell, &input).await;
+    assert!(d.profile.is_none());
+    let last = d.steps.last().unwrap();
+    assert_eq!(last.check.id, "writable");
+    assert_eq!(last.check.status, CheckStatus::Fail);
+    assert!(
+        last.check.message.contains("deploy cannot write"),
+        "{}",
+        last.check.message
+    );
+    assert!(last.check.message.contains("log in as root"));
+    // Checked as the SSH user itself: sudo would hide the problem.
+    assert_eq!(
+        last.commands[0].command,
+        "test -w /srv/nextcloud/data/ana/files"
+    );
 }
 
 #[tokio::test]
@@ -355,6 +386,7 @@ async fn the_wizard_falls_back_to_the_host_when_pct_is_missing() {
             "host",
             "datadirectory",
             "data-path",
+            "writable",
             "occ",
             "run-as",
             "owner"

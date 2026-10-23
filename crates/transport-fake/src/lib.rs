@@ -167,7 +167,7 @@ impl Transport for FakeTransport {
     }
 
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest> {
-        if self.no_hash.load(Ordering::SeqCst) || algo != HashAlgo::Sha256 {
+        if self.no_hash.load(Ordering::SeqCst) {
             return Err(TransportError::unsupported(format!(
                 "this destination can't compute {algo:?}"
             )));

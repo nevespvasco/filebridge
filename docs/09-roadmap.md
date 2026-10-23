@@ -1,6 +1,6 @@
 # 09 — Roadmap
 
-Five phases, each closed by a concrete test (gate). **Phase 1 already solves the real use case**;
+Six phases, each closed by a concrete test (gate). **Phase 1 already solves the real use case**;
 everything after makes it safer or more general.
 
 No dates: they depend on free time outside work. Phase 0 is deliberately small and must come
@@ -13,10 +13,12 @@ flowchart TB
     P2["Phase 2 · Trust<br/><small>verify and repair</small>"]
     P3["Phase 3 · Scale<br/><small>more destinations and tools</small>"]
     P4["Phase 4 · Mobile<br/><small>Android, then iOS</small>"]
+    P5["Phase 5 · Continuous sync<br/><small>copy-only</small>"]
     P0 -- "Gate: renaming during send is fast enough, or plan B chosen" --> P1
     P1 -- "Gate: send three real folders (work, code repo, comma in the name) without opening the terminal" --> P2
     P2 -- "Gate: verification with no differences and scan with no encoding warnings" --> P3
     P2 -- "Gate: same as Phase 3's entry" --> P4
+    P3 -- "Gate: a new plugin enters without changing core; scheduled sends work" --> P5
 ```
 
 ## Phase 0 — Prototype (validates the biggest risk)
@@ -66,6 +68,10 @@ flowchart TB
       unit after showing what it writes. *Linux only; on Windows and macOS the app still starts
       the service when it opens (autostart there is listed under Phase 3).*
 
+How to run each gate against the real servers and the phone:
+[runbooks/real-server-tests.md](runbooks/real-server-tests.md); the Phase 0 results go in
+[benchmarks/phase-0-real.md](benchmarks/phase-0-real.md).
+
 **Gate:** send three real folders — a large work folder, a code repository and one with a comma in its name — without opening the terminal.
 
 ## Phase 2 — Trust (verify and repair)
@@ -77,17 +83,21 @@ flowchart TB
 - [x] Nextcloud over WebDAV; credentials in the keyring; restricted SSH key and "Remove access"
       ([05](05-integration-nextcloud.md), [ADR 0004](adr/0004-os-keyring-secrets.md),
       [ADR 0012](adr/0012-own-ssh-key-with-restrict.md)). *Tested against local WebDAV and SFTP
-      servers (rclone serve) and the system keyring; not yet run against the real Nextcloud and
-      SSH servers.*
+      servers (rclone serve), the system keyring, and a local Nextcloud 31 in Docker (verify over
+      WebDAV measured there, `crates/transport-rclone/README.md`); not yet run against the real
+      Nextcloud and SSH servers.*
 
 **Gate:** verification with no differences and a scan with no encoding warnings.
 
 ## Phase 3 — Scale (more destinations and tools)
 
 - [ ] New `Transport`s (SMB, S3) and a second integration (e.g. Immich).
-- [ ] Scheduled sends and published CLI.
-- [ ] Signed installers and automatic updates; "Start the engine when I log in" on Windows (Run
-      key or Task Scheduler) and macOS (LaunchAgent), and the sidecar script for those builds.
+- [ ] Scheduled sends: a saved send runs at set times and sends only what changed, in the
+      service; its own ADR first ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
+- [ ] Published CLI.
+- [ ] "Start the engine when I log in" on Windows (Run key or Task Scheduler) and macOS
+      (LaunchAgent), and the sidecar script for those builds.
+- [ ] *Deferred (personal use, ADR 0018):* signed installers and automatic updates.
 
 **Gate (test):** a new plugin enters without changing `core`.
 
@@ -110,7 +120,8 @@ the engine in the app process and rclone linked in as librclone.
 - [x] UI without the desktop-only parts (checked on an emulator at 1080×2400).
 - [ ] Run the gate on a real phone (passed on an Android 15 emulator, see
       [11](11-mobile.md#as-built-2026-10-22)).
-- [ ] "Trust this host key" for SSH profiles on a phone.
+- [ ] Try an SSH profile on a real phone ("Trust this host key" is built, ADR 0015; sign in with
+      filebridge's own key or a key file, since a phone has no SSH agent).
 
 **Gate:** from an Android phone, send a real folder with at least 1,000 photos and videos to
 Nextcloud over WebDAV; turn the screen off and switch apps mid-send; force-stop the app once and
@@ -126,6 +137,21 @@ Needs a Mac (Xcode) and an Apple Developer account.
 
 **Gate:** send a folder from the Files app to Nextcloud over WebDAV, leaving the app and coming
 back mid-send; the Job resumes and the verification has zero differences.
+
+## Phase 5 — Continuous sync (copy-only)
+
+*Accepted in scope* ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
+Starts after Phase 3's scheduled sends, which it builds on.
+
+- [ ] ADR before any code: how folders are watched (OS file events, with a periodic scan as the
+      fallback), how changes are batched into Jobs, and how a watch survives the service
+      restarting.
+- [ ] The service watches a source and sends what changed. Fixed by ADR 0018: nothing is ever
+      deleted at the destination, and a rename at the source is sent as a new file.
+
+**Gate (proposed):** a watched folder gets new and changed files at the destination without a
+manual send; deleting and renaming files at the source leaves every earlier copy at the
+destination; restarting the service mid-batch resumes it; the verification has zero differences.
 
 ## Design work (built, on `main`)
 

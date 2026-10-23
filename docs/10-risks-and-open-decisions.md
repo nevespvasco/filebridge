@@ -18,15 +18,15 @@ interface.
 
 ## Open decisions
 
-- [ ] **Personal use only, or for distribution?** Changes the priority of code signing and
-      documentation.
-- [ ] **Do scheduled (recurring) sends and continuous sync enter the scope**, or only one-off
-      sends? A daily window that holds back sends the user started is decided
-      ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
-- [ ] **Final app name** (`filebridge` is provisional).
-- [ ] **xxHash (fast) or SHA-256 (standard) for the manifest?** Note: the manifest can store the
-      algorithm per entry, so this can default to one and still allow the other. rclone's SFTP
-      backend computes remote hashes via `sha256sum`/`md5sum` over SSH; WebDAV/Nextcloud exposes
-      only some checksums — check which ones the destination can compute before choosing.
+- [x] **Personal use only, or for distribution?** Personal use, for now
+      ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
+- [x] **Do scheduled (recurring) sends and continuous sync enter the scope?** Both: scheduled
+      sends in Phase 3, continuous sync in Phase 5, copy-only (never deletes at the destination;
+      a rename at the source is a new file). [ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md).
+      The daily window is [ADR 0010](adr/0010-bandwidth-limit-and-send-window.md).
+- [x] **Final app name:** `filebridge`
+      ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
+- [x] **xxHash or SHA-256 for the manifest?** SHA-256
+      ([ADR 0017](adr/0017-sha256-for-the-manifest.md)).
 
 When one is decided, tick it here and record an ADR in [adr/](adr/).

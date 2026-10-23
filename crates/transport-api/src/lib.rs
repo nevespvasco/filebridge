@@ -75,7 +75,7 @@ bitflags::bitflags! {
     pub struct TransportCaps: u32 {
         const RESUME = 1 << 0;
         const HASH_SHA256 = 1 << 1;
-        const HASH_XXH = 1 << 2;
+        // 1 << 2 was HASH_XXH (removed by ADR 0017); left unused.
         const CHOWN = 1 << 3;
         const CHMOD = 1 << 4;
         const RENAME = 1 << 5;
@@ -243,10 +243,11 @@ pub struct PreflightReport {
     pub checks: Vec<Check>,
 }
 
+/// The manifest's hash (ADR 0017). One kind today; the enum keeps room for another, which
+/// needs a new ADR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HashAlgo {
     Sha256,
-    Xxh3_128,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ Walks the source, **reads names as bytes**, and builds manifest entries. **Lands
   (`OsStrExt::as_bytes` on Unix).
 - Per entry: raw path bytes, decoded name (if valid UTF-8), size, mtime, is_dir.
 - Running totals (`ScanProgress`: files, bytes, current path).
-- Hash source files (SHA-256 or xxHash — open decision) streaming, with a bounded worker pool.
+- Hash source files (SHA-256, ADR 0017) streaming, with a bounded worker pool.
 - Produce `names::Entry` values and hand them to `store` in batches.
 
 ## Allowed dependencies

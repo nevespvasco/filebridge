@@ -1,6 +1,6 @@
 # ADR 0011 — A reclaimable source is shown, never freed
 
-- Status: Proposed
+- Status: Accepted (2026-10-23)
 - Date: 2026-10-22
 - Refines: [ADR 0005](0005-fix-names-in-transit.md) ("freeing the source is manual and only
   offered after a zero-difference verification")
