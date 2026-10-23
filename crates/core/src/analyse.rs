@@ -26,11 +26,27 @@ pub(crate) struct Analysis {
     pub skipped_symlinks: u64,
     /// Files left out because a schedule sent them before and they haven't changed.
     pub unchanged: u64,
+    /// Files left out because they changed within the watched schedule's quiet time.
+    pub unsettled: u64,
 }
 
 /// What a schedule sent before (docs/adr/0019), by source index and manifest path: each file's
 /// size and mtime then.
 pub(crate) type SentBefore = HashMap<(u32, Vec<u8>), (u64, Option<i64>)>;
+
+/// A watched run's "still being written" test (docs/adr/0023): a file whose mtime is after
+/// `now - quiet_ms` (and not after `now`, a clock it can't judge) waits for the next run.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Settle {
+    pub now: i64,
+    pub quiet_ms: i64,
+}
+
+impl Settle {
+    fn unsettled(&self, mtime: Option<i64>) -> bool {
+        mtime.is_some_and(|m| m > self.now - self.quiet_ms && m <= self.now)
+    }
+}
 
 /// Raw bytes of an OS string (`/`-separated on Unix).
 pub(crate) fn os_bytes(s: &OsStr) -> Vec<u8> {
@@ -64,11 +80,13 @@ pub(crate) fn source_parent(source: &Path) -> PathBuf {
 }
 
 /// Scans `sources` and runs the name rules. With `sent`, files a schedule sent before and that
-/// still have the same size and mtime are left out, and so are folders with nothing left in them.
+/// still have the same size and mtime are left out, and so are folders with nothing left in them;
+/// with `settle` too, so are files still being written.
 pub(crate) fn analyse_sources(
     sources: &[PathBuf],
     names: &NamePlan,
     sent: Option<&SentBefore>,
+    settle: Option<Settle>,
     mut on_source: impl FnMut(&Path, u64, u64),
 ) -> Result<Analysis> {
     let mut entries: Vec<Entry> = Vec::new();
@@ -126,9 +144,10 @@ pub(crate) fn analyse_sources(
         on_source(source, files, bytes);
     }
 
-    let mut unchanged = 0;
+    let (mut unchanged, mut unsettled) = (0, 0);
     if let Some(sent) = sent {
-        (entries, mtimes, source_of, unchanged) = drop_unchanged(entries, mtimes, source_of, sent);
+        (entries, mtimes, source_of, unchanged, unsettled) =
+            drop_unchanged(entries, mtimes, source_of, sent, settle);
     }
     let mut analysis = build(
         &entries,
@@ -139,19 +158,21 @@ pub(crate) fn analyse_sources(
         skipped_symlinks,
     );
     analysis.unchanged = unchanged;
+    analysis.unsettled = unsettled;
     Ok(analysis)
 }
 
-/// Leaves out the files `sent` has with the same size and mtime, and the folders with nothing
-/// left under them, keeping scanner order and renumbering the parents. Returns how many files
-/// were left out.
+/// Leaves out the files `sent` has with the same size and mtime, those `settle` finds still
+/// being written, and the folders with nothing left under them, keeping scanner order and
+/// renumbering the parents. Returns how many files were left out as unchanged and as unsettled.
 fn drop_unchanged(
     entries: Vec<Entry>,
     mtimes: Vec<Option<i64>>,
     source_of: Vec<u32>,
     sent: &SentBefore,
-) -> (Vec<Entry>, Vec<Option<i64>>, Vec<u32>, u64) {
-    let mut keep: Vec<bool> = entries
+    settle: Option<Settle>,
+) -> (Vec<Entry>, Vec<Option<i64>>, Vec<u32>, u64, u64) {
+    let changed: Vec<bool> = entries
         .iter()
         .enumerate()
         .map(|(i, e)| {
@@ -162,9 +183,19 @@ fn drop_unchanged(
         .collect();
     let unchanged = entries
         .iter()
-        .zip(&keep)
-        .filter(|(e, k)| !e.is_dir && !**k)
+        .zip(&changed)
+        .filter(|(e, c)| !e.is_dir && !**c)
         .count() as u64;
+    let mut unsettled = 0;
+    let mut keep = changed;
+    if let Some(settle) = settle {
+        for (i, k) in keep.iter_mut().enumerate() {
+            if *k && settle.unsettled(mtimes.get(i).copied().flatten()) {
+                *k = false;
+                unsettled += 1;
+            }
+        }
+    }
     // Parents come before their children: walking back, a kept entry keeps its parent.
     for i in (0..entries.len()).rev() {
         if keep[i]
@@ -185,7 +216,7 @@ fn drop_unchanged(
         out_mtimes.push(mtimes.get(i).copied().flatten());
         out_source.push(source_of[i]);
     }
-    (out, out_mtimes, out_source, unchanged)
+    (out, out_mtimes, out_source, unchanged, unsettled)
 }
 
 /// Stage 3 over scanned entries (local sources, or a destination folder for Repair): the name
@@ -261,6 +292,7 @@ pub(crate) fn build(
         scan_errors,
         skipped_symlinks,
         unchanged: 0,
+        unsettled: 0,
     }
 }
 
@@ -287,9 +319,13 @@ mod tests {
         std::fs::write(src.join("Vera\u{303}o.txt"), b"22").unwrap();
 
         let mut seen = Vec::new();
-        let a = analyse_sources(std::slice::from_ref(&src), &nfc_plan(), None, |p, f, b| {
-            seen.push((p.to_path_buf(), f, b))
-        })
+        let a = analyse_sources(
+            std::slice::from_ref(&src),
+            &nfc_plan(),
+            None,
+            None,
+            |p, f, b| seen.push((p.to_path_buf(), f, b)),
+        )
         .unwrap();
         assert_eq!(seen, vec![(src, 3, 6)]);
         assert_eq!((a.files, a.dirs, a.bytes), (3, 2, 6));
@@ -323,8 +359,14 @@ mod tests {
         std::fs::write(src.join("mixed/same.txt"), b"s").unwrap();
         std::fs::write(src.join("mixed/changed.txt"), b"now longer").unwrap();
         std::fs::write(src.join("mixed/new.txt"), b"n").unwrap();
-        let first =
-            analyse_sources(std::slice::from_ref(&src), &nfc_plan(), None, |_, _, _| {}).unwrap();
+        let first = analyse_sources(
+            std::slice::from_ref(&src),
+            &nfc_plan(),
+            None,
+            None,
+            |_, _, _| {},
+        )
+        .unwrap();
         let mut sent = SentBefore::new();
         for e in first.entries.iter().filter(|e| !e.is_dir) {
             let size = if e.raw_path.ends_with(b"changed.txt") {
@@ -341,6 +383,7 @@ mod tests {
             std::slice::from_ref(&src),
             &nfc_plan(),
             Some(&sent),
+            None,
             |_, _, _| {},
         )
         .unwrap();
@@ -365,7 +408,7 @@ mod tests {
         for e in a.entries.iter().filter(|e| !e.is_dir) {
             all.insert((e.source, e.raw_path.clone()), (e.size, e.mtime));
         }
-        let none = analyse_sources(&[src], &nfc_plan(), Some(&all), |_, _, _| {}).unwrap();
+        let none = analyse_sources(&[src], &nfc_plan(), Some(&all), None, |_, _, _| {}).unwrap();
         assert!(none.entries.is_empty());
         assert_eq!(none.unchanged, 4);
     }
@@ -378,7 +421,7 @@ mod tests {
         let src = dir.path().join("d");
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join(OsStr::from_bytes(b"Patol\xf3gica.pdf")), b"x").unwrap();
-        let a = analyse_sources(&[src], &nfc_plan(), None, |_, _, _| {}).unwrap();
+        let a = analyse_sources(&[src], &nfc_plan(), None, None, |_, _, _| {}).unwrap();
         let undecodable: Vec<_> = a
             .issues
             .iter()

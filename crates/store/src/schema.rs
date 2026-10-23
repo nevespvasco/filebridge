@@ -209,6 +209,12 @@ ALTER TABLE jobs ADD COLUMN schedule_id TEXT REFERENCES schedules(id) ON DELETE 
 CREATE INDEX jobs_schedule ON jobs(schedule_id, created_at);
 ALTER TABLE manifest_entries ADD COLUMN kept_as TEXT;
 "#,
+    // 13: continuous sync (docs/adr/0023): a watched schedule's last change seen, and its first
+    // change not in a run yet.
+    r#"
+ALTER TABLE schedules ADD COLUMN last_change_at INTEGER;
+ALTER TABLE schedules ADD COLUMN pending_since INTEGER;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

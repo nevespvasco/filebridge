@@ -1527,8 +1527,8 @@
   "schedules": {
     "title": "Envios agendados",
     "new": "Novo agendamento",
-    "intro": "Um envio agendado corre sozinho às horas que escolher, no motor em segundo plano, mesmo com esta janela fechada. Cada execução envia só o que é novo ou mudou desde a anterior.",
-    "empty": "Ainda não há envios agendados. Crie um para enviar uma pasta todas as noites, ou de poucas em poucas horas.",
+    "intro": "Um envio agendado corre sozinho às horas que escolher, ou sempre que uma pasta muda, no motor em segundo plano, mesmo com esta janela fechada. Cada execução envia só o que é novo ou mudou desde a anterior.",
+    "empty": "Ainda não há envios agendados. Crie um para enviar uma pasta todas as noites, de poucas em poucas horas, ou sempre que mudar.",
     "emptyNoDestination": "Adicione primeiro um destino; depois pode agendar envios para ele.",
     "unknownDestination": "(destino removido)",
     "on": "Ligado",
@@ -1555,7 +1555,8 @@
       "daily": "Todos os dias às {time}",
       "weekdays": "De segunda a sexta às {time}",
       "some": "{days} às {time}",
-      "hours": "De hora a hora a partir das {time} | A cada {n} horas a partir das {time}"
+      "hours": "De hora a hora a partir das {time} | A cada {n} horas a partir das {time}",
+      "onChange": "Quando algo muda (após {secs} s sem alterações)"
     },
     "days": {
       "mon": "Seg",
@@ -1606,7 +1607,30 @@
       "needDestination": "Escolha um destino.",
       "needTime": "Indique uma hora.",
       "needDays": "Escolha pelo menos um dia.",
-      "needHours": "Horas entre execuções: de 1 a 24."
+      "needHours": "Horas entre execuções: de 1 a 24.",
+      "onChange": "Quando algo muda",
+      "quiet": "Esperar",
+      "quietUnit": "segundos sem alterações antes de enviar",
+      "watchHelp": "O motor em segundo plano vigia estas pastas e envia o que muda quando estão este tempo sem alterações (no máximo 15 minutos depois de uma alteração). Também revê a pasta inteira de hora a hora e quando arranca.",
+      "enabledWatch": "Vigiar e enviar sozinho",
+      "neverDeletes": "Um ficheiro apagado ou com o nome mudado aqui fica no destino: lá nunca se apaga nada.",
+      "stillWriting": "Um ficheiro ainda a ser escrito espera até deixar de mudar.",
+      "watchWindow": "Fora das horas de envio definidas nas Definições, as alterações esperam e vão juntas quando abrirem.",
+      "needQuiet": "Esperar: {min} a {max} segundos."
+    },
+    "watch": {
+      "title": "Vigilância",
+      "events": "A vigiar alterações",
+      "scanning": "Revê a cada 10 minutos",
+      "idle": "Sem vigilância",
+      "starting": "A começar a vigiar…",
+      "limitHelp": "Foi atingido o limite de pastas vigiadas deste computador; a pasta continua a ser enviada, revista a cada 10 minutos. Para voltar a vigiá-la, aumente o limite e depois guarde este agendamento:",
+      "lastChange": "Última alteração",
+      "noChange": "Nenhuma vista ainda",
+      "pending": "Alterações à espera",
+      "goes": "vão",
+      "waitHours": "à espera das horas de envio",
+      "nextCheck": "Próxima revisão completa"
     }
   }
 }

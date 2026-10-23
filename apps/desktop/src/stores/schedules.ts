@@ -1,6 +1,8 @@
-// Scheduled sends (docs/adr/0019). The service runs them at their times; the window only lists,
-// saves, removes and runs them now. The list is reloaded when a schedule's time comes
-// (`schedule_ran`) and when the connection comes back.
+// Scheduled sends (docs/adr/0019) and watched folders (docs/adr/0023). The service runs them at
+// their times or when a watched folder changes; the window only lists, saves, removes and runs
+// them now. The list is reloaded when a schedule's time comes (`schedule_ran`), when a watched
+// folder changes (`schedule_changed`, at most a few times a second) and when the connection comes
+// back.
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import type { Recurrence, ScheduleInput_Deserialize as ScheduleInput, ScheduleView_Serialize as ScheduleView, Weekday } from "@/bindings";
@@ -37,6 +39,7 @@ export function dayGroup(days: Weekday[]): "daily" | "weekdays" | "some" {
 export function sortedDays(days: Weekday[]): Weekday[] {
   return WEEKDAYS.filter((d) => days.includes(d));
 }
+
 
 export type { Recurrence };
 
@@ -88,9 +91,15 @@ export const useSchedules = defineStore("schedules", () => {
     }
   }
 
-  /** A schedule's time came (`schedule_ran`): its row changed. */
+  /** A schedule's time came or its folder changed: its row changed. Reloads at most once per
+   * half second, so a burst of changes doesn't flood the service. */
+  let reload: ReturnType<typeof setTimeout> | null = null;
   function onRan() {
-    if (loaded.value) void load();
+    if (!loaded.value || reload) return;
+    reload = setTimeout(() => {
+      reload = null;
+      void load();
+    }, 500);
   }
 
   return { items, loaded, loadError, byId, load, save, remove, runNow, onRan };

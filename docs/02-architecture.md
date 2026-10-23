@@ -97,6 +97,14 @@ Rules:
   Its options have `keep_older`: before each transfer batch, a destination name taken by other
   contents is renamed to `<name> (filebridge <date>)<ext>` first, so nothing is overwritten.
   One unfinished run per schedule; missed times run once.
+- A **watched schedule** ([ADR 0023](adr/0023-continuous-sync.md), continuous sync, copy-only)
+  is a schedule whose recurrence is `on_change`: OS file events (`notify`, behind `core`'s
+  `FolderWatcher`) set it due a quiet time after its sources stop changing (at most 15 min after
+  the first change), and its run is the same scheduled run. Files changed within the quiet time
+  wait for the next run; while the send window is closed, nothing starts. A safety rescan runs
+  every hour (every 10 min where the folder can't be watched, e.g. past the inotify limit), and
+  each watch that starts (service start, schedule saved) rescans at once. Deletions and renames
+  at the source never remove anything at the destination.
 - `Failed` is reserved for non-retryable errors (auth revoked, destination missing); the UI shows
   the cause and an action.
 - A full destination moves a transfer to `Paused` with an error code (`destination_full`), not
@@ -111,8 +119,9 @@ Rules:
 - The **engine runs as a separate process** from the window (`filebridge-service`). Closing the
   window doesn't stop a send; a tray icon stays. On Linux it can install as a `systemd --user` unit.
 - The window connects to the service; the service owns SQLite, the rclone sidecar and the sleep
-  inhibitor. It also runs the scheduled sends' timer (`Engine::run_scheduler`, ADR 0019): the
-  window never starts a send on its own.
+  inhibitor. It also runs the scheduled sends' timer (`Engine::run_scheduler`, ADR 0019) and
+  watches the watched schedules' folders (`Engine::set_watcher` with the host's `NotifyWatcher`,
+  ADR 0023): the window never starts a send on its own.
 - rclone runs as a sidecar (`rclone rcd`) bound to localhost with a random auth token generated per
   start; `transport-rclone` talks to it over HTTP.
 
@@ -134,6 +143,7 @@ Rules:
 | `IntegrationProgress` | step label ("Indexing 3 folders"), done/total, free-text status |
 | `JobFinished` | final state, report id |
 | `ScheduleRan` | schedule id, the run it started (if any), outcome (`started`, `nothing_changed`, `still_running`, `failed`) |
+| `ScheduleChanged` | schedule id: a watched folder changed or its watch changed mode (ADR 0023) |
 
 `ProgressSink` (see [03](03-extension-contracts.md)) is the plugin-facing side of this channel.
 
@@ -148,7 +158,7 @@ Rules:
 | `issues` | Name issues per entry: rule id, severity, proposal, decision |
 | `events` | Append-only log of job events for the detail screen |
 | `settings` | App-wide bandwidth limit and send window (key `app`, ADR 0010); notifications and language stay in the window |
-| `schedules`, `schedule_sources` | Scheduled sends: sources, profile, options, recurrence, next and last run ([ADR 0019](adr/0019-scheduled-sends.md)) |
+| `schedules`, `schedule_sources` | Scheduled sends: sources, profile, options, recurrence, next and last run ([ADR 0019](adr/0019-scheduled-sends.md)); for a watched one, its last change and first change not sent yet (`last_change_at`, `pending_since`, [ADR 0023](adr/0023-continuous-sync.md)) |
 | `schedule_files` | One row per file a schedule has sent (size, mtime, destination path), written with the entry's `done`: what its next run compares with |
 | `schedule_decisions` | The name decisions of a schedule's runs, per source path and rule, carried to its next runs |
 

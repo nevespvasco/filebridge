@@ -196,6 +196,9 @@ pub struct AnalysisSummary {
     pub skipped_symlinks: u64,
     /// Files a scheduled run left out: sent before and unchanged since (docs/adr/0019).
     pub unchanged: u64,
+    /// Files a watched run left out because they changed less than its quiet time ago: still
+    /// being written; the schedule runs again for them (docs/adr/0023).
+    pub unsettled: u64,
     pub preflight: Vec<PreflightView>,
 }
 

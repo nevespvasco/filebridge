@@ -112,6 +112,9 @@ pub enum Event {
         job_id: Option<String>,
         outcome: ScheduleOutcome,
     },
+    /// A watched schedule noted a change, or its watch changed mode (docs/adr/0023): the window
+    /// refreshes its card. Not about a job.
+    ScheduleChanged { schedule_id: String },
 }
 
 impl Event {
@@ -132,7 +135,7 @@ impl Event {
             | Self::IntegrationProgress { job_id, .. }
             | Self::IntegrationProblem { job_id, .. }
             | Self::JobFinished { job_id, .. } => job_id,
-            Self::FolderSizesProgress { .. } => return None,
+            Self::FolderSizesProgress { .. } | Self::ScheduleChanged { .. } => return None,
             Self::ScheduleRan { job_id, .. } => return job_id.as_deref(),
         })
     }

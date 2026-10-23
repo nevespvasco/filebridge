@@ -259,9 +259,15 @@ export const events = {
 };
 
 /* Constants */
+export const DEFAULT_QUIET_SECS = 60 as const;
+
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"skip_entry":["transferring","paused","retrying","waiting"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 33 as const;
+export const MAX_QUIET_SECS = 3600 as const;
+
+export const MIN_QUIET_SECS = 5 as const;
+
+export const PROTOCOL_VERSION = 34 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -335,6 +341,11 @@ export type AnalysisSummary_Deserialize = {
 	skipped_symlinks: number,
 	/**  Files a scheduled run left out: sent before and unchanged since (docs/adr/0019). */
 	unchanged: number,
+	/**
+	 *  Files a watched run left out because they changed less than its quiet time ago: still
+	 *  being written; the schedule runs again for them (docs/adr/0023).
+	 */
+	unsettled: number,
 	preflight: PreflightView_Deserialize[],
 };
 
@@ -350,6 +361,11 @@ export type AnalysisSummary_Serialize = {
 	skipped_symlinks: number,
 	/**  Files a scheduled run left out: sent before and unchanged since (docs/adr/0019). */
 	unchanged: number,
+	/**
+	 *  Files a watched run left out because they changed less than its quiet time ago: still
+	 *  being written; the schedule runs again for them (docs/adr/0023).
+	 */
+	unsettled: number,
 	preflight: PreflightView_Serialize[],
 };
 
@@ -931,7 +947,12 @@ waiting?: string | null } | { type: "integration_problem"; job_id: string; code:
  *  A schedule's time came, or it was run now (docs/adr/0019); `job_id` is the run it
  *  started, if any.
  */
-{ type: "schedule_ran"; schedule_id: string; job_id?: string | null; outcome: ScheduleOutcome };
+{ type: "schedule_ran"; schedule_id: string; job_id?: string | null; outcome: ScheduleOutcome } | 
+/**
+ *  A watched schedule noted a change, or its watch changed mode (docs/adr/0023): the window
+ *  refreshes its card. Not about a job.
+ */
+{ type: "schedule_changed"; schedule_id: string };
 
 export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null; 
 /**  Files in flight now (at most the job's concurrency), in the order they started. */
@@ -967,7 +988,12 @@ waiting: string | null } | { type: "integration_problem"; job_id: string; code: 
  *  A schedule's time came, or it was run now (docs/adr/0019); `job_id` is the run it
  *  started, if any.
  */
-{ type: "schedule_ran"; schedule_id: string; job_id: string | null; outcome: ScheduleOutcome };
+{ type: "schedule_ran"; schedule_id: string; job_id: string | null; outcome: ScheduleOutcome } | 
+/**
+ *  A watched schedule noted a change, or its watch changed mode (docs/adr/0023): the window
+ *  refreshes its card. Not about a job.
+ */
+{ type: "schedule_changed"; schedule_id: string };
 
 export type ExportResult = ExportResult_Serialize | ExportResult_Deserialize;
 
@@ -1653,7 +1679,9 @@ export type Recurrence =
 /**  On each of `days` at `minute` past midnight. */
 { kind: "days"; days: Weekday[]; minute: number } | 
 /**  Every day at `minute` past midnight, then every `every` hours until midnight. */
-{ kind: "hours"; every: number; minute: number };
+{ kind: "hours"; every: number; minute: number } | 
+/**  When its sources change, once they have been quiet for `quiet_secs` (docs/adr/0023). */
+{ kind: "on_change"; quiet_secs: number };
 
 /**  An issue `decide_many` left as it was, and why. */
 export type RefusedIssue = {
@@ -1927,6 +1955,8 @@ export type ScheduleView_Deserialize = {
 	last_job_state?: JobState | null,
 	/**  Files it has sent so far (one per source file, whatever the number of runs). */
 	files_sent: number,
+	/**  For a watched schedule (`Recurrence::OnChange`): its watch. */
+	watch?: WatchView_Deserialize | null,
 	created_at: number,
 	updated_at: number,
 };
@@ -1952,6 +1982,8 @@ export type ScheduleView_Serialize = {
 	last_job_state: JobState | null,
 	/**  Files it has sent so far (one per source file, whatever the number of runs). */
 	files_sent: number,
+	/**  For a watched schedule (`Recurrence::OnChange`): its watch. */
+	watch: WatchView_Serialize | null,
 	created_at: number,
 	updated_at: number,
 };
@@ -2325,6 +2357,56 @@ export type VolumeView_Serialize = {
 	/**  Bytes, when the system reports them. */
 	total_bytes: number | null,
 	free_bytes: number | null,
+};
+
+/**  How a watched schedule's sources are being watched (docs/adr/0023). */
+export type WatchMode = 
+/**  The operating system reports changes as they happen. */
+"events" | 
+/**
+ *  It can't (a watch limit, a folder that is gone): the folder is scanned every few minutes
+ *  instead; `WatchView::reason` says why.
+ */
+"scanning" | 
+/**
+ *  This engine isn't watching it: switched off, or an engine that runs no schedules (the
+ *  CLI's own).
+ */
+"idle";
+
+/**  A watched schedule's watch, as the window shows it. */
+export type WatchView = WatchView_Serialize | WatchView_Deserialize;
+
+/**  A watched schedule's watch, as the window shows it. */
+export type WatchView_Deserialize = {
+	mode: WatchMode,
+	/**  Why it is scanning instead of watching. */
+	reason?: string | null,
+	/**
+	 *  Whether `reason` is the system's limit on watched folders (Linux inotify), which the
+	 *  user can raise.
+	 */
+	limit: boolean,
+	/**  The last change seen in its sources (Unix ms). */
+	last_change_at?: number | null,
+	/**  The first change not in a run yet (Unix ms); `None` when everything seen has gone. */
+	pending_since?: number | null,
+};
+
+/**  A watched schedule's watch, as the window shows it. */
+export type WatchView_Serialize = {
+	mode: WatchMode,
+	/**  Why it is scanning instead of watching. */
+	reason: string | null,
+	/**
+	 *  Whether `reason` is the system's limit on watched folders (Linux inotify), which the
+	 *  user can raise.
+	 */
+	limit: boolean,
+	/**  The last change seen in its sources (Unix ms). */
+	last_change_at: number | null,
+	/**  The first change not in a run yet (Unix ms); `None` when everything seen has gone. */
+	pending_since: number | null,
 };
 
 /**  A day of the week. */

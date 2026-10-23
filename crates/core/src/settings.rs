@@ -82,7 +82,7 @@ impl Engine {
     }
 
     /// The send window now, or `None` when files may be sent at any time.
-    fn window_status(&self) -> Option<WindowStatus> {
+    pub(crate) fn window_status(&self) -> Option<WindowStatus> {
         let window = self.settings.borrow().send_window?;
         Some(window.status(self.options.local_clock.second_of_day()))
     }

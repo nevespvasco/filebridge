@@ -26,17 +26,18 @@ pub use server::{Handler, bind, serve};
 /// the engine (ADR 0008: the window reaches `core` only through `ipc`).
 pub use filebridge_model::{
     ActivityItem, AnalysisSummary, AppSettings, BlockerView, BrowseResult, BrowseTarget,
-    CategoryCount, CheckView, Counts, DecideManyResult, DecisionInput, EntryCursor, EntryDetail,
-    EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryThumbnail, EntryView, Event,
-    ExportResult, FOLDER_SIZES_LISTED, Family, FolderNameCheck, FolderSize, FolderSizes, HashView,
-    IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort,
-    JobState, JobSummary, LogEntry, LogLevel, MAX_PINNED_SOURCES, PinnedSource, PreflightView,
-    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, RefusedIssue,
+    CategoryCount, CheckView, Counts, DEFAULT_QUIET_SECS, DecideManyResult, DecisionInput,
+    EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
+    EntryThumbnail, EntryView, Event, ExportResult, FOLDER_SIZES_LISTED, Family, FolderNameCheck,
+    FolderSize, FolderSizes, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
+    JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
+    MAX_PINNED_SOURCES, MAX_QUIET_SECS, MIN_QUIET_SECS, PinnedSource, PreflightView, Profile,
+    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, RefusedIssue,
     RemoteEntryView, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff,
     ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount, SOURCE_CHILDREN_CAP,
     ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem, SendOptions, SendWindow, SourceInfo,
     SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, VolumeView,
-    Weekday, job_operations,
+    WatchMode, WatchView, Weekday, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -83,7 +84,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 33: scheduled sends (ADR 0019): `list_schedules`, `save_schedule`, `delete_schedule`,
 ///     `run_schedule_now`, the `schedule_ran` event; `JobSummary.schedule_id`,
 ///     `SendOptions.keep_older`, `EntryView.kept_as`, `AnalysisSummary.unchanged`.
-pub const PROTOCOL_VERSION: u32 = 33;
+/// 34: continuous sync (ADR 0023): `Recurrence::OnChange`, `ScheduleView.watch`,
+///     `AnalysisSummary.unsettled`, the `schedule_changed` event.
+pub const PROTOCOL_VERSION: u32 = 34;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

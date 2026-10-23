@@ -10,7 +10,7 @@ progress events.** **Landed in:** Phase 1 (Wave 2).
 | Jobs | `create_job`, `job`, `list_jobs`, `wait` |
 | Stages 2–3 | `analyse` (scan + rules + preflight → `AnalysisSummary`), `rule_counts`, `issues`, `decide_issue` |
 | Lifecycle | `start`, `pause`, `resume`, `cancel`, `resume_unfinished` (on startup) |
-| Schedules (ADR 0019) | `save_schedule`, `list_schedules`, `get_schedule`, `delete_schedule`, `run_schedule_now`, `tick_schedules(now)` (testable: the time is an argument), `run_scheduler` (the service's timer) |
+| Schedules (ADR 0019, 0023) | `save_schedule`, `list_schedules`, `get_schedule`, `delete_schedule`, `run_schedule_now`, `tick_schedules(now)` (testable: the time is an argument), `run_scheduler` (the service's timer), `set_watcher` (the watched schedules' `FolderWatcher`) |
 | Events | `subscribe` → `broadcast::Receiver<Event>` |
 
 All types that cross into the UI derive `specta::Type`.
@@ -37,6 +37,12 @@ All types that cross into the UI derive `specta::Type`.
   `schedule_id`: the analysis leaves out what the schedule sent before and hasn't changed,
   carries its name decisions and accepts proposals; with `SendOptions::keep_older` the transfer
   renames a destination file that other contents would overwrite to a dated name first.
+- **Watched schedules** (`watch.rs`, ADR 0023) are schedules with `Recurrence::OnChange`: a
+  `FolderWatcher` the host gives (`Engine::set_watcher`) notes changes; `tick_schedules` folds
+  them into the next time (a quiet time after the last, at most 15 min after the first), starts
+  and stops watches, rescans when a watch starts, and holds a due one while its run is
+  unfinished or the send window is closed. Files changed within the quiet time wait
+  (`AnalysisSummary::unsettled`).
 - Every state change is validated (`JobState::can_go_to`), persisted, logged as an event and
   broadcast. A sleep inhibitor is held while a runner works (`inhibit.rs`: logind on Linux,
   `caffeinate` on macOS, `SetThreadExecutionState` on Windows; the Windows code is untested).

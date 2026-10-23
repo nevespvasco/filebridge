@@ -1527,8 +1527,8 @@
   "schedules": {
     "title": "Scheduled sends",
     "new": "New schedule",
-    "intro": "A scheduled send runs on its own at the times you set, in the background engine, even with this window closed. Each run sends only what is new or changed since the last one.",
-    "empty": "No scheduled sends yet. Create one to send a folder every night, or every few hours.",
+    "intro": "A scheduled send runs on its own at the times you set, or whenever a folder changes, in the background engine, even with this window closed. Each run sends only what is new or changed since the last one.",
+    "empty": "No scheduled sends yet. Create one to send a folder every night, every few hours, or whenever it changes.",
     "emptyNoDestination": "Add a destination first; then you can schedule sends to it.",
     "unknownDestination": "(removed destination)",
     "on": "On",
@@ -1555,7 +1555,8 @@
       "daily": "Every day at {time}",
       "weekdays": "Monday to Friday at {time}",
       "some": "{days} at {time}",
-      "hours": "Every hour from {time} | Every {n} hours from {time}"
+      "hours": "Every hour from {time} | Every {n} hours from {time}",
+      "onChange": "When something changes (after {secs} s quiet)"
     },
     "days": {
       "mon": "Mon",
@@ -1606,7 +1607,30 @@
       "needDestination": "Choose a destination.",
       "needTime": "Set a time.",
       "needDays": "Pick at least one day.",
-      "needHours": "Hours between runs: 1 to 24."
+      "needHours": "Hours between runs: 1 to 24.",
+      "onChange": "When something changes",
+      "quiet": "Wait",
+      "quietUnit": "seconds without changes before sending",
+      "watchHelp": "The background engine watches these folders and sends what changes once they have been quiet this long (at most 15 minutes after a change). It also checks the whole folder every hour, and when it starts.",
+      "enabledWatch": "Watch and send on its own",
+      "neverDeletes": "A file deleted or renamed here stays at the destination: nothing there is ever deleted.",
+      "stillWriting": "A file still being written waits until it stops changing.",
+      "watchWindow": "Outside the send hours set in Settings, changes wait and go together when they open.",
+      "needQuiet": "Wait: {min} to {max} seconds."
+    },
+    "watch": {
+      "title": "Watching",
+      "events": "Watching for changes",
+      "scanning": "Checks every 10 minutes",
+      "idle": "Not watching",
+      "starting": "Starting to watch…",
+      "limitHelp": "This computer's limit on watched folders was reached; the folder is still sent, checked every 10 minutes. To watch it again, raise the limit and then save this schedule:",
+      "lastChange": "Last change",
+      "noChange": "None seen yet",
+      "pending": "Changes waiting",
+      "goes": "go",
+      "waitHours": "wait for the send hours",
+      "nextCheck": "Next full check"
     }
   }
 }

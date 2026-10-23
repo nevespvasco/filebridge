@@ -137,6 +137,11 @@ export const useJobs = defineStore("jobs", () => {
       if (ev.job_id) void loadPage(0);
       return;
     }
+    // A watched folder changed, or its watch changed mode (docs/adr/0023).
+    if (ev.type === "schedule_changed") {
+      useSchedules().onRan();
+      return;
+    }
     // A folder measurement isn't about a job (its panel listens for it).
     if (!("job_id" in ev)) return;
     const id = ev.job_id;
