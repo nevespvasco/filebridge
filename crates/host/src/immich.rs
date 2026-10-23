@@ -5,10 +5,16 @@
 use std::sync::Arc;
 
 use filebridge_core::{Engine, PreflightView, Profile, TargetSpec};
-use filebridge_integration_immich::{INTEGRATION_ID, Immich, SetupRequest, server_url};
+use filebridge_integration_api::{Check, CheckStatus};
+use filebridge_integration_immich::{
+    INTEGRATION_ID, Immich, ImmichSettings, SAME_FOLDER, SetupRequest, server_url,
+};
 use filebridge_ipc::{DetectNextcloudResponse, DetectStepView, ErrorBody, ImmichRequest};
 use filebridge_secrets::{SecretKind, reference};
-use filebridge_transport_api::{Backend, Destination, ErrorKind};
+use filebridge_transport_api::{
+    Backend, Destination, ErrorKind, ItemOutcome, PROBE_PREFIX, ProgressSink, RemotePath,
+    TransferItem, TransferJob, TransferOptions, Transport,
+};
 
 fn err(code: &str, message: impl Into<String>) -> ErrorBody {
     ErrorBody {
@@ -29,6 +35,84 @@ fn step(id: &str, status: &str, message: impl Into<String>) -> DetectStepView {
 /// Bytes as decimal GB, for a step's message (the window formats its own numbers).
 fn gb(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / 1e9)
+}
+
+/// What the probe file says, should anyone open it before it is removed.
+const PROBE_TEXT: &[u8] =
+    b"filebridge checks that Immich sees this folder; this file is removed right away.\n";
+
+/// Whether Immich sees the destination folder where the settings say: writes a probe file
+/// into the destination's root with the host's transport, asks Immich to find it
+/// ([`Immich::same_folder`]), and removes that file again, only it ([`Transport::remove_probe`]).
+async fn check_same_folder(
+    immich: &Immich,
+    transport: &dyn Transport,
+    destination: &Destination,
+    settings: &ImmichSettings,
+    key: &str,
+) -> Check {
+    let warn = |message: String| Check {
+        id: SAME_FOLDER.into(),
+        status: CheckStatus::Warn,
+        message,
+    };
+    let id = uuid::Uuid::new_v4().simple().to_string();
+    let probe = match RemotePath::new(format!("{PROBE_PREFIX}{id}")) {
+        Ok(p) => p,
+        Err(e) => return warn(e.message),
+    };
+    let local = std::env::temp_dir().join(format!("filebridge-probe-{id}"));
+    let written = async {
+        tokio::fs::create_dir_all(&local).await?;
+        tokio::fs::write(local.join("probe"), PROBE_TEXT).await
+    }
+    .await;
+    if let Err(e) = written {
+        return warn(format!("could not make a test file here: {e}"));
+    }
+    let job = TransferJob {
+        id: format!("probe-{id}"),
+        source_roots: vec![local.clone()],
+        items: vec![TransferItem {
+            root: 0,
+            source: "probe".into(),
+            dest: probe.clone(),
+            size: PROBE_TEXT.len() as u64,
+            expected_hash: None,
+        }],
+        options: TransferOptions::default(),
+    };
+    let sent = transport
+        .transfer(destination, &job, ProgressSink::noop())
+        .await;
+    let _ = tokio::fs::remove_dir_all(&local).await;
+    let failed = match sent {
+        Ok(r) => match r.items.into_iter().next() {
+            Some(ItemOutcome::Done) => None,
+            Some(ItemOutcome::Failed(e)) => Some(e.message),
+            None => Some("nothing was sent".into()),
+        },
+        Err(e) => Some(e.message),
+    };
+    if let Some(e) = failed {
+        return warn(format!(
+            "could not write a test file into {} to check that Immich sees it: {e}",
+            destination.root
+        ));
+    }
+    let mut check = immich
+        .same_folder(settings, key, &destination.root, &probe)
+        .await;
+    if let Err(e) = transport.remove_probe(destination, &probe).await {
+        if check.status == CheckStatus::Ok {
+            check.status = CheckStatus::Warn;
+        }
+        check.message.push_str(&format!(
+            "; the test file {probe} stayed in {} ({}): delete it by hand",
+            destination.root, e.message
+        ));
+    }
+    check
 }
 
 /// The Immich plugin this host registered, and the transport its profiles use.
@@ -140,8 +224,12 @@ impl ImmichWizard {
 
         // The destination folder: there, or made by the first send.
         let mut steps = Vec::new();
+        let mut folder_there = false;
         match transport.list(&destination, None, true).await {
-            Ok(_) => steps.push(step("destination", "ok", format!("folder {root} found"))),
+            Ok(_) => {
+                folder_there = true;
+                steps.push(step("destination", "ok", format!("folder {root} found")));
+            }
             Err(e) if e.kind == ErrorKind::NotFound => steps.push(step(
                 "destination",
                 "warn",
@@ -205,6 +293,36 @@ impl ImmichWizard {
             forget().await;
             return refused(steps, libraries);
         };
+        let same = if folder_there {
+            check_same_folder(
+                &self.immich,
+                transport.as_ref(),
+                &destination,
+                &settings,
+                req.api_key.expose().trim(),
+            )
+            .await
+        } else {
+            Check {
+                id: SAME_FOLDER.into(),
+                status: CheckStatus::Warn,
+                message: format!(
+                    "{root} doesn't exist yet, so filebridge couldn't check that Immich sees it \
+                     as {}: the first send creates it",
+                    settings.import_path
+                ),
+            }
+        };
+        let same_failed = same.status == CheckStatus::Fail;
+        steps.push(step(
+            &same.id,
+            PreflightView::status_text(same.status),
+            same.message,
+        ));
+        if same_failed {
+            forget().await;
+            return refused(steps, libraries);
+        }
         let settings =
             serde_json::to_value(settings).map_err(|e| err("internal", e.to_string()))?;
         let saved = engine
@@ -288,6 +406,8 @@ mod tests {
         std::fs::write(src.join("a.jpg"), b"jpeg").unwrap();
         let mock = MockImmich::start(KEY).await;
         mock.add_library(LIB, "Fotos", &["/mnt/photos"]);
+        // The scan is over at the first look, so the send doesn't wait for the next.
+        mock.set_scan_polls(1);
         let (host, secrets) = host(dir.path()).await;
         let ops = host.operations();
 
@@ -310,6 +430,8 @@ mod tests {
                 ("library", "ok"),
                 ("import-path", "ok"),
                 ("readable", "ok"),
+                // The folder isn't there yet: nothing to probe.
+                ("same-folder", "warn"),
             ],
             "{:?}",
             res.steps
@@ -352,6 +474,64 @@ mod tests {
         // Deleting the profile takes its key out of the keyring.
         ops.delete_profile(profile.id.clone()).await.unwrap();
         assert!(secrets.get(&key_ref).is_err());
+    }
+
+    /// The names in `dir`.
+    fn names(dir: &std::path::Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_test_file_shows_whether_immich_sees_the_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("photos");
+        std::fs::create_dir_all(&dest).unwrap();
+        std::fs::write(dest.join("kept.jpg"), b"jpeg").unwrap();
+        let (first, _) = host(dir.path()).await;
+        let ops = first.operations();
+
+        // Immich's container mounts the destination at /mnt/photos/Holidays.
+        let mock = MockImmich::start(KEY).await;
+        mock.add_library(LIB, "Fotos", &["/mnt/photos"]);
+        mock.mount("/mnt/photos/Holidays", &dest);
+        let res = ops
+            .add_immich(request(mock.url(), &dest, KEY))
+            .await
+            .unwrap();
+        let same = res.steps.iter().find(|s| s.id == "same-folder").unwrap();
+        assert_eq!(same.status, "ok", "{}", same.message);
+        assert!(res.profile.is_some());
+        assert_eq!(names(&dest), ["kept.jpg"], "only the test file is removed");
+        let validated: Vec<_> = mock
+            .requests()
+            .into_iter()
+            .filter(|r| r.path.ends_with("/validate") && r.body.contains(PROBE_PREFIX))
+            .collect();
+        assert_eq!(validated.len(), 1);
+
+        // It mounts another folder there: refused, nothing saved, the test file removed.
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let mock = MockImmich::start(KEY).await;
+        mock.add_library(LIB, "Fotos", &["/mnt/photos"]);
+        mock.mount("/mnt/photos/Holidays", &elsewhere);
+        let (second, secrets) = host(&dir.path().join("second")).await;
+        let ops = second.operations();
+        let res = ops
+            .add_immich(request(mock.url(), &dest, KEY))
+            .await
+            .unwrap();
+        let same = res.steps.iter().find(|s| s.id == "same-folder").unwrap();
+        assert_eq!(same.status, "fail", "{}", same.message);
+        assert!(res.profile.is_none());
+        assert!(secrets.is_empty(), "the key went again");
+        assert_eq!(names(&dest), ["kept.jpg"]);
+        assert!(ops.list_profiles().await.unwrap().is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread")]

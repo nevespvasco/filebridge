@@ -95,6 +95,76 @@ struct Validation {
     import_paths: Vec<PathValidation>,
 }
 
+/// The state of Immich's `library` job queue, where library scans run.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct QueueState {
+    pub active: u64,
+    pub waiting: u64,
+    pub delayed: u64,
+    /// The queue is paused (Administration → Jobs): nothing in it runs until it is resumed.
+    pub paused: bool,
+}
+
+impl QueueState {
+    /// Nothing running or waiting: a scan queued earlier has finished.
+    pub fn idle(&self) -> bool {
+        self.active == 0 && self.waiting == 0 && self.delayed == 0
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueueCounts {
+    #[serde(default)]
+    active: u64,
+    #[serde(default)]
+    waiting: u64,
+    #[serde(default)]
+    delayed: u64,
+}
+
+/// `GET /api/queues/library` (Immich 2.x).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Queue {
+    #[serde(default)]
+    is_paused: bool,
+    statistics: QueueCounts,
+}
+
+/// One queue of `GET /api/jobs` (older Immich, and deprecated in 2.x).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyQueue {
+    job_counts: QueueCounts,
+    #[serde(default)]
+    queue_status: Option<LegacyQueueStatus>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyQueueStatus {
+    #[serde(default)]
+    is_paused: bool,
+}
+
+#[derive(Deserialize)]
+struct LegacyQueues {
+    library: LegacyQueue,
+}
+
+/// The file extensions Immich imports (`GET /api/server/media-types`), each with its dot.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct MediaTypes {
+    #[serde(default)]
+    pub image: Vec<String>,
+    #[serde(default)]
+    pub video: Vec<String>,
+    /// Read beside a photo (`.xmp`), never imported on its own.
+    #[serde(default)]
+    pub sidecar: Vec<String>,
+}
+
 #[derive(Deserialize)]
 struct Version {
     major: u32,
@@ -279,6 +349,43 @@ impl Api {
             )
             .await?;
         Ok(Self::decode::<Validation>(server, &body)?.import_paths)
+    }
+
+    /// The `library` job queue: `GET /api/queues/library` (key permission `queue.read`), or on
+    /// an Immich without it `GET /api/jobs` (`job.read`). Administrators only.
+    pub async fn library_queue(&self, server: &str, key: &str) -> ApiResult<QueueState> {
+        let state = |c: QueueCounts, paused: bool| QueueState {
+            active: c.active,
+            waiting: c.waiting,
+            delayed: c.delayed,
+            paused,
+        };
+        match self
+            .call(Method::GET, server, "/queues/library", Some(key), None)
+            .await
+        {
+            Ok(body) => {
+                let q: Queue = Self::decode(server, &body)?;
+                Ok(state(q.statistics, q.is_paused))
+            }
+            Err(e) if e.kind == ApiErrorKind::NotFound => {
+                let body = self
+                    .call(Method::GET, server, "/jobs", Some(key), None)
+                    .await?;
+                let q: LegacyQueues = Self::decode(server, &body)?;
+                let paused = q.library.queue_status.is_some_and(|s| s.is_paused);
+                Ok(state(q.library.job_counts, paused))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// `GET /api/server/media-types` (no key): the extensions Immich imports.
+    pub async fn media_types(&self, server: &str) -> ApiResult<MediaTypes> {
+        let body = self
+            .call(Method::GET, server, "/server/media-types", None, None)
+            .await?;
+        Self::decode(server, &body)
     }
 
     /// `POST /api/libraries/{id}/scan`: queues a scan of the whole library (Immich has no scan

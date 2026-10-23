@@ -96,7 +96,11 @@ How to run each gate against the real servers and the phone:
       folder) and a library scan through its API after the send
       ([ADR 0020](adr/0020-immich-external-library.md), `crates/integration-immich`). Wizard in
       the window, `filebridge profile add-immich`; tested against a mocked Immich API, not yet
-      against a real server.
+      against a real server. Follow-ups done
+      ([ADR 0029](adr/0029-integration-checkpoints-skips-and-probe-files.md)): the job waits for
+      the library scan with progress (and a resumed job doesn't ask twice), the analysis warns
+      about files Immich will skip, and the wizard checks with a probe file that Immich sees
+      the destination folder.
 - [ ] Scheduled sends: a saved send runs at set times and sends only what changed, in the
       service; its own ADR first ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
 - [ ] Published CLI.
@@ -108,6 +112,8 @@ How to run each gate against the real servers and the phone:
 
 > **Status (2026-10-23):** met for `integration-immich` (`git diff main -- crates/core` is
 > empty; see [03 — Extension contracts](03-extension-contracts.md#phase-3-acceptance-test)).
+> Its follow-ups then extended the contracts (ADR 0029), which touched `core` once for every
+> integration; no Immich code is in `core`.
 > The other Phase 3 items are still open.
 
 ## Phase 4 — Mobile

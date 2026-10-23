@@ -23,4 +23,5 @@ url.workspace = true
 
 [dev-dependencies]
 filebridge-integration-immich = { path = ".", features = ["fake"] }
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

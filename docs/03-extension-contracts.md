@@ -30,6 +30,9 @@ pub trait Transport: Send + Sync {
     // over `list` and the adapter's one-hop `move_unchecked` (see below).
     async fn move_path(&self, req: &MoveRequest) -> Result<()>;
     async fn move_unchecked(&self, from: &RemotePath, to: &RemotePath, is_dir: bool) -> Result<()>;
+    // Removes only a probe file (`.filebridge-probe-…` at the root) the app wrote to test the
+    // destination, over the adapter's `remove_file_unchecked` (ADR 0029)
+    async fn remove_probe(&self, path: &RemotePath) -> Result<()>;
     // App-wide, applied to running transfers too; default no-op (ADR 0010)
     async fn set_bandwidth_limit(&self, bytes_per_sec: Option<u64>) -> Result<()>;
 }
@@ -47,6 +50,8 @@ pub trait Integration: Send + Sync {
     fn name_rules(&self, settings: &Value) -> Vec<Box<dyn NameRule>>; // rules the tool imposes, per profile
     fn check_profile(&self, dest: &Destination, settings: &Value) -> Result<()>; // on every save; default: accept
     async fn preflight(&self, ctx: &JobContext) -> Result<PreflightReport>;
+    // Files of the planned send the tool won't take, as problems; a preflight warning (ADR 0029)
+    async fn will_skip(&self, ctx: &JobContext, files: &[RemotePath]) -> Result<Vec<Problem>>;
     async fn after_transfer(
         &self,
         ctx: &JobContext,
@@ -75,7 +80,7 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 | `Entry` | names | source path as raw bytes (`OsString` / `Vec<u8>`), decoded name if valid UTF-8, size, is_dir, parent id |
 | `Issue` | names | rule id, severity (`Auto` / `NeedsDecision`), human message key, before/after bytes for display |
 | `TargetProfile` | names | target OS/filesystem family, max path/name length, case-sensitive?, integration id |
-| `JobContext` | integration-api | job id, profile, destination, transport caps, logger |
+| `JobContext` | integration-api | job id, profile, destination, transport caps, and the step's last checkpoint (`IntegrationSink::checkpoint`, persisted by `core`; ADR 0029) |
 | `SecretResolver` | transport-api | `resolve(&KeyringRef) -> SecretValue`: read-only access to a profile's secrets, implemented by the host over the OS keyring and injected into the plugins that sign in with one (ADR 0004). Not stored is `Auth`; an unreachable keyring is `Transient` |
 
 ## Design rules
@@ -87,6 +92,9 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 - **An integration receives the exact list of changed paths**, so it updates only those (the
   `files:scan --path` that was done by hand). A tool that can't update by path uses the list
   only for its report: Immich's API scans a whole library.
+- **A step that runs long saves where it is.** `IntegrationSink::checkpoint` persists a small
+  state before the step goes on; a retry or a resumed job finds it in `JobContext::checkpoint`
+  (Immich: the scan was already asked for, so it only waits).
 - `Integration::required_caps` is checked against the chosen `Transport::capabilities` when a
   profile is created; incompatible combinations are rejected in the UI, not at send time.
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
@@ -143,3 +151,6 @@ plugin-settings form. A diff touching `crates/core` fails the test.
 its profile wizard added what every wizard needs around them: one ipc operation (`add_immich`),
 its host side (`crates/host/src/immich.rs`), a CLI command, and a secret kind (`api-key`) in
 `crates/secrets`, which `core` deletes with the profile's other secrets without knowing it.
+Its follow-ups (waiting for the scan, skipped files, the folder probe) needed more from the
+contracts, so [ADR 0029](adr/0029-integration-checkpoints-skips-and-probe-files.md) extended
+them; that touched `core` once, generically.

@@ -374,6 +374,7 @@ impl Engine {
                 settings: profile.integration_settings.clone(),
             },
             caps: transport.capabilities(),
+            checkpoint: None,
         })
     }
 
@@ -405,6 +406,64 @@ impl Engine {
             );
         }
         Ok(out)
+    }
+
+    /// Asks the integration which of the job's files it won't take (`will_skip`), and adds
+    /// them to its preflight view as one warning check, `skipped`. Only warns: a failed or slow
+    /// answer adds nothing, and nothing is asked when the integration's preflight failed.
+    async fn add_skipped(
+        &self,
+        profile: &Profile,
+        job_id: &str,
+        preflight: &mut [PreflightView],
+    ) -> Result<()> {
+        let Some(id) = &profile.integration else {
+            return Ok(());
+        };
+        let Some(view) = preflight.iter_mut().find(|v| v.source == "integration") else {
+            return Ok(());
+        };
+        if view.checks.iter().any(|c| c.status == "fail") {
+            return Ok(());
+        }
+        let files = self.dest_files(job_id, false).await?;
+        if files.is_empty() {
+            return Ok(());
+        }
+        let integration = self.registry.integration(id)?;
+        let ctx = self.job_context(job_id, profile)?;
+        match tokio::time::timeout(PREFLIGHT_TIMEOUT, integration.will_skip(&ctx, &files)).await {
+            Ok(Ok(problems)) if !problems.is_empty() => {
+                const SHOWN: usize = 5;
+                let mut message = format!(
+                    "{} of the {} files will be sent but {id} won't take them: ",
+                    problems.len(),
+                    files.len()
+                );
+                let listed: Vec<String> = problems
+                    .iter()
+                    .take(SHOWN)
+                    .map(|p| match &p.path {
+                        Some(path) => format!("{path} ({})", p.message),
+                        None => p.message.clone(),
+                    })
+                    .collect();
+                message.push_str(&listed.join("; "));
+                if problems.len() > SHOWN {
+                    message.push_str(&format!("; and {} more", problems.len() - SHOWN));
+                }
+                view.checks.push(filebridge_model::CheckView {
+                    id: "skipped".into(),
+                    status: PreflightView::status_text(filebridge_transport_api::CheckStatus::Warn)
+                        .into(),
+                    message,
+                });
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!(job = job_id, "{id} could not list skipped files: {e}"),
+            Err(_) => tracing::warn!(job = job_id, "{id} did not say which files it skips"),
+        }
+        Ok(())
     }
 
     // ---- jobs --------------------------------------------------------------------------
@@ -627,7 +686,7 @@ impl Engine {
             self.carry_decisions(&job_id, from).await?;
         }
 
-        let preflight = self.preflight(&profile, &job_id).await?;
+        let mut preflight = self.preflight(&profile, &job_id).await?;
         {
             let mut it = preflight.iter().cloned();
             if let Some(transport) = it.next() {
@@ -638,6 +697,8 @@ impl Engine {
                 self.keep_test(&profile.id, &test).await;
             }
         }
+        // About this job's files, so not part of the destination's kept test.
+        self.add_skipped(&profile, &job_id, &mut preflight).await?;
         let pending = self.store.pending_issue_count(&job_id).await?;
         let next = if pending > 0 {
             JobState::AwaitingApproval

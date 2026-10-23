@@ -45,6 +45,7 @@ async fn per_file_keeps_the_transport_contract() {
     };
     filebridge_transport_api::contract::check(&transport, &dest, dir.path()).await;
     filebridge_transport_api::contract::check_move(&transport, &dest, dir.path()).await;
+    filebridge_transport_api::contract::check_probe(&transport, &dest, dir.path()).await;
 }
 
 #[cfg(feature = "librclone")]
@@ -74,4 +75,5 @@ async fn librclone_keeps_the_transport_contract() {
     };
     filebridge_transport_api::contract::check(&transport, &dest, dir.path()).await;
     filebridge_transport_api::contract::check_move(&transport, &dest, dir.path()).await;
+    filebridge_transport_api::contract::check_probe(&transport, &dest, dir.path()).await;
 }

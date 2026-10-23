@@ -37,7 +37,8 @@ the background after the request is accepted.
   destination's root **as Immich sees it** (`import_path`), because Immich in Docker sees the
   host's `/srv/photos` as e.g. `/mnt/photos`. Empty means the same path.
 - **The key must be an administrator's** (library endpoints are admin-only) with at least
-  `library.read` and `library.update`.
+  `library.read` and `library.update`, and `queue.read` (`job.read` before Immich 2) to follow
+  the scan ([ADR 0029](0029-integration-checkpoints-skips-and-probe-files.md)).
 - **Preflight** (on every send and connection test): Immich answers (`/api/server/ping`), the
   key signs in and may read the library, the library exists, `import_path` is inside one of its
   import paths, and Immich can read that import path (`/validate`; a warning, not a failure).
@@ -55,11 +56,17 @@ the background after the request is accepted.
   the CLI and the UI's form.
 - Each send scans the whole library. Immich's scan only imports new or changed files, but it
   still looks at every file of the library, so a big library takes a while to settle after a
-  small send. filebridge doesn't wait for the scan to finish.
+  small send. Since [ADR 0029](0029-integration-checkpoints-skips-and-probe-files.md) the job
+  waits for the scan (Immich's `library` queue, up to an hour, with progress), and a resumed
+  job waits for the scan it already asked for instead of asking again.
 - Immich identifies an external-library photo by its path. "Repair destination" renames show
   up in Immich as new photos, and the old entries go offline; albums, favourites and
   descriptions stay with the old ones. The Repair confirmation says so.
-- A file whose name matches one of the library's exclusion patterns, or whose type Immich doesn't
-  read, is sent and verified but never appears in Immich. filebridge doesn't warn about it yet.
+- A file whose name matches one of the library's exclusion patterns, a hidden name, or a type
+  Immich doesn't read is sent and verified but never appears in Immich. Since ADR 0029 the
+  analysis lists them in the preflight (`skipped`, a warning) and the job's report lists them
+  as problems; the send is not blocked.
+- The wizard checks that Immich sees the destination folder as `import_path` with a probe file
+  it writes and removes (ADR 0029); a mismatch is refused with a pt/en explanation.
 - Upload through Immich's API (option 1) stays open as a future `Transport` for those without
   SSH access to the server.

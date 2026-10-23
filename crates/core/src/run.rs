@@ -26,6 +26,8 @@ use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOp
 use filebridge_model::{JobErrorCode, Op};
 
 const PAGE: u32 = 2_000;
+/// Job log kind of an integration's checkpoints (`IntegrationSink::checkpoint`).
+pub(crate) const CHECKPOINT_EVENT: &str = "integration_checkpoint";
 /// The most bytes one verify batch reads ([`verify_batches`]).
 const VERIFY_BATCH_BYTES: u64 = 256 << 20;
 
@@ -530,6 +532,16 @@ impl Engine {
 
     /// The destination paths of the files sent: what stage 6 is told changed.
     async fn sent_files(&self, job_id: &str) -> Result<Vec<RemotePath>> {
+        self.dest_files(job_id, true).await
+    }
+
+    /// The destination paths of the job's files: only those sent with `sent_only`, else every
+    /// one that has a destination name.
+    pub(crate) async fn dest_files(
+        &self,
+        job_id: &str,
+        sent_only: bool,
+    ) -> Result<Vec<RemotePath>> {
         let mut changed = Vec::new();
         let mut after = None;
         loop {
@@ -538,7 +550,7 @@ impl Engine {
             after = Some(last.entry.idx);
             for e in page {
                 if !e.entry.is_dir
-                    && e.transfer_state == EntryState::Done
+                    && (!sent_only || e.transfer_state == EntryState::Done)
                     && let Some(p) = e.dest_path
                 {
                     changed.push(RemotePath::new(p)?);
@@ -553,7 +565,13 @@ impl Engine {
             return Ok(StageEnd::Done(()));
         };
         let integration = self.registry.integration(&id)?;
-        let job_ctx = self.job_context(&ctx.job_id, &ctx.profile)?;
+        let mut job_ctx = self.job_context(&ctx.job_id, &ctx.profile)?;
+        // What the step saved the last time it ran for this job (a retry, or a resume).
+        job_ctx.checkpoint = self
+            .store
+            .last_event(&ctx.job_id, CHECKPOINT_EVENT)
+            .await?
+            .map(|e| e.data);
 
         let changed = if ctx.kind == JobKind::Repair {
             self.repair_outcome(&ctx.job_id, ctx.options.target_dir.as_deref())
@@ -566,7 +584,22 @@ impl Engine {
             return Ok(StageEnd::Done(()));
         }
 
-        let (sink, mut rx) = IntegrationSink::channel();
+        let (sink, mut rx, mut saves) = IntegrationSink::with_checkpoints();
+        // Each checkpoint is in SQLite before the integration hears it is saved.
+        let (store, job_id) = (self.store.clone(), ctx.job_id.clone());
+        let keep = tokio::spawn(async move {
+            while let Some(c) = saves.recv().await {
+                match store
+                    .append_event(Some(&job_id), CHECKPOINT_EVENT, c.state)
+                    .await
+                {
+                    Ok(_) => {
+                        let _ = c.saved.send(());
+                    }
+                    Err(e) => tracing::warn!(job = job_id, "cannot keep the checkpoint: {e}"),
+                }
+            }
+        });
         let events = self.events.clone();
         let job_id = ctx.job_id.clone();
         let forward = tokio::spawn(async move {
@@ -612,10 +645,12 @@ impl Engine {
             r = integration.after_transfer(&job_ctx, &changed, sink) => r,
             _ = ctx.cancel.cancelled() => {
                 forward.abort();
+                keep.abort();
                 return Ok(StageEnd::Cancelled);
             }
         };
         let _ = tokio::time::timeout(Duration::from_secs(1), forward).await;
+        let _ = tokio::time::timeout(Duration::from_secs(1), keep).await;
 
         match result {
             Ok(report) => {

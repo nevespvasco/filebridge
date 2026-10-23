@@ -14,4 +14,6 @@ async fn keeps_the_transport_contract() {
     filebridge_transport_api::contract::check(&FakeTransport::default(), &dest, dir.path()).await;
     filebridge_transport_api::contract::check_move(&FakeTransport::default(), &dest, dir.path())
         .await;
+    filebridge_transport_api::contract::check_probe(&FakeTransport::default(), &dest, dir.path())
+        .await;
 }
