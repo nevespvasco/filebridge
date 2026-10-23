@@ -129,8 +129,10 @@ const jobs: JobSummary_Serialize[] = [
   },
 ];
 
-/** The first time `r` comes after `after`, in the browser's local time (docs/adr/0019). */
+/** The first time `r` comes after `after`, in the browser's local time (docs/adr/0019). A
+ * watched schedule (docs/adr/0023) runs now, then when its folder changes. */
 function nextRun(r: Recurrence, after: number): number | null {
+  if (r.kind === "on_change") return after;
   const minutes = r.kind === "days" ? [r.minute] : Array.from({ length: Math.ceil((1440 - r.minute) / (r.every * 60)) }, (_, k) => r.minute + k * r.every * 60);
   const day0 = new Date(after);
   day0.setHours(0, 0, 0, 0);
@@ -164,8 +166,28 @@ const schedules: ScheduleView_Serialize[] = [
     last_job_id: "j-old",
     last_job_state: "completed",
     files_sent: 1234,
+    watch: null,
     created_at: now - 3 * 86_400_000,
     updated_at: now - 3 * 86_400_000,
+  },
+  {
+    id: "s-photos",
+    name: "Fotos ao mudar",
+    sources: ["/home/demo/Fotos"],
+    profile_id: "p-disk",
+    options: { verify: true, concurrency: 8, target_dir: null, keep_older: true },
+    recurrence: { kind: "on_change", quiet_secs: 60 },
+    enabled: true,
+    next_run_at: now + 40_000,
+    last_run_at: now - 50 * 60_000,
+    last_outcome: "started",
+    last_error: null,
+    last_job_id: "j-old",
+    last_job_state: "completed",
+    files_sent: 5_210,
+    watch: { mode: "events", reason: null, limit: false, last_change_at: now - 20_000, pending_since: now - 20_000 },
+    created_at: now - 86_400_000,
+    updated_at: now - 86_400_000,
   },
 ];
 
@@ -1134,6 +1156,7 @@ const handlers: Handlers = {
       scan_errors: ["/home/demo/Fotos/privado: permission denied"],
       skipped_symlinks: 2,
       unchanged: 0,
+      unsettled: 0,
       preflight: [{ source: "transport", ...spaceOf(job.profile_id), writable: true, checks: [{ id: "writable", status: "ok", message: "test file written and removed" }] }],
     };
     return summary;
@@ -1541,6 +1564,7 @@ const handlers: Handlers = {
     const r = input.recurrence;
     if (r.kind === "days" && !r.days.length) throw fail("invalid", "pick at least one day");
     if (r.kind === "hours" && (r.every < 1 || r.every > 24)) throw fail("invalid", "the hours between runs must be from 1 to 24");
+    if (r.kind === "on_change" && (r.quiet_secs < 5 || r.quiet_secs > 3600)) throw fail("invalid", "the quiet time must be from 5 s to 60 min");
     const old = schedules.find((x) => x.id === input.id);
     if (input.id && !old) throw fail("not_found", `schedule ${input.id} not found`);
     const view: ScheduleView_Serialize = {
@@ -1558,6 +1582,10 @@ const handlers: Handlers = {
       last_job_id: old?.last_job_id ?? null,
       last_job_state: old?.last_job_state ?? null,
       files_sent: old?.files_sent ?? 0,
+      watch:
+        r.kind === "on_change"
+          ? { mode: input.enabled ? "events" : "idle", reason: null, limit: false, last_change_at: old?.watch?.last_change_at ?? null, pending_since: null }
+          : null,
       created_at: old?.created_at ?? Date.now(),
       updated_at: Date.now(),
     };

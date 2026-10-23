@@ -33,7 +33,8 @@ pub use report::{
 };
 pub use rules::{JobGroup, Op, can_go, job_operations};
 pub use schedule::{
-    MAX_SCHEDULE_NAME, Recurrence, ScheduleInput, ScheduleOutcome, ScheduleView, Weekday,
+    DEFAULT_QUIET_SECS, MAX_QUIET_SECS, MAX_SCHEDULE_NAME, MIN_QUIET_SECS, Recurrence,
+    ScheduleInput, ScheduleOutcome, ScheduleView, WatchMode, WatchView, Weekday,
 };
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use sources::{

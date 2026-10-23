@@ -182,7 +182,9 @@ async fn run(cli: &Cli) -> Result<()> {
         tracing::info!("resumed {} interrupted jobs", resumed.len());
     }
     // Scheduled sends run here, never in the window (ADR 0019). A time missed while the
-    // service was off runs once now.
+    // service was off runs once now. Watched folders are watched here too (ADR 0023); each
+    // watch that starts rescans its folder, catching up what changed while the service was off.
+    engine.set_watcher(Arc::new(filebridge_host::NotifyWatcher));
     tokio::spawn(engine.clone().run_scheduler());
     tokio::select! {
         r = filebridge_ipc::serve(listener, operations) => {

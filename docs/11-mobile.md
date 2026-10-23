@@ -15,6 +15,11 @@ Not in scope: the phone as a remote control for a computer's `filebridge-service
 service on the network, which [ADR 0008](adr/0008-service-ipc.md) rules out today (only the local
 user can connect). It can be its own phase later, with its own ADR (pairing, authentication).
 
+Not in scope either: scheduled sends and continuous sync on the phone. They run in
+`filebridge-service`, and a phone has none (ADR 0014); a watch that runs all day would need a
+permanent foreground notification and the battery, and iOS doesn't allow it
+([ADR 0023](adr/0023-continuous-sync.md#phones-not-in-phase-5)).
+
 Order: **Android first** (Phase 4a), **iOS second** (Phase 4b, only once a Mac and an Apple
 Developer account are available). Builds are for personal use: a signed APK installed by hand,
 like the desktop builds ([10](10-risks-and-open-decisions.md#risks)). Stores wait for signed

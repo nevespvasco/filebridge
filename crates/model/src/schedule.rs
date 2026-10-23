@@ -1,5 +1,6 @@
 //! Scheduled sends (docs/adr/0019): a saved send that runs on its own at set times, in the
-//! service, and sends only what changed since its last run.
+//! service, and sends only what changed since its last run. A watched schedule (docs/adr/0023)
+//! runs when its sources change instead.
 
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +8,12 @@ use crate::{JobState, SendOptions};
 
 /// The most characters in a schedule's name.
 pub const MAX_SCHEDULE_NAME: usize = 120;
+
+/// How long a watched schedule waits, by default, for its sources to stop changing.
+pub const DEFAULT_QUIET_SECS: u32 = 60;
+/// The bounds of a watched schedule's quiet time.
+pub const MIN_QUIET_SECS: u32 = 5;
+pub const MAX_QUIET_SECS: u32 = 3600;
 
 /// A day of the week.
 #[derive(
@@ -66,12 +73,23 @@ pub enum Recurrence {
     Days { days: Vec<Weekday>, minute: u16 },
     /// Every day at `minute` past midnight, then every `every` hours until midnight.
     Hours { every: u16, minute: u16 },
+    /// When its sources change, once they have been quiet for `quiet_secs` (docs/adr/0023).
+    OnChange { quiet_secs: u32 },
 }
 
 impl Recurrence {
     /// Why this recurrence can't be saved, if it can't.
     pub fn validate(&self) -> Result<(), String> {
         let minute = match self {
+            Recurrence::OnChange { quiet_secs } => {
+                if !(MIN_QUIET_SECS..=MAX_QUIET_SECS).contains(quiet_secs) {
+                    return Err(format!(
+                        "the quiet time must be from {MIN_QUIET_SECS} s to {} min",
+                        MAX_QUIET_SECS / 60
+                    ));
+                }
+                return Ok(());
+            }
             Recurrence::Days { days, minute } => {
                 if days.is_empty() {
                     return Err("pick at least one day".into());
@@ -91,9 +109,11 @@ impl Recurrence {
         Ok(())
     }
 
-    /// The minutes past midnight it runs at on a day it runs, in order.
+    /// The minutes past midnight it runs at on a day it runs, in order (none when it runs on
+    /// change).
     pub fn minutes_of_day(&self) -> Vec<u16> {
         match self {
+            Recurrence::OnChange { .. } => Vec::new(),
             Recurrence::Days { minute, .. } => vec![*minute],
             Recurrence::Hours { every, minute } => {
                 let step = usize::from((*every).max(1)) * 60;
@@ -110,8 +130,46 @@ impl Recurrence {
         match self {
             Recurrence::Days { days, .. } => days.contains(&day),
             Recurrence::Hours { .. } => true,
+            Recurrence::OnChange { .. } => false,
         }
     }
+
+    /// The quiet time of a watched schedule; `None` for a timetable.
+    pub fn quiet_secs(&self) -> Option<u32> {
+        match self {
+            Recurrence::OnChange { quiet_secs } => Some(*quiet_secs),
+            _ => None,
+        }
+    }
+}
+
+/// How a watched schedule's sources are being watched (docs/adr/0023).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchMode {
+    /// The operating system reports changes as they happen.
+    Events,
+    /// It can't (a watch limit, a folder that is gone): the folder is scanned every few minutes
+    /// instead; `WatchView::reason` says why.
+    Scanning,
+    /// This engine isn't watching it: switched off, or an engine that runs no schedules (the
+    /// CLI's own).
+    Idle,
+}
+
+/// A watched schedule's watch, as the window shows it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct WatchView {
+    pub mode: WatchMode,
+    /// Why it is scanning instead of watching.
+    pub reason: Option<String>,
+    /// Whether `reason` is the system's limit on watched folders (Linux inotify), which the
+    /// user can raise.
+    pub limit: bool,
+    /// The last change seen in its sources (Unix ms).
+    pub last_change_at: Option<i64>,
+    /// The first change not in a run yet (Unix ms); `None` when everything seen has gone.
+    pub pending_since: Option<i64>,
 }
 
 /// A schedule as the window or the CLI saves it. Without `id` it is new; with one, it replaces
@@ -186,6 +244,8 @@ pub struct ScheduleView {
     pub last_job_state: Option<JobState>,
     /// Files it has sent so far (one per source file, whatever the number of runs).
     pub files_sent: u64,
+    /// For a watched schedule (`Recurrence::OnChange`): its watch.
+    pub watch: Option<WatchView>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -219,6 +279,13 @@ mod tests {
         assert!(hours(24, 1439).validate().is_ok());
         assert!(hours(0, 0).validate().is_err());
         assert!(hours(25, 0).validate().is_err());
+        let watch = |quiet_secs| Recurrence::OnChange { quiet_secs };
+        assert!(watch(DEFAULT_QUIET_SECS).validate().is_ok());
+        assert!(watch(MIN_QUIET_SECS - 1).validate().is_err());
+        assert!(watch(MAX_QUIET_SECS + 1).validate().is_err());
+        assert!(watch(60).minutes_of_day().is_empty());
+        assert!(!watch(60).runs_on(Weekday::Mon));
+        assert_eq!(watch(60).quiet_secs(), Some(60));
     }
 
     #[test]

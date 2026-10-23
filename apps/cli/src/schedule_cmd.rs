@@ -1,13 +1,15 @@
-//! `filebridge schedule`: scheduled sends (docs/adr/0019). `filebridge-service` runs them at
-//! their times; these commands manage them, and `run-now` runs one here and waits for it, like
-//! `filebridge send`.
+//! `filebridge schedule`: scheduled sends (docs/adr/0019) and watched folders (docs/adr/0023).
+//! `filebridge-service` runs them at their times, or when a watched folder changes; these
+//! commands manage them, and `run-now` runs one here and waits for it, like `filebridge send`.
 
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use filebridge_core::{
-    Recurrence, ScheduleInput, ScheduleOutcome, ScheduleView, SendOptions, Weekday,
+    DEFAULT_QUIET_SECS, Recurrence, ScheduleInput, ScheduleOutcome, ScheduleView, SendOptions,
+    WatchMode, Weekday,
 };
+
 use filebridge_host::Access;
 use filebridge_ipc::Operations;
 
@@ -16,8 +18,9 @@ use crate::send_cmd::human_secs;
 
 #[derive(clap::Subcommand)]
 pub enum ScheduleCmd {
-    /// Add a scheduled send. Each run sends only what is new or changed since the last one; a
-    /// changed file's older version is kept at the destination under a dated name.
+    /// Add a scheduled send, or with --watch a watched folder. Each run sends only what is new
+    /// or changed since the last one; a changed file's older version is kept at the destination
+    /// under a dated name, and nothing there is ever deleted.
     Add(AddArgs),
     /// Every schedule, with its next and last run.
     List,
@@ -39,15 +42,23 @@ pub struct AddArgs {
     #[arg(long)]
     name: String,
     /// The days it runs, e.g. `mon,wed,fri`, or `daily`. Needs --at.
-    #[arg(long, conflicts_with = "every_hours")]
+    #[arg(long, conflicts_with_all = ["every_hours", "watch"])]
     days: Option<String>,
     /// Local time, HH:MM: when it runs on its days, or with --every-hours its first run each
     /// day (default 00:00).
     #[arg(long)]
     at: Option<String>,
     /// Runs every N hours (1–24), from --at until midnight, every day.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "watch")]
     every_hours: Option<u16>,
+    /// Runs when the files change (continuous sync, copy-only): filebridge-service watches
+    /// them and sends what is new or changed once they have been quiet for --quiet seconds.
+    /// A file deleted or renamed at the source stays at the destination.
+    #[arg(long, conflicts_with = "at")]
+    watch: bool,
+    /// With --watch: seconds without changes before a run (5–3600).
+    #[arg(long, requires = "watch", default_value_t = DEFAULT_QUIET_SECS)]
+    quiet: u32,
     /// A folder under the destination's root to send into.
     #[arg(long)]
     into: Option<String>,
@@ -108,10 +119,17 @@ async fn add(g: &Global, args: AddArgs) -> Result<()> {
         })
         .await?;
     print(&saved, &profile.name);
-    println!(
-        "filebridge-service runs it; files changed at the source keep their older version at the \
-         destination"
-    );
+    if saved.watch.is_some() {
+        println!(
+            "filebridge-service watches it and sends changes; files changed at the source keep \
+             their older version at the destination, and deleted or renamed ones stay there"
+        );
+    } else {
+        println!(
+            "filebridge-service runs it; files changed at the source keep their older version at \
+             the destination"
+        );
+    }
     Ok(())
 }
 
@@ -134,9 +152,18 @@ async fn list(g: &Global) -> Result<()> {
 
 fn print(s: &ScheduleView, to: &str) {
     let now = filebridge_store::now_ms();
-    let next = match s.next_run_at {
-        Some(t) if s.enabled => format!("next in {}", human_secs(((t - now).max(0) / 1000) as u64)),
-        _ => "off".into(),
+    let next = match (s.next_run_at, &s.watch) {
+        (_, _) if !s.enabled => "off".into(),
+        (Some(t), Some(w)) if w.pending_since.is_some() => format!(
+            "changes go in {}",
+            human_secs(((t - now).max(0) / 1000) as u64)
+        ),
+        (Some(t), Some(_)) => format!(
+            "next rescan in {}",
+            human_secs(((t - now).max(0) / 1000) as u64)
+        ),
+        (Some(t), None) => format!("next in {}", human_secs(((t - now).max(0) / 1000) as u64)),
+        (None, _) => "off".into(),
     };
     println!(
         "{}  {}  {}, {}",
@@ -146,6 +173,30 @@ fn print(s: &ScheduleView, to: &str) {
         next
     );
     println!("    {} → {to}", s.sources.join(", "));
+    if let Some(w) = &s.watch {
+        let mode = match w.mode {
+            WatchMode::Events => "watching".to_owned(),
+            WatchMode::Scanning => format!(
+                "scanning every 10 min ({})",
+                w.reason.as_deref().unwrap_or("events not available")
+            ),
+            WatchMode::Idle if s.enabled => "watched by filebridge-service".to_owned(),
+            WatchMode::Idle => "not watched".to_owned(),
+        };
+        let last = w.last_change_at.map_or(String::new(), |t| {
+            format!(
+                "; last change {} ago",
+                human_secs(((now - t).max(0) / 1000) as u64)
+            )
+        });
+        println!("    {mode}{last}");
+        if w.limit {
+            println!(
+                "    raise the limit with `sudo sysctl fs.inotify.max_user_watches=524288`, then \
+                 restart filebridge-service"
+            );
+        }
+    }
     if let (Some(at), Some(outcome)) = (s.last_run_at, s.last_outcome) {
         let ago = human_secs(((now - at).max(0) / 1000) as u64);
         let what = match outcome {
@@ -186,6 +237,7 @@ fn describe(r: &Recurrence) -> String {
             format!("{days} at {}", hm(*minute))
         }
         Recurrence::Hours { every, minute } => format!("every {every} h from {}", hm(*minute)),
+        Recurrence::OnChange { quiet_secs } => format!("on change (after {quiet_secs} s quiet)"),
     }
 }
 
@@ -213,6 +265,9 @@ async fn find(app: &App, key: &str) -> Result<ScheduleView> {
 fn recurrence(args: &AddArgs) -> Result<Recurrence> {
     let at = args.at.as_deref().map(parse_hm).transpose()?;
     let r = match args.every_hours {
+        _ if args.watch => Recurrence::OnChange {
+            quiet_secs: args.quiet,
+        },
         Some(every) => Recurrence::Hours {
             every,
             minute: at.unwrap_or(0),
@@ -251,6 +306,15 @@ mod tests {
     use super::*;
 
     fn args(days: Option<&str>, at: Option<&str>, every: Option<u16>) -> AddArgs {
+        watched(days, at, every, None)
+    }
+
+    fn watched(
+        days: Option<&str>,
+        at: Option<&str>,
+        every: Option<u16>,
+        quiet: Option<u32>,
+    ) -> AddArgs {
         AddArgs {
             paths: vec![],
             to: String::new(),
@@ -258,6 +322,8 @@ mod tests {
             days: days.map(Into::into),
             at: at.map(Into::into),
             every_hours: every,
+            watch: quiet.is_some(),
+            quiet: quiet.unwrap_or(DEFAULT_QUIET_SECS),
             into: None,
             verify: false,
             disabled: false,
@@ -291,6 +357,11 @@ mod tests {
         assert!(recurrence(&args(Some("someday"), Some("03:00"), None)).is_err());
         assert!(recurrence(&args(None, Some("25:00"), None)).is_err());
         assert!(recurrence(&args(None, None, Some(0))).is_err());
+        assert_eq!(
+            recurrence(&watched(None, None, None, Some(60))).unwrap(),
+            Recurrence::OnChange { quiet_secs: 60 }
+        );
+        assert!(recurrence(&watched(None, None, None, Some(1))).is_err());
     }
 
     #[test]
@@ -308,6 +379,10 @@ mod tests {
                 minute: 30
             }),
             "every 6 h from 00:30"
+        );
+        assert_eq!(
+            describe(&Recurrence::OnChange { quiet_secs: 60 }),
+            "on change (after 60 s quiet)"
         );
     }
 }

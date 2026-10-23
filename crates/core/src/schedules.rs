@@ -3,6 +3,9 @@
 //! sent before and hasn't changed, carries the schedule's name decisions and accepts the rules'
 //! proposals, and its transfer keeps the destination's older versions (`keep_older`).
 //!
+//! A watched schedule (`Recurrence::OnChange`, docs/adr/0023) is the same thing with another
+//! trigger: its sources' changes (`watch.rs`) and a safety rescan set its next time.
+//!
 //! The time is always an argument ([`Engine::tick_schedules`]) or comes from
 //! [`EngineOptions::wall_clock`](crate::EngineOptions), so tests drive schedules with a fake
 //! clock.
@@ -18,7 +21,8 @@ use filebridge_model::{MAX_SCHEDULE_NAME, Op};
 use filebridge_names::Choice;
 use filebridge_store::{Decision, NewJob, ScheduleRow, ScheduleRun, now_ms};
 
-use crate::analyse::{SentBefore, os_bytes};
+use crate::analyse::{SentBefore, Settle, os_bytes};
+use crate::watch::BUSY_RECHECK;
 use crate::{
     CoreError, Engine, Event, JobKind, JobState, Recurrence, Result, ScheduleInput,
     ScheduleOutcome, ScheduleView, SendOptions, Weekday, decisions,
@@ -144,8 +148,10 @@ impl Engine {
             Some((id, state, _)) => (Some(id), JobState::parse(&state).ok()),
             None => (None, None),
         };
+        let recurrence: Recurrence = serde_json::from_value(row.recurrence.clone())?;
         Ok(ScheduleView {
-            recurrence: serde_json::from_value(row.recurrence)?,
+            watch: self.watches.view(&row, &recurrence),
+            recurrence,
             options: serde_json::from_value(row.options).unwrap_or_default(),
             sources: row
                 .sources
@@ -184,10 +190,11 @@ impl Engine {
         let mut options = input.options;
         options.keep_older = true;
         let clock = &self.options.wall_clock;
-        let next_run_at = if input.enabled {
-            clock.next_run(&input.recurrence, clock.now_ms())
-        } else {
-            None
+        let next_run_at = match (input.enabled, input.recurrence.quiet_secs()) {
+            (false, _) => None,
+            // A watched schedule's first run is a full scan, now; then its changes set its time.
+            (true, Some(_)) => Some(clock.now_ms()),
+            (true, None) => clock.next_run(&input.recurrence, clock.now_ms()),
         };
         let roots = schedule_sources(&input.sources)?;
         let id = match input.id {
@@ -208,6 +215,8 @@ impl Engine {
                         last_run_at: None,
                         last_outcome: None,
                         last_error: None,
+                        last_change_at: None,
+                        pending_since: None,
                         created_at: 0,
                         updated_at: 0,
                         sources: roots,
@@ -239,6 +248,9 @@ impl Engine {
                         ..old
                     })
                     .await?;
+                // Saving a watched schedule starts its watch again (a watch limit raised since
+                // is tried), and rescans.
+                self.watches.forget(&id);
                 id
             }
         };
@@ -251,6 +263,7 @@ impl Engine {
     pub async fn delete_schedule(&self, id: &str) -> Result<()> {
         let _guard = self.schedule_lock.lock().await;
         self.store.delete_schedule(id).await?;
+        self.watches.forget(id);
         self.schedules_changed.notify_one();
         Ok(())
     }
@@ -267,8 +280,8 @@ impl Engine {
         }
         let now = self.options.wall_clock.now_ms();
         let next = row.next_run_at;
-        let ran = self.new_run(&row).await;
-        self.record_run(&row.id, now, next, &ran).await?;
+        let ran = self.new_run(&row).await.map(|r| r.job);
+        self.record_run(&row.id, now, next, &ran, false).await?;
         ran
     }
 
@@ -277,10 +290,16 @@ impl Engine {
     /// finished skips this time. Before that, carries on runs left half-way: a Draft (its
     /// analysis was cut short) is analysed again, a Ready one is started. Returns the runs it
     /// created or carried on (a new one may be waiting for name decisions).
+    ///
+    /// Watched schedules (docs/adr/0023): their watches are started and stopped to match, the
+    /// changes noted since the last look set their next time, and one that is due waits while
+    /// its last run is unfinished or the send window is closed. After a run, its next time is
+    /// its safety rescan (or its quiet time, when files were still being written).
     pub async fn tick_schedules(self: &Arc<Self>, now: i64) -> Result<Vec<String>> {
         let _guard = self.schedule_lock.lock().await;
         let mut started = Vec::new();
-        for row in self.store.list_schedules().await? {
+        let rows = self.store.list_schedules().await?;
+        for row in &rows {
             for (job_id, state) in self.store.unfinished_runs(&row.id).await? {
                 let carried_on = match JobState::parse(&state)? {
                     JobState::Draft => self.analyse_and_start(&job_id).await.map(|_| ()),
@@ -293,25 +312,74 @@ impl Engine {
                 }
             }
         }
+        self.sync_watches(&rows, now).await?;
         for row in self.store.due_schedules(now).await? {
-            let next = serde_json::from_value::<Recurrence>(row.recurrence.clone())
-                .ok()
-                .and_then(|r| self.options.wall_clock.next_run(&r, now));
-            let ran = if self.store.unfinished_runs(&row.id).await?.is_empty() {
-                self.new_run(&row).await
-            } else {
+            let recurrence = serde_json::from_value::<Recurrence>(row.recurrence.clone()).ok();
+            let busy = !self.store.unfinished_runs(&row.id).await?.is_empty();
+            if let Some(quiet) = recurrence.as_ref().and_then(Recurrence::quiet_secs) {
+                if let Some(job) = self.tick_watched(&row, quiet, busy, now).await? {
+                    started.push(job);
+                }
+                continue;
+            }
+            let next = recurrence.and_then(|r| self.options.wall_clock.next_run(&r, now));
+            let ran = if busy {
                 Err(StillRunning.into())
+            } else {
+                self.new_run(&row).await.map(|r| r.job)
             };
             if let Ok(Some(job)) = &ran {
                 started.push(job.clone());
             }
-            self.record_run(&row.id, now, next, &ran).await?;
+            self.record_run(&row.id, now, next, &ran, false).await?;
         }
         Ok(started)
     }
 
+    /// A watched schedule that is due: waits while its last run is unfinished (one more run
+    /// goes after it) or the send window is closed (the day's changes go in one run when it
+    /// opens), else runs. Returns the run it started.
+    async fn tick_watched(
+        self: &Arc<Self>,
+        row: &ScheduleRow,
+        quiet_secs: u32,
+        busy: bool,
+        now: i64,
+    ) -> Result<Option<String>> {
+        if busy {
+            let next = now + BUSY_RECHECK.as_millis() as i64;
+            self.store.set_next_run(&row.id, Some(next)).await?;
+            return Ok(None);
+        }
+        if let Some(status) = self.window_status().filter(|s| !s.open) {
+            // Looked at again every minute, so a settings change is picked up.
+            let wait = i64::from(status.change_in_secs).clamp(1, RECHECK.as_secs() as i64);
+            self.store
+                .set_next_run(&row.id, Some(now + wait * 1000))
+                .await?;
+            return Ok(None);
+        }
+        let ran = self.new_run(row).await;
+        if let Err(e) = &ran {
+            self.watches.scan_instead(&row.id, e.to_string());
+        }
+        // Files still being written keep the changes waiting, and are looked at again a quiet
+        // time later.
+        let left = matches!(&ran, Ok(r) if r.unsettled > 0);
+        let next = if left {
+            now + i64::from(quiet_secs) * 1000
+        } else {
+            self.rescan_after(&row.id, now)
+        };
+        let ran = ran.map(|r| r.job);
+        self.record_run(&row.id, now, Some(next), &ran, left)
+            .await?;
+        Ok(ran.ok().flatten())
+    }
+
     /// The service's timer: runs [`Engine::tick_schedules`] when a schedule is due, at least
-    /// every minute, and when a schedule is saved or a run becomes Ready. Never returns.
+    /// every minute, when a schedule is saved, a run becomes Ready or a job finishes, and a
+    /// moment after a watched folder changes. Never returns.
     pub async fn run_scheduler(self: Arc<Self>) {
         loop {
             let now = self.options.wall_clock.now_ms();
@@ -328,17 +396,23 @@ impl Engine {
             tokio::select! {
                 _ = tokio::time::sleep(wait) => {}
                 _ = self.schedules_changed.notified() => {}
+                _ = self.watches.book.wake.notified() => {
+                    // The rest of the burst is folded in with it.
+                    tokio::time::sleep(CHANGE_COALESCE).await;
+                }
             }
         }
     }
 
-    /// Saves what a due time (or Run now) did, and tells the window.
+    /// Saves what a due time (or Run now) did, and tells the window. Unless the run didn't
+    /// start or `left` some files for later, a watched schedule's changes are taken.
     async fn record_run(
         &self,
         schedule_id: &str,
         at: i64,
         next_run_at: Option<i64>,
         ran: &Result<Option<String>>,
+        left: bool,
     ) -> Result<()> {
         let (outcome, job_id, error) = match ran {
             Ok(Some(job)) => (ScheduleOutcome::Started, Some(job.clone()), None),
@@ -357,6 +431,7 @@ impl Engine {
                 ScheduleRun {
                     at,
                     next_run_at,
+                    took_changes: !left && outcome != ScheduleOutcome::StillRunning,
                     outcome: outcome.as_str().into(),
                     error,
                 },
@@ -370,9 +445,9 @@ impl Engine {
         Ok(())
     }
 
-    /// A new run of `schedule`: a Transfer job, analysed, and started when Ready. `None` when
+    /// A new run of `schedule`: a Transfer job, analysed, and started when Ready. No job when
     /// nothing changed (the job is deleted again).
-    async fn new_run(self: &Arc<Self>, schedule: &ScheduleRow) -> Result<Option<String>> {
+    async fn new_run(self: &Arc<Self>, schedule: &ScheduleRow) -> Result<RunStart> {
         let mut options: SendOptions =
             serde_json::from_value(schedule.options.clone()).unwrap_or_default();
         options.keep_older = true;
@@ -410,8 +485,8 @@ impl Engine {
     }
 
     /// Analyses a run and starts it if nothing waits for the user. A run with nothing to send
-    /// is deleted (`None`); one whose analysis fails ends Failed, with the reason.
-    async fn analyse_and_start(self: &Arc<Self>, job_id: &str) -> Result<Option<String>> {
+    /// is deleted (no job); one whose analysis fails ends Failed, with the reason.
+    async fn analyse_and_start(self: &Arc<Self>, job_id: &str) -> Result<RunStart> {
         let summary = match self.analyse(job_id).await {
             Ok(s) => s,
             Err(e) => {
@@ -420,14 +495,32 @@ impl Engine {
                 return Err(e);
             }
         };
+        let unsettled = summary.unsettled;
         if summary.files == 0 {
             self.store.delete_job(job_id).await?;
-            return Ok(None);
+            return Ok(RunStart {
+                job: None,
+                unsettled,
+            });
         }
         if summary.state == JobState::Ready {
             self.start(job_id).await?;
         }
-        Ok(Some(job_id.to_owned()))
+        Ok(RunStart {
+            job: Some(job_id.to_owned()),
+            unsettled,
+        })
+    }
+
+    /// A watched schedule's test for files still being written; `None` for a timetable (or a
+    /// schedule removed since).
+    pub(crate) async fn settle_of(&self, schedule_id: &str) -> Option<Settle> {
+        let row = self.store.get_schedule(schedule_id).await.ok()?;
+        let recurrence: Recurrence = serde_json::from_value(row.recurrence).ok()?;
+        Some(Settle {
+            now: self.options.wall_clock.now_ms(),
+            quiet_ms: i64::from(recurrence.quiet_secs()?) * 1000,
+        })
     }
 
     /// What the schedule sent before, keyed like a run's manifest: by the run's source index
@@ -498,6 +591,17 @@ impl Engine {
         Ok(())
     }
 }
+
+/// What creating a run did: its job (`None` when nothing changed), and how many files it left
+/// for later because they were still being written.
+struct RunStart {
+    job: Option<String>,
+    unsettled: u64,
+}
+
+/// How long the scheduler waits after a watched folder's first change before it looks: the
+/// rest of the burst is noted meanwhile, and folded with one write.
+const CHANGE_COALESCE: Duration = Duration::from_secs(1);
 
 /// Why a due time didn't start a run: the last one isn't finished.
 const STILL_RUNNING: &str = "the schedule's last run isn't finished yet";

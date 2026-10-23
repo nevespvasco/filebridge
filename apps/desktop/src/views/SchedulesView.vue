@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Scheduled sends (docs/adr/0019): saved sends the engine runs at set times, sending only what is
 // new or changed since the last run. A changed file's older version is kept at the destination.
+// A watched schedule (docs/adr/0023) runs when its folders change instead: continuous sync,
+// copy-only (nothing at the destination is ever deleted).
 import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
@@ -12,6 +14,7 @@ import SegmentedControl from "@/components/SegmentedControl.vue";
 import { errorMessage } from "@/lib/api";
 import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
+import { useSettings } from "@/stores/settings";
 import {
   WEEKDAYS,
   dayGroup,
@@ -23,16 +26,28 @@ import {
   type ScheduleInput,
   type ScheduleView,
 } from "@/stores/schedules";
-import type { Weekday } from "@/bindings";
+import { DEFAULT_QUIET_SECS, MAX_QUIET_SECS, MIN_QUIET_SECS, type Weekday } from "@/bindings";
 
 const schedules = useSchedules();
 const profiles = useProfiles();
+const settings = useSettings();
 const router = useRouter();
 const { t } = useI18n();
 
 onMounted(async () => {
-  await Promise.all([schedules.load(), profiles.load()]);
+  await Promise.all([schedules.load(), profiles.load(), settings.loadApp()]);
 });
+
+/** Whether the send hours (Settings) are closed now, in local time: a watched schedule's changes
+ * wait for them to open (docs/adr/0023). */
+function sendHoursClosed(): boolean {
+  const w = settings.app.send_window;
+  if (!w) return false;
+  const d = new Date();
+  const m = d.getHours() * 60 + d.getMinutes();
+  const open = w.start_minute <= w.end_minute ? m >= w.start_minute && m < w.end_minute : m >= w.start_minute || m < w.end_minute;
+  return !open;
+}
 
 const error = ref<string | null>(null);
 /** The schedule whose "Run now" is on its way, and what came of the last one. */
@@ -47,10 +62,12 @@ type Draft = {
   sources: string[];
   profileId: string;
   targetDir: string;
-  kind: "days" | "hours";
+  kind: "days" | "hours" | "on_change";
   days: Weekday[];
   time: string;
   every: number;
+  /** Seconds without changes before a watched schedule runs. */
+  quiet: number;
   verify: boolean;
   enabled: boolean;
 };
@@ -71,6 +88,7 @@ function blank(): Draft {
     days: [...WEEKDAYS],
     time: "03:00",
     every: 6,
+    quiet: DEFAULT_QUIET_SECS,
     verify: true,
     enabled: true,
   };
@@ -86,8 +104,9 @@ function edit(s: ScheduleView) {
     targetDir: s.options.target_dir ?? "",
     kind: r.kind,
     days: r.kind === "days" ? [...r.days] : [...WEEKDAYS],
-    time: hm(r.minute),
+    time: r.kind === "on_change" ? "03:00" : hm(r.minute),
     every: r.kind === "hours" ? r.every : 6,
+    quiet: r.kind === "on_change" ? r.quiet_secs : DEFAULT_QUIET_SECS,
     verify: s.options.verify,
     enabled: s.enabled,
   };
@@ -102,6 +121,7 @@ function create() {
 const kindOptions = computed(() => [
   { value: "days" as const, label: t("schedules.form.onDays") },
   { value: "hours" as const, label: t("schedules.form.everyHours") },
+  { value: "on_change" as const, label: t("schedules.form.onChange") },
 ]);
 
 function toggleDay(d: Weekday) {
@@ -127,6 +147,11 @@ const formProblem = computed(() => {
   if (!d.name.trim()) return t("schedules.form.needName");
   if (!d.sources.length) return t("schedules.form.needSources");
   if (!d.profileId) return t("schedules.form.needDestination");
+  if (d.kind === "on_change") {
+    return Number.isInteger(d.quiet) && d.quiet >= MIN_QUIET_SECS && d.quiet <= MAX_QUIET_SECS
+      ? null
+      : t("schedules.form.needQuiet", { min: MIN_QUIET_SECS, max: MAX_QUIET_SECS });
+  }
   if (minuteOf(d.time) == null) return t("schedules.form.needTime");
   if (d.kind === "days" && !d.days.length) return t("schedules.form.needDays");
   if (d.kind === "hours" && !(Number.isInteger(d.every) && d.every >= 1 && d.every <= 24)) return t("schedules.form.needHours");
@@ -137,7 +162,12 @@ async function save() {
   const d = draft.value;
   if (!d || formProblem.value) return;
   const minute = minuteOf(d.time) ?? 0;
-  const recurrence: Recurrence = d.kind === "days" ? { kind: "days", days: [...d.days], minute } : { kind: "hours", every: d.every, minute };
+  const recurrence: Recurrence =
+    d.kind === "on_change"
+      ? { kind: "on_change", quiet_secs: d.quiet }
+      : d.kind === "days"
+        ? { kind: "days", days: [...d.days], minute }
+        : { kind: "hours", every: d.every, minute };
   const input: ScheduleInput = {
     id: d.id,
     name: d.name.trim(),
@@ -163,6 +193,7 @@ async function save() {
 
 /** "Every day at 03:00", "Mon, Wed at 22:30", "Every 6 hours from 00:00". */
 function describe(r: Recurrence): string {
+  if (r.kind === "on_change") return t("schedules.when.onChange", { secs: r.quiet_secs });
   if (r.kind === "hours") return t("schedules.when.hours", { n: r.every, time: hm(r.minute) }, r.every);
   const group = dayGroup(r.days);
   if (group !== "some") return t(`schedules.when.${group}`, { time: hm(r.minute) });
@@ -276,13 +307,23 @@ async function doRemove() {
         <span>{{ $t("schedules.form.when") }}</span>
         <SegmentedControl v-model="draft.kind" :options="kindOptions" :label="$t('schedules.form.when')" />
       </div>
+      <template v-if="draft.kind === 'on_change'">
+        <div class="row">
+          <label class="inline">
+            {{ $t("schedules.form.quiet") }}
+            <input v-model.number="draft.quiet" class="num" type="number" :min="MIN_QUIET_SECS" :max="MAX_QUIET_SECS" step="1" />
+            {{ $t("schedules.form.quietUnit") }}
+          </label>
+        </div>
+        <p class="small muted">{{ $t("schedules.form.watchHelp") }}</p>
+      </template>
       <div v-if="draft.kind === 'days'" class="row days" role="group" :aria-label="$t('schedules.form.days')">
         <label v-for="d in WEEKDAYS" :key="d" class="day" :class="{ on: draft.days.includes(d) }">
           <input type="checkbox" class="sr-only" :checked="draft.days.includes(d)" @change="toggleDay(d)" />
           {{ $t(`schedules.days.${d}`) }}
         </label>
       </div>
-      <div class="row">
+      <div v-if="draft.kind !== 'on_change'" class="row">
         <label v-if="draft.kind === 'hours'" class="inline">
           {{ $t("schedules.form.every") }}
           <input v-model.number="draft.every" class="num" type="number" min="1" max="24" step="1" />
@@ -293,7 +334,7 @@ async function doRemove() {
           <input v-model="draft.time" type="time" required />
         </label>
       </div>
-      <p class="small muted">{{ $t("schedules.form.localTime") }}</p>
+      <p v-if="draft.kind !== 'on_change'" class="small muted">{{ $t("schedules.form.localTime") }}</p>
 
       <label class="check">
         <input v-model="draft.verify" type="checkbox" />
@@ -301,13 +342,18 @@ async function doRemove() {
       </label>
       <label class="check">
         <input v-model="draft.enabled" type="checkbox" />
-        <span>{{ $t("schedules.form.enabled") }}</span>
+        <span>{{ draft.kind === "on_change" ? $t("schedules.form.enabledWatch") : $t("schedules.form.enabled") }}</span>
       </label>
 
       <ul class="small muted promises">
         <li>{{ $t("schedules.form.onlyChanged") }}</li>
         <li>{{ $t("schedules.form.keepsOlder") }}</li>
-        <li>{{ $t("schedules.form.waitsWindow") }}</li>
+        <template v-if="draft.kind === 'on_change'">
+          <li>{{ $t("schedules.form.neverDeletes") }}</li>
+          <li>{{ $t("schedules.form.stillWriting") }}</li>
+          <li>{{ $t("schedules.form.watchWindow") }}</li>
+        </template>
+        <li v-else>{{ $t("schedules.form.waitsWindow") }}</li>
       </ul>
 
       <div class="row">
@@ -341,11 +387,49 @@ async function doRemove() {
           <span>{{ destinationName(s) }}<template v-if="s.options.target_dir"> / {{ s.options.target_dir }}</template></span>
         </p>
         <dl class="kv small">
-          <dt>{{ $t("schedules.next") }}</dt>
-          <dd>
-            <RelativeTime v-if="s.enabled && s.next_run_at != null" :at="s.next_run_at" />
-            <span v-else class="muted">{{ $t("schedules.notOnItsOwn") }}</span>
-          </dd>
+          <template v-if="s.watch">
+            <dt>{{ $t("schedules.watch.title") }}</dt>
+            <dd>
+              <span class="watch" :class="s.watch.mode">
+                <AppIcon :name="s.watch.mode === 'events' ? 'review' : s.watch.mode === 'scanning' ? 'again' : 'pause'" />
+                {{ s.watch.mode === "idle" && s.enabled ? $t("schedules.watch.starting") : $t(`schedules.watch.${s.watch.mode}`) }}
+              </span>
+              <span v-if="s.watch.mode === 'scanning' && s.watch.reason" class="muted">— {{ s.watch.reason }}</span>
+            </dd>
+            <template v-if="s.watch.limit">
+              <dt></dt>
+              <dd class="muted">
+                {{ $t("schedules.watch.limitHelp") }} <code>sudo sysctl fs.inotify.max_user_watches=524288</code>
+              </dd>
+            </template>
+            <dt>{{ $t("schedules.watch.lastChange") }}</dt>
+            <dd>
+              <RelativeTime v-if="s.watch.last_change_at != null" :at="s.watch.last_change_at" />
+              <span v-else class="muted">{{ $t("schedules.watch.noChange") }}</span>
+            </dd>
+            <template v-if="s.enabled && s.watch.pending_since != null">
+              <dt>{{ $t("schedules.watch.pending") }}</dt>
+              <dd>
+                <span v-if="sendHoursClosed()">{{ $t("schedules.watch.waitHours") }}</span>
+                <template v-else-if="s.next_run_at != null">{{ $t("schedules.watch.goes") }} <RelativeTime :at="s.next_run_at" /></template>
+              </dd>
+            </template>
+            <template v-else-if="s.enabled && s.next_run_at != null">
+              <dt>{{ $t("schedules.watch.nextCheck") }}</dt>
+              <dd><RelativeTime :at="s.next_run_at" /></dd>
+            </template>
+            <template v-else-if="!s.enabled">
+              <dt>{{ $t("schedules.next") }}</dt>
+              <dd class="muted">{{ $t("schedules.notOnItsOwn") }}</dd>
+            </template>
+          </template>
+          <template v-else>
+            <dt>{{ $t("schedules.next") }}</dt>
+            <dd>
+              <RelativeTime v-if="s.enabled && s.next_run_at != null" :at="s.next_run_at" />
+              <span v-else class="muted">{{ $t("schedules.notOnItsOwn") }}</span>
+            </dd>
+          </template>
           <dt>{{ $t("schedules.last") }}</dt>
           <dd>
             <template v-if="s.last_run_at != null && s.last_outcome">
@@ -416,4 +500,8 @@ async function doRemove() {
 .kv dd { margin: 0; display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .empty { display: grid; justify-items: center; gap: 0.5rem; padding: 2rem; color: var(--text-2); text-align: center; max-width: 640px; }
 .error-text { color: var(--danger); }
+.watch { display: inline-flex; gap: 0.3rem; align-items: center; font-weight: 600; }
+.watch.events { color: var(--ok); }
+.watch.scanning { color: var(--warn-strong); }
+.watch.idle { color: var(--text-2); font-weight: 400; }
 </style>

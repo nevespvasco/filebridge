@@ -32,6 +32,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         // mock (`src/dev/mock.ts`) reads it instead of keeping a copy.
         .constant("JOB_OPERATIONS", filebridge_ipc::job_operations())
         .constant("PROTOCOL_VERSION", filebridge_ipc::PROTOCOL_VERSION)
+        .constant("DEFAULT_QUIET_SECS", filebridge_ipc::DEFAULT_QUIET_SECS)
+        .constant("MIN_QUIET_SECS", filebridge_ipc::MIN_QUIET_SECS)
+        .constant("MAX_QUIET_SECS", filebridge_ipc::MAX_QUIET_SECS)
         // Past this many direct entries a chosen folder shows "1000+".
         .constant("SOURCE_CHILDREN_CAP", filebridge_ipc::SOURCE_CHILDREN_CAP)
         // Byte counts and millisecond timestamps (u64/i64) stay far below 2^53, so they are

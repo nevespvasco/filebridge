@@ -187,11 +187,29 @@ trigger is "on change" instead of a recurrence, and its runs reuse their change 
 carried name decisions, keep-older and one-run-at-a-time rule
 ([ADR 0019](adr/0019-scheduled-sends.md#continuous-sync-phase-5-builds-on-this)).
 
-- [ ] ADR before any code: how folders are watched (OS file events, with a periodic scan as the
-      fallback), how changes are batched into Jobs, and how a watch survives the service
-      restarting.
-- [ ] The service watches a source and sends what changed. Fixed by ADR 0018: nothing is ever
-      deleted at the destination, and a rename at the source is sent as a new file.
+- [x] ADR before any code: [ADR 0023](adr/0023-continuous-sync.md). OS file events through
+      `notify` behind `core`'s `FolderWatcher`; a burst becomes one run a quiet time (1 min
+      default) after it stops, at most 15 min after it starts; files still being written wait;
+      a rescan every hour (every 10 min where the folder can't be watched, e.g. past the inotify
+      limit) and at every watch start, which is how a restart catches up; waits for the send
+      window; desktop only.
+- [x] The service watches a source and sends what changed (`Recurrence::OnChange`, store
+      migration 13, `PROTOCOL_VERSION` 34, `filebridge schedule add --watch`, Schedules screen).
+      Fixed by ADR 0018: nothing is ever deleted at the destination, and a rename at the source
+      is sent as a new file.
+      *Tested* in `crates/core/tests/engine.rs` with a fake watcher and the fake transport: a
+      burst of 250 events becomes one run; a deleted, a renamed and an edited source file leave
+      every earlier copy (and the edited one's older version) at the destination; a new engine on
+      the same store (a restart) rescans and sends what changed while nobody watched; a file
+      written within the quiet time waits for the next run; a refused watch (limit) scans every
+      10 min and is retried on save, a broken one rescans at once and retries; changes wait for
+      the send window and for an unfinished run; switching off stops the watch. The `notify`
+      watcher itself is tested against a real folder (`crates/host/src/watch.rs`).
+      *Not tested:* a real service left watching for days; a tree past the real inotify limit;
+      FSEvents (macOS) and `ReadDirectoryChangesW` (Windows), not built nor run here;
+      network shares (events may not arrive: only the hourly rescan catches them); a restart
+      in the middle of a watched run's transfer (it is an ordinary job, resumed as every job is,
+      ADR 0019, but not run end to end for a watched schedule).
 
 **Gate (proposed):** a watched folder gets new and changed files at the destination without a
 manual send; deleting and renaming files at the source leaves every earlier copy at the

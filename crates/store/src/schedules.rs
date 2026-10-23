@@ -20,6 +20,10 @@ pub struct ScheduleRow {
     pub last_run_at: Option<i64>,
     pub last_outcome: Option<String>,
     pub last_error: Option<String>,
+    /// A watched schedule's last change seen (docs/adr/0023).
+    pub last_change_at: Option<i64>,
+    /// A watched schedule's first change not in a run yet.
+    pub pending_since: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
     /// Source roots as raw path bytes, in the order the user picked them.
@@ -46,10 +50,13 @@ pub struct ScheduleRun {
     pub next_run_at: Option<i64>,
     pub outcome: String,
     pub error: Option<String>,
+    /// A run took the changes seen so far: `pending_since` is cleared.
+    pub took_changes: bool,
 }
 
 const COLUMNS: &str = "id, name, profile_id, options, recurrence, enabled, next_run_at, \
-                       last_run_at, last_outcome, last_error, created_at, updated_at";
+                       last_run_at, last_outcome, last_error, created_at, updated_at, \
+                       last_change_at, pending_since";
 
 type Raw = (ScheduleRow, String, String);
 
@@ -68,6 +75,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Raw> {
             last_error: row.get(9)?,
             created_at: row.get(10)?,
             updated_at: row.get(11)?,
+            last_change_at: row.get(12)?,
+            pending_since: row.get(13)?,
             sources: Vec::new(),
         },
         row.get(3)?,
@@ -242,9 +251,58 @@ impl Store {
         self.call(move |c| {
             let n = c.execute(
                 "UPDATE schedules SET last_run_at = ?2, next_run_at = ?3, last_outcome = ?4,
-                     last_error = ?5
+                     last_error = ?5,
+                     pending_since = CASE WHEN ?6 THEN NULL ELSE pending_since END
                  WHERE id = ?1",
-                params![id, run.at, run.next_run_at, run.outcome, run.error],
+                params![
+                    id,
+                    run.at,
+                    run.next_run_at,
+                    run.outcome,
+                    run.error,
+                    run.took_changes
+                ],
+            )?;
+            if n == 0 {
+                return Err(not_found(&id));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Notes a change seen in a watched schedule's sources at `at` (docs/adr/0023): its last
+    /// change, its first change not in a run yet (kept if there is one), and its next time.
+    pub async fn note_schedule_change(
+        &self,
+        id: &str,
+        at: i64,
+        next_run_at: Option<i64>,
+    ) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE schedules SET last_change_at = ?2,
+                     pending_since = COALESCE(pending_since, ?2), next_run_at = ?3
+                 WHERE id = ?1",
+                params![id, at, next_run_at],
+            )?;
+            if n == 0 {
+                return Err(not_found(&id));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Moves a schedule's next time without recording a run (a watched schedule waiting for
+    /// its last run, or for the send window).
+    pub async fn set_next_run(&self, id: &str, next_run_at: Option<i64>) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE schedules SET next_run_at = ?2 WHERE id = ?1",
+                params![id, next_run_at],
             )?;
             if n == 0 {
                 return Err(not_found(&id));
@@ -411,6 +469,8 @@ mod tests {
             last_run_at: None,
             last_outcome: None,
             last_error: None,
+            last_change_at: None,
+            pending_since: None,
             created_at: 0,
             updated_at: 0,
             sources: vec![b"/home/u/Fotos".to_vec(), b"/home/u/Patol\xf3gica".to_vec()],
@@ -513,6 +573,7 @@ mod tests {
                     next_run_at: Some(9_000),
                     outcome: "still_running".into(),
                     error: None,
+                    took_changes: false,
                 },
             )
             .await
@@ -524,6 +585,47 @@ mod tests {
 
         assert!(matches!(
             store.get_schedule("nope").await,
+            Err(StoreError::NotFound(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn changes_keep_the_first_until_a_run_takes_them() {
+        let (store, _) = store_with_job().await;
+        store.insert_schedule(schedule("s1")).await.unwrap();
+        store
+            .note_schedule_change("s1", 2_000, Some(2_060))
+            .await
+            .unwrap();
+        store
+            .note_schedule_change("s1", 2_030, Some(2_090))
+            .await
+            .unwrap();
+        let s = store.get_schedule("s1").await.unwrap();
+        assert_eq!(
+            (s.last_change_at, s.pending_since, s.next_run_at),
+            (Some(2_030), Some(2_000), Some(2_090))
+        );
+        store.set_next_run("s1", Some(5_000)).await.unwrap();
+        assert_eq!(store.next_schedule_time().await.unwrap(), Some(5_000));
+
+        let run = |took_changes| ScheduleRun {
+            at: 2_100,
+            next_run_at: Some(9_000),
+            outcome: "started".into(),
+            error: None,
+            took_changes,
+        };
+        store.record_schedule_run("s1", run(false)).await.unwrap();
+        assert_eq!(
+            store.get_schedule("s1").await.unwrap().pending_since,
+            Some(2_000)
+        );
+        store.record_schedule_run("s1", run(true)).await.unwrap();
+        let s = store.get_schedule("s1").await.unwrap();
+        assert_eq!((s.last_change_at, s.pending_since), (Some(2_030), None));
+        assert!(matches!(
+            store.set_next_run("nope", None).await,
             Err(StoreError::NotFound(_))
         ));
     }

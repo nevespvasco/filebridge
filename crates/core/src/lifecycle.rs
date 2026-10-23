@@ -227,6 +227,8 @@ impl JobLock<'_> {
                 state: to,
                 error,
             });
+            // A watched schedule waiting for its last run to finish runs again now.
+            engine.schedules_changed.notify_one();
         }
         Ok(())
     }

@@ -132,6 +132,12 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
   webdav`, and a real Nextcloud when `FILEBRIDGE_TEST_NEXTCLOUD_*` is set), and the local-disk
   fake (`crates/transport-fake`) that `core`, `ipc` and the service tests use. A new adapter
   adds the same one-function test.
+- **Continuous sync needs no `Transport` change** ([ADR 0023](adr/0023-continuous-sync.md)):
+  a watched schedule's runs are scheduled runs, so they only add files (and keep older versions
+  as above); no adapter has a delete path. Watching the source is not a plugin either:
+  `core::watch::FolderWatcher` (watch these roots, call back on a change, or say it broke and
+  whether a watch limit was hit) is a seam for the host, which gives the engine the `notify`
+  implementation (`filebridge_host::NotifyWatcher`); `core` tests use a fake.
 
 ## Registry
 

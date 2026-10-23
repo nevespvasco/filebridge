@@ -7,14 +7,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use filebridge_core::FolderWatcher;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
     EntryStatus, Event, FileCategory, IssueDecision, JobErrorCode, JobFilter, JobGroup, JobKind,
     JobState, LocalClock, LogLevel, Profile, ReclaimBlocker, Recurrence, Registry,
     ReportChangeKind, ReportFormat, ReportRequest, ReportScope, ScheduleInput, ScheduleOutcome,
-    SealProblem, SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec, WallClock,
-    Weekday,
+    SealProblem, SendOptions, SendWindow, SignalFn, SourceProblem, Store, StoreError, TargetSpec,
+    WallClock, WatchError, WatchHandle, WatchMode, WatchSignal, Weekday,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -169,6 +170,22 @@ fn engine_with_batch(
     integration: Arc<FakeIntegration>,
     batch_size: u32,
 ) -> Arc<Engine> {
+    engine_on(
+        store,
+        transport,
+        integration,
+        batch_size,
+        WallClock::fixed(|| MONDAY, 0),
+    )
+}
+
+fn engine_on(
+    store: Store,
+    transport: Arc<FakeTransport>,
+    integration: Arc<FakeIntegration>,
+    batch_size: u32,
+    wall_clock: WallClock,
+) -> Arc<Engine> {
     let mut registry = Registry::new();
     registry.add_transport(transport);
     registry.add_integration(integration);
@@ -182,7 +199,7 @@ fn engine_with_batch(
             max_verify_rounds: 3,
             local_clock: LocalClock::fixed(|| NOON),
             space_check_every: Duration::from_millis(50),
-            wall_clock: WallClock::fixed(|| MONDAY, 0),
+            wall_clock,
         },
     )
 }
@@ -3779,4 +3796,449 @@ async fn a_run_whose_source_is_gone_fails_and_says_why() {
     assert_eq!(view.last_job_state, Some(JobState::Failed));
     // A failed run is finished: the next time tries again.
     assert_eq!(view.next_run_at, Some(MONDAY + 2 * HOUR));
+}
+
+// ---- continuous sync: watched schedules (docs/adr/0023) ---------------------------------------
+
+/// A watcher whose changes the test makes up; it can refuse to watch, like a full inotify.
+#[derive(Default)]
+struct FakeWatcher {
+    watching: Mutex<Vec<(Vec<PathBuf>, SignalFn)>>,
+    refuse: Mutex<Option<WatchError>>,
+    started: std::sync::atomic::AtomicUsize,
+}
+
+impl FolderWatcher for FakeWatcher {
+    fn watch(&self, roots: &[PathBuf], on_signal: SignalFn) -> Result<WatchHandle, WatchError> {
+        if let Some(e) = self.refuse.lock().unwrap().clone() {
+            return Err(e);
+        }
+        self.started.fetch_add(1, Ordering::SeqCst);
+        self.watching
+            .lock()
+            .unwrap()
+            .push((roots.to_vec(), on_signal));
+        Ok(WatchHandle::new(()))
+    }
+}
+
+impl FakeWatcher {
+    /// Every watch reports `signal`, `times` times (a burst).
+    fn signal(&self, signal: WatchSignal, times: usize) {
+        let watching = self.watching.lock().unwrap();
+        assert!(!watching.is_empty(), "nothing is watched");
+        for _ in 0..times {
+            for (_, f) in watching.iter() {
+                f(signal.clone());
+            }
+        }
+    }
+}
+
+const SEC: i64 = 1000;
+const MIN: i64 = 60 * SEC;
+
+fn on_change(s: &Setup) -> ScheduleInput {
+    ScheduleInput {
+        recurrence: Recurrence::OnChange { quiet_secs: 60 },
+        name: "Acme watched".into(),
+        ..every_hour(s)
+    }
+}
+
+/// A watched schedule on a fake watcher, after its first run (everything sent).
+async fn watched(s: &Setup) -> (Arc<FakeWatcher>, String) {
+    let watcher = Arc::new(FakeWatcher::default());
+    s.engine.set_watcher(watcher.clone());
+    let schedule = s.engine.save_schedule(on_change(s)).await.unwrap();
+    assert_eq!(schedule.next_run_at, Some(MONDAY), "the first run is now");
+    assert_eq!(
+        schedule.watch.as_ref().map(|w| w.mode),
+        Some(WatchMode::Idle)
+    );
+    let first = tick(s, MONDAY).await;
+    assert_eq!(first.len(), 1);
+    assert_eq!(s.engine.job(&first[0]).await.unwrap().counts.files, 3);
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Events);
+    assert_eq!(
+        view.next_run_at,
+        Some(MONDAY + HOUR),
+        "watching: a safety rescan every hour"
+    );
+    (watcher, schedule.id)
+}
+
+async fn runs_of(s: &Setup, schedule_id: &str) -> usize {
+    s.engine
+        .list_jobs(100, 0)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|j| j.schedule_id.as_deref() == Some(schedule_id))
+        .count()
+}
+
+#[tokio::test]
+async fn a_burst_of_changes_becomes_one_run() {
+    let s = setup().await;
+    let (watcher, id) = watched(&s).await;
+
+    for i in 0..20 {
+        std::fs::write(s.src.join(format!("Fotos/burst{i:02}.jpg")), b"x").unwrap();
+    }
+    watcher.signal(WatchSignal::Changed, 200);
+    assert!(
+        tick(&s, MONDAY + 10 * SEC).await.is_empty(),
+        "not quiet yet"
+    );
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    let w = view.watch.unwrap();
+    assert_eq!(w.last_change_at, Some(MONDAY + 10 * SEC));
+    assert_eq!(w.pending_since, Some(MONDAY + 10 * SEC));
+    assert_eq!(view.next_run_at, Some(MONDAY + 70 * SEC));
+
+    // Still changing: the run moves on, the first change is kept.
+    watcher.signal(WatchSignal::Changed, 50);
+    assert!(tick(&s, MONDAY + 40 * SEC).await.is_empty());
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.next_run_at, Some(MONDAY + 100 * SEC));
+    assert_eq!(view.watch.unwrap().pending_since, Some(MONDAY + 10 * SEC));
+    assert!(tick(&s, MONDAY + 99 * SEC).await.is_empty());
+
+    // Quiet: one run with all of it.
+    let run = tick(&s, MONDAY + 100 * SEC).await;
+    assert_eq!(run.len(), 1);
+    let job = s.engine.job(&run[0]).await.unwrap();
+    assert_eq!(job.state, JobState::Completed);
+    assert_eq!(job.counts.files, 20);
+    assert_eq!(runs_of(&s, &id).await, 2);
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.watch.unwrap().pending_since, None);
+    assert_eq!(view.next_run_at, Some(MONDAY + 100 * SEC + HOUR));
+
+    // The safety rescan finds nothing new and keeps no run.
+    assert!(tick(&s, MONDAY + 100 * SEC + HOUR).await.is_empty());
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.last_outcome, Some(ScheduleOutcome::NothingChanged));
+    assert_eq!(runs_of(&s, &id).await, 2);
+}
+
+#[tokio::test]
+async fn deleted_and_renamed_sources_leave_every_earlier_copy() {
+    let s = setup().await;
+    let (watcher, id) = watched(&s).await;
+    let before = dest_files(&s.dest);
+    assert_eq!(before.len(), 3);
+
+    std::fs::remove_file(s.src.join("Fotos/Inverno.jpg")).unwrap();
+    std::fs::rename(
+        s.src.join("Relato\u{301}rio.pdf"),
+        s.src.join("Relato\u{301}rio final.pdf"),
+    )
+    .unwrap();
+    std::fs::write(s.src.join("Fotos/Vera\u{303}o.jpg"), b"summer, edited").unwrap();
+    watcher.signal(WatchSignal::Changed, 3);
+    assert!(tick(&s, MONDAY + SEC).await.is_empty());
+    let run = tick(&s, MONDAY + 61 * SEC).await;
+    assert_eq!(run.len(), 1);
+    let job = s.engine.job(&run[0]).await.unwrap();
+    assert_eq!(job.state, JobState::Completed);
+    assert_eq!(job.counts.files, 2, "the renamed and the edited file");
+
+    let files = dest_files(&s.dest);
+    for f in &before {
+        assert!(
+            files.contains(f),
+            "{f} is still at the destination: {files:?}"
+        );
+    }
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Fotos/Inverno.jpg")).unwrap(),
+        b"winter",
+        "deleted at the source, kept at the destination"
+    );
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Relatório.pdf")).unwrap(),
+        b"report",
+        "the old name stays"
+    );
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Relatório final.pdf")).unwrap(),
+        b"report",
+        "the new name is a new file"
+    );
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Fotos/Verão.jpg")).unwrap(),
+        b"summer, edited"
+    );
+    let older: Vec<_> = files
+        .iter()
+        .filter(|f| f.starts_with("Acme/Fotos/Verão (filebridge "))
+        .collect();
+    assert_eq!(older.len(), 1, "{files:?}");
+    assert_eq!(std::fs::read(s.dest.join(older[0])).unwrap(), b"summer");
+    assert_eq!(files.len(), 5, "{files:?}");
+    assert_eq!(
+        s.engine.get_schedule(&id).await.unwrap().files_sent,
+        4,
+        "a new row for the new name; the deleted file's row stays (put back unchanged, it isn't \
+         sent again)"
+    );
+}
+
+#[tokio::test]
+async fn a_restart_rescans_and_catches_up() {
+    let s = setup().await;
+    let (_watcher, id) = watched(&s).await;
+
+    // The service stops; a file is added and one changed while nobody watches.
+    std::fs::write(s.src.join("Fotos/Outono.jpg"), b"autumn").unwrap();
+    std::fs::write(s.src.join("Fotos/Inverno.jpg"), b"winter, later").unwrap();
+
+    // It starts again: a new engine on the same store, its watch rebuilt.
+    let engine = engine_with(s.store.clone(), s.transport.clone(), s.integration.clone());
+    let watcher = Arc::new(FakeWatcher::default());
+    engine.set_watcher(watcher.clone());
+    let at = MONDAY + 5 * MIN;
+    let started = engine.tick_schedules(at).await.unwrap();
+    assert_eq!(watcher.started.load(Ordering::SeqCst), 1);
+    assert_eq!(started.len(), 1, "the new watch rescans at once");
+    let state = tokio::time::timeout(Duration::from_secs(20), engine.wait(&started[0]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    assert_eq!(engine.job(&started[0]).await.unwrap().counts.files, 2);
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Fotos/Outono.jpg")).unwrap(),
+        b"autumn"
+    );
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Fotos/Inverno.jpg")).unwrap(),
+        b"winter, later"
+    );
+    let view = engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.next_run_at, Some(at + HOUR));
+    // Looking again doesn't start the watch twice.
+    assert!(engine.tick_schedules(at + SEC).await.unwrap().is_empty());
+    assert_eq!(watcher.started.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_file_still_being_written_waits_until_it_is_quiet() {
+    let mut s = setup().await;
+    // A clock that moves with the ticks: "still being written" is judged against it.
+    let clock = Arc::new(std::sync::atomic::AtomicI64::new(MONDAY));
+    let now = clock.clone();
+    s.engine = engine_on(
+        s.store.clone(),
+        s.transport.clone(),
+        s.integration.clone(),
+        3,
+        WallClock::fixed(move || now.load(Ordering::SeqCst), 0),
+    );
+    let (watcher, id) = watched(&s).await;
+
+    // Written ten seconds before the run looks: within the quiet time.
+    let at = MONDAY + 2 * MIN;
+    let video = s.src.join("Fotos/video.mp4");
+    std::fs::write(&video, b"half a video").unwrap();
+    let mtime = std::time::UNIX_EPOCH + Duration::from_millis((at - 10 * SEC) as u64);
+    std::fs::File::options()
+        .write(true)
+        .open(&video)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+    watcher.signal(WatchSignal::Changed, 1);
+    assert!(tick(&s, at - MIN).await.is_empty());
+    clock.store(at, Ordering::SeqCst);
+    assert!(tick(&s, at).await.is_empty(), "nothing settled to send");
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(
+        view.next_run_at,
+        Some(at + MIN),
+        "looked at again a quiet time later"
+    );
+    assert!(
+        view.watch.unwrap().pending_since.is_some(),
+        "the change still waits"
+    );
+
+    // Quiet now: it goes.
+    clock.store(at + MIN, Ordering::SeqCst);
+    let run = tick(&s, at + MIN).await;
+    assert_eq!(run.len(), 1);
+    assert_eq!(s.engine.job(&run[0]).await.unwrap().counts.files, 1);
+    assert!(dest_files(&s.dest).contains(&"Acme/Fotos/video.mp4".to_owned()));
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.watch.unwrap().pending_since, None);
+}
+
+#[tokio::test]
+async fn a_folder_that_cant_be_watched_is_scanned_instead() {
+    let s = setup().await;
+    let watcher = Arc::new(FakeWatcher::default());
+    *watcher.refuse.lock().unwrap() = Some(WatchError {
+        message: "the system's limit on watched folders was reached".into(),
+        limit: true,
+    });
+    s.engine.set_watcher(watcher.clone());
+    let schedule = s.engine.save_schedule(on_change(&s)).await.unwrap();
+    assert_eq!(
+        tick(&s, MONDAY).await.len(),
+        1,
+        "the first run all the same"
+    );
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    let w = view.watch.unwrap();
+    assert_eq!((w.mode, w.limit), (WatchMode::Scanning, true));
+    assert!(w.reason.unwrap().contains("limit"));
+    assert_eq!(
+        view.next_run_at,
+        Some(MONDAY + 10 * MIN),
+        "scanned every 10 minutes"
+    );
+
+    // A new file is found by the scan, with no event.
+    std::fs::write(s.src.join("Fotos/Outono.jpg"), b"autumn").unwrap();
+    *watcher.refuse.lock().unwrap() = None;
+    let run = tick(&s, MONDAY + 10 * MIN).await;
+    assert_eq!(run.len(), 1);
+    assert_eq!(s.engine.job(&run[0]).await.unwrap().counts.files, 1);
+    // A limit isn't tried again on its own...
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Scanning);
+    assert_eq!(watcher.started.load(Ordering::SeqCst), 0);
+
+    // ...but saving the schedule tries again.
+    let mut input = on_change(&s);
+    input.id = Some(schedule.id.clone());
+    s.engine.save_schedule(input).await.unwrap();
+    let at = MONDAY + 11 * MIN;
+    assert!(tick(&s, at).await.is_empty(), "rescanned: nothing new");
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Events);
+    assert_eq!(view.next_run_at, Some(at + HOUR));
+
+    // A watch that breaks later (its folder gone, a new folder past the limit): rescanned at
+    // once, then scanned, and tried again at its next scan.
+    watcher.signal(
+        WatchSignal::Broken(WatchError {
+            message: "Acme is gone".into(),
+            limit: false,
+        }),
+        1,
+    );
+    let at = MONDAY + 12 * MIN;
+    assert!(tick(&s, at).await.is_empty());
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.last_run_at, Some(at), "rescanned at once");
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Scanning);
+    assert_eq!(view.next_run_at, Some(at + 10 * MIN));
+    assert!(tick(&s, at + 10 * MIN).await.is_empty());
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Events);
+    assert_eq!(view.next_run_at, Some(at + 10 * MIN + HOUR));
+}
+
+#[tokio::test]
+async fn changes_wait_for_the_send_window_and_for_the_last_run() {
+    let s = setup().await;
+    let (watcher, id) = watched(&s).await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+
+    // Closed: a change doesn't start a run; it is looked at again every minute.
+    std::fs::write(s.src.join("Fotos/Outono.jpg"), b"autumn").unwrap();
+    watcher.signal(WatchSignal::Changed, 1);
+    assert!(tick(&s, MONDAY + SEC).await.is_empty());
+    assert!(
+        tick(&s, MONDAY + 61 * SEC).await.is_empty(),
+        "the window is closed"
+    );
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.next_run_at, Some(MONDAY + 121 * SEC));
+    assert!(view.watch.unwrap().pending_since.is_some());
+    assert_eq!(runs_of(&s, &id).await, 1);
+
+    // Run now doesn't wait to start; its transfer waits for the window.
+    let job = s.engine.run_schedule_now(&id).await.unwrap().unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    // A change meanwhile: no second run while it is unfinished, and no "still running" noise.
+    std::fs::write(s.src.join("Fotos/Primavera.jpg"), b"spring").unwrap();
+    watcher.signal(WatchSignal::Changed, 1);
+    s.engine
+        .save_settings(AppSettings::default())
+        .await
+        .unwrap();
+    // (The window just opened: the run goes on while the change waits for quiet.)
+    assert!(tick(&s, MONDAY + 130 * SEC).await.is_empty());
+    let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.last_outcome, Some(ScheduleOutcome::Started));
+
+    let run = tick(&s, MONDAY + 190 * SEC).await;
+    assert_eq!(run.len(), 1, "one more run after it");
+    assert_eq!(s.engine.job(&run[0]).await.unwrap().counts.files, 1);
+    assert!(dest_files(&s.dest).contains(&"Acme/Fotos/Primavera.jpg".to_owned()));
+}
+
+#[tokio::test]
+async fn a_watched_schedule_due_while_its_run_is_unfinished_looks_again_soon() {
+    let s = setup().await;
+    let (watcher, id) = watched(&s).await;
+    s.engine.save_settings(closed_window()).await.unwrap();
+    let job = s.engine.run_schedule_now(&id).await;
+    // Nothing changed since the first run.
+    assert_eq!(job.unwrap(), None);
+    std::fs::write(s.src.join("Fotos/Outono.jpg"), b"autumn").unwrap();
+    let job = s.engine.run_schedule_now(&id).await.unwrap().unwrap();
+    wait_for_state(&s.engine, &job, JobState::Waiting).await;
+    s.engine.pause(&job).await.unwrap();
+
+    watcher.signal(WatchSignal::Changed, 1);
+    assert!(tick(&s, MONDAY + SEC).await.is_empty());
+    assert!(
+        tick(&s, MONDAY + 61 * SEC).await.is_empty(),
+        "its run is paused"
+    );
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.next_run_at, Some(MONDAY + 121 * SEC));
+    assert_ne!(view.last_outcome, Some(ScheduleOutcome::StillRunning));
+}
+
+#[tokio::test]
+async fn switching_a_watched_schedule_off_stops_watching() {
+    let s = setup().await;
+    let (_watcher, id) = watched(&s).await;
+    let mut input = on_change(&s);
+    input.id = Some(id.clone());
+    input.enabled = false;
+    let off = s.engine.save_schedule(input.clone()).await.unwrap();
+    assert_eq!(off.next_run_at, None);
+    assert!(tick(&s, MONDAY + 2 * HOUR).await.is_empty());
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Idle);
+
+    // Back on: watched again, and rescanned at once.
+    input.enabled = true;
+    let on = s.engine.save_schedule(input).await.unwrap();
+    assert_eq!(on.next_run_at, Some(MONDAY));
+    std::fs::write(s.src.join("Fotos/Outono.jpg"), b"autumn").unwrap();
+    let run = tick(&s, MONDAY + 3 * HOUR).await;
+    assert_eq!(run.len(), 1);
+    let view = s.engine.get_schedule(&id).await.unwrap();
+    assert_eq!(view.watch.unwrap().mode, WatchMode::Events);
+
+    // A timetable has no watch.
+    let mut input = every_hour(&s);
+    input.id = Some(id.clone());
+    input.name = "Acme watched".into();
+    let timetable = s.engine.save_schedule(input).await.unwrap();
+    assert_eq!(timetable.watch, None);
 }

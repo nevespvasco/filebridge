@@ -12,6 +12,7 @@ mod immich;
 mod log;
 mod nextcloud;
 mod operations;
+mod watch;
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -29,6 +30,7 @@ use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport};
 
 pub use log::{RECENT_LINES, RecentLog};
 pub use operations::EngineOperations;
+pub use watch::NotifyWatcher;
 
 use immich::ImmichWizard;
 use nextcloud::NextcloudWizard;

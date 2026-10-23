@@ -27,25 +27,28 @@ mod sizes;
 mod sources;
 mod storage;
 mod transfers;
+pub mod watch;
 
 pub use engine::{Engine, EngineOptions};
 /// The shared types and rules, so `core`'s callers keep their paths.
 pub use filebridge_model::{
     AnalysisSummary, AppSettings, BrowseResult, BrowseTarget, CategoryCount, CheckView, Counts,
-    DecisionInput, DoneView, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    EntrySort, EntryStatus, EntryView, Event, ExportResult, Family, FileCategory, FolderNameCheck,
-    FolderSize, FolderSizes, InFlightView, IssueDecision, IssueSeverity, IssueView, JobErrorCode,
-    JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
-    PinnedSource, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus,
-    Recurrence, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff,
-    ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount, ScheduleInput,
-    ScheduleOutcome, ScheduleView, SealProblem, SendOptions, SendWindow, SourceInfo, SourceProblem,
-    StorageView, TargetSpec, UnknownValue, VolumeView, Weekday, job_operations,
+    DEFAULT_QUIET_SECS, DecisionInput, DoneView, EntryCursor, EntryDetail, EntryFacets,
+    EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event, ExportResult, Family,
+    FileCategory, FolderNameCheck, FolderSize, FolderSizes, InFlightView, IssueDecision,
+    IssueSeverity, IssueView, JobErrorCode, JobFilter, JobGroup, JobKind, JobPage, JobSort,
+    JobState, JobSummary, LogEntry, LogLevel, PinnedSource, PreflightView, Profile, ProfileTest,
+    RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, ReportChange, ReportChangeCount,
+    ReportChangeKind, ReportCheck, ReportDiff, ReportFormat, ReportRequest, ReportScope,
+    ReportSide, RuleCount, ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem, SendOptions,
+    SendWindow, SourceInfo, SourceProblem, StorageView, TargetSpec, UnknownValue, VolumeView,
+    WatchMode, WatchView, Weekday, job_operations,
 };
 pub use registry::Registry;
 pub use repair::MAX_REPAIR_ENTRIES;
 pub use schedules::WallClock;
 pub use settings::LocalClock;
+pub use watch::{FolderWatcher, SignalFn, WatchError, WatchHandle, WatchSignal};
 
 pub use filebridge_store::{Store, StoreError};
 

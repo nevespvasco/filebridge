@@ -102,8 +102,10 @@ pub struct Engine {
     pub(crate) sizes: crate::sizes::Scans,
     /// Held while a schedule's runs are looked at or created, so two never start at once.
     pub(crate) schedule_lock: Mutex<()>,
-    /// Wakes the scheduler: a schedule was saved, or a run became Ready.
+    /// Wakes the scheduler: a schedule was saved, a run became Ready or a job finished.
     pub(crate) schedules_changed: Notify,
+    /// The watched schedules' watches (docs/adr/0023).
+    pub(crate) watches: crate::watch::Watches,
 }
 
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
@@ -134,6 +136,7 @@ impl Engine {
             sizes: crate::sizes::Scans::default(),
             schedule_lock: Mutex::new(()),
             schedules_changed: Notify::new(),
+            watches: crate::watch::Watches::default(),
         })
     }
 
@@ -672,15 +675,18 @@ impl Engine {
                 .await?
         } else {
             // A scheduled run sends only what changed since the schedule last sent it.
-            let sent = match &row.schedule_id {
-                Some(schedule_id) => Some(self.sent_before(schedule_id, &row.sources).await?),
-                None => None,
+            let (sent, settle) = match &row.schedule_id {
+                Some(schedule_id) => (
+                    Some(self.sent_before(schedule_id, &row.sources).await?),
+                    self.settle_of(schedule_id).await,
+                ),
+                None => (None, None),
             };
             let events = self.events.clone();
             let jid = job_id.clone();
             tokio::task::spawn_blocking(move || {
                 let (mut files, mut bytes) = (0, 0);
-                analyse::analyse_sources(&sources, &names, sent.as_ref(), |src, f, b| {
+                analyse::analyse_sources(&sources, &names, sent.as_ref(), settle, |src, f, b| {
                     files += f;
                     bytes += b;
                     let _ = events.send(Event::ScanProgress {
@@ -748,6 +754,7 @@ impl Engine {
                     "scan_errors": analysis.scan_errors.len(),
                     "skipped_symlinks": analysis.skipped_symlinks,
                     "unchanged": analysis.unchanged,
+                    "unsettled": analysis.unsettled,
                     "preflight": preflight,
                 }),
             )
@@ -764,6 +771,7 @@ impl Engine {
             scan_errors: analysis.scan_errors,
             skipped_symlinks: analysis.skipped_symlinks,
             unchanged: analysis.unchanged,
+            unsettled: analysis.unsettled,
             preflight,
         })
     }
