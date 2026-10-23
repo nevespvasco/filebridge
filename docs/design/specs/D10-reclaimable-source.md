@@ -78,7 +78,7 @@ A job is **reclaimable** when all of these hold:
 | 1 | The job is `Completed` (not `CompletedWithWarnings`, not `Failed`/`Cancelled`) | `not_completed` |
 | 2 | It ran with `verify = true` | `not_verified` |
 | 3 | Every file entry is `transfer_state = done` **and** `verify_state = done` | `different` (mismatch/missing), `unverifiable`, `failed` |
-| 4 | No entry is `skipped` | `skipped` |
+| 4 | No entry is `skipped` (by a name decision, or during the send: [D04](D04-transfer-queue.md#skip-one-file-as-built)) | `skipped` |
 | 5 | A **source re-check** ran after `finished_at` and found the source unchanged | `not_checked`, `changed` |
 | 6 | The re-check is less than 24 h old | `stale_check` |
 

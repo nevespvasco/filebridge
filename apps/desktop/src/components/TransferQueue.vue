@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // The files a job is sending right now, each with its own progress, and the last ones that
 // arrived (docs/design/specs/D04-transfer-queue.md).
-import { computed } from "vue";
-import type { InFlightView_Serialize } from "@/bindings";
+import { computed, ref } from "vue";
+import { JOB_OPERATIONS, type InFlightView_Serialize, type JobState } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { CATEGORY_ICON, categoryColor } from "@/lib/categories";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import ProgressBar from "./ProgressBar.vue";
+import SkipEntryDialog from "./SkipEntryDialog.vue";
 
 const props = defineProps<{ jobId: string }>();
 const jobs = useJobs();
@@ -19,10 +20,20 @@ const state = computed(() => job.value?.state);
 /** Shown while files move, and greyed while a network error or a pause holds them. */
 const shown = computed(() => state.value === "transferring" || state.value === "retrying" || state.value === "paused");
 const held = computed(() => state.value !== "transferring");
-const rows = computed<InFlightView_Serialize[]>(() => live.value?.transfer?.in_flight ?? []);
+/** Files skipped from this screen: a paused job's last snapshot would still list them. */
+const skippedHere = ref(new Set<number>());
+const rows = computed<InFlightView_Serialize[]>(() => (live.value?.transfer?.in_flight ?? []).filter((f) => f.idx == null || !skippedHere.value.has(f.idx)));
 const started = computed(() => !!live.value?.transfer);
 const arrived = computed(() => live.value?.arrived ?? []);
 const lastMinute = computed(() => jobs.arrivedLastMinute(props.jobId));
+
+/** "Skip this file" (✕ on a row): one huge file can hold a slot on a slow link. */
+const canSkip = computed(() => !!state.value && (JOB_OPERATIONS.skip_entry as readonly JobState[]).includes(state.value));
+const skipping = ref<{ idx: number; name: string } | null>(null);
+function skipped() {
+  if (skipping.value) skippedHere.value = new Set([...skippedHere.value, skipping.value.idx]);
+  skipping.value = null;
+}
 
 /** ETA only when it says something (over a minute). */
 const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 60 ? fmt.duration(f.eta_secs) : "");
@@ -64,6 +75,16 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
                   <span class="path muted ellipsis" :title="f.dir">{{ f.dir || "/" }}</span>
                 </span>
                 <AppIcon v-if="f.renamed_from" name="renamed" class="renamed" :label="$t('queue.renamed', { name: f.renamed_from })" />
+                <button
+                  v-if="canSkip && f.idx != null"
+                  type="button"
+                  class="btn btn-small skip"
+                  :aria-label="$t('skip.label', { name: f.name })"
+                  :title="$t('skip.label', { name: f.name })"
+                  @click="skipping = { idx: f.idx, name: f.name }"
+                >
+                  <AppIcon name="close" />
+                </button>
               </div>
             </td>
             <td class="n small size">{{ fmt.bytes(f.size) }}</td>
@@ -92,6 +113,7 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
         </li>
       </ul>
     </details>
+    <SkipEntryDialog :job-id="jobId" :entry="skipping" @done="skipped" @cancel="skipping = null" />
   </section>
 </template>
 
@@ -110,6 +132,8 @@ h2 { font-size: 1rem; margin: 0; }
 .cat { flex: none; }
 .text { display: grid; min-width: 0; flex: 1; }
 .renamed { color: var(--text-2); }
+.skip { flex: none; padding: 0.15rem 0.35rem; }
+.held .rows .skip { opacity: 1; }
 .bar :deep(.progress) { display: inline-block; width: calc(100% - 3.5rem); vertical-align: middle; }
 .pct { display: inline-block; width: 3.2rem; text-align: right; }
 td.n { white-space: nowrap; }

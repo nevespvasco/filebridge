@@ -90,6 +90,15 @@ impl Engine {
         Ok(check_name(&self.registry.name_plan(&profile)?, &name))
     }
 
+    /// The folder the last transfer to this profile was sent into, for the wizard to preselect:
+    /// `None` for its root, before its first send, or when the profile's name rules no longer
+    /// accept that folder (it was edited since).
+    pub async fn last_target_dir(&self, profile_id: &str) -> Result<Option<String>> {
+        let profile = self.get_profile(profile_id).await?;
+        let dir = self.store.last_target_dir(profile_id).await?;
+        Ok(dir.filter(|d| self.check_target_dir(&profile, Some(d)).is_ok()))
+    }
+
     /// A transfer's target folder must be a relative path whose every folder name the
     /// destination accepts as it is.
     pub(crate) fn check_target_dir(&self, profile: &Profile, dir: Option<&str>) -> Result<()> {

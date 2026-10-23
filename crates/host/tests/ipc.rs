@@ -53,6 +53,24 @@ async fn client_drives_a_job_over_the_socket() {
 
     let client = Client::connect(&endpoint).await.unwrap();
     assert_eq!(client.ping().await.unwrap().protocol, PROTOCOL_VERSION);
+    {
+        // "Copy log" (D07): the engine's recent lines, secret parameters scrubbed.
+        use tracing_subscriber::layer::SubscriberExt;
+        let subscriber =
+            tracing_subscriber::registry().with(filebridge_host::RecentLog::global().layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!("rclone: bad fs :sftp,host=example.invalid,pass=hunter2:/x");
+        });
+        let log = client.service_log().await.unwrap();
+        let line = log
+            .iter()
+            .find(|l| l.contains("bad fs"))
+            .expect("logged line");
+        assert!(
+            line.contains("pass=***") && !line.contains("hunter2"),
+            "{line}"
+        );
+    }
     let mut events = client.events().await.unwrap();
 
     let profile = client

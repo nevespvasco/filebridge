@@ -100,6 +100,16 @@ Files will go into:  demo/Backup/2019/Fotos-novas   (will be created)
 - The CLI's `send` gets `--into <folder>`.
 - Real rclone passes the listing part of the contract suite (`operations/list`, `dirsOnly`;
   "directory not found" → `NotFound`).
+- **The last target folder is remembered per profile** and preselected in wizard step 2. It is
+  stored with the profile (`profiles.last_target_dir`, migration 9; `NULL` = the root), written
+  when a transfer is **started** from Ready (not when a draft is created, so an abandoned draft
+  changes nothing; not for Repair jobs, whose folder is the one repaired), and kept when the
+  profile is edited. A failed write is logged and never stops the send. `last_target_dir(profile_id)`
+  (protocol 26) answers it, or `None` when the profile's name rules no longer accept that folder.
+  Choosing a destination in step 2 fills **Send into** with it, marked "(same as the last transfer
+  here)", unless the user already picked a folder while it was asked. It is a field of neither
+  `Profile` nor the profile's config JSON: it is usage, not configuration, and `save_profile`
+  never touches it.
 
 ## States
 
@@ -239,4 +249,4 @@ CheckFolderName check_folder_name(target: BrowseTarget, name: String) -> FolderN
 - Listing or opening **files** at the destination, deleting, renaming or moving there (rejected:
   [review](../00-reference-review.md#rejected-patterns)).
 - Creating folders from the browser (see Behaviour).
-- Remembering the last-used `target_dir` per profile. It could come later as a suggestion in step 2.
+- ~~Remembering the last-used `target_dir` per profile.~~ Built: see As built.

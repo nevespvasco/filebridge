@@ -18,6 +18,7 @@ use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
     Problem, StepProgress,
 };
+use filebridge_store::EntryState;
 use filebridge_transport_api::{
     Backend, Destination, PreflightReport, RemotePath, TransportCaps, TransportError,
 };
@@ -1004,6 +1005,7 @@ async fn folders_are_browsed_checked_and_sent_into() {
         refused.is_err(),
         "a target folder the destination would rename"
     );
+    assert_eq!(s.engine.last_target_dir(&s.profile_id).await.unwrap(), None);
 
     // Sent into a folder that doesn't exist yet: the send creates it.
     let job = ready_job(
@@ -1017,6 +1019,15 @@ async fn folders_are_browsed_checked_and_sent_into() {
     .await;
     assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
     assert!(dest_files(&s.dest).contains(&"2019/Novas/Acme/Fotos/Inverno.jpg".to_owned()));
+    // The next transfer to this profile is offered the same folder (D11).
+    assert_eq!(
+        s.engine
+            .last_target_dir(&s.profile_id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("2019/Novas")
+    );
     let changed = s.integration.changed.lock().unwrap().clone();
     assert!(
         changed.iter().all(|p| p.starts_with("2019/Novas/")),
@@ -1439,6 +1450,141 @@ async fn files_finished_mid_batch_are_kept_when_paused() {
     );
     assert_eq!(s.transport.calls.load(Ordering::SeqCst) - calls, 1);
     assert_eq!(engine.job(&job).await.unwrap().counts.done, 23);
+}
+
+/// A file skipped while its batch is sending (docs/design/specs/D04): that batch stops, the
+/// others go again, and the skipped one is never sent, never verified, shown skipped in the
+/// Files tab and the report, and keeps its source from being reclaimable.
+#[tokio::test]
+async fn a_file_skipped_in_flight_is_never_sent() {
+    let s = setup().await;
+    for i in 0..20 {
+        std::fs::write(s.src.join(format!("f{i:02}.txt")), b"x").unwrap();
+    }
+    let engine = engine_with_batch(
+        s.store.clone(),
+        s.transport.clone(),
+        s.integration.clone(),
+        100,
+    );
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(40);
+    let options = SendOptions {
+        verify: true,
+        ..SendOptions::default()
+    };
+    let job = engine
+        .create_job(vec![s.src.clone()], &s.profile_id, options)
+        .await
+        .unwrap();
+    engine.analyse(&job).await.unwrap();
+    engine.start(&job).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let in_flight = s
+        .store
+        .files_with_transfer_state(&job, EntryState::Partial, None, 100)
+        .await
+        .unwrap();
+    let last = in_flight.last().expect("a file in flight").clone();
+    let calls = s.transport.calls.load(Ordering::SeqCst);
+    engine.skip_entry(&job, last.entry.idx).await.unwrap();
+    *s.transport.per_file.lock().unwrap() = Duration::ZERO;
+
+    let state = tokio::time::timeout(Duration::from_secs(20), engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed, "a skip is the user's choice");
+    assert!(
+        s.transport.calls.load(Ordering::SeqCst) > calls,
+        "the batch went on without it"
+    );
+    let dest_name = last.dest_path.clone().unwrap();
+    let files = dest_files(&s.dest);
+    assert!(!files.contains(&dest_name), "{dest_name} was sent");
+    assert_eq!(files.len(), 22);
+    let summary = engine.job(&job).await.unwrap();
+    assert_eq!((summary.counts.done, summary.counts.skipped), (22, 1));
+    assert_eq!(summary.counts.verified_ok, 22);
+
+    let detail = engine.entry_detail(&job, last.entry.idx).await.unwrap();
+    assert_eq!(detail.view.status, EntryStatus::Skipped);
+    let mut csv = Vec::new();
+    engine
+        .write_report(&job, ReportFormat::Csv, ReportScope::All, false, &mut csv)
+        .await
+        .unwrap();
+    let csv = String::from_utf8(csv).unwrap();
+    let line = csv
+        .lines()
+        .find(|l| l.contains(&dest_name))
+        .expect("in the report");
+    assert!(line.contains(",skipped,"), "{line}");
+
+    let status = engine.recheck_sources(&job).await.unwrap();
+    assert!(!status.eligible);
+    let skipped = status.sources[0]
+        .blockers
+        .iter()
+        .find(|b| b.code == ReclaimBlocker::Skipped)
+        .expect("the skipped file blocks reclaiming");
+    assert_eq!(skipped.count, Some(1));
+    let log = engine.job_log(&job, None, None, 100).await.unwrap();
+    let entry = log
+        .iter()
+        .find(|e| e.kind == "entry_skipped")
+        .expect("logged");
+    assert_eq!(entry.level, LogLevel::Warn);
+    assert_eq!(entry.data["idx"], last.entry.idx);
+}
+
+/// Skipped while paused: the resume sends everything else. Only files not sent yet, and only
+/// while the transfer has started and not finished.
+#[tokio::test]
+async fn a_file_skipped_while_paused_is_left_out_of_the_resume() {
+    let s = setup().await;
+    for i in 0..12 {
+        std::fs::write(s.src.join(format!("f{i:02}.txt")), b"x").unwrap();
+    }
+    let job = ready_job(&s, SendOptions::default()).await;
+    let pending = s
+        .store
+        .files_with_transfer_state(&job, EntryState::Pending, None, 100)
+        .await
+        .unwrap();
+    let last = pending.last().unwrap().entry.idx;
+    let refused = s.engine.skip_entry(&job, last).await.unwrap_err();
+    assert!(refused.to_string().contains("ready"), "{refused}");
+
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(30);
+    s.engine.start(&job).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    s.engine.pause(&job).await.unwrap();
+    let done = s
+        .store
+        .files_with_transfer_state(&job, EntryState::Done, None, 100)
+        .await
+        .unwrap();
+    let sent = done.first().expect("some files were sent").entry.idx;
+    let err = s.engine.skip_entry(&job, sent).await.unwrap_err();
+    assert!(err.to_string().contains("not sent yet"), "{err}");
+    let dir = s.store.entries_page(&job, None, 1).await.unwrap()[0].clone();
+    assert!(dir.entry.is_dir);
+    assert!(s.engine.skip_entry(&job, dir.entry.idx).await.is_err());
+    s.engine.skip_entry(&job, last).await.unwrap();
+    assert!(
+        s.engine.skip_entry(&job, last).await.is_err(),
+        "already skipped"
+    );
+
+    *s.transport.per_file.lock().unwrap() = Duration::ZERO;
+    s.engine.resume(&job).await.unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 14);
+    assert!(s.engine.skip_entry(&job, last).await.is_err(), "finished");
 }
 
 #[tokio::test]

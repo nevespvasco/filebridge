@@ -820,6 +820,10 @@
     "version": "Versão",
     "endpoint": "Socket",
     "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso.",
+    "copyLog": "Copiar registo",
+    "copyLogHint": "Para relatar problemas: as mensagens recentes do motor, sem palavras-passe nem chaves.",
+    "logCopied": "Registo copiado para a área de transferência.",
+    "logEmpty": "O motor ainda não registou nada.",
     "bandwidthHelp": "O máximo da sua ligação que o filebridge pode usar, para a internet continuar rápida para o resto.",
     "scheduleHelp": "As horas em que os envios podem correr, por exemplo só à noite.",
     "appearance": "Aspeto",
@@ -887,7 +891,16 @@
       "other": "Terminada"
     },
     "unknown": "Evento: {kind}",
-    "createdRepair": "Reparação de {folder} em {destination} criada"
+    "createdRepair": "Reparação de {folder} em {destination} criada",
+    "entrySkipped": "Saltado a seu pedido: {path}"
+  },
+  "skip": {
+    "label": "Saltar {name}",
+    "title": "Saltar “{name}”?",
+    "notSent": "{name} não será enviado nesta transferência. Tudo o resto continua.",
+    "restart": "Os outros ficheiros que estão a ser enviados agora recomeçam do início.",
+    "stays": "Fica marcado como saltado na lista de ficheiros e no relatório, por isso a sua pasta não pode ser mostrada como segura para libertar. Uma nova transferência ou Enviar de novo pode enviá-lo mais tarde.",
+    "confirm": "Saltar este ficheiro"
   },
   "composition": {
     "title": "O que vai enviar",
@@ -1118,7 +1131,8 @@
     "dest": {
       "sendInto": "Enviar para:",
       "change": "Mudar…",
-      "root": "Usar a raiz"
+      "root": "Usar a raiz",
+      "lastUsed": "a mesma da última transferência para aqui"
     }
   },
   "home": {

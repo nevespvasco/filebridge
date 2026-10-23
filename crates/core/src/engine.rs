@@ -91,6 +91,9 @@ pub struct Engine {
     running: Mutex<HashMap<String, Running>>,
     generation: AtomicU64,
     pub(crate) locks: JobLocks,
+    /// Files skipped during a send, `(job_id, idx)`, already persisted: a runner sending one of
+    /// them stops that batch and goes on without it (docs/design/specs/D04).
+    pub(crate) skips: broadcast::Sender<(String, u64)>,
 }
 
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
@@ -117,6 +120,7 @@ impl Engine {
             running: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             locks: JobLocks::default(),
+            skips: broadcast::channel(64).0,
         })
     }
 
@@ -1025,12 +1029,25 @@ impl Engine {
     pub async fn start(self: &Arc<Self>, job_id: &str) -> Result<()> {
         {
             let mut job = self.begin(job_id, Op::Start).await?;
+            let mut sent_into = None;
             if job.state() == JobState::Ready {
                 let row = self.store.get_job(job_id).await?;
                 let profile = self.get_profile(&row.profile_id).await?;
                 self.plan_destinations(job_id, &profile).await?;
+                if JobKind::parse(&row.kind)? == JobKind::Transfer {
+                    let options: SendOptions =
+                        serde_json::from_value(row.options).unwrap_or_default();
+                    sent_into = Some((row.profile_id, options.target_dir));
+                }
             }
             job.go(JobState::Transferring, None).await?;
+            // The wizard preselects this folder for the next transfer to the profile (D11). A
+            // memory, not a stage: failing to write it never stops the send.
+            if let Some((profile_id, dir)) = sent_into
+                && let Err(e) = self.store.set_last_target_dir(&profile_id, dir).await
+            {
+                tracing::warn!(job = job_id, "could not remember the target folder: {e}");
+            }
         }
         self.spawn_run(job_id).await;
         Ok(())
@@ -1047,6 +1064,40 @@ impl Engine {
         self.stop_runner(job_id).await;
         let mut job = self.begin(job_id, Op::Pause).await?;
         job.go(JobState::Paused, None).await
+    }
+
+    /// Leaves one file out of a send that has started (Transferring, Retrying, Waiting or
+    /// Paused): it is persisted `Skipped` at once, so no resume sends it, and a batch sending it
+    /// right now stops and goes on without it (the other files of that batch start again).
+    /// Verification passes over it, the Files tab and the report show it skipped, and it keeps
+    /// its source from being reclaimable. Only a file not sent yet can be skipped.
+    pub async fn skip_entry(&self, job_id: &str, idx: u64) -> Result<()> {
+        let _job = self.begin(job_id, Op::SkipEntry).await?;
+        let row = self.store.get_job(job_id).await?;
+        if JobKind::parse(&row.kind)? == JobKind::Repair {
+            return Err(CoreError::Invalid(
+                "a repair only renames; there is no file to skip".into(),
+            ));
+        }
+        let entry = self.store.get_entry(job_id, idx).await?;
+        if !self.store.skip_file(job_id, idx).await? {
+            return Err(CoreError::Invalid(if entry.entry.is_dir {
+                "only files can be skipped, not folders".into()
+            } else {
+                format!(
+                    "only a file not sent yet can be skipped; this one is {}",
+                    entry.transfer_state.as_str()
+                )
+            }));
+        }
+        let _ = self.skips.send((job_id.to_owned(), idx));
+        let path = String::from_utf8_lossy(&entry.entry.raw_path).into_owned();
+        self.log(
+            Some(job_id),
+            "entry_skipped",
+            serde_json::json!({ "idx": idx, "path": path, "size": entry.entry.size }),
+        )
+        .await
     }
 
     /// Stops the job for good. Nothing at the source or destination is deleted.

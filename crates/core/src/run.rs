@@ -3,6 +3,7 @@
 //! starts, so a crash resumes at the stage it was in; per-entry states mean finished files are
 //! never sent again.
 
+use std::collections::HashSet;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -279,7 +280,7 @@ impl Engine {
             .reset_transfer_states(&ctx.job_id, &[EntryState::Partial], EntryState::Pending)
             .await?;
         let counts = self.store.manifest_counts(&ctx.job_id).await?;
-        let batch = Batch {
+        let mut batch = Batch {
             store: &self.store,
             events: &self.events,
             transport: transport.as_ref(),
@@ -288,7 +289,7 @@ impl Engine {
             sources: &ctx.sources,
             concurrency: ctx.options.concurrency.max(1) as usize,
             files_total: counts.files - counts.skipped,
-            bytes_total: counts.bytes,
+            bytes_total: counts.bytes - counts.bytes_skipped,
         };
         let mut tally = Tally {
             bytes_done: counts.bytes_done,
@@ -298,6 +299,9 @@ impl Engine {
 
         let batches = async {
             loop {
+                // Listening before the page is read: a file skipped after this is caught below,
+                // one skipped before is no longer Pending.
+                let mut skips = self.skips.subscribe();
                 let entries = self
                     .store
                     .files_with_transfer_state(
@@ -310,10 +314,12 @@ impl Engine {
                 if entries.is_empty() {
                     break;
                 }
+                let in_batch: HashSet<u64> = entries.iter().map(|e| e.entry.idx).collect();
                 let stop = async {
                     tokio::select! {
                         _ = ctx.cancel.cancelled() => Stop::Cancelled,
                         _ = self.window_closes() => Stop::Held,
+                        _ = skipped_in(&mut skips, &ctx.job_id, &in_batch) => Stop::Skipped,
                     }
                 };
                 match batch.send(entries, &mut tally, stop).await? {
@@ -329,6 +335,22 @@ impl Engine {
                     Sent::Retry(e) => return Ok(StageEnd::Retry(e)),
                     Sent::Stopped(Stop::Cancelled) => return Ok(StageEnd::Cancelled),
                     Sent::Stopped(Stop::Held) => return Ok(StageEnd::Held),
+                    Sent::Stopped(Stop::Skipped) => {
+                        // The rest of that batch goes again with the next one; progress counts
+                        // from what is stored, now without the skipped file.
+                        self.store
+                            .reset_transfer_states(
+                                &ctx.job_id,
+                                &[EntryState::Partial],
+                                EntryState::Pending,
+                            )
+                            .await?;
+                        let counts = self.store.manifest_counts(&ctx.job_id).await?;
+                        batch.files_total = counts.files - counts.skipped;
+                        batch.bytes_total = counts.bytes - counts.bytes_skipped;
+                        tally.bytes_done = counts.bytes_done;
+                        tally.files_done = counts.done;
+                    }
                 }
             }
             self.log_round(&ctx.job_id, &tally).await?;
@@ -649,6 +671,25 @@ impl Engine {
                     .push(format!("{id} update failed: {}", e.message));
                 Ok(StageEnd::Done(()))
             }
+        }
+    }
+}
+
+/// Resolves when one of `in_batch`'s files of job `job_id` is skipped (`Engine::skip_entry`).
+/// Never resolves if the channel closes: the engine is going away and the batch ends anyway.
+async fn skipped_in(
+    skips: &mut tokio::sync::broadcast::Receiver<(String, u64)>,
+    job_id: &str,
+    in_batch: &HashSet<u64>,
+) {
+    use tokio::sync::broadcast::error::RecvError;
+    loop {
+        match skips.recv().await {
+            Ok((job, idx)) if job == job_id && in_batch.contains(&idx) => return,
+            Ok(_) => {}
+            // Missed some: stop to be safe; the batch restarts without whatever was skipped.
+            Err(RecvError::Lagged(_)) => return,
+            Err(RecvError::Closed) => std::future::pending::<()>().await,
         }
     }
 }

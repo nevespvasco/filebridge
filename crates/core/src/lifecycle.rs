@@ -99,6 +99,11 @@ impl Engine {
                 "only a finished transfer can do that; this one is {}",
                 state.as_str()
             )),
+            Op::SkipEntry => CoreError::Invalid(format!(
+                "a file can be skipped only while its transfer is sending or paused; this one \
+                 is {}",
+                state.as_str()
+            )),
             Op::Run | Op::Recover => {
                 CoreError::Invalid(format!("a job in state {} can't run", state.as_str()))
             }

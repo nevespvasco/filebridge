@@ -119,6 +119,40 @@ impl Store {
     }
 }
 
+impl Store {
+    /// Remembers the folder a transfer to this profile was sent into (`None` = its root).
+    pub async fn set_last_target_dir(&self, id: &str, dir: Option<String>) -> Result<()> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE profiles SET last_target_dir = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, dir],
+            )?;
+            if n == 0 {
+                return Err(StoreError::NotFound(format!("profile {id}")));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// The folder the last transfer to this profile was sent into (`None` = its root, or none
+    /// was sent yet).
+    pub async fn last_target_dir(&self, id: &str) -> Result<Option<String>> {
+        let id = id.to_owned();
+        self.call(move |c| {
+            c.query_row(
+                "SELECT last_target_dir FROM profiles WHERE id = ?1 AND deleted_at IS NULL",
+                [&id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| StoreError::NotFound(format!("profile {id}")))
+        })
+        .await
+    }
+}
+
 /// `last_test, last_test_at, last_good_test, last_good_test_at`.
 type TestColumns = (Option<String>, Option<i64>, Option<String>, Option<i64>);
 
@@ -211,6 +245,31 @@ mod tests {
             store.get_profile("nope").await,
             Err(StoreError::NotFound(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn last_target_dir_is_remembered_and_kept_on_save() {
+        let (store, _) = store_with_job().await;
+        assert_eq!(store.last_target_dir("p1").await.unwrap(), None);
+        store
+            .set_last_target_dir("p1", Some("2019/Fotos".into()))
+            .await
+            .unwrap();
+        // Editing the profile doesn't forget it.
+        let p = store.get_profile("p1").await.unwrap();
+        store.upsert_profile(p).await.unwrap();
+        assert_eq!(
+            store.last_target_dir("p1").await.unwrap().as_deref(),
+            Some("2019/Fotos")
+        );
+        store.set_last_target_dir("p1", None).await.unwrap();
+        assert_eq!(store.last_target_dir("p1").await.unwrap(), None);
+        assert!(matches!(
+            store.last_target_dir("nope").await,
+            Err(StoreError::NotFound(_))
+        ));
+        store.delete_profile("p1").await.unwrap();
+        assert!(store.set_last_target_dir("p1", None).await.is_err());
     }
 
     #[tokio::test]

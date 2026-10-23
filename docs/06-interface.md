@@ -72,7 +72,9 @@ apps/desktop/src/
 | `get_issues(job_id, rule?, page)` / `decide_issue(issue_id, decision)` / `decide_all(job_id, rule?, decision)` | Analysis step |
 | `set_options(job_id, options)` | Review step: change "verify" etc. without a new analysis (refused for a Repair job: its folder is what the user confirms) |
 | `start_job(job_id, options)` / `pause_job` / `resume_job` / `cancel_job` / `verify_job` | Lifecycle |
+| `skip_entry(job_id, idx)` | Transfer detail: leave one file not sent yet out of a started send (implemented: design D04) |
 | `list_jobs()` / `get_job(job_id)` / `get_job_log(job_id, page)` | Jobs screens (the log is `job_log(job_id, after_id, before_id, limit)`, implemented: design D07) |
 | `create_repair_job(profile_id, dir)` (as built; then `analyse`, the decisions and `start`, like a send), `planned_renames(job_id)` (what the confirmation counts) | Repair destination; "Continue" and "Send again" on a repair open this page, never the New transfer wizard |
 | `get_settings()` / `save_settings(settings)` | Settings: app-wide bandwidth limit and send window (implemented) |
+| `service_log()` | Settings → "Copy log": the engine's recent log lines, secrets scrubbed, for bug reports (implemented: design D07) |
 | `remove_access(profile_id)` | "Remove access" wizard |

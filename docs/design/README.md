@@ -88,6 +88,7 @@ land its own migration first; these labels don't assume any number.
 | M-profile-test | `profiles.last_test`, `profiles.last_test_at`, `profiles.last_good_test` | D03 |
 | M-entry-index | indexes `manifest_entries(job_id, verify_state)`, `(job_id, size, idx)`, `issues(job_id, entry_idx)`, `events(kind, id)` | D05, D07, D08 |
 | M-job-label | `jobs.label`, `jobs.again_of`, `jobs.reclaim_dismissed_at`, `jobs.reclaim_check`; `issues.carried_over`; indexes `jobs(state, created_at)`, `jobs(profile_id, created_at)` | D06, D10 |
+| M-last-target (9) | `profiles.last_target_dir` | D11 |
 
 `manifest_entries.mtime` and `hash`/`hash_algo` already exist. D05 starts writing the hash, and
 D10 starts writing mtime; neither needs a migration. No migration edits a shipped one (rule in
@@ -111,6 +112,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `send_again(job_id, profile_id) -> String` | new | D06 |
 | `job_log(job_id, after_id, before_id, limit) -> Vec<LogEntry>` | new (the docs/06 draft `get_job_log`) | D07 |
 | `activity(before_id, limit) -> Vec<ActivityItem>` | new | D07 |
+| `service_log() -> Vec<String>` | new (protocol 25): Settings → "Copy log" | D07 |
 | `decide_many(job_id, issue_ids, decision) -> u64` | new | D08 |
 | `decide_all(…, query)`, `issues(…, query)`, `rule_counts(job_id, query)` | **changed**: optional path filter | D08 |
 | `export_report(job_id, req) -> ExportResult` | new | D09 |
@@ -119,6 +121,8 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `dismiss_reclaim(job_id, dismissed)` | new | D10 |
 | `browse(target, dir, prefix) -> BrowseResult` | new | D11 |
 | `check_folder_name(target, name) -> FolderNameCheck` | new | D11 |
+| `last_target_dir(profile_id) -> Option<String>` | new (protocol 26) | D11 |
+| `skip_entry(job_id, idx)` | new (protocol 27) | D04 |
 | `create_repair_job(profile_id, dir) -> String` | new (protocol 16), Phase 2 | [04](../04-name-correction.md#repair-destination-mode) |
 | `set_profile_password(profile_id, password) -> Profile` | new (protocol 17), Phase 2 | [ADR 0004](../adr/0004-os-keyring-secrets.md) |
 | `add_nextcloud_webdav(req) -> DetectNextcloudResponse` | new (protocol 18), Phase 2 | [05](../05-integration-nextcloud.md) |
@@ -130,6 +134,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 |---|---|
 | `JobGroup` (active, needs_you, not_sent, finished, cancelled) as pure data | D06 |
 | `Op::SetLabel` (every state), `Op::SendAgain` (terminal states), `Op::Export` (terminal states) | D06, D09 |
+| `Op::SkipEntry` (Transferring, Retrying, Waiting, Paused) | D04 |
 | `EntryStatus::from_states`, `log_level(kind, data)`, `LOW_SPACE_*` constants | D05, D07, D03 |
 
 ### Contract changes (`crates/transport-api`)

@@ -48,6 +48,11 @@ export const commands = {
 	 *  libraries are listed in `containers`.
 	 */
 	addImmich: (req: ImmichRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_immich", { req })),
+	/**
+	 *  The folder the last transfer to a profile was sent into (`None` = its root, none
+	 *  yet, or one its name rules no longer accept), which wizard step 2 preselects.
+	 */
+	lastTargetDir: (profileId: string) => typedError<string | null, ErrorBody>(__TAURI_INVOKE("last_target_dir", { profileId })),
 	/**  A draft job; nothing is read from the sources yet. */
 	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
@@ -72,6 +77,12 @@ export const commands = {
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
 	cancel: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("cancel", { jobId })),
+	/**
+	 *  Leaves one file not sent yet out of a started send (Transferring, Retrying,
+	 *  Waiting, Paused): Skipped at once, never sent by a resume, stopping the batch
+	 *  that is sending it. Shown skipped in the Files tab and the report.
+	 */
+	skipEntry: (jobId: string, idx: number) => typedError<null, ErrorBody>(__TAURI_INVOKE("skip_entry", { jobId, idx })),
 	/**  A page of the jobs matching `filter`, with how many match in all. */
 	listJobs: (filter: JobFilter_Deserialize, limit: number, offset: number) => typedError<JobPage_Serialize, ErrorBody>(__TAURI_INVOKE("list_jobs", { filter, limit, offset })),
 	/**  Names a job (any state); a blank name clears it. */
@@ -151,6 +162,11 @@ export const commands = {
 	getSettings: () => typedError<AppSettings_Serialize, ErrorBody>(__TAURI_INVOKE("get_settings")),
 	/**  Validates, saves and applies them at once, to running sends too. */
 	saveSettings: (settings: AppSettings_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("save_settings", { settings })),
+	/**
+	 *  The engine's recent log lines (info and above, at most 2000, oldest first), with
+	 *  secrets scrubbed: Settings → About → "Copy log", for bug reports.
+	 */
+	serviceLog: () => typedError<string[], ErrorBody>(__TAURI_INVOKE("service_log")),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
 	serviceEndpoint: () => __TAURI_INVOKE<string>("service_endpoint"),
 	/**
@@ -187,9 +203,9 @@ export const events = {
 };
 
 /* Constants */
-export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
+export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"skip_entry":["transferring","paused","retrying","waiting"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 24 as const;
+export const PROTOCOL_VERSION = 27 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 

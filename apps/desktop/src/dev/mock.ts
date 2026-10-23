@@ -116,7 +116,7 @@ function log(jobId: string, kind: string, data: Record<string, unknown>, at = Da
   const level: LogEntry["level"] =
     (kind === "state" && data.to === "failed") || (kind === "finished" && data.state === "failed")
       ? "error"
-      : kind === "retry" || (kind === "transfer_round" && n("failed") > 0) || (kind === "finished" && data.state === "completed_with_warnings") || (kind === "analysis" && n("scan_errors") > 0)
+      : kind === "retry" || kind === "entry_skipped" || (kind === "transfer_round" && n("failed") > 0) || (kind === "finished" && data.state === "completed_with_warnings") || (kind === "analysis" && n("scan_errors") > 0)
         ? "warn"
         : "info";
   const list = logs.get(jobId) ?? [];
@@ -308,6 +308,9 @@ function queueAt(job: JobSummary_Serialize, n: number) {
 }
 
 /** A job's manifest, made up on demand from the entry's index so any size works. */
+/** Files skipped during a send (`skip_entry`), per job. */
+const skippedEntries = new Map<string, Set<number>>();
+
 function entryAt(job: JobSummary_Serialize, idx: number): EntryView & { renamed: boolean } {
   const f = QUEUE_FILES[idx % QUEUE_FILES.length];
   const n = Math.floor(idx / QUEUE_FILES.length);
@@ -316,7 +319,7 @@ function entryAt(job: JobSummary_Serialize, idx: number): EntryView & { renamed:
   let status: EntryStatus = sent ? (job.counts.verified_ok ? "verified" : "sent") : "not_sent";
   if (sent && idx % 997 === 3) status = "failed";
   else if (sent && job.counts.verified_ok && idx % 1499 === 5) status = "different";
-  else if (idx % 1777 === 11) status = "skipped";
+  else if (idx % 1777 === 11 || skippedEntries.get(job.id)?.has(idx)) status = "skipped";
   const size = Math.max(1_000, Math.round(f.size * (0.4 + ((idx * 7919) % 100) / 80)));
   return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, renamed };
 }
@@ -405,6 +408,8 @@ function spaceOf(id: string) {
 }
 /** Why each destination's last space check failed. */
 const lastError = new Map<string, string>();
+/** The folder each profile's last transfer went into (D11), as the engine records it at Start. */
+const lastTargetDir = new Map<string, string | null>([["p-nc", "Fotos/2019"]]);
 function storageOf(id: string): StorageView {
   const at = checkedAt.get(id) ?? null;
   const disk = spaceOf(id);
@@ -648,6 +653,7 @@ const handlers: Handlers = {
     if (i >= 0) profiles.splice(i, 1);
     return null;
   },
+  lastTargetDir: (a) => lastTargetDir.get(a.profileId as string) ?? null,
   testProfile: async (a) => {
     await sleep(600);
     const p = profiles.find((x) => x.id === a.id);
@@ -1024,11 +1030,25 @@ const handlers: Handlers = {
   start: (a) => {
     const job = find(a.jobId);
     allow("start", job);
+    if (job.state === "ready" && job.kind !== "repair") lastTargetDir.set(job.profile_id, job.options.target_dir ?? null);
     setState(job, "transferring");
     sendOrWait(job);
     return null;
   },
   resume: (a) => handlers.start(a),
+  skipEntry: (a) => {
+    const job = find(a.jobId);
+    allow("skip_entry", job);
+    const e = entryAt(job, a.idx as number);
+    // The mock's in-flight rows don't line up with its entry states: refuse only a repeat.
+    if (e.status === "skipped") throw fail("invalid", "only a file not sent yet can be skipped; this one is skipped");
+    const set = skippedEntries.get(job.id) ?? new Set<number>();
+    set.add(a.idx as number);
+    skippedEntries.set(job.id, set);
+    job.counts.skipped++;
+    log(job.id, "entry_skipped", { idx: a.idx as number, path: `${e.dir}/${e.name}`, size: e.size });
+    return null;
+  },
   pause: (a) => {
     const job = find(a.jobId);
     allow("pause", job);
@@ -1257,6 +1277,10 @@ const handlers: Handlers = {
     return list.filter((e) => a.beforeId == null || e.id < (a.beforeId as number)).reverse().slice(0, limit);
   },
   getSettings: () => settings,
+  serviceLog: () => [
+    `${new Date(now - 60_000).toISOString()}  INFO filebridge_service: filebridge-service 0.0.1 ready`,
+    `${new Date(now - 30_000).toISOString()}  WARN filebridge_core::run: retrying in 2 min attempt=1`,
+  ],
   saveSettings: (a) => {
     const s = a.settings as AppSettings_Serialize;
     const w = s.send_window;

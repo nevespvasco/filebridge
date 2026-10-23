@@ -3,7 +3,7 @@
 // that proves it arrived intact (docs/design/specs/D05, "Entry detail").
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { EntryDetail_Serialize } from "@/bindings";
+import { JOB_OPERATIONS, type EntryDetail_Serialize, type JobState } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { CATEGORY_ICON, categoryColor } from "@/lib/categories";
@@ -13,6 +13,7 @@ import AppIcon from "./AppIcon.vue";
 import BytesDiff from "./BytesDiff.vue";
 import Drawer from "./Drawer.vue";
 import EntryStatusBadge from "./EntryStatusBadge.vue";
+import SkipEntryDialog from "./SkipEntryDialog.vue";
 
 const props = defineProps<{ jobId: string; idx: number | null }>();
 const jobs = useJobs();
@@ -26,20 +27,29 @@ const detail = ref<EntryDetail_Serialize | null>(null);
 const error = ref<string | null>(null);
 const copied = ref<string | null>(null);
 
-watch(
-  () => [props.jobId, props.idx] as const,
-  async ([job, idx]) => {
-    detail.value = null;
-    error.value = null;
-    if (idx == null) return;
-    try {
-      detail.value = await api.entry(job, idx);
-    } catch (e) {
-      error.value = errorMessage(e);
-    }
-  },
-  { immediate: true },
-);
+async function load(job: string, idx: number | null) {
+  detail.value = null;
+  error.value = null;
+  if (idx == null) return;
+  try {
+    detail.value = await api.entry(job, idx);
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+watch(() => [props.jobId, props.idx] as const, ([job, idx]) => load(job, idx), { immediate: true });
+
+// A file not sent yet of a started send can be left out (docs/design/specs/D04).
+const skipping = ref(false);
+const canSkip = computed(() => {
+  const state = jobs.byId[props.jobId]?.state;
+  const status = detail.value?.view.status;
+  return !remote.value && !detail.value?.view.is_dir && (status === "not_sent" || status === "sending") && !!state && (JOB_OPERATIONS.skip_entry as readonly JobState[]).includes(state);
+});
+function skipped() {
+  skipping.value = false;
+  void load(props.jobId, props.idx);
+}
 
 const v = computed(() => detail.value?.view);
 const extension = computed(() => {
@@ -173,6 +183,8 @@ async function reveal() {
 
       <p v-if="copied" class="small ok-text" role="status">{{ $t("entry.copied") }}</p>
       <button v-if="!remote && canReveal()" class="btn" @click="reveal"><AppIcon name="reveal" /> {{ $t("entry.reveal") }}</button>
+      <button v-if="canSkip" class="btn" @click="skipping = true"><AppIcon name="skipped" /> {{ $t("skip.confirm") }}</button>
+      <SkipEntryDialog :job-id="jobId" :entry="skipping && v ? { idx: v.idx, name: v.name } : null" @done="skipped" @cancel="skipping = false" />
     </template>
   </Drawer>
 </template>

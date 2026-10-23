@@ -106,6 +106,13 @@ impl Operations for EngineOperations {
         self.engine.delete_profile(&id).await.map_err(to_error)
     }
 
+    async fn last_target_dir(&self, profile_id: String) -> Res<Option<String>> {
+        self.engine
+            .last_target_dir(&profile_id)
+            .await
+            .map_err(to_error)
+    }
+
     async fn test_profile(&self, id: String) -> Res<ProfileTest> {
         self.engine.test_profile(&id).await.map_err(to_error)
     }
@@ -226,6 +233,10 @@ impl Operations for EngineOperations {
 
     async fn pause(&self, job_id: String) -> Res<()> {
         self.engine.pause(&job_id).await.map_err(to_error)
+    }
+
+    async fn skip_entry(&self, job_id: String, idx: u64) -> Res<()> {
+        self.engine.skip_entry(&job_id, idx).await.map_err(to_error)
     }
 
     async fn resume(&self, job_id: String) -> Res<()> {
@@ -434,6 +445,10 @@ impl Operations for EngineOperations {
 
     async fn save_settings(&self, settings: AppSettings) -> Res<()> {
         self.engine.save_settings(settings).await.map_err(to_error)
+    }
+
+    async fn service_log(&self) -> Res<Vec<String>> {
+        Ok(crate::RecentLog::global().lines())
     }
 }
 

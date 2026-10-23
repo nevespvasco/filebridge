@@ -42,6 +42,9 @@ macro_rules! for_each_operation {
             /// the keyring) when they pass. Same answer as `detect_nextcloud`; ambiguous
             /// libraries are listed in `containers`.
             AddImmich add_immich(req: $crate::ImmichRequest) -> $crate::DetectNextcloudResponse;
+            /// The folder the last transfer to a profile was sent into (`None` = its root, none
+            /// yet, or one its name rules no longer accept), which wizard step 2 preselects.
+            LastTargetDir last_target_dir(profile_id: String) -> Option<String>;
             /// A draft job; nothing is read from the sources yet.
             CreateJob create_job(sources: Vec<String>, profile_id: String, options: $crate::SendOptions) -> String;
             /// Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready).
@@ -62,6 +65,10 @@ macro_rules! for_each_operation {
             Pause pause(job_id: String) -> ();
             Resume resume(job_id: String) -> ();
             Cancel cancel(job_id: String) -> ();
+            /// Leaves one file not sent yet out of a started send (Transferring, Retrying,
+            /// Waiting, Paused): Skipped at once, never sent by a resume, stopping the batch
+            /// that is sending it. Shown skipped in the Files tab and the report.
+            SkipEntry skip_entry(job_id: String, idx: u64) -> ();
             /// A page of the jobs matching `filter`, with how many match in all.
             ListJobs list_jobs(filter: $crate::JobFilter, limit: u32, offset: u32) -> $crate::JobPage;
             /// Names a job (any state); a blank name clears it.
@@ -123,6 +130,9 @@ macro_rules! for_each_operation {
             GetSettings get_settings() -> $crate::AppSettings;
             /// Validates, saves and applies them at once, to running sends too.
             SaveSettings save_settings(settings: $crate::AppSettings) -> ();
+            /// The engine's recent log lines (info and above, at most 2000, oldest first), with
+            /// secrets scrubbed: Settings → About → "Copy log", for bug reports.
+            ServiceLog service_log() -> Vec<String>;
         }
     };
 }

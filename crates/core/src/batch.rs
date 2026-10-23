@@ -37,6 +37,9 @@ pub(crate) enum Stop {
     Cancelled,
     /// The send window closed.
     Held,
+    /// The user skipped a file of this batch (`Engine::skip_entry`): the stage goes on with
+    /// the next files.
+    Skipped,
 }
 
 /// How a batch ended.
@@ -125,7 +128,7 @@ impl Batch<'_> {
             kept.push(e);
         }
         self.store
-            .set_transfer_states(self.job_id, std::mem::take(&mut updates))
+            .record_transfer_states(self.job_id, std::mem::take(&mut updates))
             .await?;
         if items.is_empty() {
             return Ok(Sent::Answered { retry: None });
@@ -139,7 +142,7 @@ impl Batch<'_> {
             },
         };
         self.store
-            .set_transfer_states(
+            .record_transfer_states(
                 self.job_id,
                 kept.iter()
                     .map(|e| (e.entry.idx, EntryState::Partial, None))
@@ -225,7 +228,9 @@ impl Batch<'_> {
                 }
             }
         }
-        self.store.set_transfer_states(self.job_id, updates).await?;
+        self.store
+            .record_transfer_states(self.job_id, updates)
+            .await?;
         if any_done {
             self.store.set_job_retry(self.job_id, 0, None).await?;
         }
@@ -288,7 +293,11 @@ impl Forwarder {
             .iter()
             .filter_map(|&i| self.idx_of.get(i).map(|&idx| (idx, EntryState::Done, None)))
             .collect();
-        match self.store.set_transfer_states(&self.job_id, updates).await {
+        match self
+            .store
+            .record_transfer_states(&self.job_id, updates)
+            .await
+        {
             Ok(()) => saved.extend(indexes),
             Err(e) => tracing::warn!(job = self.job_id, "cannot save progress: {e}"),
         }
