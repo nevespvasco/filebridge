@@ -8,6 +8,7 @@ import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { CATEGORY_ICON, categoryColor } from "@/lib/categories";
 import { canReveal, copyText, revealInFileManager } from "@/lib/platform";
+import { knownThumbnail, loadThumbnail } from "@/lib/thumbnails";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import BytesDiff from "./BytesDiff.vue";
@@ -24,18 +25,26 @@ const { t, te } = useI18n();
 const fmt = useFmt();
 
 const detail = ref<EntryDetail_Serialize | null>(null);
+/** A preview of the source image, when it has one (ADR 0027). */
+const preview = ref<string | null>(null);
 const error = ref<string | null>(null);
 const copied = ref<string | null>(null);
 
 async function load(job: string, idx: number | null) {
   detail.value = null;
+  preview.value = null;
   error.value = null;
   if (idx == null) return;
   try {
     detail.value = await api.entry(job, idx);
   } catch (e) {
     error.value = errorMessage(e);
+    return;
   }
+  if (remote.value || detail.value.view.is_dir || detail.value.view.category !== "image") return;
+  const had = knownThumbnail(job, idx);
+  const url = had !== undefined ? had : await loadThumbnail(job, idx).promise;
+  if (props.jobId === job && props.idx === idx) preview.value = url;
 }
 watch(() => [props.jobId, props.idx] as const, ([job, idx]) => load(job, idx), { immediate: true });
 
@@ -104,6 +113,7 @@ async function reveal() {
     <p v-if="error" class="error small" role="alert">{{ error }}</p>
     <p v-else-if="!detail" class="small muted">{{ $t("common.loading") }}</p>
     <template v-else-if="v">
+      <img v-if="preview" class="preview" :src="preview" :alt="$t('entry.preview', { name: v.name })" />
       <div class="hero">
         <AppIcon :name="v.is_dir ? 'folder' : CATEGORY_ICON[v.category]" :size="40" :style="{ color: v.is_dir ? 'var(--text-2)' : categoryColor(v.category) }" />
         <div>
@@ -191,6 +201,7 @@ async function reveal() {
 
 <style scoped>
 h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); margin: 0 0 0.4rem; }
+.preview { display: block; max-width: 100%; max-height: 16rem; margin: 0 auto; border-radius: 6px; background: var(--surface-2); }
 .hero { display: flex; gap: 0.9rem; align-items: center; }
 .name { font-size: 1.05rem; overflow-wrap: anywhere; }
 .kv { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.45rem 0.8rem; margin: 0; }

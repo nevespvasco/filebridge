@@ -48,6 +48,7 @@ detail to build each crate on its own.
 | [0021](adr/0021-full-destination-pauses-the-job.md) | A full destination (`ErrorKind::Full`) pauses the job, resumable; free space is watched during a send |
 | [0022](adr/0022-smb-and-s3-as-rclone-backends.md) | SMB and S3 are `Backend` variants of `transport-rclone`; `Backend` answers its kind and password slot, so `core` never lists the variants |
 | [0026](adr/0026-unreadable-source-pauses-the-job.md) | A source that can't be read (a disk unplugged) pauses the job, resumable, instead of failing its files |
+| [0027](adr/0027-source-thumbnails-in-the-cache.md) | Thumbnails of source images: made by the engine (`crates/thumbnail`), cached in the app's cache (128 MB, LRU), sent to the window as bytes; no video previews |
 | [0028](adr/0028-login-start-on-every-desktop-os.md) | The engine starts at login from a per-user entry on every desktop OS: systemd unit, LaunchAgent, Run key value (through the app, so no console window) |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes

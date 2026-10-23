@@ -194,7 +194,7 @@ This is the closest shot to filebridge's purpose.
 | F10 | Multi-select with a bar for the selection | Adapt | Issues in the Analysis step. [D08](specs/D08-issue-selection.md) |
 | F11 | Grid/list switch | Reject | One list view; see G1. |
 | F12 | File detail with exact bytes and a checksum | Adopt | **Entry detail**: both paths, exact size, the Name rules applied, transfer and verify state, SHA-256. [D05](specs/D05-files-and-entry-detail.md) |
-| F13 | Preview thumbnail in the detail | Later | A thumbnail of the **local** source image is cheap and safe; not needed to prove anything. [D05](specs/D05-files-and-entry-detail.md#out-of-scope) |
+| F13 | Preview thumbnail in the detail | Adopt | A thumbnail of the **local** source image is cheap and safe; built in the Files tab and the Entry detail ([D05](specs/D05-files-and-entry-detail.md#thumbnails-as-built-adr-0027), ADR 0027). |
 | F14 | Open File, Share, Rename | Adapt | **Show in file manager** (source) and Copy path. Share and Rename rejected. |
 | F15 | Search with type chips | Adopt | [D05](specs/D05-files-and-entry-detail.md) |
 | F16 | Transfers queue with progress per file | Adopt | [D04](specs/D04-transfer-queue.md) |

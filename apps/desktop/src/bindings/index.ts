@@ -175,6 +175,12 @@ export const commands = {
 	/**  Everything about one file of a job. */
 	entry: (jobId: string, idx: number) => typedError<EntryDetail_Serialize, ErrorBody>(__TAURI_INVOKE("entry", { jobId, idx })),
 	/**
+	 *  A small preview of a file's source image, made from the local source (read only)
+	 *  and cached; `None` when it has none (not an image, a video, a folder, a Repair job,
+	 *  or the source is gone).
+	 */
+	entryThumbnail: (jobId: string, idx: number) => typedError<EntryThumbnail | null, ErrorBody>(__TAURI_INVOKE("entry_thumbnail", { jobId, idx })),
+	/**
 	 *  A job's log: oldest first after `after_id`, otherwise newest first before
 	 *  `before_id` (the newest page when both are absent).
 	 */
@@ -226,7 +232,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"skip_entry":["transferring","paused","retrying","waiting"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 29 as const;
+export const PROTOCOL_VERSION = 30 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -768,6 +774,17 @@ export type EntrySort =
 
 /**  Where an entry stands, merging its transfer and verify states into one word. */
 export type EntryStatus = "not_sent" | "sending" | "sent" | "verified" | "different" | "missing" | "unverifiable" | "failed" | "skipped";
+
+/**
+ *  A small preview of an entry's source image (at most 256 px a side), for the Files tab and the
+ *  Entry detail (ADR 0027).
+ */
+export type EntryThumbnail = {
+	/**  `image/jpeg` or `image/png`. */
+	mime: string,
+	/**  The image file, in base64. */
+	base64: string,
+};
 
 /**  One row of the Files tab. */
 export type EntryView = EntryView_Serialize | EntryView_Deserialize;

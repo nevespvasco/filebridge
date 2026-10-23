@@ -22,6 +22,7 @@ filebridge/
 │   ├── scanner/                 # walk source, names as bytes, manifest
 │   ├── names/                   # NameRule trait + general rules (NFC, mojibake, forbidden)
 │   ├── store/                   # SQLite: jobs, manifests, profiles
+│   ├── thumbnail/               # previews of source images, bounded cache (ADR 0027)
 │   ├── secrets/                 # OS keyring
 │   ├── transport-api/           # Transport trait + types
 │   ├── transport-fake/          # local-disk Transport with fault injection (tests, dev mode)
@@ -54,6 +55,7 @@ flowchart TB
     host --> tnc["transport-nextcloud"]
     host --> inc["integration-nextcloud"]
     host --> iim["integration-immich"]
+    host --> thumb["thumbnail"]
     ipc --> model
     ipc --> tapi
     core --> model

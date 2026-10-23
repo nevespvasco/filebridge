@@ -252,6 +252,7 @@ mod tests {
         let host = Host::open_with_secrets(
             &HostOptions {
                 data_dir: Some(dir.join("data")),
+                cache_dir: None,
                 rclone: None,
                 transport: TransportChoice::Fake,
             },

@@ -41,6 +41,7 @@ impl App {
         let host = Host::open(
             &HostOptions {
                 data_dir: g.data_dir.clone(),
+                cache_dir: None,
                 rclone: g.rclone.clone(),
                 transport,
             },

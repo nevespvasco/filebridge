@@ -27,14 +27,14 @@ pub use server::{Handler, bind, serve};
 pub use filebridge_model::{
     ActivityItem, AnalysisSummary, AppSettings, BlockerView, BrowseResult, BrowseTarget,
     CategoryCount, CheckView, Counts, DecideManyResult, DecisionInput, EntryCursor, EntryDetail,
-    EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event, ExportResult,
-    FOLDER_SIZES_LISTED, Family, FolderNameCheck, FolderSize, FolderSizes, HashView, IssueDecision,
-    IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary,
-    LogEntry, LogLevel, MAX_PINNED_SOURCES, PinnedSource, PreflightView, Profile, ProfileTest,
-    RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue, RemoteEntryView, ReportFormat,
-    ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP, SendOptions, SendWindow,
-    SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec,
-    VolumeView, job_operations,
+    EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryThumbnail, EntryView, Event,
+    ExportResult, FOLDER_SIZES_LISTED, Family, FolderNameCheck, FolderSize, FolderSizes, HashView,
+    IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort,
+    JobState, JobSummary, LogEntry, LogLevel, MAX_PINNED_SOURCES, PinnedSource, PreflightView,
+    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
+    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
+    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
+    StorageView, TargetSpec, VolumeView, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -73,7 +73,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 29: `pinned_sources`, `pin_source`, `volumes`, `folder_sizes`, `cancel_folder_sizes`, the
 ///     `folder_sizes_progress` event; `JobErrorCode::SourceUnavailable` (a source that can't be
 ///     read pauses the job).
-pub const PROTOCOL_VERSION: u32 = 29;
+/// 30: `entry_thumbnail` (ADR 0027).
+pub const PROTOCOL_VERSION: u32 = 30;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

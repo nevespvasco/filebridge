@@ -15,6 +15,7 @@ import { TERMINAL, useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import EntryDrawer from "./EntryDrawer.vue";
 import EntryStatusBadge from "./EntryStatusBadge.vue";
+import EntryThumb from "./EntryThumb.vue";
 import FilterChips from "./FilterChips.vue";
 import SearchField from "./SearchField.vue";
 
@@ -116,6 +117,8 @@ watch(filter, () => void reload(), { immediate: true, deep: true });
 // While the job runs, the statuses change: re-read the counts, and the first page when that is
 // all that is loaded (deeper pages stay put so rows don't jump), at most every 2 s.
 const job = computed(() => jobs.byId[props.jobId]);
+/** A Repair job's entries are at the destination: no local file to preview. */
+const remote = computed(() => job.value?.kind === "repair");
 let liveTimer: ReturnType<typeof setTimeout> | undefined;
 watch(
   () => [job.value?.state, job.value?.counts.done, job.value?.counts.verified_ok, jobs.live[props.jobId]?.verify?.checked],
@@ -238,7 +241,7 @@ function clearFilters() {
           @click="(focused = it.index), open(rows[it.index])"
         >
           <span class="cell name" role="gridcell">
-            <AppIcon :name="CATEGORY_ICON[rows[it.index].category]" :style="{ color: categoryColor(rows[it.index].category) }" />
+            <EntryThumb :job-id="jobId" :idx="rows[it.index].idx" :category="rows[it.index].category" :size="28" :preview="!remote" />
             <span class="ellipsis" :title="rows[it.index].name">{{ rows[it.index].name }}</span>
             <AppIcon v-if="rows[it.index].source_name" name="renamed" class="muted" :label="$t('queue.renamed', { name: rows[it.index].source_name })" />
           </span>
