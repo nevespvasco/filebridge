@@ -29,6 +29,53 @@
     "sendingOne": "Sending 1 transfer",
     "sendingMany": "Sending {n} transfers"
   },
+  "phone": {
+    "conn": {
+      "tip": "The copy engine runs inside filebridge and keeps copying while you use other apps or the screen is off. This shows whether it is running.",
+      "problem": {
+        "replacing": {
+          "body": "A copy engine from an earlier version of filebridge was running and is being replaced by this version's. This takes a few seconds; filebridge waits for it. Sends already running continue in the new one."
+        },
+        "version": {
+          "body": "Close filebridge and open it again. Sends already running are not lost: they continue when the engine starts again."
+        },
+        "lost": {
+          "body": "Sends already running are not lost. filebridge reconnects by itself; you can also tap “Try again”."
+        }
+      }
+    },
+    "review": {
+      "safety": "Copy only: the source is never changed or deleted. Leaving the app doesn't stop the send."
+    },
+    "after": {
+      "closeOk": "You can leave the app or turn off the screen: the send continues in the background and you'll get a notification when it ends."
+    },
+    "settings": {
+      "sendingHint": "Applies to every send, including the ones already running. Times are this phone's local time; the phone has to be on when the send window opens.",
+      "serviceHint": "On a phone the copy engine runs inside filebridge, with a notification while it sends."
+    },
+    "joblog": {
+      "note": "Recorded by the copy engine, including while the app was in the background."
+    },
+    "activity": {
+      "empty": "Nothing happened yet. What your transfers do, even with the app in the background, appears here."
+    },
+    "home": {
+      "start": {
+        "send": "Send. You can leave the app: it keeps going."
+      },
+      "offline": {
+        "body": "Nothing is lost meanwhile: the transfers and destinations are kept by the engine, not by this screen."
+      }
+    },
+    "tour": {
+      "source": {
+        "add": {
+          "body": "Choose a folder with the button, one at a time. Add as many as you like: they all go to the same place, and nothing at the source changes."
+        }
+      }
+    }
+  },
   "conn": {
     "connected": "Copy engine running",
     "connecting": "Starting the copy engine…",

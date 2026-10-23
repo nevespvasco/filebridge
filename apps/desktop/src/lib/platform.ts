@@ -11,7 +11,7 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { commands, type Platform } from "@/bindings";
-import { i18n } from "@/i18n";
+import { i18n, applyPhoneTexts } from "@/i18n";
 import { api } from "@/lib/api";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
@@ -21,6 +21,7 @@ let current: Platform = "desktop";
 /** Asks Rust where the app runs; called once before the app mounts. */
 export async function initPlatform(): Promise<void> {
   if (!isMock) current = await commands.platform();
+  if (isMobile()) applyPhoneTexts();
 }
 
 /** Android or iOS: no tray, no service, no drag & drop, folders only. */

@@ -1,4 +1,4 @@
-package app.filebridge.desktop
+package app.filebridge
 
 import android.app.Notification
 import android.app.NotificationChannel

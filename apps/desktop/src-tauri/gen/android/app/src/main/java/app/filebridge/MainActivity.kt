@@ -1,4 +1,4 @@
-package app.filebridge.desktop
+package app.filebridge
 
 import android.os.Bundle
 import android.view.View

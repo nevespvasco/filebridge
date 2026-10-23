@@ -14,16 +14,39 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing with your own key (apps/desktop/scripts/android-release.sh): the keystore's
+// path, alias and passwords come from the environment, never from a file in the repo. Without
+// FILEBRIDGE_ANDROID_KEYSTORE the release APK is signed with the debug key, which is fine for
+// trying it but can't update an install signed with your own key (and the other way around).
+fun env(name: String): String? = providers.environmentVariable(name).orNull?.takeIf { it.isNotEmpty() }
+val releaseKeystore = env("FILEBRIDGE_ANDROID_KEYSTORE")
+
 android {
     compileSdk = 37
-    namespace = "app.filebridge.desktop"
+    namespace = "app.filebridge"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "app.filebridge.desktop"
-        minSdk = 24
+        applicationId = "app.filebridge"
+        minSdk = 26
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                fun required(name: String) = env(name)
+                    ?: throw GradleException("FILEBRIDGE_ANDROID_KEYSTORE is set but $name is not")
+                storeFile = file(releaseKeystore)
+                if (!storeFile!!.isFile) {
+                    throw GradleException("FILEBRIDGE_ANDROID_KEYSTORE: no file at $releaseKeystore")
+                }
+                storePassword = required("FILEBRIDGE_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = required("FILEBRIDGE_ANDROID_KEY_ALIAS")
+                // A PKCS12 keystore (keytool's default) has one password for the store and the key.
+                keyPassword = env("FILEBRIDGE_ANDROID_KEY_PASSWORD") ?: storePassword
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -39,6 +62,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             optimization {
                enable = true
             }

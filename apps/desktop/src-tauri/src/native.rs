@@ -27,7 +27,7 @@ pub struct Native {
 }
 
 #[cfg(target_os = "android")]
-const ANDROID_PACKAGE: &str = "app.filebridge.desktop";
+const ANDROID_PACKAGE: &str = "app.filebridge";
 
 /// Registers the plugin and puts a [`Native`] in the app's state.
 pub fn plugin() -> TauriPlugin<tauri::Wry> {

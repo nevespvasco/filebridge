@@ -19,6 +19,7 @@ import (
 	"os"
 	"unsafe"
 
+	"github.com/rclone/rclone/filebridge/quietconfig"
 	"github.com/rclone/rclone/librclone/librclone"
 
 	// Backends a Destination can name (transport-api `Backend`).
@@ -29,6 +30,14 @@ import (
 	_ "github.com/rclone/rclone/fs/operations" // operations/* rc calls
 	_ "github.com/rclone/rclone/fs/sync"       // sync/* rc calls
 )
+
+// quietconfig set RCLONE_CONFIG only so that fs/config's init stays quiet; nothing after it
+// should see it.
+func init() {
+	if quietconfig.Set {
+		_ = os.Unsetenv("RCLONE_CONFIG")
+	}
+}
 
 // RcloneSetenv sets a variable in Go's own copy of the environment. A library loaded with
 // dlopen only sees the environment the process started with, and Android starts apps without

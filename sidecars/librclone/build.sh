@@ -27,8 +27,9 @@ if [[ ! -d "$src" ]]; then
 fi
 
 # Our shim (only the backends filebridge uses) inside rclone's module.
-mkdir -p "$src/filebridge"
+mkdir -p "$src/filebridge/quietconfig"
 cp "$here/shim/main.go" "$src/filebridge/main.go"
+cp "$here/shim/quietconfig/quietconfig.go" "$src/filebridge/quietconfig/quietconfig.go"
 
 build() { # <out .so> [env…]
   local out="$1"; shift

@@ -87,6 +87,11 @@ impl Service {
         ENDPOINT.into()
     }
 
+    /// Never: the engine lives in the app, so there is no older one to replace.
+    pub fn replacing(&self) -> bool {
+        false
+    }
+
     /// The engine's operations, opening the engine first (once).
     #[allow(clippy::type_complexity)]
     pub fn client(

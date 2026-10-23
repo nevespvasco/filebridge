@@ -1,4 +1,4 @@
-package app.filebridge.desktop
+package app.filebridge
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec

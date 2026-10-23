@@ -29,6 +29,53 @@
     "sendingOne": "A enviar 1 transferência",
     "sendingMany": "A enviar {n} transferências"
   },
+  "phone": {
+    "conn": {
+      "tip": "O motor de cópia funciona dentro do filebridge e continua a copiar enquanto usa outras aplicações ou com o ecrã desligado. Isto mostra se está a funcionar.",
+      "problem": {
+        "replacing": {
+          "body": "Estava a funcionar um motor de cópia de uma versão anterior do filebridge, que está a ser substituído pelo desta versão. Demora alguns segundos e o filebridge espera por ele. Os envios em curso continuam no novo."
+        },
+        "version": {
+          "body": "Feche o filebridge e abra-o de novo. Os envios em curso não se perdem: continuam quando o motor voltar a arrancar."
+        },
+        "lost": {
+          "body": "Os envios em curso não se perdem. O filebridge volta a ligar-se sozinho; também pode tocar em “Tentar de novo”."
+        }
+      }
+    },
+    "review": {
+      "safety": "Só cópia: a origem nunca é alterada nem apagada. Sair da aplicação não para o envio."
+    },
+    "after": {
+      "closeOk": "Pode sair da aplicação ou desligar o ecrã: o envio continua em segundo plano e recebe uma notificação quando acabar."
+    },
+    "settings": {
+      "sendingHint": "Aplica-se a todos os envios, incluindo os que já estão a correr. As horas são as deste telemóvel; o telemóvel tem de estar ligado quando o horário começa.",
+      "serviceHint": "No telemóvel o motor de cópia funciona dentro do filebridge, com uma notificação enquanto envia."
+    },
+    "joblog": {
+      "note": "Registado pelo motor de cópia, mesmo com a aplicação em segundo plano."
+    },
+    "activity": {
+      "empty": "Ainda nada aconteceu. O que as transferências fazem, mesmo com a aplicação em segundo plano, aparece aqui."
+    },
+    "home": {
+      "start": {
+        "send": "Envie. Pode sair da aplicação: continua."
+      },
+      "offline": {
+        "body": "Entretanto nada se perde: as transferências e os destinos são guardados pelo motor, não por este ecrã."
+      }
+    },
+    "tour": {
+      "source": {
+        "add": {
+          "body": "Escolha uma pasta com o botão, uma de cada vez. Junte quantas quiser: vão todas para o mesmo sítio, e nada muda na origem."
+        }
+      }
+    }
+  },
   "conn": {
     "connected": "Motor de cópia a funcionar",
     "connecting": "A iniciar o motor de cópia…",

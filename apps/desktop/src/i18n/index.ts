@@ -12,6 +12,14 @@ export const i18n = createI18n({
   messages: { pt, en },
 });
 
+/** On a phone there is no window and no separate service: the texts under `phone` (same keys
+ *  as the rest of the file) replace the ones that say otherwise. */
+export function applyPhoneTexts() {
+  for (const [locale, m] of Object.entries({ pt, en })) {
+    i18n.global.mergeLocaleMessage(locale, m.phone);
+  }
+}
+
 export function setLocale(locale: Locale) {
   i18n.global.locale.value = locale;
   document.documentElement.lang = locale;
