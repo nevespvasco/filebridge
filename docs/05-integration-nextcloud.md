@@ -40,8 +40,9 @@ network (like the 500 GB initial migration).
 - A wrong app password is an `Auth` error (WebDAV's 401), not a retry; the transfer stops at the
   first one instead of signing in once per file (Nextcloud's brute-force protection counts
   each). HTTP statuses are read from their token (`401 Unauthorized`), never from free text:
-  `403` (a blocked name) and `413` are `Other`, `507` is `Other` with "no space left at the
-  destination", other `5xx`, `423` and `429` are `Transient`.
+  `403` (a blocked name) and `413` are `Other`, `507` (no space, a quota reached) is `Full`, which
+  pauses the job until space is freed ([ADR 0021](adr/0021-full-destination-pauses-the-job.md)),
+  other `5xx`, `423` and `429` are `Transient`.
 - Removing the app password of a WebDAV profile is refused: the profile needs it.
 - Speed depends on the password being an **app password**. Nextcloud checks an account password
   with a slow hash on every request (~175 ms against ~43 ms for an app password on Nextcloud 31),

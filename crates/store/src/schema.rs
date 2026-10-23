@@ -133,6 +133,11 @@ CREATE INDEX jobs_profile ON jobs(profile_id, created_at);
     r#"
 ALTER TABLE profiles ADD COLUMN deleted_at INTEGER;
 "#,
+    // 8: what the job's error is, when the UI has its own words for it (`destination_full`),
+    // next to the message itself (docs/design/specs/D03).
+    r#"
+ALTER TABLE jobs ADD COLUMN error_code TEXT;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

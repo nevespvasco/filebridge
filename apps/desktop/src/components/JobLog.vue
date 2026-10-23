@@ -171,10 +171,15 @@ function describe(e: LogEntry): Line {
     }
     case "state": {
       const to = str(e, "to");
+      if (str(e, "error_code") === "destination_full") {
+        return { icon: "warning", text: t("storage.fullLog"), detail: str(e, "error") || undefined };
+      }
       return { icon: to === "failed" ? "failCircle" : "activity", text: t("joblog.state", { to: te(`state.${to}`) ? t(`state.${to}`) : to }), detail: str(e, "error") || undefined };
     }
     case "retry":
       return { icon: "retry", text: t("joblog.retry", { in: fmt.duration(n(e, "in_secs")), attempt: n(e, "attempt") }), detail: str(e, "error") || undefined };
+    case "space_low":
+      return { icon: "warning", text: t("storage.runningOutLog", { free: fmt.bytes(n(e, "free_bytes")), left: fmt.bytes(n(e, "left_bytes")) }) };
     case "send_window_wait":
       return { icon: "waiting", text: t("joblog.window", { time: fmt.time(n(e, "opens_at")) }) };
     case "transfer_round":

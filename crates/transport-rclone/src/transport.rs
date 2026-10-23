@@ -214,6 +214,10 @@ impl RcloneTransport {
     /// more refused sign-in, which servers count against the account), the files already on
     /// their way finish, and the call fails with that error. Files that arrived were already
     /// reported by `ItemDone`.
+    ///
+    /// The first `Full` error stops the round the same way, without failing the call: every
+    /// file not started yet fails with that error too, instead of each being uploaded in turn
+    /// to a destination with no room.
     async fn per_file(
         &self,
         dst_fs: &str,
@@ -225,6 +229,8 @@ impl RcloneTransport {
         let src_fs: Vec<Result<String>> = job.source_roots.iter().map(|r| local_fs(r)).collect();
         let mut outcomes = vec![ItemOutcome::Done; job.items.len()];
         let mut refused: Option<TransportError> = None;
+        let mut full: Option<TransportError> = None;
+        let mut stopped_at = None;
         let sem = Arc::new(Semaphore::new(job.options.concurrency.max(1)));
         let mut set = JoinSet::new();
         for (i, item) in job.items.iter().enumerate() {
@@ -247,9 +253,10 @@ impl RcloneTransport {
                 .await
                 .expect("semaphore is never closed");
             while let Some(done) = set.try_join_next() {
-                record(done, &mut outcomes, progress, &mut refused);
+                record(done, &mut outcomes, progress, &mut refused, &mut full);
             }
-            if refused.is_some() {
+            if refused.is_some() || full.is_some() {
+                stopped_at = Some(i);
                 break;
             }
             let rc = self.rc().clone();
@@ -267,7 +274,12 @@ impl RcloneTransport {
             });
         }
         while let Some(done) = set.join_next().await {
-            record(done, &mut outcomes, progress, &mut refused);
+            record(done, &mut outcomes, progress, &mut refused, &mut full);
+        }
+        if let (Some(e), Some(at)) = (&full, stopped_at) {
+            for outcome in &mut outcomes[at..] {
+                *outcome = ItemOutcome::Failed(e.clone());
+            }
         }
         match refused {
             Some(e) => Err(e),
@@ -276,18 +288,22 @@ impl RcloneTransport {
     }
 }
 
-/// One finished copy: its outcome, its `ItemDone`, and the first `Auth` error in `refused`.
+/// One finished copy: its outcome, its `ItemDone`, the first `Auth` error in `refused` and the
+/// first `Full` one in `full`.
 fn record(
     done: std::result::Result<(usize, Result<Value>), tokio::task::JoinError>,
     outcomes: &mut [ItemOutcome],
     progress: &ProgressSink,
     refused: &mut Option<TransportError>,
+    full: &mut Option<TransportError>,
 ) {
     let Ok((i, res)) = done else { return };
     let ok = res.is_ok();
     if let Err(e) = res {
-        if e.kind == ErrorKind::Auth && refused.is_none() {
-            *refused = Some(e.clone());
+        if e.kind == ErrorKind::Auth {
+            refused.get_or_insert_with(|| e.clone());
+        } else if e.kind == ErrorKind::Full {
+            full.get_or_insert_with(|| e.clone());
         }
         outcomes[i] = ItemOutcome::Failed(e);
     }
@@ -629,8 +645,8 @@ mod tests {
     use crate::recording::Recording;
     use filebridge_names::loose_key;
     use filebridge_transport_api::{
-        Backend, Destination, ErrorKind, HashAlgo, ProgressSink, RemotePath, TransferItem,
-        TransferJob, TransferOptions, Transport, TransportError,
+        Backend, Destination, ErrorKind, HashAlgo, ItemOutcome, ProgressSink, RemotePath,
+        TransferItem, TransferJob, TransferOptions, Transport, TransportError,
     };
     use serde_json::{Value, json};
 
@@ -726,6 +742,36 @@ mod tests {
             .unwrap_err();
         assert_eq!(err.kind, ErrorKind::Auth);
         assert!(rc.calls_to("operations/copyfile").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_full_destination_stops_the_round() {
+        let rc = Arc::new(Recording::new(|method, _| match method {
+            "operations/list" => Some(Err(TransportError::not_found("directory not found"))),
+            "operations/copyfile" => Some(Err(TransportError::full(
+                "Failed to copy: no space left on device",
+            ))),
+            _ => None,
+        }));
+        let t = RcloneTransport::new(rc.clone());
+        let paths: Vec<String> = (0..20).map(|i| format!("f{i}.bin")).collect();
+        let paths: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let sent = t
+            .transfer(&dest(), &job(&paths), ProgressSink::noop())
+            .await
+            .unwrap();
+        assert!(
+            sent.items
+                .iter()
+                .all(|o| matches!(o, ItemOutcome::Failed(e) if e.kind == ErrorKind::Full)),
+            "{:?}",
+            sent.items
+        );
+        let copies = rc.calls_to("operations/copyfile").len();
+        assert!(
+            copies < paths.len(),
+            "{copies} uploads to a full destination"
+        );
     }
 
     #[tokio::test]

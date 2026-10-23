@@ -21,8 +21,10 @@ attempt: 1    2     3     4     5      6+
 wait:    30s  1m    2m    4m    8m     15m (cap, repeated forever)
 ```
 
-Jitter ±10 %. Non-retryable errors (auth revoked, destination path gone, disk full) move the job
-to `Failed` with an actionable message instead of retrying.
+Jitter ±10 %. Non-retryable errors (auth revoked, destination path gone) move the job to
+`Failed` with an actionable message instead of retrying. A full destination (disk or quota)
+**pauses** the job instead: the files that didn't fit wait, and Resume sends them once space is
+freed ([ADR 0021](adr/0021-full-destination-pauses-the-job.md)).
 
 ## Security
 

@@ -339,6 +339,18 @@ impl NextcloudBulk {
         let answer = match answer {
             Ok(files) => files,
             Err(e) if e.kind == ErrorKind::Auth => return Err(e),
+            // No room (a quota reached): sending them again through rclone would only be
+            // refused again.
+            Err(e) if e.kind == ErrorKind::Full => {
+                for (index, _) in request {
+                    out.outcomes[index] = Some(ItemOutcome::Failed(e.clone()));
+                    progress
+                        .sink
+                        .send(ProgressEvent::ItemDone { index, ok: false });
+                }
+                progress.stats(out, in_flight);
+                return Ok(());
+            }
             Err(e) => {
                 if e.kind == ErrorKind::Unsupported {
                     self.offers
@@ -578,7 +590,8 @@ struct BulkCall {
 
 impl BulkCall {
     /// Reads the files, sends them, and says what became of each. A refused sign-in is `Auth`;
-    /// a server without bulk upload `Unsupported`; any other failure of the whole request an
+    /// a server without bulk upload `Unsupported`; no room (`507`, a quota reached) `Full`; any
+    /// other failure of the whole request an
     /// error the caller answers by trying its files through the inner transport.
     async fn run(self) -> Result<Vec<(usize, Sent)>> {
         let mut out = Vec::with_capacity(self.parts.len());
@@ -629,6 +642,11 @@ impl BulkCall {
             | StatusCode::METHOD_NOT_ALLOWED
             | StatusCode::NOT_IMPLEMENTED) => {
                 return Err(TransportError::unsupported(format!("bulk upload: {s}")));
+            }
+            s @ StatusCode::INSUFFICIENT_STORAGE => {
+                return Err(TransportError::full(format!(
+                    "bulk upload: no space left at the destination: {s}"
+                )));
             }
             s => return Err(TransportError::fatal(format!("bulk upload: {s}"))),
         }

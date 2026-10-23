@@ -182,7 +182,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 22 as const;
+export const PROTOCOL_VERSION = 23 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -718,7 +718,14 @@ in_flight: InFlightView_Deserialize[] } |
 /**  Rows of a report written so far (advisory). */
 { type: "report_progress"; job_id: string; rows: number; total: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
-{ type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
+{ type: "send_window_wait"; job_id: string; opens_at: number } | 
+/**
+ *  The destination's free space, measured during the transfer (at its start, then every few
+ *  minutes) when the destination reports it, against the bytes still to send. The job goes
+ *  on either way; `free_bytes < left_bytes` means it may run out of space
+ *  (docs/design/specs/D03).
+ */
+{ type: "destination_space"; job_id: string; free_bytes: number; left_bytes: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current?: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
@@ -737,7 +744,14 @@ in_flight: InFlightView_Serialize[] } |
 /**  Rows of a report written so far (advisory). */
 { type: "report_progress"; job_id: string; rows: number; total: number } | { type: "entry_failed"; job_id: string; path: string; error: string; retryable: boolean } | { type: "retry_scheduled"; job_id: string; attempt: number; in_secs: number; error: string } | 
 /**  The transfer waits for the send window; `opens_at` is Unix ms. */
-{ type: "send_window_wait"; job_id: string; opens_at: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
+{ type: "send_window_wait"; job_id: string; opens_at: number } | 
+/**
+ *  The destination's free space, measured during the transfer (at its start, then every few
+ *  minutes) when the destination reports it, against the bytes still to send. The job goes
+ *  on either way; `free_bytes < left_bytes` means it may run out of space
+ *  (docs/design/specs/D03).
+ */
+{ type: "destination_space"; job_id: string; free_bytes: number; left_bytes: number } | { type: "verify_progress"; job_id: string; checked: number; total: number; mismatches: number } | { type: "integration_progress"; job_id: string; 
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
@@ -912,6 +926,17 @@ export type IssueView_Serialize = {
 	carried_over: boolean,
 };
 
+/**
+ *  A job error the UI words itself, with what to do about it (`destination_full`: the
+ *  `storage.full` strings).
+ */
+export type JobErrorCode = 
+/**
+ *  The destination has no room left (a full disk, a quota reached): the job paused, and
+ *  resumes once space is freed (docs/design/specs/D03).
+ */
+"destination_full";
+
 /**  Which jobs the Transfers list shows (docs/design/specs/D06). */
 export type JobFilter = JobFilter_Serialize | JobFilter_Deserialize;
 
@@ -974,6 +999,8 @@ export type JobSummary_Deserialize = {
 	profile_id: string,
 	state: JobState,
 	error?: string | null,
+	/**  What `error` is, when the UI has its own words for it; `error` stays the detail. */
+	error_code?: JobErrorCode | null,
 	attempt: number,
 	next_retry_at?: number | null,
 	created_at: number,
@@ -995,6 +1022,8 @@ export type JobSummary_Serialize = {
 	profile_id: string,
 	state: JobState,
 	error: string | null,
+	/**  What `error` is, when the UI has its own words for it; `error` stays the detail. */
+	error_code: JobErrorCode | null,
 	attempt: number,
 	next_retry_at: number | null,
 	created_at: number,

@@ -25,6 +25,10 @@ pub enum ErrorKind {
     Unsupported,
     /// Credentials were refused or are missing.
     Auth,
+    /// The destination has no room left: a full disk (`ENOSPC`, WebDAV `507 Insufficient
+    /// Storage`) or a quota reached. Trying again won't help until someone frees space, so
+    /// `core` pauses the job (resumable) instead of failing file after file.
+    Full,
     /// Anything else that trying again won't fix.
     #[default]
     Other,
@@ -63,6 +67,11 @@ impl TransportError {
 
     pub fn unsupported(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::Unsupported, message)
+    }
+
+    /// A `Full` error: no space left at the destination.
+    pub fn full(message: impl Into<String>) -> Self {
+        Self::new(ErrorKind::Full, message)
     }
 
     pub fn is_retryable(&self) -> bool {

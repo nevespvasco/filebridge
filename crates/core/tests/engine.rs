@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
-    EntryStatus, Event, FileCategory, IssueDecision, JobFilter, JobGroup, JobKind, JobState,
-    LocalClock, LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest,
+    EntryStatus, Event, FileCategory, IssueDecision, JobErrorCode, JobFilter, JobGroup, JobKind,
+    JobState, LocalClock, LogLevel, Profile, ReclaimBlocker, Registry, ReportFormat, ReportRequest,
     ReportScope, SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec,
 };
 use filebridge_integration_api::{
@@ -144,6 +144,7 @@ fn engine_with_batch(
             inhibit_sleep: false,
             max_verify_rounds: 3,
             local_clock: LocalClock::fixed(|| NOON),
+            space_check_every: Duration::from_millis(50),
         },
     )
 }
@@ -301,6 +302,91 @@ async fn sends_with_nfc_names_and_updates_the_integration() {
         }
     }
     assert!(saw_progress && saw_integration);
+}
+
+/// The fake's three files are 6 bytes each: room for one leaves the other two without.
+async fn fill_up_then_free_space(s: &Setup) {
+    *s.transport.free.lock().unwrap() = Some(10);
+    let mut events = s.engine.subscribe();
+    let job = ready_job(s, SendOptions::default()).await;
+    assert_eq!(run_to_end(s, &job).await, JobState::Paused);
+
+    let paused = s.engine.job(&job).await.unwrap();
+    assert_eq!(paused.error_code, Some(JobErrorCode::DestinationFull));
+    assert!(paused.error.is_some());
+    assert_eq!(
+        (
+            paused.counts.done,
+            paused.counts.failed,
+            paused.counts.pending
+        ),
+        (1, 0, 2),
+        "the files that didn't fit wait to go again, not failed"
+    );
+    while let Ok(e) = events.try_recv() {
+        assert!(
+            !matches!(e, Event::EntryFailed { .. }),
+            "a full disk isn't a file's failure: {e:?}"
+        );
+    }
+
+    // Someone frees space; resuming sends the rest.
+    *s.transport.free.lock().unwrap() = None;
+    assert_eq!(run_to_end(s, &job).await, JobState::Completed);
+    let done = s.engine.job(&job).await.unwrap();
+    assert_eq!((done.counts.done, done.error_code), (3, None));
+    assert_eq!(dest_files(&s.dest).len(), 3);
+}
+
+#[tokio::test]
+async fn a_full_destination_pauses_the_job_until_space_is_freed() {
+    let s = setup().await;
+    fill_up_then_free_space(&s).await;
+}
+
+#[tokio::test]
+async fn a_full_disk_that_says_only_failure_is_found_by_measuring() {
+    let s = setup().await;
+    s.transport.full_unexplained.store(true, Ordering::SeqCst);
+    fill_up_then_free_space(&s).await;
+}
+
+#[tokio::test]
+async fn the_send_warns_when_the_destination_may_run_out_of_space() {
+    let s = setup().await;
+    // 15 bytes free for 18 to send; then space is freed while the send goes on.
+    *s.transport.free.lock().unwrap() = Some(15);
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(150);
+    let mut events = s.engine.subscribe();
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.engine.start(&job).await.unwrap();
+    let warned = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(Event::DestinationSpace {
+                free_bytes,
+                left_bytes,
+                ..
+            }) = events.recv().await
+            {
+                return (free_bytes, left_bytes);
+            }
+        }
+    })
+    .await
+    .expect("the space is measured at the start");
+    assert_eq!(warned, (15, 18));
+    *s.transport.free.lock().unwrap() = None;
+
+    let end = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(end, JobState::Completed, "a warning never stops the send");
+    let log = s.engine.job_log(&job, Some(0), None, 500).await.unwrap();
+    let low: Vec<_> = log.iter().filter(|e| e.kind == "space_low").collect();
+    assert_eq!(low.len(), 1, "logged once: {log:?}");
+    assert_eq!(low[0].level, LogLevel::Warn);
+    assert_eq!(low[0].data["left_bytes"], 18);
 }
 
 #[tokio::test]
@@ -2101,6 +2187,7 @@ async fn a_profile_password_lives_in_the_keyring_only() {
             inhibit_sleep: false,
             max_verify_rounds: 3,
             local_clock: LocalClock::fixed(|| NOON),
+            ..EngineOptions::default()
         },
     );
     let profile = engine
@@ -2182,6 +2269,7 @@ async fn a_password_a_profile_needs_cannot_be_removed() {
             inhibit_sleep: false,
             max_verify_rounds: 3,
             local_clock: LocalClock::fixed(|| NOON),
+            ..EngineOptions::default()
         },
     );
     let id = "p-webdav".to_owned();

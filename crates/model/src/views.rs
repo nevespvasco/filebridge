@@ -49,6 +49,8 @@ pub struct JobSummary {
     pub profile_id: String,
     pub state: JobState,
     pub error: Option<String>,
+    /// What `error` is, when the UI has its own words for it; `error` stays the detail.
+    pub error_code: Option<JobErrorCode>,
     pub attempt: u32,
     pub next_retry_at: Option<i64>,
     pub created_at: i64,
@@ -62,6 +64,32 @@ pub struct JobSummary {
     pub label: Option<String>,
     /// The job this one repeats (Send again).
     pub again_of: Option<String>,
+}
+
+/// A job error the UI words itself, with what to do about it (`destination_full`: the
+/// `storage.full` strings).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum JobErrorCode {
+    /// The destination has no room left (a full disk, a quota reached): the job paused, and
+    /// resumes once space is freed (docs/design/specs/D03).
+    DestinationFull,
+}
+
+impl JobErrorCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DestinationFull => "destination_full",
+        }
+    }
+
+    /// `None` for a code this build doesn't know (a newer one): the message still shows.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "destination_full" => Some(Self::DestinationFull),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]

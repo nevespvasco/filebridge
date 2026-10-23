@@ -49,6 +49,8 @@ pub struct JobRow {
     pub state: String,
     pub options: serde_json::Value,
     pub error: Option<String>,
+    /// What `error` is, when the UI words it itself (`core`'s job error codes, as text).
+    pub error_code: Option<String>,
     /// Consecutive failed attempts, for backoff.
     pub attempt: u32,
     pub next_retry_at: Option<i64>,
@@ -78,6 +80,8 @@ pub struct StateChange {
     pub to: String,
     /// Replaces the previous error (`None` clears it).
     pub error: Option<String>,
+    /// Replaces the previous error's code, likewise.
+    pub error_code: Option<String>,
     /// A terminal state: the job is finished and never resumed.
     pub finished: bool,
     /// Warnings of the stage that just ended, added to the job's.
@@ -88,7 +92,7 @@ pub struct StateChange {
 
 const COLUMNS: &str = "id, kind, profile_id, state, options, error, attempt, next_retry_at, \
                        created_at, updated_at, finished_at, warnings, verify_rounds, label, \
-                       again_of, reclaim_dismissed_at, reclaim_check";
+                       again_of, reclaim_dismissed_at, reclaim_check, error_code";
 
 /// A row, plus its options and warnings as JSON text.
 type RawJob = (JobRow, String, String);
@@ -116,6 +120,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<RawJob> {
             reclaim_check: row
                 .get::<_, Option<String>>(16)?
                 .and_then(|s| serde_json::from_str(&s).ok()),
+            error_code: row.get(17)?,
         },
         row.get(4)?,
         row.get(11)?,
@@ -251,6 +256,7 @@ impl Store {
         let id = id.to_owned();
         let event = serde_json::to_string(&serde_json::json!({
             "from": change.from, "to": change.to, "error": change.error,
+            "error_code": change.error_code,
         }))?;
         self.call(move |c| {
             let now = now_ms();
@@ -277,7 +283,7 @@ impl Store {
                 "UPDATE jobs SET state = ?2, error = ?3, updated_at = ?4,
                      finished_at = CASE WHEN ?5 THEN ?4 ELSE finished_at END,
                      next_retry_at = CASE WHEN ?5 THEN NULL ELSE next_retry_at END,
-                     warnings = ?6, verify_rounds = verify_rounds + ?7
+                     warnings = ?6, verify_rounds = verify_rounds + ?7, error_code = ?8
                  WHERE id = ?1",
                 params![
                     id,
@@ -286,7 +292,8 @@ impl Store {
                     now,
                     change.finished,
                     serde_json::to_string(&all)?,
-                    u32::from(change.verify_round)
+                    u32::from(change.verify_round),
+                    change.error_code
                 ],
             )?;
             tx.execute(
@@ -496,6 +503,28 @@ mod tests {
             error: error.map(str::to_owned),
             ..StateChange::default()
         }
+    }
+
+    #[tokio::test]
+    async fn an_error_code_goes_with_its_error() {
+        let (store, id) = store_with_job().await;
+        let paused = StateChange {
+            error_code: Some("destination_full".into()),
+            ..change("draft", "paused", Some("the destination is full"))
+        };
+        store.change_job_state(&id, paused).await.unwrap();
+        let job = store.get_job(&id).await.unwrap();
+        assert_eq!(job.error_code.as_deref(), Some("destination_full"));
+        store
+            .change_job_state(&id, change("paused", "transferring", None))
+            .await
+            .unwrap();
+        let job = store.get_job(&id).await.unwrap();
+        assert_eq!(
+            (job.error, job.error_code),
+            (None, None),
+            "cleared together"
+        );
     }
 
     #[tokio::test]

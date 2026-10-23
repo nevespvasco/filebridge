@@ -5,7 +5,12 @@
 //! Entries go `Partial` before the call. A file the transport reports arrived (`ItemDone`) is
 //! saved `Done` on the next 500 ms tick, so a crash or a pause loses at most that tick's files,
 //! which are sent again. When the call answers, every Entry gets its outcome: `Done`, `Failed`,
-//! or back to `Partial` for a retryable error.
+//! or back to `Partial` for a retryable error or a full destination.
+//!
+//! A full destination is the transport's `Full` error, or (OpenSSH's sftp-server says only
+//! "Failure") a fatal error on a file bigger than the free space measured right after: either
+//! way the files go back to `Partial`, not `Failed`, and the batch ends [`Sent::Full`] so the
+//! Job pauses until someone frees space (docs/design/specs/D03).
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -14,12 +19,13 @@ use std::time::Duration;
 
 use filebridge_store::{EntryState, ManifestEntry, Store};
 use filebridge_transport_api::{
-    Destination, InFlight, ItemOutcome, ProgressEvent, ProgressSink, RemotePath, TransferItem,
-    TransferJob, TransferOptions, Transport,
+    Destination, ErrorKind, InFlight, ItemOutcome, ProgressEvent, ProgressSink, RemotePath,
+    TransferItem, TransferJob, TransferOptions, Transport, TransportError,
 };
 use tokio::sync::broadcast;
 
 use crate::analyse::{bytes_path, source_parent};
+use crate::engine::PREFLIGHT_TIMEOUT;
 use crate::{CoreError, Event, Result};
 use filebridge_model::{DoneView, FileCategory, InFlightView};
 
@@ -40,6 +46,9 @@ pub(crate) enum Sent {
     Answered { retry: Option<String> },
     /// The whole call failed with a retryable error; its Entries stay `Partial`.
     Retry(String),
+    /// The destination is full: the files it refused for that went back to `Partial`, the
+    /// others have their outcome.
+    Full(String),
     /// Stopped by `stop`; files still in flight stay `Partial`.
     Stopped(Stop),
 }
@@ -170,12 +179,16 @@ impl Batch<'_> {
         let result = match result {
             Ok(r) => r,
             Err(e) if e.is_retryable() => return Ok(Sent::Retry(e.message)),
+            Err(e) if e.kind == ErrorKind::Full => return Ok(Sent::Full(e.message)),
             Err(e) => return Err(e.into()),
         };
+        let mut items = result.items;
+        self.explain_failures(&kept, &mut items).await;
 
         let mut retry = None;
+        let mut full = None;
         let mut any_done = false;
-        for (i, (e, outcome)) in kept.iter().zip(result.items).enumerate() {
+        for (i, (e, outcome)) in kept.iter().zip(items).enumerate() {
             match outcome {
                 ItemOutcome::Done => {
                     any_done = true;
@@ -186,6 +199,11 @@ impl Batch<'_> {
                     if !saved.contains(&i) {
                         updates.push((e.entry.idx, EntryState::Done, None));
                     }
+                }
+                ItemOutcome::Failed(err) if err.kind == ErrorKind::Full => {
+                    // Not this file's fault: it goes again once there is room.
+                    full.get_or_insert_with(|| err.message.clone());
+                    updates.push((e.entry.idx, EntryState::Partial, Some(err.message)));
                 }
                 ItemOutcome::Failed(err) => {
                     let path = String::from_utf8_lossy(&e.entry.raw_path).into_owned();
@@ -211,7 +229,40 @@ impl Batch<'_> {
         if any_done {
             self.store.set_job_retry(self.job_id, 0, None).await?;
         }
-        Ok(Sent::Answered { retry })
+        Ok(match full {
+            Some(e) => Sent::Full(e),
+            None => Sent::Answered { retry },
+        })
+    }
+
+    /// Turns the fatal failures of files bigger than the destination's free space, measured now,
+    /// into `Full`: a server that reports a full disk without saying so (OpenSSH's sftp-server
+    /// answers "Failure"). Nothing changes when no file failed that way, or the destination
+    /// doesn't report its space.
+    async fn explain_failures(&self, kept: &[ManifestEntry], items: &mut [ItemOutcome]) {
+        let unexplained =
+            |o: &ItemOutcome| matches!(o, ItemOutcome::Failed(e) if e.kind == ErrorKind::Other);
+        if !items.iter().any(unexplained) {
+            return;
+        }
+        let measured = tokio::time::timeout(PREFLIGHT_TIMEOUT, self.transport.preflight(self.dest));
+        let Ok(Ok(report)) = measured.await else {
+            return;
+        };
+        let Some(free) = report.free_bytes else {
+            return;
+        };
+        for (e, outcome) in kept.iter().zip(items.iter_mut()) {
+            if let ItemOutcome::Failed(err) = outcome
+                && err.kind == ErrorKind::Other
+                && e.entry.size > free
+            {
+                *err = TransportError::full(format!(
+                    "no space left at the destination ({free} bytes free, the file is {}): {}",
+                    e.entry.size, err.message
+                ));
+            }
+        }
     }
 }
 

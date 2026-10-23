@@ -12,7 +12,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use filebridge_core::{
-    AnalysisSummary, DecisionInput, Engine, Event, IssueDecision, JobState, SendOptions,
+    AnalysisSummary, DecisionInput, Engine, Event, IssueDecision, JobErrorCode, JobState,
+    SendOptions,
 };
 use tokio::sync::broadcast::error::RecvError;
 
@@ -383,6 +384,7 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
     let tty = std::io::stderr().is_terminal();
     let mut last_line = Instant::now() - Duration::from_secs(1);
     let mut wrote_progress = false;
+    let mut warned_space = false;
     let short = &job_id[..8];
     let wait = engine.wait(job_id);
     tokio::pin!(wait);
@@ -397,6 +399,9 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
                 match state {
                     JobState::Completed => println!("✓ done: {} files, {}", job.counts.done, human_bytes(job.counts.bytes_done)),
                     JobState::CompletedWithWarnings => println!("! done with warnings: {}", job.error.unwrap_or_default()),
+                    JobState::Paused if job.error_code == Some(JobErrorCode::DestinationFull) => println!(
+                        "! the destination is full ({}); free space there, then continue with \
+                         `filebridge resume {short}`", job.error.unwrap_or_default()),
                     JobState::Paused => println!("paused; continue with `filebridge resume {short}`"),
                     other => println!("job {short} is {}{}", other.as_str(),
                         job.error.map(|e| format!(": {e}")).unwrap_or_default()),
@@ -444,6 +449,13 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
                         let secs = (opens_at - filebridge_store::now_ms()).max(0) as u64 / 1000;
                         Some((false, format!("waiting for the send window; it opens in {} \
                             (`filebridge settings`)", human_secs(secs))))
+                    }
+                    Event::DestinationSpace { free_bytes, left_bytes, .. }
+                        if free_bytes < left_bytes && !warned_space =>
+                    {
+                        warned_space = true;
+                        Some((false, format!("! the destination may run out of space: {} free, {} still to send",
+                            human_bytes(free_bytes), human_bytes(left_bytes))))
                     }
                     Event::EntryFailed { path, error, retryable: false, .. } =>
                         Some((false, format!("! {path}: {error}"))),

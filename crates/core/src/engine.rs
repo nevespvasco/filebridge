@@ -25,8 +25,8 @@ use crate::{
     JobSummary, PreflightView, Profile, ProfileTest, Registry, Result, RuleCount, SendOptions,
 };
 use filebridge_model::{
-    ActivityItem, CategoryCount, DecideManyResult, FileCategory, LogEntry, Op, RecentSource,
-    RefusedIssue, default_label, log_level,
+    ActivityItem, CategoryCount, DecideManyResult, FileCategory, JobErrorCode, LogEntry, Op,
+    RecentSource, RefusedIssue, default_label, log_level,
 };
 
 const INSERT_BATCH: usize = 10_000;
@@ -42,6 +42,8 @@ pub struct EngineOptions {
     pub max_verify_rounds: u32,
     /// The local time the send window is checked against.
     pub local_clock: LocalClock,
+    /// How often a transfer measures the destination's free space (docs/design/specs/D03).
+    pub space_check_every: Duration,
 }
 
 impl Default for EngineOptions {
@@ -52,6 +54,7 @@ impl Default for EngineOptions {
             inhibit_sleep: true,
             max_verify_rounds: 3,
             local_clock: LocalClock::default(),
+            space_check_every: Duration::from_secs(120),
         }
     }
 }
@@ -93,7 +96,7 @@ pub struct Engine {
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
 /// server, SSH agent or keyring that never answers must not leave a connection test (or an
 /// analysis) waiting forever, so past this it counts as a failed check.
-const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn no_answer() -> String {
     format!(
@@ -533,6 +536,7 @@ impl Engine {
             id: row.id,
             profile_id: row.profile_id,
             error: row.error,
+            error_code: row.error_code.as_deref().and_then(JobErrorCode::parse),
             attempt: row.attempt,
             next_retry_at: row.next_retry_at,
             created_at: row.created_at,

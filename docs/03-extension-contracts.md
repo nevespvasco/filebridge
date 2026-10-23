@@ -90,7 +90,9 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
   `JobContext`, and the host gives the ones that sign in a `SecretResolver` (they don't depend
   on `crates/secrets`).
-- Transport errors carry a **kind** (`Transient`, `NotFound`, `Unsupported`, `Auth`, `Other`).
+- Transport errors carry a **kind** (`Transient`, `NotFound`, `Unsupported`, `Auth`, `Full`,
+  `Other`). `Full` (no room at the destination) pauses the job instead of failing the file
+  ([ADR 0021](adr/0021-full-destination-pauses-the-job.md)).
   Only `Transient` is retried; `core` decides on the kind and never reads the message. Each
   adapter maps its own errors to kinds (rclone: `transport-rclone/src/client.rs`, `kind_of`).
   Integration errors still carry a `retryable` flag.
