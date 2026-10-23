@@ -150,7 +150,7 @@ async fn main() -> anyhow::Result<()> {
         } => send_cmd::report(g, &job, format, only, dirs, output).await,
         Cmd::Scan { source, show } => prepare::print_scan(&source, show),
         Cmd::Fixture(args) => fixture::run(&args),
-        Cmd::Bench(args) => bench::run(args).await,
+        Cmd::Bench(args) => bench::run(args, g.rclone.as_deref()).await,
     }
 }
 

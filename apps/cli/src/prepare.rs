@@ -96,7 +96,7 @@ pub fn print_scan(source: &Path, show: bool) -> Result<()> {
         p.renamed_files
     );
     println!(
-        "non-UTF-8 names (skipped until Phase 2): {}",
+        "non-UTF-8 names (left out here and by `bench`; a send fixes them with the `encoding` rule): {}",
         p.unmappable.len()
     );
     println!(
