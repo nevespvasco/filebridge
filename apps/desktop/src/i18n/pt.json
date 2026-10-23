@@ -920,7 +920,14 @@
     "quota": "Quota da conta: {used} de {total} usados",
     "low": "Apenas {free} livres",
     "lowNotice": "{name} tem {free} livres",
-    "lastError": "A última verificação falhou: {reason}"
+    "lastError": "A última verificação falhou: {reason}",
+    "runningOut": "{name} pode ficar sem espaço: {free} livres, faltam enviar {left}",
+    "full": "{name} está cheio. A transferência está em pausa; nada se perdeu.",
+    "fullHelp": "Liberte espaço no destino (ou aumente a quota da conta) e carregue em Retomar. Os ficheiros que não couberam são enviados de novo.",
+    "fullLog": "Em pausa: o destino está cheio",
+    "runningOutLog": "O destino pode ficar sem espaço: {free} livres, faltam enviar {left}",
+    "fullNotifyTitle": "Destino cheio",
+    "fullNotifyBody": "{where}: em pausa até haver espaço livre."
   },
   "again": {
     "title": "Enviar de novo: {name}",

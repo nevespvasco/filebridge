@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import { useFmt } from "@/composables/useFmt";
 import { minutesToTime } from "@/lib/format";
 import { RUNNING, TERMINAL, useJobs } from "@/stores/jobs";
+import { useProfiles } from "@/stores/profiles";
 import { useSettings } from "@/stores/settings";
 import ProgressBar from "./ProgressBar.vue";
 import JobStateBadge from "./JobStateBadge.vue";
@@ -13,6 +14,7 @@ import JobStateBadge from "./JobStateBadge.vue";
 const props = defineProps<{ jobId: string }>();
 const jobs = useJobs();
 const settings = useSettings();
+const profiles = useProfiles();
 const fmt = useFmt();
 const { t, te } = useI18n();
 
@@ -43,6 +45,15 @@ const windowText = computed(() => {
   const w = settings.app.send_window;
   return w ? t("progress.windowSoon", { start: minutesToTime(w.start_minute), end: minutesToTime(w.end_minute) }) : "";
 });
+
+const destination = computed(() => (job.value ? profiles.byId[job.value.profile_id]?.name : undefined) ?? "—");
+/** Measured during the send: what is left doesn't fit in the free space. Only a warning. */
+const runningOut = computed(() => {
+  const sp = live.value?.space;
+  if (!sp || !running.value || sp.free_bytes >= sp.left_bytes) return "";
+  return t("storage.runningOut", { name: destination.value, free: fmt.bytes(sp.free_bytes), left: fmt.bytes(sp.left_bytes) });
+});
+const full = computed(() => job.value?.state === "paused" && job.value.error_code === "destination_full");
 
 const integrationLabel = computed(() => {
   const i = live.value?.integration;
@@ -86,6 +97,7 @@ const waitingLabel = computed(() => {
       {{ $t("progress.retry", { attempt: live.retry.attempt, secs: live.retry.in_secs }) }} — {{ live.retry.error }}
     </p>
     <p v-else-if="job.attempt > 0 && !finished" class="small muted">{{ $t("progress.retries", { n: job.attempt }) }}</p>
+    <p v-if="runningOut" class="small warn-text" role="status">{{ runningOut }}</p>
 
     <div v-if="job.state === 'verifying' && live?.verify" class="stage">
       <span class="small">{{ $t("progress.verifying", { done: fmt.count(live.verify.checked), total: fmt.count(live.verify.total) }) }}</span>
@@ -104,7 +116,12 @@ const waitingLabel = computed(() => {
       />
     </div>
 
-    <p v-if="job.error" class="error small">{{ job.error }}</p>
+    <div v-if="full" class="full" role="alert">
+      <p class="small warn-text">{{ $t("storage.full", { name: destination }) }}</p>
+      <p class="small">{{ $t("storage.fullHelp") }}</p>
+      <p v-if="job.error" class="small muted ellipsis" :title="job.error">{{ job.error }}</p>
+    </div>
+    <p v-else-if="job.error" class="error small">{{ job.error }}</p>
   </div>
 </template>
 
@@ -112,4 +129,6 @@ const waitingLabel = computed(() => {
 .job-progress { display: grid; gap: 0.5rem; }
 .line { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
 .stage { display: grid; gap: 0.3rem; margin-top: 0.25rem; }
+.full { display: grid; gap: 0.2rem; }
+.full p { margin: 0; }
 </style>

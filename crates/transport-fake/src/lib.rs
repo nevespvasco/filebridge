@@ -43,10 +43,33 @@ pub struct FakeTransport {
     pub fail_move_once: Mutex<HashMap<String, TransportError>>,
     /// `preflight` never returns, as if the server or the SSH agent stopped answering.
     pub hang_preflight: AtomicBool,
+    /// Free bytes at the destination, when set: `preflight` reports it, every file sent uses
+    /// its size, and a file that doesn't fit fails with `Full` (`None`: 1 TiB, never full).
+    pub free: Mutex<Option<u64>>,
+    /// A file that doesn't fit fails the way OpenSSH's sftp-server reports a full disk: a
+    /// fatal error that doesn't say why.
+    pub full_unexplained: AtomicBool,
+    /// `preflight` calls so far.
+    pub preflights: AtomicU32,
 }
 
 impl FakeTransport {
     pub const ID: &'static str = "fake";
+
+    /// Uses `size` bytes of [`Self::free`]; the error when they don't fit.
+    fn take_space(&self, size: u64) -> Option<TransportError> {
+        let mut free = self.free.lock().unwrap();
+        let left = free.as_mut()?;
+        if size <= *left {
+            *left -= size;
+            return None;
+        }
+        Some(if self.full_unexplained.load(Ordering::SeqCst) {
+            TransportError::fatal("sftp: \"Failure\" (SSH_FX_FAILURE)")
+        } else {
+            TransportError::full("write: no space left on device")
+        })
+    }
 }
 
 fn io_error(context: &str, e: std::io::Error) -> TransportError {
@@ -72,13 +95,16 @@ impl Transport for FakeTransport {
     }
 
     async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
+        self.preflights.fetch_add(1, Ordering::SeqCst);
         if self.hang_preflight.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
         }
+        let free = self.free.lock().unwrap().unwrap_or(1 << 40);
+        let total = free.max(1 << 40) + (2 << 40);
         Ok(PreflightReport {
-            free_bytes: Some(1 << 40),
-            total_bytes: Some(3 << 40),
-            used_bytes: Some(2 << 40),
+            free_bytes: Some(free),
+            total_bytes: Some(total),
+            used_bytes: Some(total - free),
             writable: true,
             ..Default::default()
         })
@@ -122,6 +148,14 @@ impl Transport for FakeTransport {
                 items.push(ItemOutcome::Failed(TransportError::fatal(
                     "permission denied",
                 )));
+                continue;
+            }
+            if let Some(e) = self.take_space(item.size) {
+                progress.send(ProgressEvent::ItemDone {
+                    index: i,
+                    ok: false,
+                });
+                items.push(ItemOutcome::Failed(e));
                 continue;
             }
             let Some(from) = job.source_of(item) else {

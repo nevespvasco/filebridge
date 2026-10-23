@@ -65,6 +65,15 @@ pub enum Event {
     },
     /// The transfer waits for the send window; `opens_at` is Unix ms.
     SendWindowWait { job_id: String, opens_at: i64 },
+    /// The destination's free space, measured during the transfer (at its start, then every few
+    /// minutes) when the destination reports it, against the bytes still to send. The job goes
+    /// on either way; `free_bytes < left_bytes` means it may run out of space
+    /// (docs/design/specs/D03).
+    DestinationSpace {
+        job_id: String,
+        free_bytes: u64,
+        left_bytes: u64,
+    },
     VerifyProgress {
         job_id: String,
         checked: u64,
@@ -107,6 +116,7 @@ impl Event {
             | Self::EntryFailed { job_id, .. }
             | Self::RetryScheduled { job_id, .. }
             | Self::SendWindowWait { job_id, .. }
+            | Self::DestinationSpace { job_id, .. }
             | Self::VerifyProgress { job_id, .. }
             | Self::IntegrationProgress { job_id, .. }
             | Self::IntegrationProblem { job_id, .. }

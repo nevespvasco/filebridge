@@ -183,19 +183,31 @@ fn http_status(message: &str) -> Option<StatusCode> {
         .find_map(|(i, _)| token_at(i))
 }
 
+/// How a full destination reads in rclone's messages, lowercased: `ENOSPC` and `EDQUOT` as Go
+/// prints them (a local disk, an SFTP server that passes them on), Windows' wording, and the
+/// SFTP status codes for both. OpenSSH's server sends a full disk as a bare `SSH_FX_FAILURE`;
+/// `core` tells that one apart by measuring the space left.
+const NO_SPACE: &[&str] = &[
+    "no space left on device",
+    "disk quota exceeded",
+    "not enough space on the disk",
+    "ssh_fx_no_space_on_filesystem",
+    "ssh_fx_quota_exceeded",
+];
+
 /// The kind of an rclone error, from the HTTP status of an rc call (`None` for an async job's
 /// result) and rclone's message. This is the only place that reads rclone's wording. A backend's
 /// HTTP status (WebDAV) is read from its status token, never from free text: `401` is `Auth`;
-/// `403` (a blocked name, a share without write access) and `413` are `Other`; `507` (no space)
-/// is `Other` too, since trying again won't free space; other `5xx` are `Transient`.
+/// `403` (a blocked name, a share without write access) and `413` are `Other`; `507` (no space,
+/// a Nextcloud quota reached) is `Full`; other `5xx` are `Transient`. A full disk elsewhere is
+/// read from the system's words for it ([`NO_SPACE`]).
 pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
     if let Some(backend) = http_status(message) {
         match backend {
             StatusCode::UNAUTHORIZED => return ErrorKind::Auth,
             StatusCode::NOT_FOUND => return ErrorKind::NotFound,
-            StatusCode::FORBIDDEN
-            | StatusCode::PAYLOAD_TOO_LARGE
-            | StatusCode::INSUFFICIENT_STORAGE => return ErrorKind::Other,
+            StatusCode::INSUFFICIENT_STORAGE => return ErrorKind::Full,
+            StatusCode::FORBIDDEN | StatusCode::PAYLOAD_TOO_LARGE => return ErrorKind::Other,
             StatusCode::TOO_MANY_REQUESTS | StatusCode::LOCKED => return ErrorKind::Transient,
             s if s.is_server_error() => return ErrorKind::Transient,
             _ => {}
@@ -203,7 +215,9 @@ pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
     }
     let msg = message.to_ascii_lowercase();
     let has = |needle: &str| msg.contains(needle);
-    if status == Some(StatusCode::NOT_FOUND)
+    if NO_SPACE.iter().any(|n| has(n)) {
+        ErrorKind::Full
+    } else if status == Some(StatusCode::NOT_FOUND)
         || has("not found")
         || has("no such file")
         || has("does not exist")
@@ -266,6 +280,47 @@ mod tests {
     }
 
     #[test]
+    fn a_full_destination_is_full() {
+        let k = |msg: &str| kind_of(None, msg);
+        // A local disk, and an SFTP server that passes `ENOSPC` / `EDQUOT` on.
+        assert_eq!(
+            k("Failed to copy: write /mnt/backup/a.mkv: no space left on device"),
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k(
+                "Failed to copy: Update ReadFrom failed: sftp: \"Disk quota exceeded\" (SSH_FX_FAILURE)"
+            ),
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k("Failed to copy: sftp: \"No space on filesystem\" (SSH_FX_NO_SPACE_ON_FILESYSTEM)"),
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k("Failed to copy: sftp: \"Quota exceeded\" (SSH_FX_QUOTA_EXCEEDED)"),
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k("Failed to copy: There is not enough space on the disk."),
+            ErrorKind::Full
+        );
+        // OpenSSH's bare failure says nothing about space: `core` measures it.
+        assert_eq!(
+            k("Failed to copy: Update ReadFrom failed: sftp: \"Failure\" (SSH_FX_FAILURE)"),
+            ErrorKind::Transient
+        );
+        assert_eq!(
+            kind_of(
+                Some(StatusCode::INTERNAL_SERVER_ERROR),
+                "no space left on device"
+            ),
+            ErrorKind::Full,
+            "the rc's own 500 doesn't hide it"
+        );
+    }
+
+    #[test]
     fn webdav_statuses_are_read_from_their_token() {
         let k = |msg: &str| kind_of(Some(StatusCode::INTERNAL_SERVER_ERROR), msg);
         assert_eq!(
@@ -284,7 +339,13 @@ mod tests {
         );
         assert_eq!(
             k("Update failed: 507 Insufficient Storage: quota exceeded"),
-            ErrorKind::Other
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k(
+                "failed to upload: 507 Insufficient Storage: Sabre\\DAV\\Exception\\InsufficientStorage"
+            ),
+            ErrorKind::Full
         );
         assert_eq!(k("PUT: 503 Service Unavailable"), ErrorKind::Transient);
         assert_eq!(k("too fast: 429 Too Many Requests"), ErrorKind::Transient);

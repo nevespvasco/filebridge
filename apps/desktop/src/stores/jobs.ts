@@ -26,6 +26,8 @@ export type Live = {
   report?: Of<"report_progress">;
   /** When the send window opens, while the job waits for it. */
   window?: Of<"send_window_wait">;
+  /** The destination's free space against what is left to send, measured during the transfer. */
+  space?: Of<"destination_space">;
   /** The last files that arrived, newest first (the queue's "Just finished"). */
   arrived: DoneView[];
   /** Arrivals counted per event, for "+N in the last minute". */
@@ -163,6 +165,9 @@ export const useJobs = defineStore("jobs", () => {
         l.window = ev;
         refreshSoon(id);
         break;
+      case "destination_space":
+        l.space = ev;
+        break;
       case "entry_failed":
         push(l.failures, ev);
         break;
@@ -174,6 +179,9 @@ export const useJobs = defineStore("jobs", () => {
         if (j) j.state = ev.to;
         if (ev.to !== "retrying") l.retry = undefined;
         if (ev.to !== "waiting") l.window = undefined;
+        if (!RUNNING.includes(ev.to)) l.space = undefined;
+        // Paused with an error: the engine paused it (a full destination), not the user.
+        if (ev.to === "paused" && ev.error) void pausedByEngine(id);
         refreshSoon(id);
         if (!j) void loadPage(0);
         break;
@@ -199,6 +207,14 @@ export const useJobs = defineStore("jobs", () => {
         ? t(ev.state === "completed" ? "notify.doneBody" : "notify.warningsBody", { where })
         : t("notify.failedBody", { where, error: ev.error ?? "" }),
     );
+  }
+
+  async function pausedByEngine(id: string) {
+    const job = await refresh(id);
+    if (!job || job.error_code !== "destination_full" || !useSettings().notifications) return;
+    const t = i18n.global.t;
+    const where = [jobLabel(job), useProfiles().byId[job.profile_id]?.name].filter(Boolean).join(" → ");
+    await notify(t("storage.fullNotifyTitle"), t("storage.fullNotifyBody", { where }));
   }
 
   async function init() {

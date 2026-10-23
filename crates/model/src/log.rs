@@ -66,12 +66,13 @@ pub fn log_level(kind: &str, data: &Value) -> LogLevel {
     let s = |k: &str| data.get(k).and_then(Value::as_str).unwrap_or("");
     match kind {
         "state" if s("to") == "failed" => LogLevel::Error,
+        "state" if !s("error_code").is_empty() => LogLevel::Warn,
         "finished" => match s("state") {
             "failed" => LogLevel::Error,
             "completed_with_warnings" => LogLevel::Warn,
             _ => LogLevel::Info,
         },
-        "retry" => LogLevel::Warn,
+        "retry" | "space_low" => LogLevel::Warn,
         "transfer_round" if n("failed") > 0 => LogLevel::Warn,
         "verify" if n("mismatch") + n("missing") + n("unverifiable") > 0 => LogLevel::Warn,
         "analysis" if n("scan_errors") > 0 => LogLevel::Warn,
@@ -104,6 +105,14 @@ mod tests {
             LogLevel::Info
         );
         assert_eq!(log_level("retry", &json!({})), LogLevel::Warn);
+        assert_eq!(log_level("space_low", &json!({})), LogLevel::Warn);
+        assert_eq!(
+            log_level(
+                "state",
+                &json!({ "to": "paused", "error_code": "destination_full" })
+            ),
+            LogLevel::Warn
+        );
         assert_eq!(
             log_level("transfer_round", &json!({ "failed": 0 })),
             LogLevel::Info

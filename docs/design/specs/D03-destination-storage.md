@@ -60,7 +60,8 @@
 | Profile card | effective free < 10 % of total, or < 10 GB | `Notice tone="warn"` inside the card: "Only {free} free" |
 | Sidebar notice slot | any profile is low | "{name} has {free} free" → Destinations ([02](../02-information-architecture.md#sidebar)) |
 | Analysis "Does it fit?" | the transfer leaves < 5 % or < 10 GB | [D02](D02-source-and-composition.md#step-3--analysis-what-youre-sending) |
-| During a send | free space measured during the run drops below the bytes still to send | `IntegrationProblem`-style warning on the job: "Nextcloud home may run out of space: {free} free, {left} still to send" |
+| During a send | free space measured during the run drops below the bytes still to send | Warning line in the job's progress: "Nextcloud home may run out of space: {free} free, {left} still to send"; the job goes on |
+| Destination full | the transport refuses a file for lack of room | The job pauses; its progress says "{name} is full…" and what to do |
 
 The thresholds are constants in `crates/model` (`LOW_SPACE_RATIO = 0.10`,
 `LOW_SPACE_BYTES = 10 GB`) so the UI and the engine agree.
@@ -74,16 +75,21 @@ known. The same rule applies to `total` and `used`: the meter shows the tighter 
 
 ### When storage is measured
 
-Measuring means an SSH or HTTP round trip, so it never runs on a timer:
+Measuring means an SSH or HTTP round trip, so it never runs on a timer outside a send:
 
 1. **Test** on a profile (exists) → stores the result.
 2. **Analyse** (stage 2 already runs both preflights) → stores the result for the job's profile.
 3. **After a transfer stage ends** (done, failed or paused) → one `preflight` of the transport, and
    the result is stored. This catches "the send filled the disk".
-4. **During a send**: if the transport fails a file with a disk-full message, the adapter maps it
-   to `ErrorKind::Other` (not retryable), and core stores a fresh preflight. The job's failure
-   then says "destination is full" instead of an rclone message.
-5. Explicit `profile_storage(id, refresh = true)` ("Check now").
+4. **During a send**: at the start of the transfer stage and every 2 minutes
+   (`EngineOptions::space_check_every`), one transport `preflight`, compared with the bytes still
+   to send (`Event::DestinationSpace`). Not stored as the profile's test: it lacks the
+   integration's side.
+5. **When the destination is full**: the transport fails a file with `ErrorKind::Full`
+   ([ADR 0017](../../adr/0017-full-destination-pauses-the-job.md)), or with a fatal error on a
+   file bigger than the free space measured right after. The job pauses with
+   `error_code = destination_full`, and the measurement after the stage (3) is stored.
+6. Explicit `profile_storage(id, refresh = true)` ("Check now").
 
 `profile_storage(id, refresh = false)` never touches the network. It answers from the stored
 result (`stale = true` when older than 1 hour).
@@ -96,9 +102,34 @@ result (`stale = true` when older than 1 hour).
   kept test (migration 5, `last_test` and `last_good_test` with their times), measuring after
   Test, Analyse and every transfer stage, `profile_storage`, the Destinations meter, total and
   used in "Does it fit?", and the sidebar's low-space notice.
-- Not built yet: the warning *during* a send ("may run out of space") and mapping a disk-full
-  transfer error to "destination is full". Both need the transport to report the error kind;
-  today a full disk fails the job with rclone's own message.
+- Built (2026-10-23, [ADR 0017](../../adr/0017-full-destination-pauses-the-job.md)):
+  - **"May run out of space" during a send.** `run.rs` measures the transport's free space beside
+    the transfer stage (at its start, then every `space_check_every`, 2 min; a 60 s timeout) and
+    emits `Event::DestinationSpace { free_bytes, left_bytes }`, `left_bytes` being the pending
+    and partial files (`ManifestCounts::bytes_left`). `JobProgress` shows `storage.runningOut`
+    while the job is running and `free < left`; the job log gets one `space_low` row (warn) per
+    stage run. A destination whose `preflight` has no `free_bytes` emits nothing. Only the
+    transport is measured, not the Nextcloud quota (`occ` is too slow to repeat; over WebDAV
+    rclone's `about` already reports the quota).
+  - **"Destination is full".** `ErrorKind::Full` in `transport-api`. rclone (`kind_of`): WebDAV
+    `507`, and `no space left on device`, `disk quota exceeded`, Windows' `not enough space on
+    the disk`, `SSH_FX_NO_SPACE_ON_FILESYSTEM`, `SSH_FX_QUOTA_EXCEEDED`; after its first `Full`
+    answer a batch starts no more uploads. Nextcloud bulk upload: a request's `507` fails its
+    files `Full` (not resent through rclone). `core` (`batch.rs`): an `Other` failure of a file
+    bigger than a fresh `preflight`'s free space is `Full` too (OpenSSH says only "Failure").
+    `Full` files go back to `Partial` with no `EntryFailed`, and the job goes `Paused` with
+    `error_code = destination_full` (store migration 8, `jobs.error_code`; `JobSummary.error_code`,
+    protocol 23). The window shows `storage.full` + `storage.fullHelp` in place of the raw
+    error, notifies `storage.fullNotifyTitle`, and the log reads `storage.fullLog`; the CLI
+    prints what to do. Resume sends what didn't fit.
+  - Tests: `kind_of` cases (`a_full_destination_is_full`), rclone stopping the round
+    (`a_full_destination_stops_the_round`), and the engine with the fake transport's `free` /
+    `full_unexplained` knobs (`a_full_destination_pauses_the_job_until_space_is_freed`,
+    `a_full_disk_that_says_only_failure_is_found_by_measuring`,
+    `the_send_warns_when_the_destination_may_run_out_of_space`). Nextcloud's bulk `507` has no
+    automated test (no HTTP mock in the crate).
+  - Not built: a warning based on the Nextcloud quota during a send; resuming by itself once
+    space is freed (the user presses Resume).
 
 ## States
 
@@ -211,6 +242,10 @@ after `JobFinished` and after `test_profile`, which covers every moment a measur
 | `storage.quota` | Quota for {user}: {used} of {total} | Quota de {user}: {used} de {total} |
 | `storage.low` | Only {free} free | Apenas {free} livres |
 | `storage.runningOut` | {name} may run out of space: {free} free, {left} still to send | {name} pode ficar sem espaço: {free} livres, faltam enviar {left} |
+| `storage.full` | {name} is full. The transfer is paused; nothing was lost. | {name} está cheio. A transferência está em pausa; nada se perdeu. |
+| `storage.fullHelp` | Free space at the destination (or raise the account's quota), then press Resume. The files that didn't fit are sent again. | Liberte espaço no destino (ou aumente a quota da conta) e carregue em Retomar. Os ficheiros que não couberam são enviados de novo. |
+| `storage.fullLog` / `storage.runningOutLog` | the job log's rows for both | |
+| `storage.fullNotifyTitle` / `fullNotifyBody` | Destination full / {where}: paused until there is free space. | Destino cheio / {where}: em pausa até haver espaço livre. |
 
 ## Accessibility
 

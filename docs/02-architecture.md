@@ -57,7 +57,7 @@ stateDiagram-v2
     Analysing --> Ready: no pending issues
     AwaitingApproval --> Ready: all decisions made
     Ready --> Transferring: Send
-    Transferring --> Paused: user pause
+    Transferring --> Paused: user pause, or destination full
     Paused --> Transferring: resume
     Transferring --> Retrying: network error
     Retrying --> Transferring: backoff elapsed
@@ -92,6 +92,9 @@ Rules:
   it can be paused or cancelled and is resumed on startup, still waiting.
 - `Failed` is reserved for non-retryable errors (auth revoked, destination missing); the UI shows
   the cause and an action.
+- A full destination moves a transfer to `Paused` with an error code (`destination_full`), not
+  to `Failed`: the files that didn't fit stay to send, and Resume carries on once space is
+  freed ([ADR 0017](adr/0017-full-destination-pauses-the-job.md)). A user pause has no error.
 
 ## Process model
 
@@ -112,6 +115,7 @@ Rules:
 | Event | Payload (summary) |
 |---|---|
 | `JobStateChanged` | job id, old → new state, timestamp |
+| `DestinationSpace` | free space measured during the transfer, bytes still to send (D03) |
 | `ScanProgress` | files counted, bytes counted, current path |
 | `TransferProgress` | bytes done/total, files done/total, speed, ETA, current file |
 | `EntryFailed` | entry id, error, retry in |

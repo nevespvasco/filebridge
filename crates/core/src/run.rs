@@ -10,17 +10,20 @@ use std::time::Duration;
 
 use filebridge_integration_api::{IntegrationEvent, IntegrationSink};
 use filebridge_store::{EntryState, now_ms};
-use filebridge_transport_api::{ErrorKind, HashAlgo, RemotePath, TransportCaps};
+use filebridge_transport_api::{
+    Destination, ErrorKind, HashAlgo, RemotePath, Transport, TransportCaps,
+};
 use sha2::{Digest as _, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::analyse::{bytes_path, source_parent};
 use crate::batch::{Batch, Sent, Stop, Tally};
+use crate::engine::PREFLIGHT_TIMEOUT;
 use crate::inhibit::{SleepGuard, inhibit};
 use crate::lifecycle::Outcome;
 use crate::repair::RepairEnd;
 use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOptions};
-use filebridge_model::Op;
+use filebridge_model::{JobErrorCode, Op};
 
 const PAGE: u32 = 2_000;
 /// The most bytes one verify batch reads ([`verify_batches`]).
@@ -33,6 +36,9 @@ enum StageEnd<T> {
     Cancelled,
     /// Transfer only: the send window closed; wait for it to open again.
     Held,
+    /// Transfer only: the destination is full. The job pauses: trying again won't help until
+    /// someone frees space.
+    Full(String),
 }
 
 struct Ctx {
@@ -120,6 +126,13 @@ impl Engine {
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
                     StageEnd::Held => JobState::Waiting,
+                    StageEnd::Full(e) => {
+                        tracing::warn!(job = job_id, "the destination is full: {e}");
+                        let mut job = self.begin(job_id, Op::Run).await?;
+                        return job
+                            .go_coded(JobState::Paused, e, JobErrorCode::DestinationFull)
+                            .await;
+                    }
                 },
                 JobState::Verifying => match self.verify_stage(&mut ctx).await? {
                     StageEnd::Done(mismatched) if mismatched.is_empty() => JobState::Integrating,
@@ -159,7 +172,9 @@ impl Engine {
                     }
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
-                    StageEnd::Held => unreachable!("only the transfer waits for the window"),
+                    StageEnd::Held | StageEnd::Full(_) => {
+                        unreachable!("only the transfer waits for the window or fills the disk")
+                    }
                 },
                 JobState::Integrating => match self.integrate_stage(&mut ctx).await? {
                     StageEnd::Done(()) => {
@@ -184,7 +199,9 @@ impl Engine {
                     }
                     StageEnd::Retry(e) => self.back_off(&mut ctx, current, e).await?,
                     StageEnd::Cancelled => return Ok(()),
-                    StageEnd::Held => unreachable!("only the transfer waits for the window"),
+                    StageEnd::Held | StageEnd::Full(_) => {
+                        unreachable!("only the transfer waits for the window or fills the disk")
+                    }
                 },
                 other => {
                     return Err(CoreError::Invalid(format!(
@@ -279,38 +296,86 @@ impl Engine {
             ..Tally::default()
         };
 
-        loop {
-            let entries = self
-                .store
-                .files_with_transfer_state(
-                    &ctx.job_id,
-                    EntryState::Pending,
-                    None,
-                    self.options.batch_size,
-                )
-                .await?;
-            if entries.is_empty() {
-                break;
-            }
-            let stop = async {
-                tokio::select! {
-                    _ = ctx.cancel.cancelled() => Stop::Cancelled,
-                    _ = self.window_closes() => Stop::Held,
+        let batches = async {
+            loop {
+                let entries = self
+                    .store
+                    .files_with_transfer_state(
+                        &ctx.job_id,
+                        EntryState::Pending,
+                        None,
+                        self.options.batch_size,
+                    )
+                    .await?;
+                if entries.is_empty() {
+                    break;
                 }
-            };
-            match batch.send(entries, &mut tally, stop).await? {
-                Sent::Answered { retry: None } => {}
-                Sent::Answered { retry: Some(e) } => {
-                    self.log_round(&ctx.job_id, &tally).await?;
-                    return Ok(StageEnd::Retry(e));
+                let stop = async {
+                    tokio::select! {
+                        _ = ctx.cancel.cancelled() => Stop::Cancelled,
+                        _ = self.window_closes() => Stop::Held,
+                    }
+                };
+                match batch.send(entries, &mut tally, stop).await? {
+                    Sent::Answered { retry: None } => {}
+                    Sent::Answered { retry: Some(e) } => {
+                        self.log_round(&ctx.job_id, &tally).await?;
+                        return Ok(StageEnd::Retry(e));
+                    }
+                    Sent::Full(e) => {
+                        self.log_round(&ctx.job_id, &tally).await?;
+                        return Ok(StageEnd::Full(e));
+                    }
+                    Sent::Retry(e) => return Ok(StageEnd::Retry(e)),
+                    Sent::Stopped(Stop::Cancelled) => return Ok(StageEnd::Cancelled),
+                    Sent::Stopped(Stop::Held) => return Ok(StageEnd::Held),
                 }
-                Sent::Retry(e) => return Ok(StageEnd::Retry(e)),
-                Sent::Stopped(Stop::Cancelled) => return Ok(StageEnd::Cancelled),
-                Sent::Stopped(Stop::Held) => return Ok(StageEnd::Held),
             }
+            self.log_round(&ctx.job_id, &tally).await?;
+            Ok(StageEnd::Done(()))
+        };
+        let watch = self.watch_space(&ctx.job_id, transport.as_ref(), &ctx.profile.destination);
+        tokio::select! {
+            end = batches => end,
+            never = watch => match never {},
         }
-        self.log_round(&ctx.job_id, &tally).await?;
-        Ok(StageEnd::Done(()))
+    }
+
+    /// Measures the destination's free space at the start of the transfer and every
+    /// `space_check_every` after, and tells the window how it compares with the bytes still to
+    /// send (`Event::DestinationSpace`); the first time they don't fit, the job log says so too.
+    /// Only warns: the transfer goes on. A destination that doesn't report its space, or doesn't
+    /// answer, is passed over until the next check. Never ends: it runs beside the transfer.
+    async fn watch_space(
+        &self,
+        job_id: &str,
+        transport: &dyn Transport,
+        dest: &Destination,
+    ) -> std::convert::Infallible {
+        let mut warned = false;
+        loop {
+            let measured = tokio::time::timeout(PREFLIGHT_TIMEOUT, transport.preflight(dest)).await;
+            if let Ok(Ok(report)) = measured
+                && let Some(free_bytes) = report.free_bytes
+                && let Ok(counts) = self.store.manifest_counts(job_id).await
+            {
+                let left_bytes = counts.bytes_left;
+                self.emit(Event::DestinationSpace {
+                    job_id: job_id.to_owned(),
+                    free_bytes,
+                    left_bytes,
+                });
+                if free_bytes < left_bytes && !warned {
+                    warned = true;
+                    let data =
+                        serde_json::json!({ "free_bytes": free_bytes, "left_bytes": left_bytes });
+                    if let Err(e) = self.log(Some(job_id), "space_low", data).await {
+                        tracing::warn!(job = job_id, "cannot log the low space: {e}");
+                    }
+                }
+            }
+            tokio::time::sleep(self.options.space_check_every).await;
+        }
     }
 
     /// One transfer stage run, for the job log: what moved and what didn't.

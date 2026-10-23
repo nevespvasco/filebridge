@@ -91,6 +91,8 @@ pub struct ManifestCounts {
     pub failed: u64,
     pub skipped: u64,
     pub bytes_done: u64,
+    /// Bytes of the files still to send (pending or partial).
+    pub bytes_left: u64,
     pub verified_ok: u64,
     pub mismatch: u64,
     pub missing: u64,
@@ -610,8 +612,14 @@ impl Store {
                 counts.files += n;
                 counts.bytes += bytes;
                 match EntryState::parse(&row.get::<_, String>(1)?)? {
-                    EntryState::Pending => counts.pending += n,
-                    EntryState::Partial => counts.partial += n,
+                    EntryState::Pending => {
+                        counts.pending += n;
+                        counts.bytes_left += bytes;
+                    }
+                    EntryState::Partial => {
+                        counts.partial += n;
+                        counts.bytes_left += bytes;
+                    }
                     EntryState::Done => {
                         counts.done += n;
                         counts.bytes_done += bytes;

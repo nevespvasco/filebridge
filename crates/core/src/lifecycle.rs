@@ -15,7 +15,7 @@ use std::sync::Arc;
 use filebridge_store::StateChange;
 use tokio::sync::OwnedMutexGuard;
 
-use filebridge_model::{Op, can_go};
+use filebridge_model::{JobErrorCode, Op, can_go};
 
 use crate::{CoreError, Engine, Event, JobState, Result};
 
@@ -142,11 +142,32 @@ impl JobLock<'_> {
         }
     }
 
+    /// Moves the job to `to` with an error the UI words itself (`code`); `error` is the detail.
+    pub(crate) async fn go_coded(
+        &mut self,
+        to: JobState,
+        error: String,
+        code: JobErrorCode,
+    ) -> Result<()> {
+        self.change(to, Some(error), Some(code), Outcome::default())
+            .await
+    }
+
     /// Moves the job to `to`, saving what the stage that ends produced.
     pub(crate) async fn go_with(
         &mut self,
         to: JobState,
         error: Option<String>,
+        outcome: Outcome,
+    ) -> Result<()> {
+        self.change(to, error, None, outcome).await
+    }
+
+    async fn change(
+        &mut self,
+        to: JobState,
+        error: Option<String>,
+        code: Option<JobErrorCode>,
         outcome: Outcome,
     ) -> Result<()> {
         let from = self.state;
@@ -165,6 +186,7 @@ impl JobLock<'_> {
                     from: from.as_str().into(),
                     to: to.as_str().into(),
                     error: error.clone(),
+                    error_code: code.map(|c| c.as_str().to_owned()),
                     finished: to.is_terminal(),
                     warnings: outcome.warnings.clone(),
                     verify_round: outcome.verify_round,

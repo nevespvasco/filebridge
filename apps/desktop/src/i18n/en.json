@@ -920,7 +920,14 @@
     "quota": "Quota of the account: {used} of {total} used",
     "low": "Only {free} free",
     "lowNotice": "{name} has {free} free",
-    "lastError": "Last check failed: {reason}"
+    "lastError": "Last check failed: {reason}",
+    "runningOut": "{name} may run out of space: {free} free, {left} still to send",
+    "full": "{name} is full. The transfer is paused; nothing was lost.",
+    "fullHelp": "Free space at the destination (or raise the account's quota), then press Resume. The files that didn't fit are sent again.",
+    "fullLog": "Paused: the destination is full",
+    "runningOutLog": "The destination may run out of space: {free} free, {left} still to send",
+    "fullNotifyTitle": "Destination full",
+    "fullNotifyBody": "{where}: paused until there is free space."
   },
   "again": {
     "title": "Send again: {name}",

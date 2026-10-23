@@ -62,7 +62,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 21: `scan_host_key`, `trust_host_key` (ADR 0015).
 /// 22: the request goes under `request` beside the call's `id`, so an argument named `id`
 ///     (`test_profile`, `profile_storage`, `delete_profile`) no longer collides with it.
-pub const PROTOCOL_VERSION: u32 = 22;
+/// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
+///     destination pauses the job).
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
