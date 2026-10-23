@@ -104,6 +104,33 @@ impl HostDetector {
     pub const ID: &'static str = "host";
 }
 
+/// Nextcloud in a Docker container on the SSH host: the official image (or another image named
+/// `nextcloud`) or Nextcloud AIO's `nextcloud-aio-nextcloud`.
+#[derive(Debug, Default, Clone)]
+pub struct DockerDetector;
+
+impl DockerDetector {
+    pub const ID: &'static str = "docker";
+}
+
+/// Where Nextcloud's images keep it: the official image and AIO, then linuxserver.io's.
+pub const DOCKER_INSTALL_DIRS: &[&str] =
+    &["/var/www/html", "/app/www/public", "/config/www/nextcloud"];
+
+/// The Nextcloud snap on the SSH host.
+#[derive(Debug, Default, Clone)]
+pub struct SnapDetector;
+
+impl SnapDetector {
+    pub const ID: &'static str = "snap";
+}
+
+/// The snap's `config.php`, and its data folder when `config.php` doesn't set one.
+pub const SNAP_CONFIG_PHP: &str = "/var/snap/nextcloud/current/nextcloud/config/config.php";
+pub const SNAP_DATA_DIR: &str = "/var/snap/nextcloud/common/nextcloud/data";
+/// Where the snap's Nextcloud code lives (for the profile; `occ` is the snap's wrapper).
+pub const SNAP_INSTALL_DIR: &str = "/snap/nextcloud/current/htdocs";
+
 /// The Proxmox CLI, for a non-root SSH user whose `PATH` has no `/usr/sbin`.
 const PCT_PATH: &str = "/usr/sbin/pct";
 
@@ -254,6 +281,430 @@ impl Detector for HostDetector {
             containers: Vec::new(),
             profile,
         }
+    }
+}
+
+#[async_trait]
+impl Detector for DockerDetector {
+    fn id(&self) -> &str {
+        Self::ID
+    }
+
+    async fn detect(&self, shell: &dyn RemoteShell, input: &DetectInput) -> Detection {
+        let mut rec = Recorder::new(shell);
+        // A chosen container is an LXC; the `docker` group is as good as root.
+        let (applies, profile) = if input.ctid.is_some() || input.dedicated_user {
+            (false, None)
+        } else {
+            match detect_docker(&mut rec, input).await {
+                Ok(Some(p)) => (true, Some(p)),
+                Ok(None) => (false, None),
+                Err(Failed) => (true, None),
+            }
+        };
+        Detection {
+            detector: Self::ID.to_string(),
+            applies,
+            lacks_rights: rec.lacks_rights,
+            server_setup: rec.server_setup,
+            steps: rec.steps,
+            containers: Vec::new(),
+            profile,
+        }
+    }
+}
+
+#[async_trait]
+impl Detector for SnapDetector {
+    fn id(&self) -> &str {
+        Self::ID
+    }
+
+    async fn detect(&self, shell: &dyn RemoteShell, input: &DetectInput) -> Detection {
+        let mut rec = Recorder::new(shell);
+        // The snap's occ needs root.
+        let (applies, profile) = if input.ctid.is_some() || input.dedicated_user {
+            (false, None)
+        } else {
+            match detect_snap(&mut rec, input).await {
+                Ok(Some(p)) => (true, Some(p)),
+                Ok(None) => (false, None),
+                Err(Failed) => (true, None),
+            }
+        };
+        Detection {
+            detector: Self::ID.to_string(),
+            applies,
+            lacks_rights: rec.lacks_rights,
+            server_setup: rec.server_setup,
+            steps: rec.steps,
+            containers: Vec::new(),
+            profile,
+        }
+    }
+}
+
+/// `Ok(None)`: no Docker on the SSH host, or no Nextcloud container in it.
+async fn detect_docker(
+    rec: &mut Recorder<'_>,
+    input: &DetectInput,
+) -> Result<Option<NextcloudDirectProfile>, Failed> {
+    // 1. The running containers, as the SSH user or through `sudo -n`.
+    let plain = Exec {
+        host_sudo: false,
+        runtime: Runtime::Host,
+    };
+    let ps = ["docker", "ps", "--format", "{{.Names}} {{.Image}}"];
+    let mut out = rec.run_in("docker", plain.host(&ps)).await?;
+    if out.status == 127 {
+        // No Docker here: nothing to say.
+        return Ok(None);
+    }
+    let mut host_sudo = false;
+    if !out.success() {
+        let sudo = Exec {
+            host_sudo: true,
+            ..plain.clone()
+        };
+        out = rec.run_in("docker", sudo.host(&ps)).await?;
+        if !out.success() {
+            rec.step(
+                "docker",
+                CheckStatus::Warn,
+                format!(
+                    "Docker is here, but {} can't list its containers ({}): looking for \
+                     Nextcloud outside Docker",
+                    input.ssh.user,
+                    out.short_error()
+                ),
+            );
+            return Ok(None);
+        }
+        host_sudo = true;
+    }
+    let found: Vec<parse::DockerContainer> = parse::docker_ps(&out.stdout)
+        .into_iter()
+        .filter(parse::DockerContainer::is_nextcloud)
+        .collect();
+    let ct = match &found[..] {
+        [] => {
+            rec.step(
+                "docker",
+                CheckStatus::Ok,
+                "Docker runs no Nextcloud container here: looking further",
+            );
+            return Ok(None);
+        }
+        [one] => one.clone(),
+        many => {
+            let names: Vec<&str> = many.iter().map(|c| c.name.as_str()).collect();
+            return Err(rec.fail(
+                "docker",
+                format!(
+                    "found {} Nextcloud containers ({}); filebridge can't choose between them yet",
+                    many.len(),
+                    names.join(", ")
+                ),
+            ));
+        }
+    };
+    let aio = ct.name == parse::AIO_CONTAINER;
+    rec.step(
+        "docker",
+        CheckStatus::Ok,
+        format!(
+            "container {} ({}{}) is running",
+            ct.name,
+            ct.image,
+            if aio { ", Nextcloud AIO" } else { "" }
+        ),
+    );
+    let exec = Exec {
+        host_sudo,
+        runtime: Runtime::Docker {
+            container: ct.name.clone(),
+        },
+    };
+
+    // 2. Its volumes and bind mounts.
+    let out = rec
+        .run_in(
+            "mounts",
+            exec.host(&[
+                "docker",
+                "inspect",
+                "--format",
+                "{{json .Mounts}}",
+                &ct.name,
+            ]),
+        )
+        .await?;
+    let Some(mounts) = parse::docker_mounts(&out.stdout).filter(|_| out.success()) else {
+        return Err(rec.fail(
+            "mounts",
+            format!("`docker inspect` failed: {}", out.short_error()),
+        ));
+    };
+    rec.step(
+        "mounts",
+        CheckStatus::Ok,
+        format!("{} volume(s) or bind mount(s)", mounts.len()),
+    );
+
+    // 3. `datadirectory`, mapped to the host through the mount that holds it.
+    let install_dir = find_install_dir_in(rec, &exec, input, DOCKER_INSTALL_DIRS).await?;
+    let config_php = path_join(&install_dir, "config/config.php");
+    let data_dir = read_datadirectory(rec, &exec, &config_php)
+        .await?
+        .unwrap_or_else(|| path_join(&install_dir, "data"));
+    let Some(host_data_dir) = parse::docker_host_path(&mounts, &data_dir) else {
+        return Err(rec.fail(
+            "datadirectory",
+            format!(
+                "Nextcloud keeps its data in {data_dir}, inside the container (no volume or bind \
+                 mount holds it); direct mode writes on the host, so files would land where \
+                 Nextcloud doesn't look"
+            ),
+        ));
+    };
+    rec.step(
+        "datadirectory",
+        CheckStatus::Ok,
+        format!("{data_dir} in the container is {host_data_dir} on the host"),
+    );
+    let user = &input.nextcloud_user;
+    let host_files = path_join(&path_join(&host_data_dir, user), "files");
+    check_dirs(
+        rec,
+        [
+            (
+                exec.container(&["test", "-d", &data_dir]),
+                format!("{data_dir} (container)"),
+            ),
+            (
+                exec.host(&["test", "-d", &host_data_dir]),
+                format!("{host_data_dir} (host)"),
+            ),
+            (
+                exec.host(&["test", "-d", &host_files]),
+                format!("{host_files} (host)"),
+            ),
+        ],
+        &host_files,
+    )
+    .await?;
+    check_writable(rec, &exec, &input.ssh.user, &host_files).await?;
+
+    // 4–5. `occ` and its web user, run straight from `docker exec -u`.
+    let (occ, web_user) = find_occ(rec, &exec, &install_dir).await?;
+    let php = "php";
+    occ_answers(rec, &exec, &web_user, php, &occ, "docker exec").await?;
+
+    // 6. Owner: the web user's ids in the container are the host's (no user namespace).
+    let (uid, gid) = web_user_ids(rec, &exec, &web_user).await?;
+    let owner = Owner { uid, gid };
+    check_owner(
+        rec,
+        &exec,
+        owner,
+        &host_data_dir,
+        &format!("{web_user} {uid}:{gid} in the container"),
+    )
+    .await?;
+
+    Ok(Some(NextcloudDirectProfile {
+        ssh: input.ssh.clone(),
+        host_sudo,
+        runtime: exec.runtime,
+        install_dir,
+        php: php.to_string(),
+        // Not used: `docker exec -u` becomes the web user.
+        run_as: RunAs::Sudo,
+        web_user,
+        data_dir,
+        host_data_dir,
+        user: user.clone(),
+        owner,
+        dir_mode: NextcloudDirectProfile::DEFAULT_DIR_MODE.into(),
+        file_mode: NextcloudDirectProfile::DEFAULT_FILE_MODE.into(),
+        access: Access::Root,
+    }))
+}
+
+/// `Ok(None)`: the Nextcloud snap isn't installed on the SSH host.
+async fn detect_snap(
+    rec: &mut Recorder<'_>,
+    input: &DetectInput,
+) -> Result<Option<NextcloudDirectProfile>, Failed> {
+    // 1. The snap is installed (anyone may ask), then root or `sudo -n` for its occ.
+    let plain = Exec {
+        host_sudo: false,
+        runtime: Runtime::Snap,
+    };
+    let out = rec
+        .run_in("snap", plain.host(&["snap", "list", "nextcloud"]))
+        .await?;
+    if !out.success() {
+        return Ok(None);
+    }
+    let version = out
+        .stdout
+        .lines()
+        .nth(1)
+        .and_then(|l| l.split_whitespace().nth(1))
+        .unwrap_or("?")
+        .to_string();
+    rec.step(
+        "snap",
+        CheckStatus::Ok,
+        format!("the Nextcloud snap ({version}) is installed"),
+    );
+    let host_sudo = root_or_sudo(rec, input, "host").await?;
+    rec.step(
+        "host",
+        CheckStatus::Ok,
+        format!(
+            "the snap's occ runs {}",
+            if host_sudo {
+                "through sudo -n"
+            } else {
+                "as root"
+            }
+        ),
+    );
+    let exec = Exec {
+        host_sudo,
+        runtime: Runtime::Snap,
+    };
+
+    // 2. `datadirectory`, or the snap's own default.
+    let (data_dir, default) = match read_datadirectory(rec, &exec, SNAP_CONFIG_PHP).await? {
+        Some(d) => (d, false),
+        None => (SNAP_DATA_DIR.to_string(), true),
+    };
+    rec.step(
+        "datadirectory",
+        CheckStatus::Ok,
+        if default {
+            format!("{data_dir} (the snap's default)")
+        } else {
+            data_dir.clone()
+        },
+    );
+    let user = &input.nextcloud_user;
+    let files = path_join(&path_join(&data_dir, user), "files");
+    check_dirs(
+        rec,
+        [
+            (exec.host(&["test", "-d", &data_dir]), data_dir.clone()),
+            (exec.host(&["test", "-d", &files]), files.clone()),
+        ],
+        &files,
+    )
+    .await?;
+    check_writable(rec, &exec, &input.ssh.user, &files).await?;
+
+    // 3. The snap's `occ` answers.
+    occ_answers(
+        rec,
+        &exec,
+        "root",
+        "php",
+        crate::profile::SNAP_OCC,
+        "the snap's nextcloud.occ",
+    )
+    .await?;
+
+    // 4. Owner: as the data folder is (the snap runs Nextcloud as root).
+    let out = rec
+        .run_in("owner", exec.host(&["stat", "-c", "%u:%g", &data_dir]))
+        .await?;
+    let Some((uid, gid)) = parse::uid_gid(&out.stdout).filter(|_| out.success()) else {
+        return Err(rec.fail(
+            "owner",
+            format!(
+                "could not read the owner of {data_dir}: {}",
+                out.short_error()
+            ),
+        ));
+    };
+    let owner = Owner { uid, gid };
+    rec.step(
+        "owner",
+        CheckStatus::Ok,
+        format!(
+            "files will be owned by {}, like {data_dir} (the snap runs Nextcloud as root)",
+            owner.chown_spec()
+        ),
+    );
+
+    Ok(Some(NextcloudDirectProfile {
+        ssh: input.ssh.clone(),
+        host_sudo,
+        runtime: Runtime::Snap,
+        install_dir: SNAP_INSTALL_DIR.into(),
+        php: "php".into(),
+        // Not used: the snap's wrapper runs occ.
+        run_as: RunAs::Sudo,
+        web_user: "root".into(),
+        host_data_dir: data_dir.clone(),
+        data_dir,
+        user: user.clone(),
+        owner,
+        dir_mode: NextcloudDirectProfile::DEFAULT_DIR_MODE.into(),
+        file_mode: NextcloudDirectProfile::DEFAULT_FILE_MODE.into(),
+        access: Access::Root,
+    }))
+}
+
+/// Step `run-as` for a runtime that runs `occ` its own way (`docker exec -u`, the snap's
+/// wrapper): `occ status` answers. `how` names that way for the message.
+async fn occ_answers(
+    rec: &mut Recorder<'_>,
+    exec: &Exec,
+    web_user: &str,
+    php: &str,
+    occ: &str,
+    how: &str,
+) -> Result<(), Failed> {
+    let out = rec
+        .run_in(
+            "run-as",
+            exec.occ(
+                RunAs::Sudo,
+                web_user,
+                php,
+                occ,
+                &["status", "--output=json"],
+                false,
+            ),
+        )
+        .await?;
+    match parse::occ_status(&out.stdout) {
+        Some(st) if out.success() && st.installed => {
+            rec.step(
+                "run-as",
+                if st.maintenance {
+                    CheckStatus::Warn
+                } else {
+                    CheckStatus::Ok
+                },
+                format!(
+                    "Nextcloud {} answers through {how}{}",
+                    st.versionstring,
+                    if st.maintenance {
+                        "; maintenance mode is on"
+                    } else {
+                        ""
+                    }
+                ),
+            );
+            Ok(())
+        }
+        _ => Err(rec.fail(
+            "run-as",
+            format!("`occ status` did not work: {}", out.short_error()),
+        )),
     }
 }
 
@@ -486,30 +937,7 @@ async fn detect_host(
     input: &DetectInput,
 ) -> Result<NextcloudDirectProfile, Failed> {
     // 1. Root, or `sudo -n`: setting the owner of sent files needs it, and so does `su`.
-    let plain = Exec {
-        host_sudo: false,
-        runtime: Runtime::Host,
-    };
-    let out = rec.run_in("host", plain.host(&["id", "-u"])).await?;
-    let host_sudo = if out.success() && out.stdout.trim() == "0" {
-        false
-    } else {
-        let out = rec
-            .run_in("host", plain.host(&["sudo", "-n", "true"]))
-            .await?;
-        if !out.success() {
-            return Err(rec.fail_rights(
-                "host",
-                format!(
-                    "direct mode sets the owner of the files it sends, which needs root: log in \
-                     as root or allow `sudo -n` for {} ({})",
-                    input.ssh.user,
-                    out.short_error()
-                ),
-            ));
-        }
-        true
-    };
+    let host_sudo = root_or_sudo(rec, input, "host").await?;
     rec.step(
         "host",
         CheckStatus::Ok,
@@ -585,6 +1013,35 @@ async fn detect_host(
         file_mode: NextcloudDirectProfile::DEFAULT_FILE_MODE.into(),
         access: Access::Root,
     })
+}
+
+/// Step `id`'s check that the SSH user is root, or has `sudo -n`: whether host commands need it.
+async fn root_or_sudo(
+    rec: &mut Recorder<'_>,
+    input: &DetectInput,
+    id: &str,
+) -> Result<bool, Failed> {
+    let plain = Exec {
+        host_sudo: false,
+        runtime: Runtime::Host,
+    };
+    let out = rec.run_in(id, plain.host(&["id", "-u"])).await?;
+    if out.success() && out.stdout.trim() == "0" {
+        return Ok(false);
+    }
+    let out = rec.run_in(id, plain.host(&["sudo", "-n", "true"])).await?;
+    if !out.success() {
+        return Err(rec.fail_rights(
+            id,
+            format!(
+                "direct mode sets the owner of the files it sends, which needs root: log in as \
+                 root or allow `sudo -n` for {} ({})",
+                input.ssh.user,
+                out.short_error()
+            ),
+        ));
+    }
+    Ok(true)
 }
 
 /// A dedicated user on the machine Nextcloud runs on (ADR 0024): not root, in the web server's
@@ -829,8 +1286,8 @@ async fn detect_dedicated(
 /// Where Nextcloud runs, for messages.
 fn place(exec: &Exec) -> &'static str {
     match exec.runtime {
-        Runtime::ProxmoxLxc { .. } => "in the container",
-        Runtime::Host => "on this machine",
+        Runtime::ProxmoxLxc { .. } | Runtime::Docker { .. } => "in the container",
+        Runtime::Host | Runtime::Snap => "on this machine",
     }
 }
 
@@ -840,15 +1297,21 @@ async fn find_install_dir(
     exec: &Exec,
     input: &DetectInput,
 ) -> Result<String, Failed> {
+    find_install_dir_in(rec, exec, input, INSTALL_DIRS).await
+}
+
+/// Like [`find_install_dir`], over `candidates`.
+async fn find_install_dir_in(
+    rec: &mut Recorder<'_>,
+    exec: &Exec,
+    input: &DetectInput,
+    candidates: &[&str],
+) -> Result<String, Failed> {
     if let Some(d) = &input.install_dir {
         return Ok(d.trim_end_matches('/').to_string());
     }
     let mut argv = vec!["ls".to_string(), "-d".to_string()];
-    argv.extend(
-        INSTALL_DIRS
-            .iter()
-            .map(|d| format!("{d}/config/config.php")),
-    );
+    argv.extend(candidates.iter().map(|d| format!("{d}/config/config.php")));
     // `ls` fails for the missing candidates but lists the ones that exist.
     let out = rec.run_in("datadirectory", exec.container(&argv)).await?;
     let found = out.stdout.lines().map(str::trim).find(|l| !l.is_empty());
@@ -859,7 +1322,7 @@ async fn find_install_dir(
             format!(
                 "no config/config.php {} in {}; set the install directory by hand",
                 place(exec),
-                INSTALL_DIRS.join(", ")
+                candidates.join(", ")
             ),
         )),
     }

@@ -1,0 +1,2 @@
+Name       Version       Rev    Tracking       Publisher    Notes
+nextcloud  30.0.2snap1   45000  latest/stable  nextcloud**  -

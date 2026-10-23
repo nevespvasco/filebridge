@@ -1,0 +1,6 @@
+nextcloud-aio-apache nextcloud/aio-apache:latest
+nextcloud-aio-notify-push nextcloud/aio-notify-push:latest
+nextcloud-aio-nextcloud nextcloud/aio-nextcloud:latest
+nextcloud-aio-redis nextcloud/aio-redis:latest
+nextcloud-aio-database nextcloud/aio-postgresql:latest
+nextcloud-aio-mastercontainer nextcloud/all-in-one:latest

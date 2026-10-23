@@ -66,7 +66,16 @@ fn no_pct(shell: &FakeShell) {
             "pct list",
             Output::fail(127, "bash: line 1: pct: command not found\n"),
         )
-        .on("test -x /usr/sbin/pct", Output::fail(1, ""));
+        .on("test -x /usr/sbin/pct", Output::fail(1, ""))
+        // Nor Docker or the snap: Nextcloud is installed on the machine itself.
+        .on(
+            "docker ps --format '{{.Names}} {{.Image}}'",
+            Output::fail(127, "bash: line 1: docker: command not found\n"),
+        )
+        .on(
+            "snap list nextcloud",
+            Output::fail(127, "bash: line 1: snap: command not found\n"),
+        );
 }
 
 /// The reporter's setup: root over Tailscale straight into the Nextcloud LXC, which (like most

@@ -1,0 +1,3 @@
+nextcloud-app-1 nextcloud:31-apache
+nextcloud-db-1 mariadb:11
+nextcloud-redis-1 redis:alpine

@@ -417,6 +417,94 @@ pub fn scan_totals(out: &str) -> Option<ScanTotals> {
     })
 }
 
+/// A running Docker container, from `docker ps --format '{{.Names}} {{.Image}}'`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DockerContainer {
+    pub name: String,
+    pub image: String,
+}
+
+/// The container Nextcloud AIO runs Nextcloud itself in (its other containers are the master
+/// container, Apache, the database, Redis, …).
+pub const AIO_CONTAINER: &str = "nextcloud-aio-nextcloud";
+
+impl DockerContainer {
+    /// AIO's Nextcloud container, or one from an image named `nextcloud` (the official image,
+    /// `nextcloud:31-apache`, or a mirror's `…/nextcloud:tag`).
+    pub fn is_nextcloud(&self) -> bool {
+        if self.name == AIO_CONTAINER {
+            return true;
+        }
+        if self.name.starts_with("nextcloud-aio-") {
+            return false;
+        }
+        let repo = self.image.split('@').next().unwrap_or("");
+        let repo = match repo.rsplit_once(':') {
+            // A registry port (`host:5000/nextcloud`) is not a tag.
+            Some((r, tag)) if !tag.contains('/') => r,
+            _ => repo,
+        };
+        repo.rsplit('/').next() == Some("nextcloud")
+    }
+}
+
+pub fn docker_ps(out: &str) -> Vec<DockerContainer> {
+    out.lines()
+        .filter_map(|l| {
+            let (name, image) = l.trim().split_once(char::is_whitespace)?;
+            Some(DockerContainer {
+                name: name.to_string(),
+                image: image.trim().to_string(),
+            })
+        })
+        .collect()
+}
+
+/// One of a container's mounts, from `docker inspect --format '{{json .Mounts}}'`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DockerMount {
+    /// The host path (a bind mount's directory, or a volume's `_data`).
+    pub source: String,
+    /// Where the container sees it.
+    pub destination: String,
+}
+
+pub fn docker_mounts(out: &str) -> Option<Vec<DockerMount>> {
+    let v: serde_json::Value = serde_json::from_str(out.trim()).ok()?;
+    Some(
+        v.as_array()?
+            .iter()
+            .filter_map(|m| {
+                Some(DockerMount {
+                    source: m.get("Source")?.as_str()?.to_string(),
+                    destination: m.get("Destination")?.as_str()?.to_string(),
+                })
+            })
+            .filter(|m| m.source.starts_with('/') && m.destination.starts_with('/'))
+            .collect(),
+    )
+}
+
+/// The host path of container path `path`, through the mount that holds it (longest match).
+pub fn docker_host_path(mounts: &[DockerMount], path: &str) -> Option<String> {
+    mounts
+        .iter()
+        .filter_map(|m| {
+            let target = m.destination.trim_end_matches('/');
+            let rest = path.strip_prefix(target)?;
+            (rest.is_empty() || rest.starts_with('/')).then_some((m, rest))
+        })
+        .max_by_key(|(m, _)| m.destination.len())
+        .map(|(m, rest)| {
+            let rest = rest.trim_start_matches('/');
+            if rest.is_empty() {
+                m.source.trim_end_matches('/').to_string()
+            } else {
+                format!("{}/{rest}", m.source.trim_end_matches('/'))
+            }
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,5 +697,60 @@ mod tests {
                 errors: 0
             })
         );
+    }
+
+    #[test]
+    fn docker_containers_and_mounts() {
+        let ps = docker_ps(include_str!("../tests/fixtures/docker_ps_aio.txt"));
+        let nc: Vec<&str> = ps
+            .iter()
+            .filter(|c| c.is_nextcloud())
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(nc, ["nextcloud-aio-nextcloud"]);
+        let ps = docker_ps(include_str!("../tests/fixtures/docker_ps_official.txt"));
+        let nc: Vec<&str> = ps
+            .iter()
+            .filter(|c| c.is_nextcloud())
+            .map(|c| c.name.as_str())
+            .collect();
+        assert_eq!(nc, ["nextcloud-app-1"]);
+        for (image, yes) in [
+            ("nextcloud:31-apache", true),
+            ("nextcloud", true),
+            ("docker.io/library/nextcloud:30", true),
+            ("registry.lan:5000/nextcloud", true),
+            ("lscr.io/linuxserver/nextcloud:latest", true),
+            ("nextcloud/aio-mastercontainer:latest", false),
+            ("mariadb:11", false),
+        ] {
+            let c = DockerContainer {
+                name: "x".into(),
+                image: image.into(),
+            };
+            assert_eq!(c.is_nextcloud(), yes, "{image}");
+        }
+
+        let mounts =
+            docker_mounts(include_str!("../tests/fixtures/docker_mounts_aio.json")).unwrap();
+        assert_eq!(
+            docker_host_path(&mounts, "/mnt/ncdata/alice/files"),
+            Some("/var/lib/docker/volumes/nextcloud_aio_nextcloud_data/_data/alice/files".into())
+        );
+        assert_eq!(docker_host_path(&mounts, "/srv/other"), None);
+        let mounts = docker_mounts(include_str!(
+            "../tests/fixtures/docker_mounts_official.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            docker_host_path(&mounts, "/var/www/html/data"),
+            Some("/tank/ncdata".into()),
+            "the longest mount wins"
+        );
+        assert_eq!(
+            docker_host_path(&mounts, "/var/www/html/data2"),
+            Some("/srv/nextcloud/html/data2".into())
+        );
+        assert_eq!(docker_mounts("not json"), None);
     }
 }

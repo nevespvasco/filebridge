@@ -673,7 +673,9 @@
     "saved": "Destino “{name}” guardado.",
     "runtime": {
       "proxmox-lxc": "O Nextcloud corre num contentor deste anfitrião Proxmox.",
-      "host": "O Nextcloud corre nesta própria máquina (sem contentor Proxmox)."
+      "host": "O Nextcloud corre nesta própria máquina (sem contentor Proxmox).",
+      "docker": "O Nextcloud corre num contentor Docker nesta máquina (a imagem oficial ou o Nextcloud AIO).",
+      "snap": "O Nextcloud corre como snap nesta máquina."
     },
     "steps": {
       "ssh": "Ligação SSH",
@@ -686,7 +688,10 @@
       "occ": "Comando occ",
       "run-as": "Utilizador do servidor web",
       "owner": "Dono dos ficheiros",
-      "group": "Grupo do servidor web"
+      "group": "Grupo do servidor web",
+      "docker": "Contentor Docker",
+      "mounts": "Volumes do contentor",
+      "snap": "Snap do Nextcloud"
     },
     "done": "Concluir",
     "advancedHint": "só se a deteção o pedir",

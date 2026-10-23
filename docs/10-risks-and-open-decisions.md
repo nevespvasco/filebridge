@@ -12,7 +12,7 @@ interface.
 | Owner and permissions (`chown`) not supported over SFTP without root | Medium | Direct mode with a dedicated user in the right group, or remote `chown` after the send |
 | Code signing (macOS notarization, Windows SmartScreen) | Medium | Developer accounts; until then, builds for personal use only |
 | rclone licence (MIT) when distributing the binary | Low | Include the licence; no issue for MIT |
-| Differences between Nextcloud setups (Docker, AIO, Snap, LXC) | Medium | Start with the author's (LXC, via the Proxmox node or SSH into the LXC itself) and Nextcloud on the SSH host (VM, bare metal; ADR 0009); the detection wizard grows case by case |
+| Differences between Nextcloud setups (Docker, AIO, Snap, LXC) | Medium | Detected: Proxmox LXC (through the node or SSH into the LXC), Nextcloud on the SSH host (VM, bare metal; ADR 0009), Docker (official image), AIO and the snap ([05](05-integration-nextcloud.md#setups-supported)); Docker and snap detection is checked against fixtures only, not a real server yet |
 | Nextcloud scan slow on HDD | Low | Scan only changed paths; show "waiting for disk" instead of looking stuck |
 | Phones (Phase 4): librclone is experimental, Go cross-compiling, iOS background limits | Medium | See [11 — Mobile](11-mobile.md#risks); plan B is a native SFTP/WebDAV transport crate |
 

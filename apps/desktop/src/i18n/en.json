@@ -673,7 +673,9 @@
     "saved": "Destination “{name}” saved.",
     "runtime": {
       "proxmox-lxc": "Nextcloud runs in a container on this Proxmox host.",
-      "host": "Nextcloud runs on this machine itself (no Proxmox container)."
+      "host": "Nextcloud runs on this machine itself (no Proxmox container).",
+      "docker": "Nextcloud runs in a Docker container on this machine (the official image or Nextcloud AIO).",
+      "snap": "Nextcloud runs as a snap on this machine."
     },
     "steps": {
       "ssh": "SSH connection",
@@ -686,7 +688,10 @@
       "occ": "occ command",
       "run-as": "Web server user",
       "owner": "File owner",
-      "group": "Web server's group"
+      "group": "Web server's group",
+      "docker": "Docker container",
+      "mounts": "Container volumes",
+      "snap": "Nextcloud snap"
     },
     "done": "Done",
     "advancedHint": "only if the detection asks for it",

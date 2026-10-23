@@ -424,6 +424,8 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 "{}",
                 match res.detector.as_str() {
                     "host" => "Nextcloud runs on the SSH host itself",
+                    "docker" => "Nextcloud runs in a Docker container on the SSH host",
+                    "snap" => "Nextcloud runs as a snap on the SSH host",
                     _ => "Nextcloud runs in a container on the Proxmox node",
                 }
             );

@@ -25,7 +25,18 @@ pub enum Runtime {
     /// Nextcloud runs on the SSH host itself (its LXC or VM reached directly, or a bare-metal
     /// server): "container" commands are plain host commands, and both views of a path match.
     Host,
+    /// Nextcloud in Docker container `container` on the SSH host: the official image, or AIO's
+    /// `nextcloud-aio-nextcloud`. Container commands are `docker exec <container> argv…` (as the
+    /// container's root); `occ` is `docker exec -u <web user> <container> php occ …`. The data
+    /// folder reaches the host through a volume or bind mount.
+    Docker { container: String },
+    /// The Nextcloud snap on the SSH host: `occ` is `/snap/bin/nextcloud.occ`, run as root (the
+    /// snap runs Nextcloud as root); both views of a path match.
+    Snap,
 }
+
+/// The snap's `occ` wrapper, by its full path (`/snap/bin` is often not on a command's `PATH`).
+pub const SNAP_OCC: &str = "/snap/bin/nextcloud.occ";
 
 /// How to become the web-server user where Nextcloud runs, to run `occ`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,10 +135,21 @@ impl NextcloudDirectProfile {
                 )));
             }
         }
-        if self.runtime == Runtime::Host && self.host_data_dir != self.data_dir {
+        if matches!(self.runtime, Runtime::Host | Runtime::Snap)
+            && self.host_data_dir != self.data_dir
+        {
             return Err(IntegrationError::fatal(format!(
                 "Nextcloud runs on the SSH host, so host_data_dir {:?} must equal data_dir {:?}",
                 self.host_data_dir, self.data_dir
+            )));
+        }
+        if let Runtime::Docker { container } = &self.runtime
+            && (container.is_empty()
+                || container.starts_with('-')
+                || container.contains(['\0', '/', ' ']))
+        {
+            return Err(IntegrationError::fatal(format!(
+                "invalid Docker container name {container:?}"
             )));
         }
         if self.access == Access::Dedicated {
@@ -263,7 +285,7 @@ impl Exec {
     /// A command where Nextcloud runs: `pct exec <id> -- argv…` for an LXC, the host command
     /// itself for [`Runtime::Host`].
     pub fn container<S: AsRef<str>>(&self, argv: &[S]) -> String {
-        match self.runtime {
+        match &self.runtime {
             Runtime::ProxmoxLxc { ctid } => {
                 let ctid = ctid.to_string();
                 // `pct exec` runs argv directly (no shell inside the container).
@@ -271,7 +293,13 @@ impl Exec {
                 words.extend(argv.iter().map(AsRef::as_ref));
                 self.host(&words)
             }
-            Runtime::Host => self.host(argv),
+            Runtime::Docker { container } => {
+                // `docker exec` runs argv directly too, as the container's root.
+                let mut words: Vec<&str> = vec!["docker", "exec", container];
+                words.extend(argv.iter().map(AsRef::as_ref));
+                self.host(&words)
+            }
+            Runtime::Host | Runtime::Snap => self.host(argv),
         }
     }
 
@@ -287,6 +315,38 @@ impl Exec {
         args: &[S],
         stop_on_eof: bool,
     ) -> String {
+        match &self.runtime {
+            Runtime::Docker { container } => {
+                // As the web user straight from `docker exec`; `-i` hands the SSH channel to
+                // the watcher inside the container, which then sees its EOF.
+                let mut occ_argv: Vec<&str> = vec![php, occ];
+                occ_argv.extend(args.iter().map(AsRef::as_ref));
+                let mut words: Vec<&str> = vec!["docker", "exec"];
+                if stop_on_eof {
+                    words.push("-i");
+                }
+                words.extend(["-u", web_user, container.as_str()]);
+                let script;
+                if stop_on_eof {
+                    script = self::stop_on_eof(&occ_argv);
+                    words.extend(["sh", "-c", &script]);
+                } else {
+                    words.extend(&occ_argv);
+                }
+                return self.host(&words);
+            }
+            Runtime::Snap => {
+                // The snap's wrapper runs as root and becomes the snap's own web user itself.
+                let mut occ_argv: Vec<&str> = vec![SNAP_OCC];
+                occ_argv.extend(args.iter().map(AsRef::as_ref));
+                return if stop_on_eof {
+                    self.host(&["sh", "-c", &self::stop_on_eof(&occ_argv)])
+                } else {
+                    self.host(&occ_argv)
+                };
+            }
+            Runtime::ProxmoxLxc { .. } | Runtime::Host => {}
+        }
         let mut occ_argv: Vec<&str> = vec![php, occ];
         occ_argv.extend(args.iter().map(AsRef::as_ref));
         let line = || {
@@ -595,6 +655,74 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn docker_and_snap_commands() {
+        use crate::quote::tests::split;
+        let mut p = sample_host();
+        p.runtime = Runtime::Docker {
+            container: "nextcloud-aio-nextcloud".into(),
+        };
+        p.data_dir = "/mnt/ncdata".into();
+        p.host_data_dir = "/var/lib/docker/volumes/nextcloud_aio_nextcloud_data/_data".into();
+        p.install_dir = "/var/www/html".into();
+        assert!(p.validate().is_ok());
+        assert_eq!(
+            p.container_cmd(&["test", "-d", "/mnt/ncdata"]),
+            "docker exec nextcloud-aio-nextcloud test -d /mnt/ncdata"
+        );
+        assert_eq!(
+            p.occ_cmd(&["status", "--output=json"]),
+            "docker exec -u www-data nextcloud-aio-nextcloud php /var/www/html/occ status --output=json"
+        );
+        let path = "--path=alice/files/O'Neil";
+        let words = split(&p.occ_cmd_stop_on_eof(&["files:scan", path]));
+        assert_eq!(
+            words[..8],
+            [
+                "docker",
+                "exec",
+                "-i",
+                "-u",
+                "www-data",
+                "nextcloud-aio-nextcloud",
+                "sh",
+                "-c"
+            ]
+        );
+        assert_eq!(
+            words[8],
+            stop_on_eof(&["php", "/var/www/html/occ", "files:scan", path])
+        );
+        p.host_sudo = true;
+        assert!(
+            p.occ_cmd(&["status"])
+                .starts_with("sudo -n docker exec -u www-data ")
+        );
+        p.runtime = Runtime::Docker {
+            container: "-it".into(),
+        };
+        assert!(p.validate().is_err(), "not an option for docker exec");
+
+        let mut s = sample_host();
+        s.runtime = Runtime::Snap;
+        s.host_sudo = true;
+        assert_eq!(
+            s.occ_cmd(&["status", "--output=json"]),
+            "sudo -n /snap/bin/nextcloud.occ status --output=json"
+        );
+        assert_eq!(
+            split(&s.occ_cmd_stop_on_eof(&["files:scan", path])),
+            [
+                "sudo",
+                "-n",
+                "sh",
+                "-c",
+                &stop_on_eof(&[SNAP_OCC, "files:scan", path])
+            ]
+        );
+        assert_eq!(s.container_cmd(&["test", "-d", "/x"]), "sudo -n test -d /x");
+    }
+
+    #[test]
     fn settings_json_shape() {
         let s = NextcloudSettings::Direct(Box::new(sample()));
         let v = serde_json::to_value(&s).unwrap();
@@ -608,6 +736,19 @@ pub(crate) mod tests {
         let v = serde_json::to_value(&h).unwrap();
         assert_eq!(v["runtime"], serde_json::json!({ "kind": "host" }));
         assert_eq!(serde_json::from_value::<NextcloudSettings>(v).unwrap(), h);
+
+        let d = serde_json::to_value(Runtime::Docker {
+            container: "nextcloud".into(),
+        })
+        .unwrap();
+        assert_eq!(
+            d,
+            serde_json::json!({ "kind": "docker", "container": "nextcloud" })
+        );
+        assert_eq!(
+            serde_json::to_value(Runtime::Snap).unwrap(),
+            serde_json::json!({ "kind": "snap" })
+        );
     }
 
     #[test]

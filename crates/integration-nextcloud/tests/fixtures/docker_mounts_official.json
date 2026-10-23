@@ -1,0 +1,1 @@
+[{"Type":"bind","Source":"/srv/nextcloud/html","Destination":"/var/www/html","Mode":"","RW":true,"Propagation":"rprivate"},{"Type":"bind","Source":"/tank/ncdata","Destination":"/var/www/html/data","Mode":"","RW":true,"Propagation":"rprivate"}]

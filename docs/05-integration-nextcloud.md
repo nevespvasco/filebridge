@@ -110,10 +110,24 @@ the host follow it, so the panel shows which setup was found.
 v1 targets **Nextcloud in a Proxmox LXC** (the author's setup), reached either through the Proxmox
 node (`LxcDetector`, `Runtime::ProxmoxLxc`) or directly over SSH, and more generally **Nextcloud
 on the SSH host** — an LXC, a VM or a bare-metal server with a package or tarball install
-(`HostDetector`, `Runtime::Host`; [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md)). Docker, AIO
-and Snap differ in `occ` invocation and data paths; the detector grows case by case (see
-[10 — Risks](10-risks-and-open-decisions.md)). Detection is structured as a list of `Detector`s,
-tried until one applies, so adding `DockerDetector` doesn't change the wizard.
+(`HostDetector`, `Runtime::Host`; [ADR 0009](adr/0009-nextcloud-on-the-ssh-host.md)), and
+**Docker, AIO and the snap** on the SSH host. Detection is a list of `Detector`s tried in order
+until one applies — Proxmox node, Docker, snap, then Nextcloud installed on the host — so each
+of these was added without changing the wizard:
+
+| Setup | Found by | `occ` | Data folder (container → host) | Owner of sent files |
+|---|---|---|---|---|
+| Proxmox LXC | `pct list` | `pct exec <id> -- su/sudo -u www-data php occ` | `datadirectory`, through the `mpN` bind mount | the container's web user through the idmap (`100033`) |
+| Installed on the host | (the fallback) | `su`/`sudo -u www-data php occ` | `datadirectory` (or `<install>/data`), same path | the web user (`33:33`) |
+| Docker, official image | `docker ps`: an image named `nextcloud` | `docker exec -u www-data <container> php /var/www/html/occ` | `datadirectory` (`/var/www/html/data`), through the volume or bind mount that holds it (`docker inspect` `.Mounts`, longest match) | the web user's ids in the container (`33:33`; no user namespace) |
+| Nextcloud AIO | `docker ps`: the container `nextcloud-aio-nextcloud` (AIO's other containers are left out) | as Docker | `/mnt/ncdata` → the `nextcloud_aio_nextcloud_data` volume (or `NEXTCLOUD_DATADIR`'s bind mount) | as Docker; AIO's data folder is `33:0`, so the owner check warns |
+| Snap | `snap list nextcloud` | `/snap/bin/nextcloud.occ`, as root | `datadirectory` from `/var/snap/nextcloud/current/nextcloud/config/config.php`, else `/var/snap/nextcloud/common/nextcloud/data` | the data folder's own owner (`0:0`: the snap runs Nextcloud as root) |
+
+Docker needs root or the `docker` group (`docker ps` is retried with `sudo -n`); Docker present
+but unusable is a warning and detection looks further. Long `occ` commands in Docker run as
+`docker exec -i … sh -c '<watcher>'`, so the scan still dies with the SSH connection. Not yet:
+choosing between several Nextcloud containers on one host (detection stops and names them),
+and Docker with user-namespace remapping (the owner check warns).
 
 The wizard lives in the plugin (`Nextcloud::set_up`): it detects over the integration's own
 `ShellConnector` (so it is tested with the fake shell) and builds the whole profile: SFTP to the

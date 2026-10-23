@@ -30,6 +30,11 @@ const STUBS: &[(&str, &str)] = &[
         "while [ $# -gt 0 ]; do case \"$1\" in -n) shift;; -u) shift 2;; *) break;; esac; done\nexec \"$@\"\n",
     ),
     ("php", "for a in \"$@\"; do printf '%s\\0' \"$a\"; done\n"),
+    // docker exec [-i] [-u user] <container> argv…  (runs argv directly, no shell)
+    (
+        "docker",
+        "[ \"$1\" = exec ] || exit 92\nshift\nwhile [ $# -gt 0 ]; do case \"$1\" in -i) shift;; -u) shift 2;; *) break;; esac; done\nshift\nexec \"$@\"\n",
+    ),
 ];
 
 fn stubs(dir: &Path) {
@@ -61,6 +66,16 @@ fn all_profiles() -> Vec<NextcloudDirectProfile> {
     // A dedicated user (ADR 0024): the watcher runs outside `sudo`, which runs only `php occ`.
     // (The stub `sudo` execs its command, so this proves the plumbing, not sudo's relaying.)
     out.push(profile(Runtime::Host, RunAs::SudoRule, false));
+    // Docker (the official image, AIO): `docker exec -i -u www-data <container> sh -c …`.
+    for host_sudo in [false, true] {
+        out.push(profile(
+            Runtime::Docker {
+                container: "nextcloud-aio-nextcloud".into(),
+            },
+            RunAs::Sudo,
+            host_sudo,
+        ));
+    }
     out
 }
 
@@ -145,8 +160,14 @@ fn occ_receives_exact_arguments() {
         (RunAs::Sudo, true),
         (RunAs::SudoRule, false),
     ];
-    // Through `pct exec` on a Proxmox node, and on the machine Nextcloud runs on.
-    let runtimes = [Runtime::ProxmoxLxc { ctid: 105 }, Runtime::Host];
+    // Through `pct exec` on a Proxmox node, on the machine Nextcloud runs on, and in Docker.
+    let runtimes = [
+        Runtime::ProxmoxLxc { ctid: 105 },
+        Runtime::Host,
+        Runtime::Docker {
+            container: "nextcloud".into(),
+        },
+    ];
     for (runtime, (run_as, host_sudo)) in runtimes
         .iter()
         .flat_map(|r| cases.iter().map(move |c| (r.clone(), *c)))
@@ -155,7 +176,7 @@ fn occ_receives_exact_arguments() {
         assert_eq!(
             p.occ_cmd(&["status"]).starts_with("pct ")
                 || p.occ_cmd(&["status"]).starts_with("sudo -n pct "),
-            runtime != Runtime::Host,
+            matches!(runtime, Runtime::ProxmoxLxc { .. }),
             "{runtime:?}"
         );
         for arg in nasty {
