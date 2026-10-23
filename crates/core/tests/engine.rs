@@ -1004,6 +1004,7 @@ async fn folders_are_browsed_checked_and_sent_into() {
         refused.is_err(),
         "a target folder the destination would rename"
     );
+    assert_eq!(s.engine.last_target_dir(&s.profile_id).await.unwrap(), None);
 
     // Sent into a folder that doesn't exist yet: the send creates it.
     let job = ready_job(
@@ -1017,6 +1018,15 @@ async fn folders_are_browsed_checked_and_sent_into() {
     .await;
     assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
     assert!(dest_files(&s.dest).contains(&"2019/Novas/Acme/Fotos/Inverno.jpg".to_owned()));
+    // The next transfer to this profile is offered the same folder (D11).
+    assert_eq!(
+        s.engine
+            .last_target_dir(&s.profile_id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("2019/Novas")
+    );
     let changed = s.integration.changed.lock().unwrap().clone();
     assert!(
         changed.iter().all(|p| p.starts_with("2019/Novas/")),

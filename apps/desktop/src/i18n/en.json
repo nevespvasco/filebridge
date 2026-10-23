@@ -1105,7 +1105,8 @@
     "dest": {
       "sendInto": "Send into:",
       "change": "Change…",
-      "root": "Use the root"
+      "root": "Use the root",
+      "lastUsed": "same as the last transfer here"
     }
   },
   "home": {

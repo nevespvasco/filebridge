@@ -138,6 +138,11 @@ ALTER TABLE profiles ADD COLUMN deleted_at INTEGER;
     r#"
 ALTER TABLE jobs ADD COLUMN error_code TEXT;
 "#,
+    // 9: the folder under the profile root that the last transfer to it was sent into (NULL =
+    // the root), which the wizard preselects next time (docs/design/specs/D11).
+    r#"
+ALTER TABLE profiles ADD COLUMN last_target_dir TEXT;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

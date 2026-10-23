@@ -48,6 +48,11 @@ export const commands = {
 	 *  libraries are listed in `containers`.
 	 */
 	addImmich: (req: ImmichRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_immich", { req })),
+	/**
+	 *  The folder the last transfer to a profile was sent into (`None` = its root, none
+	 *  yet, or one its name rules no longer accept), which wizard step 2 preselects.
+	 */
+	lastTargetDir: (profileId: string) => typedError<string | null, ErrorBody>(__TAURI_INVOKE("last_target_dir", { profileId })),
 	/**  A draft job; nothing is read from the sources yet. */
 	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
@@ -194,7 +199,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 25 as const;
+export const PROTOCOL_VERSION = 26 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 

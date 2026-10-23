@@ -106,6 +106,13 @@ impl Operations for EngineOperations {
         self.engine.delete_profile(&id).await.map_err(to_error)
     }
 
+    async fn last_target_dir(&self, profile_id: String) -> Res<Option<String>> {
+        self.engine
+            .last_target_dir(&profile_id)
+            .await
+            .map_err(to_error)
+    }
+
     async fn test_profile(&self, id: String) -> Res<ProfileTest> {
         self.engine.test_profile(&id).await.map_err(to_error)
     }

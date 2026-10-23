@@ -66,7 +66,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///     destination pauses the job).
 /// 24: `add_immich` (ADR 0020).
 /// 25: `service_log` (D07).
-pub const PROTOCOL_VERSION: u32 = 25;
+/// 26: `last_target_dir` (D11).
+pub const PROTOCOL_VERSION: u32 = 26;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

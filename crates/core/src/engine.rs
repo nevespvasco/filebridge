@@ -1025,12 +1025,25 @@ impl Engine {
     pub async fn start(self: &Arc<Self>, job_id: &str) -> Result<()> {
         {
             let mut job = self.begin(job_id, Op::Start).await?;
+            let mut sent_into = None;
             if job.state() == JobState::Ready {
                 let row = self.store.get_job(job_id).await?;
                 let profile = self.get_profile(&row.profile_id).await?;
                 self.plan_destinations(job_id, &profile).await?;
+                if JobKind::parse(&row.kind)? == JobKind::Transfer {
+                    let options: SendOptions =
+                        serde_json::from_value(row.options).unwrap_or_default();
+                    sent_into = Some((row.profile_id, options.target_dir));
+                }
             }
             job.go(JobState::Transferring, None).await?;
+            // The wizard preselects this folder for the next transfer to the profile (D11). A
+            // memory, not a stage: failing to write it never stops the send.
+            if let Some((profile_id, dir)) = sent_into
+                && let Err(e) = self.store.set_last_target_dir(&profile_id, dir).await
+            {
+                tracing::warn!(job = job_id, "could not remember the target folder: {e}");
+            }
         }
         self.spawn_run(job_id).await;
         Ok(())

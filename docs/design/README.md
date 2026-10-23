@@ -88,6 +88,7 @@ land its own migration first; these labels don't assume any number.
 | M-profile-test | `profiles.last_test`, `profiles.last_test_at`, `profiles.last_good_test` | D03 |
 | M-entry-index | indexes `manifest_entries(job_id, verify_state)`, `(job_id, size, idx)`, `issues(job_id, entry_idx)`, `events(kind, id)` | D05, D07, D08 |
 | M-job-label | `jobs.label`, `jobs.again_of`, `jobs.reclaim_dismissed_at`, `jobs.reclaim_check`; `issues.carried_over`; indexes `jobs(state, created_at)`, `jobs(profile_id, created_at)` | D06, D10 |
+| M-last-target (9) | `profiles.last_target_dir` | D11 |
 
 `manifest_entries.mtime` and `hash`/`hash_algo` already exist. D05 starts writing the hash, and
 D10 starts writing mtime; neither needs a migration. No migration edits a shipped one (rule in
@@ -120,6 +121,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `dismiss_reclaim(job_id, dismissed)` | new | D10 |
 | `browse(target, dir, prefix) -> BrowseResult` | new | D11 |
 | `check_folder_name(target, name) -> FolderNameCheck` | new | D11 |
+| `last_target_dir(profile_id) -> Option<String>` | new (protocol 26) | D11 |
 | `create_repair_job(profile_id, dir) -> String` | new (protocol 16), Phase 2 | [04](../04-name-correction.md#repair-destination-mode) |
 | `set_profile_password(profile_id, password) -> Profile` | new (protocol 17), Phase 2 | [ADR 0004](../adr/0004-os-keyring-secrets.md) |
 | `add_nextcloud_webdav(req) -> DetectNextcloudResponse` | new (protocol 18), Phase 2 | [05](../05-integration-nextcloud.md) |

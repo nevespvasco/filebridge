@@ -9,6 +9,7 @@ import PreflightList from "@/components/PreflightList.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
+import { api } from "@/lib/api";
 import { request } from "@/lib/requests";
 import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
 import { useWizard } from "@/stores/wizard";
@@ -25,10 +26,30 @@ onMounted(async () => {
 });
 
 function choose(p: Profile_Serialize) {
-  // A folder of another destination means nothing here.
-  if (wizard.profileId !== p.id) wizard.options = { ...wizard.options, target_dir: null };
+  // A folder of another destination means nothing here; the one this destination's last
+  // transfer went into is offered instead (docs/design/specs/D11).
+  if (wizard.profileId !== p.id) {
+    wizard.options = { ...wizard.options, target_dir: null };
+    void preselectFolder(p.id);
+  }
   wizard.profileId = p.id;
   if (!profiles.tests[p.id]) void profiles.test(p.id);
+}
+
+/** The folder that was preselected because the last transfer to this destination went there. */
+const remembered = ref<string | null>(null);
+async function preselectFolder(profileId: string) {
+  remembered.value = null;
+  try {
+    const dir = await api.lastTargetDir(profileId);
+    // Only if the user hasn't moved on or picked a folder while it was asked.
+    if (dir && wizard.profileId === profileId && wizard.options.target_dir == null) {
+      wizard.options = { ...wizard.options, target_dir: dir };
+      remembered.value = dir;
+    }
+  } catch {
+    // A suggestion only: without it the transfer goes to the root, as before.
+  }
 }
 
 function onSaved(p: Profile_Serialize) {
@@ -103,6 +124,7 @@ const details = computed(() => [
     <div v-if="selectedProfile && !creating" class="card into">
       <span class="small muted">{{ $t("step.dest.sendInto") }}</span>
       <span class="path">{{ trimEnd(selectedProfile.destination.root, "/") }}/{{ wizard.options.target_dir ?? "" }}</span>
+      <span v-if="remembered && wizard.options.target_dir === remembered" class="small muted">({{ $t("step.dest.lastUsed") }})</span>
       <button class="btn btn-small" @click="browsing = true"><AppIcon name="reveal" /> {{ $t("step.dest.change") }}</button>
       <button v-if="wizard.options.target_dir" class="btn btn-small" @click="chooseFolder('')">{{ $t("step.dest.root") }}</button>
     </div>

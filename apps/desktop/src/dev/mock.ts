@@ -405,6 +405,8 @@ function spaceOf(id: string) {
 }
 /** Why each destination's last space check failed. */
 const lastError = new Map<string, string>();
+/** The folder each profile's last transfer went into (D11), as the engine records it at Start. */
+const lastTargetDir = new Map<string, string | null>([["p-nc", "Fotos/2019"]]);
 function storageOf(id: string): StorageView {
   const at = checkedAt.get(id) ?? null;
   const disk = spaceOf(id);
@@ -647,6 +649,7 @@ const handlers: Handlers = {
     if (i >= 0) profiles.splice(i, 1);
     return null;
   },
+  lastTargetDir: (a) => lastTargetDir.get(a.profileId as string) ?? null,
   testProfile: async (a) => {
     await sleep(600);
     const p = profiles.find((x) => x.id === a.id);
@@ -1023,6 +1026,7 @@ const handlers: Handlers = {
   start: (a) => {
     const job = find(a.jobId);
     allow("start", job);
+    if (job.state === "ready" && job.kind !== "repair") lastTargetDir.set(job.profile_id, job.options.target_dir ?? null);
     setState(job, "transferring");
     sendOrWait(job);
     return null;
