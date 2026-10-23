@@ -723,6 +723,8 @@
       "login": "From your next login the copy engine runs before you open filebridge, and unfinished sends continue by themselves.",
       "now": "The copy engine running now keeps running: nothing stops.",
       "undo": "You can turn it off here at any time.",
+      "agentPinned": "It also tells the engine where your SSH agent is, so destinations that sign in with it keep working.",
+      "agentMissing": "Your SSH agent moves at each login, so the engine started this way can't reach it: SFTP and Nextcloud destinations that sign in with it will fail. Give them filebridge's own key (Destinations), or open filebridge before they send.",
       "confirm": "Turn on",
       "confirmUpdate": "Update"
     },

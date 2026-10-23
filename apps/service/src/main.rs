@@ -103,6 +103,9 @@ async fn main() -> Result<()> {
                     (true, true, true) => "enabled",
                 };
                 println!("{}: {state}\n\n{}", unit.path, unit.contents);
+                if let Some(hint) = unit::agent_hint(unit.agent) {
+                    eprintln!("{hint}");
+                }
             }
             Ok(())
         }

@@ -177,6 +177,7 @@ mod imp {
                 current: false,
                 systemd,
                 contents: "[Service]\nExecStart=\"/usr/bin/filebridge-service\" run\n".into(),
+                agent: filebridge_ipc::UnitAgent::Missing,
             }
         }
 

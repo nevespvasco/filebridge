@@ -4,12 +4,18 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use filebridge_ipc::UserUnit;
+use filebridge_ipc::{UnitAgent, UserUnit};
 
 pub const UNIT_NAME: &str = "filebridge-service.service";
 
-/// The unit file for `exe`, passing on explicit `--data-dir` / `--rclone`.
-pub fn render(exe: &Path, data_dir: Option<&Path>, rclone: Option<&Path>) -> String {
+/// The unit file for `exe`, passing on explicit `--data-dir` / `--rclone`, and the SSH agent's
+/// socket when [`Agent`] pins it.
+pub fn render(
+    exe: &Path,
+    data_dir: Option<&Path>,
+    rclone: Option<&Path>,
+    agent: Option<&str>,
+) -> String {
     let mut cmd = vec![quote(exe)];
     if let Some(d) = data_dir {
         cmd.push("--data-dir".into());
@@ -20,12 +26,16 @@ pub fn render(exe: &Path, data_dir: Option<&Path>, rclone: Option<&Path>) -> Str
         cmd.push(quote(r));
     }
     cmd.push("run".into());
+    let env = agent
+        .map(|sock| format!("Environment=\"SSH_AUTH_SOCK={sock}\"\n"))
+        .unwrap_or_default();
     format!(
         "[Unit]\n\
          Description=filebridge background service (file transfers)\n\
          After=network-online.target\n\
          \n\
          [Service]\n\
+         {env}\
          ExecStart={}\n\
          Restart=on-failure\n\
          RestartSec=5\n\
@@ -36,14 +46,80 @@ pub fn render(exe: &Path, data_dir: Option<&Path>, rclone: Option<&Path>) -> Str
     )
 }
 
-/// systemd quoting: double quotes, with `\` and `"` escaped; `%` doubled (specifier).
+/// systemd quoting: double quotes around [`escape`].
 fn quote(p: &Path) -> String {
-    let s = p.to_string_lossy();
-    let escaped = s
-        .replace('\\', "\\\\")
+    format!("\"{}\"", escape(&p.to_string_lossy()))
+}
+
+/// For inside systemd double quotes: `\` and `"` escaped; `%` doubled (specifier).
+fn escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
         .replace('"', "\\\"")
-        .replace('%', "%%");
-    format!("\"{escaped}\"")
+        .replace('%', "%%")
+}
+
+/// How the engine the unit starts finds the SSH agent. The unit's process starts with the user
+/// manager's environment, which often lacks the session's `SSH_AUTH_SOCK`, and even when it has
+/// it the unit may start at login before the agent sets it. So a socket at a fixed per-user path
+/// (`$XDG_RUNTIME_DIR/…`, as GNOME Keyring, gcr, gpg-agent and `ssh-agent.socket` use, or under
+/// home) is written into the unit, as `%t/…` or `%h/…`. The path only, never a key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Agent {
+    pub reach: UnitAgent,
+    /// With [`UnitAgent::Pinned`]: the socket as a unit value, `%t/keyring/ssh`.
+    pin: Option<String>,
+}
+
+impl Agent {
+    fn current() -> Self {
+        let var = |name| std::env::var_os(name).map(PathBuf::from);
+        // A variable left over from a dead agent is no agent.
+        let sock = var("SSH_AUTH_SOCK").filter(|p| p.exists());
+        Self::decide(
+            sock.as_deref(),
+            var("XDG_RUNTIME_DIR").as_deref(),
+            var("HOME").as_deref(),
+            &manager_environment(),
+        )
+    }
+
+    fn decide(
+        sock: Option<&Path>,
+        runtime_dir: Option<&Path>,
+        home: Option<&Path>,
+        manager_env: &str,
+    ) -> Self {
+        let Some(sock) = sock else {
+            return Self {
+                reach: UnitAgent::None,
+                pin: None,
+            };
+        };
+        let pin = [("%t", runtime_dir), ("%h", home)]
+            .into_iter()
+            .find_map(|(specifier, base)| {
+                let rel = sock.strip_prefix(base?).ok()?;
+                let plain = rel.components().next().is_some()
+                    && rel
+                        .components()
+                        .all(|c| matches!(c, std::path::Component::Normal(_)));
+                plain
+                    .then(|| rel.to_str())
+                    .flatten()
+                    .map(|rel| format!("{specifier}/{}", escape(rel)))
+            });
+        let reach = if pin.is_some() {
+            UnitAgent::Pinned
+        } else if manager_env
+            .lines()
+            .any(|l| l.starts_with("SSH_AUTH_SOCK="))
+        {
+            UnitAgent::Manager
+        } else {
+            UnitAgent::Missing
+        };
+        Self { reach, pin }
+    }
 }
 
 fn unit_path() -> Result<PathBuf> {
@@ -84,7 +160,8 @@ pub fn show(data_dir: Option<&Path>, rclone: Option<&Path>) -> Result<UserUnit> 
     }
     let exe = this_exe()?;
     let path = unit_path()?;
-    let contents = render(&exe, data_dir, rclone);
+    let agent = Agent::current();
+    let contents = render(&exe, data_dir, rclone, agent.pin.as_deref());
     let on_disk = std::fs::read_to_string(&path).ok();
     let answers = |args: &[&str]| {
         std::process::Command::new("systemctl")
@@ -105,6 +182,7 @@ pub fn show(data_dir: Option<&Path>, rclone: Option<&Path>) -> Result<UserUnit> 
         current: on_disk.as_deref() == Some(contents.as_str()),
         systemd,
         contents,
+        agent: agent.reach,
     })
 }
 
@@ -115,7 +193,8 @@ pub fn install(data_dir: Option<&Path>, rclone: Option<&Path>, start: bool) -> R
     let exe = this_exe()?;
     let path = unit_path()?;
     std::fs::create_dir_all(path.parent().expect("has a parent"))?;
-    std::fs::write(&path, render(&exe, data_dir, rclone))
+    let agent = Agent::current();
+    std::fs::write(&path, render(&exe, data_dir, rclone, agent.pin.as_deref()))
         .with_context(|| format!("write {}", path.display()))?;
     systemctl(&["daemon-reload"])?;
     if start {
@@ -124,10 +203,7 @@ pub fn install(data_dir: Option<&Path>, rclone: Option<&Path>, start: bool) -> R
         systemctl(&["enable", UNIT_NAME])?;
     }
     println!("installed {}", path.display());
-    if let Some(hint) = agent_hint(
-        std::env::var_os("SSH_AUTH_SOCK").is_some(),
-        &manager_environment(),
-    ) {
+    if let Some(hint) = agent_hint(agent.reach) {
         eprintln!("{hint}");
     }
     Ok(())
@@ -144,16 +220,16 @@ fn manager_environment() -> String {
         .unwrap_or_default()
 }
 
-/// The unit only sees the user manager's environment: without `SSH_AUTH_SOCK` there, SSH
-/// destinations that sign in with the agent fail under it, though they work from this shell.
-fn agent_hint(shell_has_agent: bool, manager_env: &str) -> Option<String> {
-    let manager_has_agent = manager_env.lines().any(|l| l.starts_with("SSH_AUTH_SOCK="));
-    (shell_has_agent && !manager_has_agent).then(|| {
+/// With [`UnitAgent::Missing`], SSH destinations that sign in with the agent fail under the
+/// unit, though they work from this shell: says how to fix it.
+pub fn agent_hint(reach: UnitAgent) -> Option<String> {
+    (reach == UnitAgent::Missing).then(|| {
         format!(
-            "! the service can't reach your SSH agent: SSH destinations that sign in with it \
-             will fail. Run `systemctl --user import-environment SSH_AUTH_SOCK` and \
-             `systemctl --user restart {UNIT_NAME}` (again after each login, or set it in \
-             ~/.config/environment.d/), or give those destinations filebridge's own key"
+            "! the service can't reach your SSH agent (its socket changes at each login and \
+             systemd's user manager doesn't have it): SSH destinations that sign in with it \
+             will fail. After each login run `systemctl --user import-environment \
+             SSH_AUTH_SOCK` and `systemctl --user restart {UNIT_NAME}`, or give those \
+             destinations filebridge's own key"
         )
     })
 }
@@ -182,6 +258,7 @@ mod tests {
             Path::new("/home/u/My Apps/filebridge-service"),
             Some(Path::new("/data/50%")),
             None,
+            None,
         );
         assert!(unit.contains(
             "ExecStart=\"/home/u/My Apps/filebridge-service\" --data-dir \"/data/50%%\" run\n"
@@ -189,21 +266,61 @@ mod tests {
         assert!(unit.contains("Restart=on-failure"));
         assert!(unit.contains("WantedBy=default.target"));
         assert!(!unit.contains("--rclone"));
+        assert!(!unit.contains("Environment="));
+    }
+
+    fn decide(sock: Option<&str>, manager_env: &str) -> Agent {
+        Agent::decide(
+            sock.map(Path::new),
+            Some(Path::new("/run/user/1000")),
+            Some(Path::new("/home/u")),
+            manager_env,
+        )
     }
 
     #[test]
-    fn warns_when_the_user_manager_has_no_agent() {
-        let env = "HOME=/home/u\nPATH=/usr/bin\n";
-        assert!(
-            agent_hint(true, env)
-                .unwrap()
-                .contains("import-environment SSH_AUTH_SOCK")
+    fn a_fixed_per_user_agent_socket_is_written_into_the_unit() {
+        let gnome = decide(Some("/run/user/1000/keyring/ssh"), "");
+        assert_eq!(gnome.reach, UnitAgent::Pinned);
+        let unit = render(
+            Path::new("/usr/bin/filebridge-service"),
+            None,
+            None,
+            gnome.pin.as_deref(),
         );
-        assert_eq!(
-            agent_hint(true, &format!("{env}SSH_AUTH_SOCK=/run/user/1000/ssh\n")),
-            None
-        );
-        // No agent in this shell either: nothing the unit could be given.
-        assert_eq!(agent_hint(false, env), None);
+        assert!(unit.contains(
+            "[Service]\nEnvironment=\"SSH_AUTH_SOCK=%t/keyring/ssh\"\nExecStart=\"/usr/bin/filebridge-service\" run\n"
+        ));
+        // Pinned even when the user manager has it now: at login the unit may start first.
+        let home = decide(Some("/home/u/.1password/agent.sock"), "SSH_AUTH_SOCK=/x\n");
+        assert_eq!(home.pin.as_deref(), Some("%h/.1password/agent.sock"));
+        // `%` would be a specifier, `"` would end the value.
+        let odd = decide(Some("/run/user/1000/50%/a\"b"), "");
+        assert_eq!(odd.pin.as_deref(), Some("%t/50%%/a\\\"b"));
+    }
+
+    #[test]
+    fn an_agent_that_moves_at_each_login_comes_from_the_user_manager_or_is_missing() {
+        for sock in [
+            "/tmp/ssh-XXXXabcd/agent.1234",
+            "/run/user/1000/../1001/ssh",
+            "/run/user/1000",
+        ] {
+            let manager = decide(Some(sock), "PATH=/usr/bin\nSSH_AUTH_SOCK=/tmp/x\n");
+            assert_eq!(manager.reach, UnitAgent::Manager, "{sock}");
+            assert_eq!(manager.pin, None);
+            assert_eq!(agent_hint(manager.reach), None);
+            let missing = decide(Some(sock), "PATH=/usr/bin\n");
+            assert_eq!(missing.reach, UnitAgent::Missing, "{sock}");
+            assert!(
+                agent_hint(missing.reach)
+                    .unwrap()
+                    .contains("import-environment SSH_AUTH_SOCK")
+            );
+        }
+        // No agent here either: nothing the unit could be given, nothing to warn about.
+        let none = decide(None, "");
+        assert_eq!((none.reach, none.pin), (UnitAgent::None, None));
+        assert_eq!(agent_hint(UnitAgent::None), None);
     }
 }

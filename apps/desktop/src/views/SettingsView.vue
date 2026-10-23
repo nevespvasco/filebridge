@@ -47,7 +47,8 @@ const autostartConsequences = computed(() => {
   if (autostartAsk.value === "off") {
     return [t("settings.autostartOff.remove", at), t("settings.autostartOff.login"), t("settings.autostartOff.now")];
   }
-  return [t("settings.autostartOn.write", at), t("settings.autostartOn.login"), t("settings.autostartOn.now"), t("settings.autostartOn.undo")];
+  const agent = u.agent === "pinned" ? [t("settings.autostartOn.agentPinned")] : u.agent === "missing" ? [t("settings.autostartOn.agentMissing")] : [];
+  return [t("settings.autostartOn.write", at), ...agent, t("settings.autostartOn.login"), t("settings.autostartOn.now"), t("settings.autostartOn.undo")];
 });
 async function loadAutostart() {
   if (isMobile()) return;

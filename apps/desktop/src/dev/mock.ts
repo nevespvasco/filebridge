@@ -598,7 +598,8 @@ const mockUnit: UserUnit = {
   enabled: false,
   current: false,
   systemd: true,
-  contents: `[Unit]\nDescription=filebridge background service (file transfers)\nAfter=network-online.target\n\n[Service]\nExecStart="${MOCK_EXEC}" run\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`,
+  agent: "pinned",
+  contents: `[Unit]\nDescription=filebridge background service (file transfers)\nAfter=network-online.target\n\n[Service]\nEnvironment="SSH_AUTH_SOCK=%t/keyring/ssh"\nExecStart="${MOCK_EXEC}" run\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`,
 };
 
 const handlers: Handlers = {

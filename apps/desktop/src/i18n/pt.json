@@ -723,6 +723,8 @@
       "login": "A partir da próxima sessão o motor de cópia corre antes de abrir o filebridge, e os envios por acabar continuam sozinhos.",
       "now": "O motor de cópia que está a correr agora continua: nada para.",
       "undo": "Pode desligar isto aqui quando quiser.",
+      "agentPinned": "Também diz ao motor onde está o seu agente SSH, para os destinos que entram com ele continuarem a funcionar.",
+      "agentMissing": "O seu agente SSH muda de sítio a cada sessão, por isso o motor iniciado assim não chega a ele: os destinos SFTP e Nextcloud que entram com ele vão falhar. Dê-lhes a chave própria do filebridge (Destinos), ou abra o filebridge antes de enviarem.",
       "confirm": "Ligar",
       "confirmUpdate": "Atualizar"
     },
