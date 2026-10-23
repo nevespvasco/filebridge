@@ -32,9 +32,10 @@ pub use filebridge_model::{
     IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort,
     JobState, JobSummary, LogEntry, LogLevel, MAX_PINNED_SOURCES, PinnedSource, PreflightView,
     Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
-    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
-    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
-    StorageView, TargetSpec, VolumeView, job_operations,
+    RemoteEntryView, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff,
+    ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount, SOURCE_CHILDREN_CAP,
+    SealProblem, SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView,
+    StatusCount, StorageView, TargetSpec, VolumeView, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -74,7 +75,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///     `folder_sizes_progress` event; `JobErrorCode::SourceUnavailable` (a source that can't be
 ///     read pauses the job).
 /// 30: `entry_thumbnail` (ADR 0027).
-pub const PROTOCOL_VERSION: u32 = 30;
+/// 31: `diff_reports`, `check_report`; `ReportFormat::Sealed`, `ExportResult.readable`/`seal`
+///     (ADR 0025).
+pub const PROTOCOL_VERSION: u32 = 31;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

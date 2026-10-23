@@ -56,8 +56,10 @@ filebridge issues <job> [--rule R] [--all]
 filebridge decide <job> <issue> accept|keep|skip|edit [--name N]
 filebridge decide-all <job> accept|keep|skip [--rule R]
 filebridge start <job> | resume [<job>] | cancel <job> | jobs | job <job>
-filebridge report <job> [--format csv|json] [--only problems|renamed] [--dirs] [-o FILE]
 filebridge settings [show] | settings set [--bwlimit 20M|off] [--window 22:00-07:00|off]
+filebridge report <job> [--format csv|json|sealed] [--only problems|renamed] [--dirs] [-o FILE]
+filebridge report diff <job-or-report.json> <job-or-report.json> [--only KIND]   # ADR 0025
+filebridge report check <report.json|report.html>
 filebridge completions <shell> | man [--dir DIR]
 filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbooks/real-server-tests.md § 1)
 ```
@@ -71,6 +73,10 @@ filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbook
 - `settings set` changes the app-wide bandwidth limit (rclone sizes: `20M` = 20 MiB/s, a plain
   number is KiB/s) and the daily send window, in local time (ADR 0010). A send started outside
   the window waits (`→ waiting`) and goes on its own when it opens.
+- `report diff` prints one `kind<TAB>source path<TAB>detail` line per change (kinds: `added`,
+  `removed`, `changed`, `renamed`, `newly_verified`, `new_problem`), the totals on stderr, and
+  exits 1 when there are changes, like `diff`. `report check` exits 1 when a sealed report (or
+  its HTML copy) changed since the export.
 - Logs: `FILEBRIDGE_LOG=debug` (or `rclone=debug` for the sidecar's own log).
 
 ## Phase 0 scope (kept)

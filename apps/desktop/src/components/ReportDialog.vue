@@ -1,14 +1,14 @@
 <script setup lang="ts">
-// Export a finished transfer's report: the proof of the migration, as CSV or JSON
-// (docs/design/specs/D09-report-export.md). The service writes the file; the window only picks
-// where.
+// Export a finished transfer's report: the proof of the migration, as CSV, JSON, or sealed JSON
+// with a readable HTML copy (docs/design/specs/D09-report-export.md, ADR 0025). The service
+// writes the files; the window only picks where.
 import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { EntryFacets, ExportResult, ReportFormat, ReportScope } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import { jobLabel } from "@/lib/jobs";
-import { canReveal, pickSavePath, revealInFileManager } from "@/lib/platform";
+import { canReveal, copyText, pickSavePath, revealInFileManager } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
 import ProgressBar from "./ProgressBar.vue";
@@ -29,6 +29,8 @@ const done = ref<ExportResult | null>(null);
 const facets = shallowRef<EntryFacets | null>(null);
 
 const job = computed(() => (props.jobId ? jobs.byId[props.jobId] : undefined));
+/** The file's extension: a sealed report is a .json (its .html copy goes beside it). */
+const ext = computed(() => (format.value === "sealed" ? "json" : format.value));
 const progress = computed(() => (props.jobId ? jobs.live[props.jobId]?.report : undefined));
 
 watch(
@@ -50,7 +52,7 @@ watch(
 
 /** "photos-2019_2026-10-22.csv": the name in plain ASCII, and the finish date. */
 const suggested = computed(() => {
-  if (!job.value) return `report.${format.value}`;
+  if (!job.value) return `report.${ext.value}`;
   const slug =
     jobLabel(job.value)
       .normalize("NFKD")
@@ -59,14 +61,14 @@ const suggested = computed(() => {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "") || "report";
   const date = new Date(job.value.finished_at ?? job.value.created_at).toISOString().slice(0, 10);
-  return `${slug}_${date}.${format.value}`;
+  return `${slug}_${date}.${ext.value}`;
 });
-watch(format, () => {
-  if (path.value) path.value = path.value.replace(/\.(csv|json)$/i, `.${format.value}`);
+watch(ext, () => {
+  if (path.value) path.value = path.value.replace(/\.(csv|json)$/i, `.${ext.value}`);
 });
 
 async function choose() {
-  const p = await pickSavePath(suggested.value, format.value, format.value.toUpperCase());
+  const p = await pickSavePath(suggested.value, ext.value, ext.value.toUpperCase());
   if (p) path.value = p;
 }
 
@@ -103,6 +105,8 @@ void t;
             <legend class="small muted">{{ $t("report.format") }}</legend>
             <label class="opt"><input v-model="format" type="radio" value="csv" /> {{ $t("report.csv") }}</label>
             <label class="opt"><input v-model="format" type="radio" value="json" /> {{ $t("report.json") }}</label>
+            <label class="opt"><input v-model="format" type="radio" value="sealed" /> {{ $t("report.sealed") }}</label>
+            <p v-if="format === 'sealed'" class="small muted hint">{{ $t("report.sealedHint") }}</p>
           </fieldset>
           <fieldset>
             <legend class="small muted">{{ $t("report.include") }}</legend>
@@ -130,7 +134,13 @@ void t;
         </template>
         <template v-else>
           <p class="ok-text" role="status"><AppIcon name="checkCircle" /> {{ $t("report.saved", { rows: fmt.count(done.rows), size: fmt.bytes(done.bytes) }) }}</p>
-          <p class="path small">{{ done.path }}</p>
+          <p class="path small">{{ done.path }}<template v-if="done.readable"><br />{{ done.readable }}</template></p>
+          <div v-if="done.seal" class="seal">
+            <span class="small muted">{{ $t("report.sealCode") }}</span>
+            <span class="hash">{{ done.seal }}</span>
+            <button class="btn btn-small" @click="copyText(done.seal)"><AppIcon name="copy" /> {{ $t("report.copySeal") }}</button>
+            <span class="small muted">{{ $t("report.keepSeal") }}</span>
+          </div>
           <div class="actions">
             <button v-if="canReveal()" class="btn" @click="revealInFileManager(done.path)"><AppIcon name="reveal" /> {{ $t("entry.revealFile") }}</button>
             <button class="btn btn-primary" @click="emit('close')">{{ $t("common.close") }}</button>
@@ -151,6 +161,8 @@ legend { margin-bottom: 0.3rem; }
 .where { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .where .path { flex: 1; min-width: 0; }
 .progress { display: grid; gap: 0.3rem; }
+.hint { margin-left: 1.6rem; }
+.seal { display: grid; gap: 0.3rem; justify-items: start; }
 .actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 p { margin: 0; }
 </style>

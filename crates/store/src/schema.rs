@@ -151,6 +151,11 @@ CREATE TABLE pinned_sources (
     pinned_at INTEGER NOT NULL
 );
 "#,
+    // 11: a job's entries in source-path order, so two jobs' reports are compared side by side
+    // page by page (docs/design/specs/D09, ADR 0025).
+    r#"
+CREATE INDEX manifest_path ON manifest_entries(job_id, raw_path, idx);
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

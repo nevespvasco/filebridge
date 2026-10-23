@@ -78,6 +78,11 @@ impl EntryStatus {
         }
     }
 
+    /// From [`Self::as_str`]'s word.
+    pub fn parse(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == word)
+    }
+
     /// Different, missing, couldn't verify or failed: what needs a look.
     pub fn is_problem(self) -> bool {
         matches!(
@@ -198,6 +203,9 @@ pub enum ReportFormat {
     #[default]
     Csv,
     Json,
+    /// JSON with a digest chain and a final SHA-256, plus a readable HTML copy beside it
+    /// (`<path>` with `.html`): any later edit shows in `filebridge report check` (ADR 0025).
+    Sealed,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -224,6 +232,10 @@ pub struct ExportResult {
     pub path: String,
     pub rows: u64,
     pub bytes: u64,
+    /// A sealed report's readable HTML copy.
+    pub readable: Option<String>,
+    /// A sealed report's final SHA-256: kept elsewhere, it proves the files unchanged.
+    pub seal: Option<String>,
 }
 
 #[cfg(test)]
@@ -239,6 +251,9 @@ mod tests {
                 s,
                 "{s:?}"
             );
+        }
+        for s in EntryStatus::ALL {
+            assert_eq!(EntryStatus::parse(s.as_str()), Some(s));
         }
         assert!(EntryStatus::Missing.is_problem());
         assert!(!EntryStatus::Skipped.is_problem());

@@ -35,8 +35,9 @@ pub use filebridge_model::{
     FolderSize, FolderSizes, InFlightView, IssueDecision, IssueSeverity, IssueView, JobErrorCode,
     JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
     PinnedSource, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus,
-    ReportFormat, ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow, SourceInfo,
-    SourceProblem, StorageView, TargetSpec, UnknownValue, VolumeView, job_operations,
+    ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff, ReportFormat,
+    ReportRequest, ReportScope, ReportSide, RuleCount, SealProblem, SendOptions, SendWindow,
+    SourceInfo, SourceProblem, StorageView, TargetSpec, UnknownValue, VolumeView, job_operations,
 };
 pub use registry::Registry;
 pub use repair::MAX_REPAIR_ENTRIES;

@@ -100,7 +100,17 @@ export const commands = {
 	/**  Hides a job from the reclaimable total (or shows it again). */
 	dismissReclaim: (jobId: string, dismissed: boolean) => typedError<null, ErrorBody>(__TAURI_INVOKE("dismiss_reclaim", { jobId, dismissed })),
 	/**  Writes a finished job's report to `req.path` on the service's machine. */
-	exportReport: (jobId: string, req: ReportRequest) => typedError<ExportResult, ErrorBody>(__TAURI_INVOKE("export_report", { jobId, req })),
+	exportReport: (jobId: string, req: ReportRequest) => typedError<ExportResult_Serialize, ErrorBody>(__TAURI_INVOKE("export_report", { jobId, req })),
+	/**
+	 *  Two finished jobs' reports compared, files matched by source path: the counts per
+	 *  kind of change, and the first `limit` changes (only of `kind` when given).
+	 */
+	diffReports: (jobA: string, jobB: string, kind: ReportChangeKind | null, limit: number) => typedError<ReportDiff_Serialize, ErrorBody>(__TAURI_INVOKE("diff_reports", { jobA, jobB, kind, limit })),
+	/**
+	 *  Checks a sealed report file on the service's machine (the JSON or its HTML copy;
+	 *  the other one beside it too): whether anything changed since the export.
+	 */
+	checkReport: (path: string) => typedError<ReportCheck_Serialize, ErrorBody>(__TAURI_INVOKE("check_report", { path })),
 	/**  Milestones of every job and profile changes, newest first, before `before_id`. */
 	activity: (beforeId: number | null, limit: number) => typedError<ActivityItem_Serialize[], ErrorBody>(__TAURI_INVOKE("activity", { beforeId, limit })),
 	/**  A job's files per Category, most bytes first. */
@@ -232,7 +242,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"skip_entry":["transferring","paused","retrying","waiting"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 30 as const;
+export const PROTOCOL_VERSION = 31 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -896,10 +906,26 @@ waiting: string | null } | { type: "integration_problem"; job_id: string; code: 
  */
 { type: "folder_sizes_progress"; scan_id: string; sizes: FolderSizes_Serialize };
 
-export type ExportResult = {
+export type ExportResult = ExportResult_Serialize | ExportResult_Deserialize;
+
+export type ExportResult_Deserialize = {
 	path: string,
 	rows: number,
 	bytes: number,
+	/**  A sealed report's readable HTML copy. */
+	readable?: string | null,
+	/**  A sealed report's final SHA-256: kept elsewhere, it proves the files unchanged. */
+	seal?: string | null,
+};
+
+export type ExportResult_Serialize = {
+	path: string,
+	rows: number,
+	bytes: number,
+	/**  A sealed report's readable HTML copy. */
+	readable: string | null,
+	/**  A sealed report's final SHA-256: kept elsewhere, it proves the files unchanged. */
+	seal: string | null,
 };
 
 /**  What the destination filesystem accepts; decides which general name rules apply. */
@@ -1559,7 +1585,133 @@ export type RemoteEntryView_Serialize = {
 	mtime: number | null,
 };
 
-export type ReportFormat = "csv" | "json";
+/**  One file that differs between the two reports, matched by its source path. */
+export type ReportChange = ReportChange_Serialize | ReportChange_Deserialize;
+
+export type ReportChangeCount = {
+	kind: ReportChangeKind,
+	files: number,
+};
+
+/**
+ *  What changed for one file between two reports of the same source. A file can be in several
+ *  (renamed and newly verified).
+ */
+export type ReportChangeKind = 
+/**  Only in the second report. */
+"added" | 
+/**  Only in the first report. */
+"removed" | 
+/**  Its size or its SHA-256 differs. */
+"changed" | 
+/**  It went to another destination path (a name rule, or another target folder). */
+"renamed" | 
+/**  Verified in the second report and not in the first. */
+"newly_verified" | 
+/**
+ *  A problem (different, missing, unverifiable, failed) in the second report and not in the
+ *  first.
+ */
+"new_problem";
+
+/**  One file that differs between the two reports, matched by its source path. */
+export type ReportChange_Deserialize = {
+	/**  Relative to the source's parent, lossily decoded. */
+	source_path: string,
+	kinds: ReportChangeKind[],
+	/**  `None` when added. */
+	a?: ReportSide_Deserialize | null,
+	/**  `None` when removed. */
+	b?: ReportSide_Deserialize | null,
+};
+
+/**  One file that differs between the two reports, matched by its source path. */
+export type ReportChange_Serialize = {
+	/**  Relative to the source's parent, lossily decoded. */
+	source_path: string,
+	kinds: ReportChangeKind[],
+	/**  `None` when added. */
+	a: ReportSide_Serialize | null,
+	/**  `None` when removed. */
+	b: ReportSide_Serialize | null,
+};
+
+/**  The answer of `filebridge report check` (ADR 0025). */
+export type ReportCheck = ReportCheck_Serialize | ReportCheck_Deserialize;
+
+/**  The answer of `filebridge report check` (ADR 0025). */
+export type ReportCheck_Deserialize = {
+	/**  Nothing changed since the export. */
+	intact: boolean,
+	/**  The sealed JSON checked. */
+	path: string,
+	/**  The readable copy beside it, when there is one; it is checked too. */
+	readable?: string | null,
+	entries: number,
+	/**  The final SHA-256 the seal records (compare it with a copy kept elsewhere). */
+	sha256?: string | null,
+	/**  The first problems found (at most 50 entries). */
+	problems: SealProblem[],
+	/**  Changed entries beyond those listed. */
+	more: number,
+};
+
+/**  The answer of `filebridge report check` (ADR 0025). */
+export type ReportCheck_Serialize = {
+	/**  Nothing changed since the export. */
+	intact: boolean,
+	/**  The sealed JSON checked. */
+	path: string,
+	/**  The readable copy beside it, when there is one; it is checked too. */
+	readable: string | null,
+	entries: number,
+	/**  The final SHA-256 the seal records (compare it with a copy kept elsewhere). */
+	sha256: string | null,
+	/**  The first problems found (at most 50 entries). */
+	problems: SealProblem[],
+	/**  Changed entries beyond those listed. */
+	more: number,
+};
+
+/**  Two jobs' reports side by side: what changed from the first to the second. */
+export type ReportDiff = ReportDiff_Serialize | ReportDiff_Deserialize;
+
+/**  Two jobs' reports side by side: what changed from the first to the second. */
+export type ReportDiff_Deserialize = {
+	/**  Every kind, in [`ReportChangeKind::ALL`] order, zeros included; over the whole reports. */
+	counts: ReportChangeCount[],
+	/**  Files in both reports with no change. */
+	unchanged: number,
+	/**  In source-path order: the first `limit` changes (of `kind` when one was asked for). */
+	changes: ReportChange_Deserialize[],
+	/**  More changes than listed. */
+	more: boolean,
+	/**  Both jobs have the same source folders; when not, matching paths may be other files. */
+	same_sources: boolean,
+	same_profile: boolean,
+};
+
+/**  Two jobs' reports side by side: what changed from the first to the second. */
+export type ReportDiff_Serialize = {
+	/**  Every kind, in [`ReportChangeKind::ALL`] order, zeros included; over the whole reports. */
+	counts: ReportChangeCount[],
+	/**  Files in both reports with no change. */
+	unchanged: number,
+	/**  In source-path order: the first `limit` changes (of `kind` when one was asked for). */
+	changes: ReportChange_Serialize[],
+	/**  More changes than listed. */
+	more: boolean,
+	/**  Both jobs have the same source folders; when not, matching paths may be other files. */
+	same_sources: boolean,
+	same_profile: boolean,
+};
+
+export type ReportFormat = "csv" | "json" | 
+/**
+ *  JSON with a digest chain and a final SHA-256, plus a readable HTML copy beside it
+ *  (`<path>` with `.html`): any later edit shows in `filebridge report check` (ADR 0025).
+ */
+"sealed";
 
 /**  What to write in a job's report, and where (docs/design/specs/D09). */
 export type ReportRequest = {
@@ -1572,6 +1724,29 @@ export type ReportRequest = {
 
 export type ReportScope = "all" | "problems" | "renamed";
 
+/**  One file as one of the two reports has it. */
+export type ReportSide = ReportSide_Serialize | ReportSide_Deserialize;
+
+/**  One file as one of the two reports has it. */
+export type ReportSide_Deserialize = {
+	destination_path?: string | null,
+	size: number,
+	status: EntryStatus,
+	sha256?: string | null,
+	/**  The name rules that renamed it. */
+	renamed_by: string[],
+};
+
+/**  One file as one of the two reports has it. */
+export type ReportSide_Serialize = {
+	destination_path: string | null,
+	size: number,
+	status: EntryStatus,
+	sha256: string | null,
+	/**  The name rules that renamed it. */
+	renamed_by: string[],
+};
+
 export type RuleCount = {
 	rule: string,
 	total: number,
@@ -1582,6 +1757,24 @@ export type RuleCount = {
 	 */
 	no_proposal: number,
 };
+
+/**  What a sealed report's check found wrong. */
+export type SealProblem = 
+/**  Not a filebridge report, or not laid out as filebridge writes one. */
+{ kind: "unreadable"; detail: string } | 
+/**  A report exported without a seal: nothing to check. */
+{ kind: "not_sealed" } | 
+/**  The summary at the top (transfer, destination, totals) was changed. */
+{ kind: "header" } | 
+/**
+ *  This entry (0-based, in file order) was changed, or one was removed or added just
+ *  before it.
+ */
+{ kind: "entry"; index: number; source_path: string } | 
+/**  Entries were removed or added at the end, or the seal itself was changed. */
+{ kind: "seal" } | 
+/**  The readable copy (HTML) doesn't match the sealed JSON. */
+{ kind: "readable" };
 
 /**  Per-job choices made in step 4 of the wizard. */
 export type SendOptions = SendOptions_Serialize | SendOptions_Deserialize;

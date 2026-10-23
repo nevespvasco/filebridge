@@ -1125,7 +1125,61 @@
     "private": "The report names the destination and its folder, never the server's address, user or keys.",
     "rows": "{n} rows written",
     "export": "Export",
-    "saved": "Report saved: {rows} rows, {size}."
+    "saved": "Report saved: {rows} rows, {size}.",
+    "sealed": "Sealed — JSON plus a readable HTML copy; any later change shows when checked",
+    "sealedHint": "Two files: the .json is the proof, the .html opens in any browser. Every entry is chained into one SHA-256 code, so “Check a report…” (or filebridge report check) shows any later change.",
+    "sealCode": "Seal (SHA-256)",
+    "copySeal": "Copy",
+    "keepSeal": "Keep this code somewhere else (an email, a note): later it proves both files unchanged.",
+    "check": {
+      "open": "Check a report…",
+      "title": "Check a sealed report",
+      "intro": "Pick the .json or the .html of a sealed report: filebridge checks both against their seal.",
+      "choose": "Choose a file…",
+      "checking": "Checking…",
+      "intact": "Intact: {n} entry, exactly as exported | Intact: {n} entries, exactly as exported",
+      "changed": "Changed since the export",
+      "noCopy": "There is no readable .html copy beside it.",
+      "more": "…and {n} more entries",
+      "compare": "Compare it with the code you kept elsewhere: if they match, nobody rewrote the files and their seal.",
+      "problem": {
+        "unreadable": "Not readable as a filebridge report: {detail}",
+        "not_sealed": "Exported without a seal: there is nothing to check. Export it again as “Sealed”.",
+        "header": "The summary at the top was changed.",
+        "entry": "Entry {n} ({path}) was changed, or one just before it was removed or added.",
+        "seal": "Entries were removed or added at the end, or the seal itself was changed.",
+        "readable": "The readable .html copy doesn't match the .json."
+      }
+    },
+    "compare": {
+      "menu": "Compare with…",
+      "title": "Compare reports",
+      "intro": "What changed from one finished transfer to another. Files are matched by their path at the source.",
+      "from": "From",
+      "to": "To",
+      "swap": "Swap",
+      "choose": "Choose a transfer…",
+      "pickSecond": "Choose the transfer to compare with.",
+      "comparing": "Comparing…",
+      "otherSources": "These transfers have different source folders: files with the same path may not be the same files.",
+      "otherDestination": "These transfers went to different destinations.",
+      "unchanged": "{n} file unchanged | {n} files unchanged",
+      "same": "No differences: both reports say the same.",
+      "noneOfKind": "No changes of this kind.",
+      "before": "Before",
+      "after": "After",
+      "showing": "Showing the first {n}.",
+      "showMore": "Show more",
+      "useCli": "For every change, use",
+      "kind": {
+        "added": "Added",
+        "removed": "Removed",
+        "changed": "Changed",
+        "renamed": "Renamed",
+        "newly_verified": "Now verified",
+        "new_problem": "New problem"
+      }
+    }
   },
   "reclaim": {
     "title": "Space you can free at the source",

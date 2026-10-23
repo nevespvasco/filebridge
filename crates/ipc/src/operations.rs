@@ -85,6 +85,12 @@ macro_rules! for_each_operation {
             DismissReclaim dismiss_reclaim(job_id: String, dismissed: bool) -> ();
             /// Writes a finished job's report to `req.path` on the service's machine.
             ExportReport export_report(job_id: String, req: $crate::ReportRequest) -> $crate::ExportResult;
+            /// Two finished jobs' reports compared, files matched by source path: the counts per
+            /// kind of change, and the first `limit` changes (only of `kind` when given).
+            DiffReports diff_reports(job_a: String, job_b: String, kind: Option<$crate::ReportChangeKind>, limit: u32) -> $crate::ReportDiff;
+            /// Checks a sealed report file on the service's machine (the JSON or its HTML copy;
+            /// the other one beside it too): whether anything changed since the export.
+            CheckReport check_report(path: String) -> $crate::ReportCheck;
             /// Milestones of every job and profile changes, newest first, before `before_id`.
             Activity activity(before_id: Option<i64>, limit: u32) -> Vec<$crate::ActivityItem>;
             /// A job's files per Category, most bytes first.

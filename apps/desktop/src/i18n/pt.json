@@ -1125,7 +1125,61 @@
     "private": "O relatório indica o destino e a pasta, nunca o endereço do servidor, o utilizador ou as chaves.",
     "rows": "{n} linhas escritas",
     "export": "Exportar",
-    "saved": "Relatório guardado: {rows} linhas, {size}."
+    "saved": "Relatório guardado: {rows} linhas, {size}.",
+    "sealed": "Selado — JSON e uma cópia HTML legível; qualquer alteração posterior aparece ao verificar",
+    "sealedHint": "Dois ficheiros: o .json é a prova, o .html abre em qualquer navegador. Todas as entradas ficam encadeadas num só código SHA-256, por isso «Verificar um relatório…» (ou filebridge report check) mostra qualquer alteração posterior.",
+    "sealCode": "Selo (SHA-256)",
+    "copySeal": "Copiar",
+    "keepSeal": "Guarda este código noutro sítio (um email, uma nota): mais tarde prova que os dois ficheiros não mudaram.",
+    "check": {
+      "open": "Verificar um relatório…",
+      "title": "Verificar um relatório selado",
+      "intro": "Escolhe o .json ou o .html de um relatório selado: o filebridge verifica os dois contra o selo.",
+      "choose": "Escolher ficheiro…",
+      "checking": "A verificar…",
+      "intact": "Intacto: {n} entrada, tal como foi exportada | Intacto: {n} entradas, tal como foram exportadas",
+      "changed": "Alterado desde a exportação",
+      "noCopy": "Não há uma cópia .html legível ao lado.",
+      "more": "…e mais {n} entradas",
+      "compare": "Compara-o com o código que guardaste noutro sítio: se forem iguais, ninguém reescreveu os ficheiros nem o selo.",
+      "problem": {
+        "unreadable": "Não se lê como um relatório do filebridge: {detail}",
+        "not_sealed": "Exportado sem selo: não há nada para verificar. Exporta-o de novo como «Selado».",
+        "header": "O resumo no topo foi alterado.",
+        "entry": "A entrada {n} ({path}) foi alterada, ou foi removida ou acrescentada uma logo antes dela.",
+        "seal": "Foram removidas ou acrescentadas entradas no fim, ou o próprio selo foi alterado.",
+        "readable": "A cópia .html legível não corresponde ao .json."
+      }
+    },
+    "compare": {
+      "menu": "Comparar com…",
+      "title": "Comparar relatórios",
+      "intro": "O que mudou de uma transferência terminada para outra. Os ficheiros são emparelhados pelo caminho na origem.",
+      "from": "De",
+      "to": "Para",
+      "swap": "Trocar",
+      "choose": "Escolhe uma transferência…",
+      "pickSecond": "Escolhe a transferência com que comparar.",
+      "comparing": "A comparar…",
+      "otherSources": "Estas transferências têm pastas de origem diferentes: ficheiros com o mesmo caminho podem não ser os mesmos.",
+      "otherDestination": "Estas transferências foram para destinos diferentes.",
+      "unchanged": "{n} ficheiro sem alterações | {n} ficheiros sem alterações",
+      "same": "Sem diferenças: os dois relatórios dizem o mesmo.",
+      "noneOfKind": "Nenhuma alteração deste tipo.",
+      "before": "Antes",
+      "after": "Depois",
+      "showing": "A mostrar as primeiras {n}.",
+      "showMore": "Mostrar mais",
+      "useCli": "Para ver todas, usa",
+      "kind": {
+        "added": "Novo",
+        "removed": "Removido",
+        "changed": "Alterado",
+        "renamed": "Renomeado",
+        "newly_verified": "Agora verificado",
+        "new_problem": "Novo problema"
+      }
+    }
   },
   "reclaim": {
     "title": "Espaço que pode libertar na origem",
