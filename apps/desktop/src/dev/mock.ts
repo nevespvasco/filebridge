@@ -45,6 +45,7 @@ import {
   type RuleCount,
   type SourceInfo_Serialize,
   type SourceProblem,
+  type UserUnit,
 } from "@/bindings";
 
 type Args = Record<string, unknown>;
@@ -588,6 +589,19 @@ function hostKeyProblem(id: unknown): string | null {
   return null;
 }
 
+/** "Start the engine when I log in": the systemd user unit, not installed at first. */
+const MOCK_EXEC = "/usr/bin/filebridge-service";
+const mockUnit: UserUnit = {
+  path: "/home/demo/.config/systemd/user/filebridge-service.service",
+  exec: MOCK_EXEC,
+  installed: false,
+  enabled: false,
+  current: false,
+  systemd: true,
+  agent: "pinned",
+  contents: `[Unit]\nDescription=filebridge background service (file transfers)\nAfter=network-online.target\n\n[Service]\nEnvironment="SSH_AUTH_SOCK=%t/keyring/ssh"\nExecStart="${MOCK_EXEC}" run\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`,
+};
+
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
   serviceReplacing: () => false,
@@ -598,6 +612,12 @@ const handlers: Handlers = {
   requestStorageAccess: () => true,
   requestBatteryExemption: () => null,
   setSendNoticeLabels: () => null,
+  autostart: () => ({ kind: "unit", unit: { ...mockUnit } }),
+  setAutostart: async (a) => {
+    await sleep(300);
+    Object.assign(mockUnit, { installed: !!a.on, enabled: !!a.on, current: !!a.on });
+    return { kind: "unit", unit: { ...mockUnit } };
+  },
   ping: () => ({ protocol: PROTOCOL_VERSION, version: "0.0.1-mock" }),
   listProfiles: () => profiles,
   saveProfile: (a) => {

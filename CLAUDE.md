@@ -17,6 +17,8 @@ real-server benchmark is still pending and can reopen it.
 - Android (docs/11): Go `~/.local/go/bin/go`, SDK `~/Android/Sdk` (NDK under `ndk/`).
   `sidecars/librclone/build.sh android`, then `pnpm tauri android build` in `apps/desktop` with
   `ANDROID_HOME`, `NDK_HOME` and `JAVA_HOME` (JDK 17 or 21) set.
+- Desktop installers: `pnpm bundle` in `apps/desktop` (builds the service and copies the
+  pinned rclone, `sidecars/RCLONE_VERSION`, in as sidecars; see its README).
 - `cargo test --workspace` and `cargo clippy --workspace -- -D warnings` must pass.
 - Shared external dependency versions live in the root `[workspace.dependencies]`; add a new one
   there only if more than one crate needs it.

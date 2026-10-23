@@ -226,6 +226,49 @@ pub struct DetectNextcloudResponse {
     pub profile: Option<Profile>,
 }
 
+/// The `systemd --user` unit that starts `filebridge-service` at login (Linux), as
+/// `filebridge-service show-user-unit --json` prints it. The window reads it for the Settings
+/// switch "Start the engine when I log in" and shows it before changing anything. Not an ipc
+/// request: the window runs the service binary, so it works with no service running.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct UserUnit {
+    /// The unit file: `~/.config/systemd/user/filebridge-service.service`.
+    pub path: String,
+    /// The program the unit runs, or would run once installed: this service binary.
+    pub exec: String,
+    /// The unit file is there.
+    pub installed: bool,
+    /// systemd starts it at login (`systemctl --user is-enabled`).
+    pub enabled: bool,
+    /// The file there is the one installing would write now. `false` when it runs another
+    /// binary (an earlier install from elsewhere) or other options.
+    pub current: bool,
+    /// `systemctl --user` answers: without it nothing can be installed.
+    pub systemd: bool,
+    /// The file installing writes.
+    pub contents: String,
+    /// Whether the engine the unit starts can reach the SSH agent this program sees.
+    pub agent: UnitAgent,
+}
+
+/// How the engine started by the systemd user unit finds the SSH agent (`SSH_AUTH_SOCK`), which
+/// SFTP and Nextcloud destinations without filebridge's own key, a key file or a password sign
+/// in with. The unit's process starts with the user manager's environment, not the session's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum UnitAgent {
+    /// No SSH agent here: nothing to pass on.
+    None,
+    /// The agent's socket is at a fixed per-user path (under the runtime directory or home): the
+    /// unit sets `SSH_AUTH_SOCK` to it.
+    Pinned,
+    /// The user manager's environment has `SSH_AUTH_SOCK`: the unit's process inherits it.
+    Manager,
+    /// The agent's socket changes at each login and the user manager doesn't have it: SSH
+    /// destinations that sign in with the agent fail under the unit.
+    Missing,
+}
+
 /// Where the service listens: a socket file, or a named pipe on Windows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Endpoint {

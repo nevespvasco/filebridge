@@ -10,6 +10,7 @@ filebridge-service [run]              # foreground; default
 filebridge-service status             # running? version, active jobs (exit 3 if not running)
 filebridge-service install-user-unit [--no-start]   # Linux: ~/.config/systemd/user/filebridge-service.service
 filebridge-service uninstall-user-unit
+filebridge-service show-user-unit [--json]          # Linux: the unit as it is and as install would write it
 ```
 Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
 (`FILEBRIDGE_RCLONE`), `--socket` (`FILEBRIDGE_SOCKET`). Logs: `FILEBRIDGE_LOG`, default
@@ -25,7 +26,17 @@ Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
   macOS/Windows).
 - **systemd unit:** `Restart=on-failure`, `WantedBy=default.target`. It runs this exact binary
   with any `--data-dir` / `--rclone` given at install time. Installing changes your user's
-  systemd config, so it is never done automatically.
+  systemd config, so it is never done automatically: from the terminal, or from the app's
+  Settings → "Start the engine when I log in", which runs these same commands (`--no-start`)
+  after showing `show-user-unit --json` (`filebridge_ipc::UserUnit`). Refused when run from an
+  AppImage, whose files are gone once it exits.
+- **SSH agent under the unit:** the unit's process gets the user manager's environment, not your
+  session's. If your `SSH_AUTH_SOCK` is a fixed per-user socket (`$XDG_RUNTIME_DIR/…`: GNOME
+  Keyring, gcr, gpg-agent, `ssh-agent.socket`; or under home) the unit sets it as
+  `Environment="SSH_AUTH_SOCK=%t/…"` (or `%h/…`): a path, never a key. If it moves at each login
+  (`/tmp/ssh-…`) and `systemctl --user show-environment` lacks it, `install-user-unit` and
+  `show-user-unit` warn (`UserUnit::agent` = `missing`, which the Settings confirmation says in
+  pt/en): import it after each login, or give those destinations filebridge's own key.
 
 ## Tests
 `tests/service.rs` runs the real binary with real rclone (skipped if rclone is missing):
@@ -37,4 +48,4 @@ Options (also as env vars): `--data-dir` (`FILEBRIDGE_DATA_DIR`), `--rclone`
 
 ## Allowed dependencies
 `core`, `ipc`, `host` (which wires `transport-rclone` and `integration-nextcloud`), `tokio`,
-`clap`, `tracing-subscriber`, `anyhow`.
+`clap`, `tracing-subscriber`, `anyhow`, `serde_json`.

@@ -164,6 +164,13 @@ export const commands = {
 	requestBatteryExemption: () => typedError<null, ErrorBody>(__TAURI_INVOKE("request_battery_exemption")),
 	/**  Phones: the translated text of the notification shown while sending; `many` has `{n}`. */
 	setSendNoticeLabels: (title: string, one: string, many: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_send_notice_labels", { title, one, many })),
+	/**  "Start the engine when I log in": whether it is on, and what turning it on writes. */
+	autostart: () => typedError<Autostart, ErrorBody>(__TAURI_INVOKE("autostart")),
+	/**
+	 *  Turns "Start the engine when I log in" on or off; answers how it stands after. The UI shows
+	 *  what it will do (from `autostart`) and asks first.
+	 */
+	setAutostart: (on: boolean) => typedError<Autostart, ErrorBody>(__TAURI_INVOKE("set_autostart", { on })),
 };
 
 /** Events */
@@ -278,6 +285,23 @@ export type AppSettings_Serialize = {
 	/**  When files may be sent, in the service machine's local time; `None` = any time. */
 	send_window: SendWindow | null,
 };
+
+/**  Whether the engine starts at login, and what turning it on or off does. */
+export type Autostart = 
+/**  Not possible here: the switch is hidden, or shown off with the reason. */
+{ kind: "unsupported"; reason: AutostartUnsupported } | 
+/**  The systemd user unit as it is, and the file turning it on writes. */
+{ kind: "unit"; unit: UserUnit };
+
+export type AutostartUnsupported = 
+/**  Not done yet on this OS (Windows, macOS), and never on a phone. */
+"os" | 
+/**  The app runs from an AppImage, whose files are gone once it exits. */
+"app_image" | 
+/**  No `filebridge-service` next to the app, in `FILEBRIDGE_SERVICE` or on `PATH`. */
+"no_service" | 
+/**  `systemctl --user` doesn't answer (no systemd user session). */
+"no_systemd";
 
 export type Backend = Backend_Serialize | Backend_Deserialize;
 
@@ -1441,6 +1465,55 @@ export type TargetSpec_Serialize = {
 	 *  classic limit), 4096 elsewhere.
 	 */
 	max_path_bytes: number | null,
+};
+
+/**
+ *  How the engine started by the systemd user unit finds the SSH agent (`SSH_AUTH_SOCK`), which
+ *  SFTP and Nextcloud destinations without filebridge's own key, a key file or a password sign
+ *  in with. The unit's process starts with the user manager's environment, not the session's.
+ */
+export type UnitAgent = 
+/**  No SSH agent here: nothing to pass on. */
+"none" | 
+/**
+ *  The agent's socket is at a fixed per-user path (under the runtime directory or home): the
+ *  unit sets `SSH_AUTH_SOCK` to it.
+ */
+"pinned" | 
+/**  The user manager's environment has `SSH_AUTH_SOCK`: the unit's process inherits it. */
+"manager" | 
+/**
+ *  The agent's socket changes at each login and the user manager doesn't have it: SSH
+ *  destinations that sign in with the agent fail under the unit.
+ */
+"missing";
+
+/**
+ *  The `systemd --user` unit that starts `filebridge-service` at login (Linux), as
+ *  `filebridge-service show-user-unit --json` prints it. The window reads it for the Settings
+ *  switch "Start the engine when I log in" and shows it before changing anything. Not an ipc
+ *  request: the window runs the service binary, so it works with no service running.
+ */
+export type UserUnit = {
+	/**  The unit file: `~/.config/systemd/user/filebridge-service.service`. */
+	path: string,
+	/**  The program the unit runs, or would run once installed: this service binary. */
+	exec: string,
+	/**  The unit file is there. */
+	installed: boolean,
+	/**  systemd starts it at login (`systemctl --user is-enabled`). */
+	enabled: boolean,
+	/**
+	 *  The file there is the one installing would write now. `false` when it runs another
+	 *  binary (an earlier install from elsewhere) or other options.
+	 */
+	current: boolean,
+	/**  `systemctl --user` answers: without it nothing can be installed. */
+	systemd: boolean,
+	/**  The file installing writes. */
+	contents: string,
+	/**  Whether the engine the unit starts can reach the SSH agent this program sees. */
+	agent: UnitAgent,
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };

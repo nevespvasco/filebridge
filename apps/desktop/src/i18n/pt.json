@@ -706,6 +706,35 @@
     },
     "notifications": "Avisar quando um envio acaba",
     "notificationsHint": "Notificação do sistema quando um envio termina ou falha.",
+    "autostart": "Iniciar o motor ao entrar na sessão",
+    "autostartHint": "O motor de cópia arranca sozinho sempre que entra na sessão, e os envios por acabar continuam sem abrir o filebridge.",
+    "autostartWhy": {
+      "app_image": "Não está disponível com o filebridge a correr a partir de uma AppImage. Instale o pacote .deb ou .rpm para o usar.",
+      "no_service": "O filebridge-service não foi encontrado junto à aplicação, por isso isto não pode ser configurado.",
+      "no_systemd": "Precisa de uma sessão de utilizador do systemd, que este computador não tem."
+    },
+    "autostartOutdated": "Está configurado para iniciar outra cópia do motor. Atualize-o para iniciar esta ({exec}).",
+    "autostartUpdate": "Atualizar",
+    "autostartFile": "Mostrar o ficheiro",
+    "autostartOn": {
+      "title": "Iniciar o motor ao entrar na sessão?",
+      "update": "Atualizar o arranque na sessão?",
+      "write": "Escreve {path}, que diz ao systemd para executar {exec} sempre que entra na sessão.",
+      "login": "A partir da próxima sessão o motor de cópia corre antes de abrir o filebridge, e os envios por acabar continuam sozinhos.",
+      "now": "O motor de cópia que está a correr agora continua: nada para.",
+      "undo": "Pode desligar isto aqui quando quiser.",
+      "agentPinned": "Também diz ao motor onde está o seu agente SSH, para os destinos que entram com ele continuarem a funcionar.",
+      "agentMissing": "O seu agente SSH muda de sítio a cada sessão, por isso o motor iniciado assim não chega a ele: os destinos SFTP e Nextcloud que entram com ele vão falhar. Dê-lhes a chave própria do filebridge (Destinos), ou abra o filebridge antes de enviarem.",
+      "confirm": "Ligar",
+      "confirmUpdate": "Atualizar"
+    },
+    "autostartOff": {
+      "title": "Deixar de iniciar o motor ao entrar na sessão?",
+      "remove": "Desliga-o no systemd e apaga {path}.",
+      "login": "A partir da próxima sessão o motor de cópia só arranca quando abrir o filebridge.",
+      "now": "Se o motor de cópia que está a correr foi iniciado pelo systemd, para e o filebridge volta a iniciá-lo logo: os envios em curso param um momento e continuam.",
+      "confirm": "Desligar"
+    },
     "sending": "Envios",
     "bandwidthLimit": "Limitar a velocidade",
     "bandwidthUnit": "Unidade",

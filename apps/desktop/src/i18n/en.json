@@ -706,6 +706,35 @@
     },
     "notifications": "Notify when a send ends",
     "notificationsHint": "System notification when a send finishes or fails.",
+    "autostart": "Start the engine when I log in",
+    "autostartHint": "The copy engine starts by itself each time you log in, so unfinished sends continue without opening filebridge.",
+    "autostartWhy": {
+      "app_image": "Not available while filebridge runs from an AppImage. Install the .deb or .rpm package to use it.",
+      "no_service": "filebridge-service was not found next to the app, so this can't be set up.",
+      "no_systemd": "Needs a systemd user session, which this computer doesn't have."
+    },
+    "autostartOutdated": "It is set to start another copy of the engine. Update it to start this one ({exec}).",
+    "autostartUpdate": "Update",
+    "autostartFile": "Show the file",
+    "autostartOn": {
+      "title": "Start the engine when you log in?",
+      "update": "Update the login start?",
+      "write": "Writes {path}, which tells systemd to run {exec} each time you log in.",
+      "login": "From your next login the copy engine runs before you open filebridge, and unfinished sends continue by themselves.",
+      "now": "The copy engine running now keeps running: nothing stops.",
+      "undo": "You can turn it off here at any time.",
+      "agentPinned": "It also tells the engine where your SSH agent is, so destinations that sign in with it keep working.",
+      "agentMissing": "Your SSH agent moves at each login, so the engine started this way can't reach it: SFTP and Nextcloud destinations that sign in with it will fail. Give them filebridge's own key (Destinations), or open filebridge before they send.",
+      "confirm": "Turn on",
+      "confirmUpdate": "Update"
+    },
+    "autostartOff": {
+      "title": "Stop starting the engine when you log in?",
+      "remove": "Turns it off in systemd and deletes {path}.",
+      "login": "From your next login the copy engine starts only when you open filebridge.",
+      "now": "If systemd started the copy engine running now, it stops and filebridge starts it again at once: running sends pause for a moment and continue.",
+      "confirm": "Turn off"
+    },
     "sending": "Sending",
     "bandwidthLimit": "Limit the speed",
     "bandwidthUnit": "Unit",

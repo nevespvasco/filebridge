@@ -1,12 +1,23 @@
 # sidecars
 
-Per-platform **rclone** binaries shipped as Tauri sidecars. **Lands in:** Phase 0/1.
+The desktop app's Tauri sidecars, `filebridge-service` and **rclone**, and the pinned rclone
+version. **Landed in:** Phase 1.
 
-- Binaries go in `sidecars/bin/` and are **not committed** (see `.gitignore`); a script
-  (Phase 1) downloads a pinned rclone version and verifies its checksum.
-- Tauri naming: `rclone-<target-triple>[.exe]`, e.g. `rclone-x86_64-unknown-linux-gnu`,
-  `rclone-aarch64-apple-darwin`, `rclone-x86_64-pc-windows-msvc.exe`.
-- rclone is **MIT-licensed** — include its `LICENSE` in distributed builds.
+- `RCLONE_VERSION` (now `v1.75.2`): the one rclone version, for the desktop sidecar and for
+  librclone on phones. Change it here; both scripts read it.
+- `prepare-desktop.sh`: builds `filebridge-service` (release) and copies the pinned rclone into
+  `sidecars/bin/`, which is **not committed** (see `.gitignore`). `pnpm bundle` in
+  `apps/desktop` runs it first. rclone comes from `RCLONE`, `PATH` or `~/.local/bin/rclone`,
+  and only if `rclone version` is the pinned one; get it from
+  `https://downloads.rclone.org/<version>/`. *TODO: download it and check the release's
+  `SHA256SUMS`, and a Windows (PowerShell) twin.*
+- Tauri naming: `<name>-<target-triple>[.exe]`, e.g. `filebridge-rclone-x86_64-unknown-linux-gnu`,
+  `filebridge-service-aarch64-apple-darwin`, `filebridge-rclone-x86_64-pc-windows-msvc.exe`.
+  Tauri drops the triple when it installs them beside the app (`/usr/bin` in the .deb). rclone
+  is `filebridge-rclone` so it never clashes with the distribution's `rclone` there;
+  `filebridge_host::find_rclone` looks for that name first.
+- rclone is **MIT-licensed**: its `COPYING`, kept here as `licenses/rclone-COPYING.txt`, goes
+  into every bundle as a resource (`tauri.bundle.conf.json`).
 
 ## librclone (phones)
 

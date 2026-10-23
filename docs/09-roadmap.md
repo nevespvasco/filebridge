@@ -62,6 +62,11 @@ flowchart TB
       ([D07](design/specs/D07-job-log-and-activity.md)).
 - [x] App-wide bandwidth limit and daily send window in Settings and the CLI
       ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
+- [x] One install, no terminal: the installers carry `filebridge-service` and the pinned rclone
+      as Tauri sidecars (`pnpm bundle`, [apps/desktop](../apps/desktop/README.md#bundle-one-install-no-terminal)),
+      and Settings → "Start the engine when I log in" installs or removes the `systemd --user`
+      unit after showing what it writes. *Linux only; on Windows and macOS the app still starts
+      the service when it opens (autostart there is listed under Phase 3).*
 
 How to run each gate against the real servers and the phone:
 [runbooks/real-server-tests.md](runbooks/real-server-tests.md); the Phase 0 results go in
@@ -90,6 +95,8 @@ How to run each gate against the real servers and the phone:
 - [ ] Scheduled sends: a saved send runs at set times and sends only what changed, in the
       service; its own ADR first ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
 - [ ] Published CLI.
+- [ ] "Start the engine when I log in" on Windows (Run key or Task Scheduler) and macOS
+      (LaunchAgent), and the sidecar script for those builds.
 - [ ] *Deferred (personal use, ADR 0018):* signed installers and automatic updates.
 
 **Gate (test):** a new plugin enters without changing `core`.

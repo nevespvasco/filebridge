@@ -2,11 +2,13 @@
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import type { AppSettings_Deserialize } from "@/bindings";
+import type { AppSettings_Deserialize, Autostart } from "@/bindings";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import SegmentedControl from "@/components/SegmentedControl.vue";
 import { LOCALES } from "@/i18n";
-import { errorMessage } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
+import { isMobile } from "@/lib/platform";
 import { minutesToTime, timeToMinutes } from "@/lib/format";
 import { useConnection } from "@/stores/connection";
 import { THEMES, useSettings } from "@/stores/settings";
@@ -24,6 +26,55 @@ function resetGuides() {
   settings.resetGuides();
   guidesReset.value = true;
 }
+// "Start the engine when I log in" (Linux: the systemd user unit). Read when the screen opens;
+// every change shows what it will do and asks first.
+const autostart = ref<Autostart | null>(null);
+const autostartError = ref<string | null>(null);
+const autostartBusy = ref(false);
+/** What the open dialog does: turn on, update an outdated unit, or turn off. */
+const autostartAsk = ref<"on" | "update" | "off" | null>(null);
+const unit = computed(() => (autostart.value?.kind === "unit" ? autostart.value.unit : null));
+const autostartOn = computed(() => !!unit.value?.installed && unit.value.enabled);
+/** Hidden where it doesn't exist yet (Windows, macOS, phones); shown off with the reason
+ *  where it can't work (an AppImage, no systemd). */
+const autostartShown = computed(
+  () => !isMobile() && autostart.value != null && !(autostart.value.kind === "unsupported" && autostart.value.reason === "os"),
+);
+const autostartConsequences = computed(() => {
+  const u = unit.value;
+  if (!u) return [];
+  const at = { path: u.path, exec: u.exec };
+  if (autostartAsk.value === "off") {
+    return [t("settings.autostartOff.remove", at), t("settings.autostartOff.login"), t("settings.autostartOff.now")];
+  }
+  const agent = u.agent === "pinned" ? [t("settings.autostartOn.agentPinned")] : u.agent === "missing" ? [t("settings.autostartOn.agentMissing")] : [];
+  return [t("settings.autostartOn.write", at), ...agent, t("settings.autostartOn.login"), t("settings.autostartOn.now"), t("settings.autostartOn.undo")];
+});
+async function loadAutostart() {
+  if (isMobile()) return;
+  try {
+    autostart.value = await api.autostart();
+    autostartError.value = null;
+  } catch (e) {
+    autostartError.value = errorMessage(e);
+  }
+}
+void loadAutostart();
+async function confirmAutostart() {
+  const ask = autostartAsk.value;
+  if (!ask) return;
+  autostartBusy.value = true;
+  try {
+    autostart.value = await api.setAutostart(ask !== "off");
+    autostartError.value = null;
+  } catch (e) {
+    autostartError.value = errorMessage(e);
+  } finally {
+    autostartBusy.value = false;
+    autostartAsk.value = null;
+  }
+}
+
 const themeOptions = computed(() => THEMES.map((value) => ({ value, label: t(`settings.themes.${value}`), icon: value })));
 
 /** Bytes per second in one of each unit (decimal, like the rest of the app). */
@@ -127,6 +178,27 @@ async function save() {
         </label>
       </section>
 
+      <section v-if="autostartShown" class="card autostart">
+        <label class="check">
+          <input
+            type="checkbox"
+            :checked="autostartOn"
+            :disabled="!unit || autostartBusy"
+            @click.prevent="autostartAsk = autostartOn ? 'off' : 'on'"
+          />
+          <span>
+            <strong>{{ $t("settings.autostart") }}</strong>
+            <span class="small muted block">{{ $t("settings.autostartHint") }}</span>
+            <span v-if="autostart?.kind === 'unsupported'" class="small muted block">{{ $t(`settings.autostartWhy.${autostart.reason}`) }}</span>
+          </span>
+        </label>
+        <div v-if="autostartOn && unit && !unit.current" class="row">
+          <span class="small">{{ $t("settings.autostartOutdated", { exec: unit.exec }) }}</span>
+          <button class="btn btn-small" type="button" :disabled="autostartBusy" @click="autostartAsk = 'update'">{{ $t("settings.autostartUpdate") }}</button>
+        </div>
+        <p v-if="autostartError" class="error small">{{ autostartError }}</p>
+      </section>
+
       <section class="card guides">
         <label class="check">
           <input v-model="guidesAuto" type="checkbox" />
@@ -197,6 +269,21 @@ async function save() {
         <button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button>
       </section>
     </div>
+
+    <ConfirmDialog
+      :open="autostartAsk != null && unit != null"
+      :title="$t(autostartAsk === 'off' ? 'settings.autostartOff.title' : autostartAsk === 'update' ? 'settings.autostartOn.update' : 'settings.autostartOn.title')"
+      :consequences="autostartConsequences"
+      :confirm-label="$t(autostartAsk === 'off' ? 'settings.autostartOff.confirm' : autostartAsk === 'update' ? 'settings.autostartOn.confirmUpdate' : 'settings.autostartOn.confirm')"
+      :busy="autostartBusy"
+      @confirm="confirmAutostart"
+      @cancel="autostartAsk = null"
+    >
+      <details v-if="autostartAsk !== 'off' && unit" class="unit-file">
+        <summary class="small">{{ $t("settings.autostartFile") }}</summary>
+        <pre class="mono small">{{ unit.contents }}</pre>
+      </details>
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -205,7 +292,8 @@ async function save() {
 .check { display: flex; gap: 0.75rem; align-items: flex-start; cursor: pointer; }
 .check input { margin-top: 0.3rem; }
 .block { display: block; }
-.guides { display: grid; gap: 0.75rem; }
+.guides, .autostart { display: grid; gap: 0.75rem; }
+.unit-file pre { white-space: pre-wrap; word-break: break-all; margin: 0.5rem 0 0; padding: var(--sp-2); background: var(--surface-2); border-radius: var(--radius-sm); }
 .sending { display: grid; gap: 0.9rem; }
 .sending h2 { margin-bottom: 0; }
 .group { display: grid; gap: 0.4rem; }
