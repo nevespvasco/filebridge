@@ -6,6 +6,10 @@ Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`).
 - **Data directory:** `default_data_dir()` (XDG on Linux, Application Support on macOS,
   `%APPDATA%` on Windows) and the single-instance lock `filebridge.lock`. One engine per data
   directory; `Access::Read` commands skip the lock.
+- **Cache directory:** `default_cache_dir()` (XDG cache on Linux, `Library/Caches` on macOS,
+  `%LOCALAPPDATA%` on Windows), `cache/` inside an explicit data directory, or
+  `HostOptions::cache_dir` (the app's cache on phones). It holds the thumbnails of source images
+  (`crates/thumbnail`, ADR 0027) that `entry_thumbnail` answers with, at most two decoded at once.
 - **rclone:** `find_rclone()` (explicit path, then next to the executable: `filebridge-rclone`,
   the installed app's sidecar, then `rclone`; then PATH, then `~/.local/bin`) and the `Rcd`
   sidecar.

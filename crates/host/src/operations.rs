@@ -6,18 +6,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use filebridge_core::{CoreError, Engine, Event, StoreError};
 use filebridge_integration_nextcloud::ShellConnector;
 use filebridge_ipc::{
     AccessReport, ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget,
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest, IssueView,
-    JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
-    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
-    SourceInfo, StorageView,
+    EntryThumbnail, ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest,
+    IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations,
+    PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest,
+    RuleCount, SendOptions, SourceInfo, StorageView,
 };
-use tokio::sync::broadcast;
+use filebridge_thumbnail::{Lookup, Thumbnails};
+use tokio::sync::{Semaphore, broadcast};
 
 use crate::immich::ImmichWizard;
 use crate::nextcloud::NextcloudWizard;
@@ -29,6 +32,22 @@ pub struct EngineOperations {
     immich: Option<ImmichWizard>,
     /// For the SSH-key operations (ADR 0012).
     ssh: Option<Arc<dyn ShellConnector>>,
+    /// Source image previews (ADR 0027); `None` answers `unsupported`.
+    thumbnails: Option<Arc<Thumbnails>>,
+    /// Thumbnails being made at once: each decode takes a core and up to a few hundred MB.
+    making: Arc<Semaphore>,
+}
+
+/// How many thumbnails are decoded at the same time.
+const MAKING_AT_ONCE: usize = 2;
+
+/// Runs file work off the async threads.
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> std::io::Result<T> + Send + 'static,
+) -> std::io::Result<T> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .unwrap_or_else(|e| Err(std::io::Error::other(format!("thumbnail task failed: {e}"))))
 }
 
 impl EngineOperations {
@@ -39,7 +58,15 @@ impl EngineOperations {
             nextcloud: None,
             immich: None,
             ssh: None,
+            thumbnails: None,
+            making: Arc::new(Semaphore::new(MAKING_AT_ONCE)),
         }
+    }
+
+    /// Answers `entry_thumbnail` from this cache.
+    pub fn with_thumbnails(mut self, thumbnails: Arc<Thumbnails>) -> Self {
+        self.thumbnails = Some(thumbnails);
+        self
     }
 
     pub(crate) fn with_plugins(
@@ -53,6 +80,8 @@ impl EngineOperations {
             nextcloud,
             immich,
             ssh,
+            thumbnails: None,
+            making: Arc::new(Semaphore::new(MAKING_AT_ONCE)),
         }
     }
 
@@ -302,6 +331,42 @@ impl Operations for EngineOperations {
 
     async fn entry_facets(&self, job_id: String) -> Res<EntryFacets> {
         self.engine.entry_facets(&job_id).await.map_err(to_error)
+    }
+
+    async fn entry_thumbnail(&self, job_id: String, idx: u64) -> Res<Option<EntryThumbnail>> {
+        let Some(cache) = self.thumbnails.clone() else {
+            return Err(ErrorBody {
+                code: "unsupported".into(),
+                message: "this service makes no thumbnails".into(),
+            });
+        };
+        let Some(source) = self
+            .engine
+            .entry_source_file(&job_id, idx)
+            .await
+            .map_err(to_error)?
+        else {
+            return Ok(None);
+        };
+        let (c, s) = (cache.clone(), source.clone());
+        let found = match blocking(move || c.lookup(&s)).await {
+            Ok(Lookup::Found(t)) => t,
+            Ok(Lookup::Missing(key)) => {
+                let _permit = self.making.acquire().await.map_err(|e| ErrorBody {
+                    code: "internal".into(),
+                    message: e.to_string(),
+                })?;
+                blocking(move || cache.fill(&source, &key))
+                    .await
+                    .unwrap_or(None)
+            }
+            // The source moved, or can't be read now: no preview, and no error to show.
+            Err(_) => None,
+        };
+        Ok(found.map(|t| EntryThumbnail {
+            mime: t.mime.into(),
+            base64: BASE64.encode(&t.bytes),
+        }))
     }
 
     async fn entry(&self, job_id: String, idx: u64) -> Res<EntryDetail> {

@@ -133,6 +133,7 @@ impl Service {
         let host = Host::open_with_secrets(
             &HostOptions {
                 data_dir: Some(data_dir),
+                cache_dir: Some(cache_dir),
                 rclone: None,
                 transport: TransportChoice::Librclone,
             },

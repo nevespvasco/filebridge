@@ -1,5 +1,7 @@
 //! A job's files for the Files tab and the Entry detail (docs/design/specs/D05).
 
+use std::path::PathBuf;
+
 use filebridge_model::{
     EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
     EntryView, FileCategory, HashView, StatusCount,
@@ -123,13 +125,7 @@ impl Engine {
             let rel = String::from_utf8_lossy(&e.entry.raw_path).into_owned();
             at_root(&under(options.target_dir.as_deref(), rel))
         } else {
-            let source_root = job
-                .sources
-                .get(e.entry.source as usize)
-                .map(|s| source_parent(&bytes_path(s)))
-                .unwrap_or_default();
-            source_root
-                .join(bytes_path(&e.entry.raw_path))
+            local_source(&job.sources, &e)
                 .to_string_lossy()
                 .into_owned()
         };
@@ -155,6 +151,26 @@ impl Engine {
             error: e.error.clone(),
         })
     }
+
+    /// The local file a send's entry was read from, for its thumbnail (ADR 0027). `None` for a
+    /// folder, or for a Repair job (its entries are at the destination).
+    pub async fn entry_source_file(&self, job_id: &str, idx: u64) -> Result<Option<PathBuf>> {
+        let job = self.store.get_job(job_id).await?;
+        if JobKind::parse(&job.kind)? == JobKind::Repair {
+            return Ok(None);
+        }
+        let e = self.store.get_entry(job_id, idx).await?;
+        Ok((!e.entry.is_dir).then(|| local_source(&job.sources, &e)))
+    }
+}
+
+/// Where a send's entry is on this machine: its source's parent joined with its relative path.
+fn local_source(sources: &[Vec<u8>], e: &ManifestEntry) -> PathBuf {
+    let source_root = sources
+        .get(e.entry.source as usize)
+        .map(|s| source_parent(&bytes_path(s)))
+        .unwrap_or_default();
+    source_root.join(bytes_path(&e.entry.raw_path))
 }
 
 fn view(r: &EntryRow) -> EntryView {

@@ -1109,6 +1109,16 @@ const handlers: Handlers = {
       problems: [...by].filter(([s]) => PROBLEMS.includes(s)).reduce((n, [, v]) => n + v, 0),
     };
   },
+  entryThumbnail: async (a) => {
+    const job = find(a.jobId);
+    const { category, is_dir } = entryAt(job, a.idx as number);
+    if (job.kind === "repair" || is_dir || category !== "image") return null;
+    await sleep(120);
+    // A made-up picture: a sky and a hill, coloured by the index.
+    const hue = ((a.idx as number) * 47) % 360;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="192"><rect width="256" height="192" fill="hsl(${hue},55%,70%)"/><circle cx="196" cy="52" r="22" fill="hsl(${(hue + 40) % 360},80%,85%)"/><path d="M0 192 L0 130 Q90 70 170 120 T256 110 L256 192Z" fill="hsl(${(hue + 120) % 360},35%,40%)"/></svg>`;
+    return { mime: "image/svg+xml", base64: btoa(svg) };
+  },
   entry: (a) => {
     const job = find(a.jobId);
     const { renamed, ...view } = entryAt(job, a.idx as number);

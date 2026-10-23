@@ -537,6 +537,33 @@ async fn the_files_of_a_transfer_prove_what_arrived() {
     );
     assert_eq!(detail.issues.len(), 1);
     assert_eq!(detail.issues[0].rule, "nfc");
+    // Its thumbnail is read from the same local file; a folder has none.
+    let local = s
+        .engine
+        .entry_source_file(&job, summer.idx)
+        .await
+        .unwrap()
+        .expect("a file of a send");
+    assert_eq!(local.to_string_lossy(), detail.source_path);
+    assert_eq!(std::fs::read(&local).unwrap(), b"summer");
+    let with_dirs = s
+        .engine
+        .files_page(
+            &job,
+            EntryFilter {
+                include_dirs: true,
+                ..EntryFilter::default()
+            },
+            None,
+            100,
+        )
+        .await
+        .unwrap();
+    let dir = with_dirs.items.iter().find(|e| e.is_dir).expect("a folder");
+    assert_eq!(
+        s.engine.entry_source_file(&job, dir.idx).await.unwrap(),
+        None
+    );
     let failed = s
         .engine
         .entry_detail(&job, problems.items[0].idx)

@@ -13,12 +13,14 @@ librclone = ["filebridge-transport-rclone/librclone"]
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+base64 = "0.22"
 filebridge-core.workspace = true
 filebridge-integration-api.workspace = true
 filebridge-integration-immich.workspace = true
 filebridge-integration-nextcloud.workspace = true
 filebridge-ipc.workspace = true
 filebridge-secrets.workspace = true
+filebridge-thumbnail.workspace = true
 filebridge-transport-api.workspace = true
 filebridge-transport-fake.workspace = true
 filebridge-transport-nextcloud.workspace = true

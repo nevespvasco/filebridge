@@ -122,6 +122,7 @@ async fn run(cli: &Cli) -> Result<()> {
     let host = Host::open(
         &HostOptions {
             data_dir: cli.data_dir.clone(),
+            cache_dir: None,
             rclone: cli.rclone.clone(),
             transport,
         },

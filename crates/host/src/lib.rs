@@ -1,6 +1,7 @@
 //! Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`, and the app
-//! itself on phones, ADR 0014): the data directory and its single-instance lock, rclone (the
-//! sidecar, or librclone in the process), and the built-in plugins.
+//! itself on phones, ADR 0014): the data directory and its single-instance lock, the cache
+//! folder (thumbnails, ADR 0027), rclone (the sidecar, or librclone in the process), and the
+//! built-in plugins.
 //!
 //! This is the one place, besides those binaries, that may name concrete plugins (CLAUDE.md:
 //! only the hosts wire implementations into the `Registry`).
@@ -20,6 +21,7 @@ use filebridge_core::{Engine, EngineOptions, Registry, Store};
 use filebridge_integration_immich::Immich;
 use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
 use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore, StoreResolver};
+use filebridge_thumbnail::Thumbnails;
 use filebridge_transport_fake::FakeTransport;
 use filebridge_transport_nextcloud::NextcloudBulk;
 use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport};
@@ -36,6 +38,9 @@ pub const LOCK_FILE: &str = "filebridge.lock";
 pub struct HostOptions {
     /// Default: the OS data directory (see [`default_data_dir`]).
     pub data_dir: Option<PathBuf>,
+    /// Where thumbnails are cached. Default: `cache/` inside an explicit `data_dir`, else the
+    /// OS cache directory (see [`default_cache_dir`]).
+    pub cache_dir: Option<PathBuf>,
     /// The rclone binary (default: see [`find_rclone`]), or with
     /// [`TransportChoice::Librclone`] the library (default: `librclone.so`, found by the
     /// system loader).
@@ -99,6 +104,8 @@ pub fn lock_data_dir(dir: &Path) -> Result<DataLock> {
 pub struct Host {
     pub engine: Arc<Engine>,
     pub data_dir: PathBuf,
+    /// Thumbnails of source images (ADR 0027), in the cache folder.
+    thumbnails: Arc<Thumbnails>,
     /// The Nextcloud plugin registered in the engine, for its profile wizard.
     nextcloud: Option<Arc<Nextcloud>>,
     /// The Immich plugin registered in the engine, for its profile wizard.
@@ -214,6 +221,7 @@ impl Host {
             self.immich_wizard(),
             self.ssh.clone(),
         )
+        .with_thumbnails(self.thumbnails.clone())
     }
 
     fn immich_wizard(&self) -> Option<ImmichWizard> {
@@ -244,9 +252,19 @@ impl Host {
         let store = Store::open(&dir.join(DB_FILE))
             .with_context(|| format!("open the database in {}", dir.display()))?;
         let engine = Engine::new(store, registry, EngineOptions::default());
+        let cache = match (&opts.cache_dir, &opts.data_dir) {
+            (Some(c), _) => c.clone(),
+            (None, Some(_)) => dir.join("cache"),
+            (None, None) => default_cache_dir().unwrap_or_else(|_| dir.join("cache")),
+        };
+        let thumbnails = Arc::new(Thumbnails::new(
+            cache.join("thumbnails"),
+            filebridge_thumbnail::DEFAULT_MAX_BYTES,
+        ));
         Ok(Self {
             engine,
             data_dir: dir,
+            thumbnails,
             nextcloud: None,
             immich: None,
             transport: None,
@@ -270,6 +288,22 @@ pub fn default_data_dir() -> Result<PathBuf> {
             .map(|d| d.join("filebridge"))
     };
     dir.context("cannot find a data directory; pass --data-dir")
+}
+
+/// The OS cache directory for filebridge: what can be thrown away and made again.
+pub fn default_cache_dir() -> Result<PathBuf> {
+    let home = || std::env::var_os("HOME").map(PathBuf::from);
+    let dir = if cfg!(target_os = "macos") {
+        home().map(|h| h.join("Library/Caches/filebridge"))
+    } else if cfg!(windows) {
+        std::env::var_os("LOCALAPPDATA").map(|a| PathBuf::from(a).join("filebridge").join("cache"))
+    } else {
+        std::env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| home().map(|h| h.join(".cache")))
+            .map(|d| d.join("filebridge"))
+    };
+    dir.context("cannot find a cache directory")
 }
 
 /// The name the installed app gives its rclone sidecar: in `/usr/bin` a plain `rclone` would

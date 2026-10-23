@@ -967,7 +967,8 @@
     "copyHash": "Copiar checksum",
     "copied": "Copiado",
     "reveal": "Mostrar a origem no gestor de ficheiros",
-    "revealFile": "Mostrar no gestor de ficheiros"
+    "revealFile": "Mostrar no gestor de ficheiros",
+    "preview": "Pré-visualização de {name}"
   },
   "ruleName": {
     "nfc": "Acentos compostos (NFC)",

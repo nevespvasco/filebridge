@@ -219,6 +219,8 @@ Entries entries(job_id: String, filter: EntryFilter, after: Option<EntryCursor>,
 EntryFacets entry_facets(job_id: String) -> EntryFacets;
 /// Everything about one Entry, for the detail drawer.
 Entry entry(job_id: String, idx: u64) -> EntryDetail;
+/// As built (ADR 0027): a preview of the source image, `None` when it has none.
+EntryThumbnail entry_thumbnail(job_id: String, idx: u64) -> Option<EntryThumbnail>;
 ```
 
 `limit` is capped at 500 by the service.
@@ -271,6 +273,31 @@ positioned; `J`/`K`/arrows move and `Enter` opens.
   (no `open-path`, no `open-url`). The window and the service run as the same user on the same
   machine, so the source path is local to the window.
 
+### Thumbnails (as built, ADR 0027)
+
+Added after the first release of this spec (it was out of scope, F13).
+
+- **Engine:** `crates/thumbnail` decodes the local source (JPEG, PNG, GIF, WebP, BMP, TIFF;
+  pure Rust `image` codecs), applies the EXIF orientation and shrinks it to fit 256×256 (JPEG,
+  or PNG with transparency). Results live in `<cache>/thumbnails/` (OS cache directory, or the
+  app's cache on phones), keyed by path + size + mtime, at most 128 MB, least recently used
+  removed first; files without a preview leave an empty marker. The source is only opened for
+  reading. `core`'s `Engine::entry_source_file` says which local file an Entry is (none for
+  folders and Repair jobs); `crates/host` wires the cache into `EngineOperations` and decodes
+  at most two at once.
+- **Answer:** `EntryThumbnail { mime, base64 }`, or `None` (not an image, video, HEIC/RAW,
+  damaged, too large, folder, Repair job, source gone). A service built without the cache
+  answers `unsupported`.
+- **Files tab:** the Name cell's Category icon sits in a 28 px box (`EntryThumb.vue`); rows of
+  Category Image that stay on screen 150 ms ask for their preview, which replaces the icon in
+  the same box. `lib/thumbnails.ts` keeps the last 400 in memory and sends at most three
+  requests at once, newest first; a row that leaves the screen drops its queued request. A fast
+  scroll over 10 000 rows asks only for the rows where it stops.
+- **Entry detail:** the preview, when there is one, above the hero (at most 16 rem high), with
+  `alt` "Preview of {name}".
+- Videos show the Category icon: no dependency-light way to read a frame (ffmpeg, libheif are
+  C libraries the phone and desktop builds don't ship).
+
 ## i18n
 
 | Key | en | pt |
@@ -289,6 +316,7 @@ positioned; `J`/`K`/arrows move and `Enter` opens.
 | `entry.hashNone` | Not computed: this transfer ran without verification | Não calculado: esta transferência correu sem verificação |
 | `entry.reveal` | Show source in file manager | Mostrar a origem no gestor de ficheiros |
 | `entry.lossy` | Name isn't valid text: shown approximately | O nome não é texto válido: mostrado aproximadamente |
+| `entry.preview` | Preview of {name} | Pré-visualização de {name} |
 
 ## Accessibility
 
@@ -315,7 +343,8 @@ positioned; `J`/`K`/arrows move and `Enter` opens.
 
 ## Out of scope
 
-- A thumbnail preview of the source image (F13). Later: cheap and read-only, but it proves nothing.
+- ~~A thumbnail preview of the source image (F13).~~ Built later: see
+  [Thumbnails](#thumbnails-as-built-adr-0027). Video frames stay out (no dependency-light decoder).
 - Bulk actions on files (retry these, skip these). The job already retries failures as a whole
   (Resume); per-file actions wait for the skip question in [D04](D04-transfer-queue.md#open-questions).
 - Browsing the destination's own files: that is Repair destination ([04](../../04-name-correction.md)).

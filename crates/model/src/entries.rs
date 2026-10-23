@@ -182,6 +182,16 @@ pub struct EntryDetail {
     pub error: Option<String>,
 }
 
+/// A small preview of an entry's source image (at most 256 px a side), for the Files tab and the
+/// Entry detail (ADR 0027).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct EntryThumbnail {
+    /// `image/jpeg` or `image/png`.
+    pub mime: String,
+    /// The image file, in base64.
+    pub base64: String,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportFormat {

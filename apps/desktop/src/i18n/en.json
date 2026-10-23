@@ -967,7 +967,8 @@
     "copyHash": "Copy checksum",
     "copied": "Copied",
     "reveal": "Show source in file manager",
-    "revealFile": "Show in file manager"
+    "revealFile": "Show in file manager",
+    "preview": "Preview of {name}"
   },
   "ruleName": {
     "nfc": "Accents composed (NFC)",
