@@ -103,8 +103,8 @@ enum Cmd {
     },
     /// Create a synthetic test tree where some names are NFD. Refuses a non-empty folder.
     Fixture(fixture::Args),
-    /// Compare a plain `sync/copy` (baseline) with plan A (per-file rename) and plan B
-    /// (temp folder + batch rename + move). Never writes to the source.
+    /// Compare a plain `sync/copy` (baseline) with plan A (one `copyfile` per file, under the
+    /// corrected name) and the engine. Never writes to the source.
     Bench(bench::Args),
 }
 

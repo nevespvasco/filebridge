@@ -103,8 +103,12 @@ back mid-send; the Job resumes and the verification has zero differences.
 | `TransportChoice::Librclone`, `Host::open_with_secrets` | `crates/host` |
 | The engine in the app under `cfg(mobile)`, same commands and events as the desktop's `Service`; the foreground service follows the busy Jobs | `apps/desktop/src-tauri/src/engine.rs` |
 | Phone-only commands (`platform`, `pick_folder`, `storage_access`, `request_storage_access`, `request_battery_exemption`, `set_send_notice_labels`) and the Keystore `SecretStore` | `apps/desktop/src-tauri/src/native.rs`, `commands.rs` |
-| Android plugin: folder picker → path, "All files access", `SendService` (`specialUse`, wake and Wi-Fi locks), `SecretVault` (AES-GCM key in the Android Keystore) | `gen/android/app/src/main/java/app/filebridge/desktop/` |
+| Android plugin: folder picker → path, "All files access", `SendService` (`specialUse`, wake and Wi-Fi locks), `SecretVault` (AES-GCM key in the Android Keystore) | `gen/android/app/src/main/java/app/filebridge/` |
 | UI: folders only, no drag & drop or "show in file manager", the notification's text in pt/en, battery exemption asked once at the first send | `apps/desktop/src/lib/platform.ts`, `FileDropZone.vue`, `App.vue` |
+| Phone texts: a `phone` section in `en.json`/`pt.json` laid over the normal texts on a phone ("You can leave the app: it keeps going" instead of the window) | `apps/desktop/src/i18n/index.ts` (`applyPhoneTexts`), called from `initPlatform()` |
+| Package id `app.filebridge` on Android only (`identifier` override). Desktop keeps `app.filebridge.desktop`: there it names the folder of the UI's local settings, and changing it would reset them. The service data (`~/.local/share/filebridge`) and the keyring service (`filebridge`) never depended on it | `apps/desktop/src-tauri/tauri.android.conf.json` |
+| Release APK signed with your own key: the one-time `keytool -genkeypair` command is in the script's header; Gradle reads the keystore, alias and passwords from `FILEBRIDGE_ANDROID_*`; with no keystore the debug key signs | `apps/desktop/scripts/android-release.sh`, `gen/android/app/build.gradle.kts` |
+| `quietconfig`: runs before rclone's config setup so librclone no longer logs "Couldn't find configuration directory" | `sidecars/librclone/shim/quietconfig/` |
 
 **Tested** on an Android 15 emulator (x86_64), not yet on a real phone: 1,201 photos (37.5 MB,
 one NFD name) from `DCIM/Camera` to Nextcloud 31 over WebDAV, with the app in the background and
@@ -114,19 +118,15 @@ was stored only as ciphertext.
 
 **Known gaps:**
 
-- **SSH profiles on a phone** (SFTP, Nextcloud direct mode) need the server in `known_hosts`
-  (now in the app's data folder), and a phone has no `ssh` to add it. A "trust this host key"
-  step that shows the fingerprint is needed before SSH profiles work there.
-- **Verifying over Nextcloud WebDAV is slow** (about one file a second): Nextcloud gives no
-  SHA-256, so each file is downloaded, and rclone lists the whole folder for each one. Not
-  phone-specific.
-- librclone logs a harmless "Couldn't find configuration directory" when it loads: Go reads the
-  environment the process started with, before the app sets HOME (`RcloneSetenv` fixes it for
-  everything after).
-- Some texts still say "window" ("You can close the window: it keeps going").
-- The Android package id is `app.filebridge.desktop` (from `tauri.conf.json`).
-- The release APK is signed with the Android debug key; a key of your own goes in
-  `gen/android/key.properties` (git-ignored).
+- **SSH profiles on a phone** (SFTP, Nextcloud direct mode) are not yet tried on one. The
+  "trust this host key" step ([ADR 0015](adr/0015-trust-unknown-host-key-in-the-app.md)) is in
+  the shared `Operations`, so the phone build has it, and it writes to the `known_hosts` in the
+  app's data folder. A phone has no SSH agent: sign in with filebridge's own key
+  ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)) or a key file.
+- rclone picks its cache folder before the app sets HOME. The local, SFTP and WebDAV backends
+  don't use it.
+- An emulator or phone that had the earlier `app.filebridge.desktop` build keeps it as a
+  separate app: uninstall it by hand.
 - iOS (Phase 4b) is not started: it needs a Mac.
 
 ## Risks

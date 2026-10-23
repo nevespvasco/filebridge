@@ -11,7 +11,7 @@ root access.
 | **Automatic resume** | Network failures retry with growing waits — 30 s, 1 min, 2 min, … up to 15 min — **with no limit** while the user doesn't cancel. On startup, every non-terminal job resumes at its persisted stage; completed manifest entries are skipped. |
 | **Block sleep** | While a send runs the system can't suspend: logind inhibitor (`systemd-inhibit` / D-Bus `Inhibit("sleep:idle")`) on Linux, `SetThreadExecutionState(ES_CONTINUOUS \| ES_SYSTEM_REQUIRED)` on Windows, `caffeinate -i` / `IOPMAssertionCreateWithName` on macOS. Released when the job leaves `Transferring`/`Verifying`/`Integrating`. |
 | **Hidden partial files** | Files in progress use a temporary name (e.g. `.filebridge-<id>.partial`, or rclone's `--inplace=false` partial suffix) and only get the final name when complete. A scan mid-transfer never indexes truncated files. |
-| **Manifest** | SHA-256 (or xxHash, faster) of each source file, with its destination name. Verification compares against the manifest and works even with corrected names. Algorithm is an [open decision](10-risks-and-open-decisions.md#open-decisions). |
+| **Manifest** | SHA-256 of each source file, with its destination name ([ADR 0017](adr/0017-sha256-for-the-manifest.md)). Verification compares against the manifest and works even with corrected names. |
 | **Never delete the source** | There is no "move" mode. Freeing the source is a manual action, only available after a verification with **zero differences**. |
 
 ### Backoff schedule

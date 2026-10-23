@@ -24,7 +24,7 @@ moving bytes reliably.
 | SQLite | `rusqlite` (bundled) or `sqlx` | Prefer `rusqlite` + a dedicated writer task; migrations embedded |
 | Unicode normalization | `unicode-normalization` | NFC/NFD checks and conversion |
 | Encoding detection | `encoding_rs` (+ `chardetng`) | Decode Latin-1/CP1252 names |
-| Hashing | `sha2`, `xxhash-rust` | Algorithm is an [open decision](10-risks-and-open-decisions.md#open-decisions) |
+| Hashing | `sha2` | SHA-256 for the manifest ([ADR 0017](adr/0017-sha256-for-the-manifest.md)) |
 | Keyring | `keyring` | Per-OS backends |
 | SSH (direct mode setup) | `russh` or `openssh` | Detection wizard and `occ` calls |
 | HTTP (rclone rc, WebDAV checks) | `reqwest` | rclone `rc` is a local HTTP JSON API |

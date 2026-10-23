@@ -100,9 +100,7 @@ impl RcloneTransport {
         algo: HashAlgo,
         out: &mut [Option<Result<Digest>>],
     ) {
-        let Ok(hash_type) = hash_type(algo) else {
-            return;
-        };
+        let hash_type = hash_type(algo);
         let mut folders: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
         for (i, path) in paths.iter().enumerate() {
             folders
@@ -463,7 +461,7 @@ impl Transport for RcloneTransport {
 
     async fn hash(&self, dest: &Destination, path: &RemotePath, algo: HashAlgo) -> Result<Digest> {
         let creds = self.creds(dest).await?;
-        let hash_type = hash_type(algo)?;
+        let hash_type = hash_type(algo);
         let fs = dest_fs(dest, &creds, path.as_str())?;
         let params =
             |download: bool| json!({ "fs": fs, "hashType": hash_type, "download": download });
@@ -504,7 +502,7 @@ impl Transport for RcloneTransport {
         algo: HashAlgo,
     ) -> Vec<Result<Digest>> {
         let mut out: Vec<Option<Result<Digest>>> = vec![None; paths.len()];
-        if hash_type(algo).is_ok() && !paths.is_empty() {
+        if !paths.is_empty() {
             match self.creds(dest).await {
                 Ok(creds) => {
                     self.hash_by_folder(dest, &creds, paths, algo, &mut out)
@@ -569,12 +567,9 @@ fn is_absent(listed: &HashMap<String, HashSet<String>>, dest: &RemotePath) -> bo
 const HASH_DOWNLOADS: usize = 8;
 
 /// rclone's name for a hash kind.
-fn hash_type(algo: HashAlgo) -> Result<&'static str> {
+fn hash_type(algo: HashAlgo) -> &'static str {
     match algo {
-        HashAlgo::Sha256 => Ok("sha256"),
-        HashAlgo::Xxh3_128 => Err(TransportError::unsupported(
-            "xxh3-128 is not supported by rclone",
-        )),
+        HashAlgo::Sha256 => "sha256",
     }
 }
 
@@ -592,7 +587,6 @@ fn hashsum_lines(v: &Value) -> impl Iterator<Item = &str> {
 fn parse_hashsum_line(line: &str, algo: HashAlgo) -> Option<(Vec<u8>, &str)> {
     let width = match algo {
         HashAlgo::Sha256 => 64,
-        HashAlgo::Xxh3_128 => 32,
     };
     let (hex, path) = line.split_once("  ")?;
     if hex.len() != width {

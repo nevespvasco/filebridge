@@ -64,13 +64,13 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 
 | Type | Crate | Shape (first draft) |
 |---|---|---|
-| `TransportCaps` | transport-api | bitflags: `RESUME`, `HASH_SHA256`, `HASH_XXH`, `CHOWN`, `CHMOD`, `RENAME`, `PARTIAL_HIDDEN` |
+| `TransportCaps` | transport-api | bitflags: `RESUME`, `HASH_SHA256`, `CHOWN`, `CHMOD`, `RENAME`, `PARTIAL_HIDDEN` |
 | `Destination` | transport-api | transport id + backend config (host, port, user, root path, WebDAV URL…) + keyring refs |
 | `RemotePath` | transport-api | destination-relative path, always valid UTF-8 NFC |
 | `PreflightReport` | transport-api | `free_bytes: Option<u64>`, `writable: bool`, `latency_ms`, `checks: Vec<Check { id, status: Ok/Warn/Fail, message }>` |
 | `TransferJob` | transport-api | job id, list of `TransferItem { source: PathBuf (raw bytes OK), dest: RemotePath, size, expected_hash }`, options (concurrency; the bandwidth limit is app-wide, `Transport::set_bandwidth_limit`) |
 | `TransferResult` | transport-api | per-item outcome (`Done` / `Failed(err)`), bytes moved |
-| `HashAlgo` / `Digest` | transport-api | `Sha256` / `Xxh3_128`; digest as bytes + hex |
+| `HashAlgo` / `Digest` | transport-api | `Sha256` only ([ADR 0017](adr/0017-sha256-for-the-manifest.md)); digest as bytes + hex |
 | `ProgressSink` | transport-api | cloneable handle wrapping an mpsc sender of typed progress events; cheap to call per file |
 | `Entry` | names | source path as raw bytes (`OsString` / `Vec<u8>`), decoded name if valid UTF-8, size, is_dir, parent id |
 | `Issue` | names | rule id, severity (`Auto` / `NeedsDecision`), human message key, before/after bytes for display |

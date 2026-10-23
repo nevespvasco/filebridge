@@ -275,14 +275,6 @@ pub async fn check(transport: &dyn Transport, dest: &Destination, scratch: &Path
             assert_eq!(got.unwrap().bytes, Sha256::digest(data).to_vec(), "{to}");
         }
     }
-    if !caps.contains(TransportCaps::HASH_XXH) {
-        let path = RemotePath::new("a.txt").unwrap();
-        let err = transport
-            .hash(dest, &path, HashAlgo::Xxh3_128)
-            .await
-            .unwrap_err();
-        assert_eq!(err.kind, ErrorKind::Unsupported, "{err:?}");
-    }
 }
 
 /// The promise of [`Transport::move_path`], for adapters with [`TransportCaps::MOVE`]: a file

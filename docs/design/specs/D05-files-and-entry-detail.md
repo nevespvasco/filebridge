@@ -259,8 +259,8 @@ positioned; `J`/`K`/arrows move and `Enter` opens.
   Mismatch and Missing alike (the source side is known in all three).
 - The store's `set_verify_states` updates `hash`/`hash_algo` only when a digest is given (`COALESCE`),
   so a later round without a digest never clears one.
-- This does not settle the xxHash vs SHA-256 open decision
-  ([10](../../10-risks-and-open-decisions.md#open-decisions)): the algorithm is stored per entry.
+- The algorithm is stored per entry. SHA-256 is the manifest's hash
+  ([ADR 0017](../../adr/0017-sha256-for-the-manifest.md)).
 
 ### Window
 
