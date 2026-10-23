@@ -12,11 +12,12 @@ import AppIcon from "./AppIcon.vue";
 import HelpTip from "./HelpTip.vue";
 import StatusIcon from "./StatusIcon.vue";
 
+const props = defineProps<{ /** The Nextcloud user typed in the mode advisor. */ initialUser?: string }>();
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const { t, te } = useI18n();
 const profiles = useProfiles();
 
-const form = reactive({ name: "Nextcloud", server: "", user: "", folder: "" });
+const form = reactive({ name: "Nextcloud", server: "", user: props.initialUser ?? "", folder: "" });
 /** Kept apart from the form and cleared once used. */
 const appPassword = ref("");
 const running = ref(false);

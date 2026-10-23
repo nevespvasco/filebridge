@@ -13,6 +13,7 @@ import HelpTip from "./HelpTip.vue";
 import HostKeyPrompt from "./HostKeyPrompt.vue";
 import ImmichFields, { type ImmichForm } from "./ImmichFields.vue";
 import NextcloudDetect from "./NextcloudDetect.vue";
+import NextcloudModeAdvisor, { type AdvisedMode, type AdvisorFields } from "./NextcloudModeAdvisor.vue";
 import NextcloudWebdav from "./NextcloudWebdav.vue";
 import SegmentedControl from "./SegmentedControl.vue";
 
@@ -37,6 +38,15 @@ const apiKey = ref("");
 const immichResult = shallowRef<DetectNextcloudResponse_Serialize | null>(null);
 /** Nextcloud's two modes (docs/05): WebDAV by default, direct on the server for big loads. */
 const ncMode = ref<"webdav" | "direct">("webdav");
+/** What the mode advisor was given (ADR 0024), to fill in the chosen form; `ncKey` remounts the
+ *  forms so they pick it up. */
+const ncFields = shallowRef<AdvisorFields | null>(null);
+const ncKey = ref(0);
+function advised(mode: AdvisedMode, fields: AdvisorFields) {
+  ncMode.value = mode;
+  ncFields.value = fields;
+  ncKey.value++;
+}
 const ncModes = computed(() => [
   { value: "webdav" as const, label: t("webdav.modeWebdav"), icon: "nextcloud" as const },
   { value: "direct" as const, label: t("webdav.modeDirect"), icon: "sftp" as const },
@@ -212,8 +222,9 @@ async function save() {
         <SegmentedControl v-model="ncMode" :options="ncModes" :label="$t('webdav.mode')" />
         <span class="small muted">{{ $t(`webdav.modeHint.${ncMode}`) }}</span>
       </div>
-      <NextcloudWebdav v-if="ncMode === 'webdav'" @saved="emit('saved', $event)" @cancel="emit('cancel')" />
-      <NextcloudDetect v-else @saved="emit('saved', $event)" @cancel="emit('cancel')" />
+      <NextcloudModeAdvisor @advised="advised" />
+      <NextcloudWebdav v-if="ncMode === 'webdav'" :key="`w${ncKey}`" :initial-user="ncFields?.nextcloud_user" @saved="emit('saved', $event)" @cancel="emit('cancel')" />
+      <NextcloudDetect v-else :key="`d${ncKey}`" :initial="ncFields" @saved="emit('saved', $event)" @cancel="emit('cancel')" />
     </template>
 
     <form v-else @submit.prevent="save">

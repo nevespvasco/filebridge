@@ -1,7 +1,7 @@
 // Saved destinations, their connection tests and the Nextcloud direct-mode detection.
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
-import type { DetectNextcloudRequest_Deserialize, DetectNextcloudResponse_Serialize, ImmichRequest_Deserialize, NextcloudWebdavRequest, Profile_Deserialize, Profile_Serialize, ProfileTest_Serialize, StorageView_Serialize as StorageView } from "@/bindings";
+import type { DetectNextcloudRequest_Deserialize, DetectNextcloudResponse_Serialize, ImmichRequest_Deserialize, NextcloudAdvice, NextcloudWebdavRequest, Profile_Deserialize, Profile_Serialize, ProfileTest_Serialize, StorageView_Serialize as StorageView } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 
 export type TestState = { running: boolean; result?: ProfileTest_Serialize; error?: string };
@@ -83,6 +83,11 @@ export const useProfiles = defineStore("profiles", () => {
     return res;
   }
 
+  /** Which Nextcloud mode suits a server (ADR 0024): detection over SSH, nothing saved. */
+  async function probeNextcloud(req: DetectNextcloudRequest_Deserialize): Promise<NextcloudAdvice> {
+    return api.probeNextcloud(req);
+  }
+
   /** WebDAV-mode wizard (docs/05): the app password goes to the keyring, never into a profile. */
   async function addNextcloudWebdav(req: NextcloudWebdavRequest): Promise<DetectNextcloudResponse_Serialize> {
     const res = await api.addNextcloudWebdav(req);
@@ -98,7 +103,7 @@ export const useProfiles = defineStore("profiles", () => {
     return res;
   }
 
-  return { list, loaded, loadError, tests, storage, checking, low, byId, load, ensure, save, remove, test, loadStorage, loadAllStorage, detectNextcloud, addNextcloudWebdav, addImmich };
+  return { list, loaded, loadError, tests, storage, checking, low, byId, load, ensure, save, remove, test, loadStorage, loadAllStorage, detectNextcloud, probeNextcloud, addNextcloudWebdav, addImmich };
 });
 
 /** Free space reported by a connection test, if any. */

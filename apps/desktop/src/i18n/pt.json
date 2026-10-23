@@ -701,6 +701,19 @@
     "hint": {
       "host": "O nó Proxmox ou o próprio servidor do Nextcloud",
       "sshUser": "Normalmente root"
+    },
+    "advice": {
+      "title": "Não sabe qual escolher? Deixe o filebridge verificar o servidor",
+      "intro": "O filebridge entra por SSH e procura o Nextcloud como o modo direto faria, e depois recomenda um modo. Nada é alterado no servidor e nada é guardado.",
+      "check": "Verificar o servidor",
+      "checking": "A verificar…",
+      "recommended": "Recomendado: {mode}",
+      "ready": "O SSH chega à máquina onde o Nextcloud corre com as permissões de que o modo direto precisa, por isso os envios grandes podem ir diretamente para a pasta de dados.",
+      "unreachable": "O SSH não conseguiu ligar a este servidor, por isso o modo direto não funciona a partir daqui. O WebDAV só precisa do endereço do Nextcloud e de uma palavra-passe de aplicação.",
+      "rights": "O Nextcloud está lá, mas este utilizador SSH não tem as permissões de que o modo direto precisa (root ou sudo sem palavra-passe, e escrever na pasta de ficheiros do utilizador). O WebDAV não precisa de nada disso.",
+      "not_found": "Não foi encontrado por SSH nenhum Nextcloud utilizável neste servidor. O WebDAV só precisa do endereço do Nextcloud e de uma palavra-passe de aplicação.",
+      "untrusted": "A chave do servidor não foi aceite, por isso o filebridge não entrou. O WebDAV só precisa do endereço do Nextcloud e de uma palavra-passe de aplicação.",
+      "override": "Pode escolher o outro modo acima na mesma."
     }
   },
   "immich": {

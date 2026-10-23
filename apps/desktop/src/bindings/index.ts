@@ -36,6 +36,11 @@ export const commands = {
 	 */
 	detectNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("detect_nextcloud", { req })),
 	/**
+	 *  Which Nextcloud mode suits this server (ADR 0024): detection over SSH as for
+	 *  `detect_nextcloud`, but nothing is saved; `name` and `folder` are not used.
+	 */
+	probeNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<NextcloudAdvice, ErrorBody>(__TAURI_INVOKE("probe_nextcloud", { req })),
+	/**
 	 *  Nextcloud WebDAV-mode profile wizard: checks the address, the sign-in, the folder
 	 *  and the space, and saves the profile (its app password in the keyring) when they
 	 *  pass. Same answer as `detect_nextcloud`.
@@ -189,7 +194,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 24 as const;
+export const PROTOCOL_VERSION = 25 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -1134,6 +1139,27 @@ export type LogEntry = {
 };
 
 export type LogLevel = "info" | "warn" | "error";
+
+/**  The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024). */
+export type NextcloudAdvice = {
+	/**
+	 *  `direct` when SSH reaches the machine Nextcloud runs on with the rights direct mode needs,
+	 *  else `webdav`.
+	 */
+	mode: string,
+	/**
+	 *  Why: `ready`, `unreachable` (SSH didn't connect), `rights` (the SSH user lacks root,
+	 *  `sudo -n` or writing the files folder) or `not_found` (no usable Nextcloud there). The
+	 *  window's i18n key is `nextcloud.advice.<reason>`.
+	 */
+	reason: string,
+	/**  The message of the step (or the connection error) that decided it, untranslated. */
+	message: string,
+	/**  The setup detection found (`proxmox-lxc`, `host`, …); empty when SSH didn't connect. */
+	detector: string,
+	/**  What detection did, for the Details panel. */
+	steps: DetectStepView[],
+};
 
 /**
  *  Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app

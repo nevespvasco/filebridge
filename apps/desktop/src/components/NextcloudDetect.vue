@@ -14,19 +14,22 @@ import StatusIcon from "./StatusIcon.vue";
 import DetailsPanel from "./DetailsPanel.vue";
 import HelpTip from "./HelpTip.vue";
 import HostKeyPrompt from "./HostKeyPrompt.vue";
+import type { AdvisorFields } from "./NextcloudModeAdvisor.vue";
 
+/** What the mode advisor was given, so it isn't typed twice. */
+const props = defineProps<{ initial?: AdvisorFields | null }>();
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const { t, te } = useI18n();
 const profiles = useProfiles();
 
 const form = reactive({
   name: "Nextcloud",
-  host: "",
-  port: 22,
-  user: "root",
+  host: props.initial?.host ?? "",
+  port: props.initial?.port ?? 22,
+  user: props.initial?.user ?? "root",
   key_file: "",
   known_hosts_file: "",
-  nextcloud_user: "",
+  nextcloud_user: props.initial?.nextcloud_user ?? "",
   folder: "",
   ctid: "",
   install_dir: "",

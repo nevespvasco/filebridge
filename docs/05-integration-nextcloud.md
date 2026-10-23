@@ -52,14 +52,25 @@ network (like the 500 GB initial migration).
   offers it (`transport-nextcloud`, [ADR 0016](adr/0016-nextcloud-bulk-upload.md)): the same
   1,200 files in 7.6 s, and 14 s even with the account password. Bigger files, and anything the
   bulk upload doesn't take, go through rclone.
-- Mode auto-selection below is not built: the user picks the mode in the wizard.
+- Mode auto-selection is built as advice in the wizard (below); the send-size threshold is not.
 
 ### Mode auto-selection
 
-- Profile has only WebDAV credentials → WebDAV.
-- Profile has direct mode configured **and** the server is reachable (preflight) **and** the send
-  is above a threshold (default 20 GB or 50 000 files, configurable) → suggest direct mode.
-- The user can always override in step 4 of the wizard.
+The wizard recommends a mode from the server itself ([ADR 0024](adr/0024-nextcloud-mode-advice-and-occ-user.md)):
+"Not sure which to pick? Let filebridge check the server" asks for the SSH server, port and user
+and the Nextcloud user, and `probe_nextcloud` (`Nextcloud::advise`) runs direct mode's detection
+without saving anything.
+
+- Every step passes → **direct mode**: SSH reaches the machine Nextcloud runs on with the rights
+  it needs.
+- SSH doesn't connect, or the server's key isn't trusted → **WebDAV**.
+- Nextcloud is there but the SSH user lacks root (or `sudo -n`) or can't write the files folder
+  → **WebDAV**, saying which right is missing.
+- No usable Nextcloud found over SSH → **WebDAV**.
+
+The window moves the mode control to the recommendation, explains it (pt and en, with the step's
+own message), fills the chosen form with what was typed, and the user can still pick the other
+mode. Not built: suggesting direct mode only above a send size (20 GB or 50 000 files).
 
 ## Profile detection wizard
 

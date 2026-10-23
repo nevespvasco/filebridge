@@ -55,6 +55,10 @@ pub struct Detection {
     pub containers: Vec<LxcContainer>,
     /// Present when every step passed (warnings allowed); ready to save.
     pub profile: Option<NextcloudDirectProfile>,
+    /// The failed step found Nextcloud but not the rights direct mode needs (root or `sudo -n`,
+    /// writing the files folder), rather than no usable Nextcloud.
+    #[serde(default)]
+    pub lacks_rights: bool,
 }
 
 #[async_trait]
@@ -100,6 +104,7 @@ struct Recorder<'a> {
     shell: &'a dyn RemoteShell,
     steps: Vec<DetectStep>,
     pending: Vec<RanCommand>,
+    lacks_rights: bool,
 }
 
 /// A failed step: message for the user. The step is recorded before returning it.
@@ -111,6 +116,7 @@ impl<'a> Recorder<'a> {
             shell,
             steps: Vec::new(),
             pending: Vec::new(),
+            lacks_rights: false,
         }
     }
 
@@ -151,6 +157,12 @@ impl<'a> Recorder<'a> {
         Failed
     }
 
+    /// Fails step `id` for want of rights (see [`Detection::lacks_rights`]).
+    fn fail_rights(&mut self, id: &str, message: impl Into<String>) -> Failed {
+        self.lacks_rights = true;
+        self.fail(id, message)
+    }
+
     /// Runs `cmd`; a lost connection fails step `id`.
     async fn run_in(&mut self, id: &str, cmd: String) -> Result<Output, Failed> {
         match self.run(cmd).await {
@@ -189,6 +201,7 @@ impl Detector for LxcDetector {
         Detection {
             detector: Self::ID.to_string(),
             applies,
+            lacks_rights: rec.lacks_rights,
             steps: rec.steps,
             containers,
             profile,
@@ -208,6 +221,7 @@ impl Detector for HostDetector {
         Detection {
             detector: Self::ID.to_string(),
             applies: true,
+            lacks_rights: rec.lacks_rights,
             steps: rec.steps,
             containers: Vec::new(),
             profile,
@@ -257,7 +271,7 @@ async fn detect_lxc(
         };
         out = rec.run_in("pct-list", sudo.host(&["pct", "list"])).await?;
         if !out.success() {
-            return Err(rec.fail(
+            return Err(rec.fail_rights(
                 "pct-list",
                 format!(
                     "`pct list` needs root: log in as root or allow `sudo pct` for {} ({})",
@@ -455,7 +469,7 @@ async fn detect_host(
             .run_in("host", plain.host(&["sudo", "-n", "true"]))
             .await?;
         if !out.success() {
-            return Err(rec.fail(
+            return Err(rec.fail_rights(
                 "host",
                 format!(
                     "direct mode sets the owner of the files it sends, which needs root: log in \
@@ -630,7 +644,7 @@ async fn check_writable(
         .run_in("writable", plain.host(&["test", "-w", files]))
         .await?;
     if !out.success() {
-        return Err(rec.fail(
+        return Err(rec.fail_rights(
             "writable",
             format!(
                 "{ssh_user} cannot write to {files}: files are sent over SFTP as the SSH user \

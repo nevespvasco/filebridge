@@ -65,7 +65,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
 ///     destination pauses the job).
 /// 24: `add_immich` (ADR 0020).
-pub const PROTOCOL_VERSION: u32 = 24;
+/// 25: `probe_nextcloud` (ADR 0024).
+pub const PROTOCOL_VERSION: u32 = 25;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,6 +252,24 @@ pub struct DetectNextcloudResponse {
     pub containers: Vec<String>,
     /// The saved profile, when every step passed.
     pub profile: Option<Profile>,
+}
+
+/// The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct NextcloudAdvice {
+    /// `direct` when SSH reaches the machine Nextcloud runs on with the rights direct mode needs,
+    /// else `webdav`.
+    pub mode: String,
+    /// Why: `ready`, `unreachable` (SSH didn't connect), `rights` (the SSH user lacks root,
+    /// `sudo -n` or writing the files folder) or `not_found` (no usable Nextcloud there). The
+    /// window's i18n key is `nextcloud.advice.<reason>`.
+    pub reason: String,
+    /// The message of the step (or the connection error) that decided it, untranslated.
+    pub message: String,
+    /// The setup detection found (`proxmox-lxc`, `host`, …); empty when SSH didn't connect.
+    pub detector: String,
+    /// What detection did, for the Details panel.
+    pub steps: Vec<DetectStepView>,
 }
 
 /// The `systemd --user` unit that starts `filebridge-service` at login (Linux), as

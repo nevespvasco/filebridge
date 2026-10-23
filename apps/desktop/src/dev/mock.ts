@@ -714,6 +714,29 @@ const handlers: Handlers = {
     profiles.push(profile);
     return { detector, steps, containers: [], profile };
   },
+  probeNextcloud: async (a) => {
+    await sleep(900);
+    const req = a.req as { host: string; user: string; nextcloud_user: string };
+    // "webdav-only…" has no SSH, a non-root user lacks the rights, anything else is ready.
+    if (/^webdav/i.test(req.host)) return { mode: "webdav", reason: "unreachable", message: `could not connect to ${req.host}:22: connection refused`, detector: "", steps: [] };
+    if (req.user !== "root") {
+      return {
+        mode: "webdav",
+        reason: "rights",
+        message: `direct mode sets the owner of the files it sends, which needs root: log in as root or allow \`sudo -n\` for ${req.user} (sudo: a password is required)`,
+        detector: "host",
+        steps: [{ id: "host", status: "fail", message: "needs root", commands: ["id -u  (exit 0)", "sudo -n true  (exit 1)"] }],
+      };
+    }
+    const proxmox = /proxmox|pve/i.test(req.host);
+    return {
+      mode: "direct",
+      reason: "ready",
+      message: `Nextcloud found (${proxmox ? "proxmox-lxc" : "host"})`,
+      detector: proxmox ? "proxmox-lxc" : "host",
+      steps: [{ id: "owner", status: "ok", message: "files will be owned by 33:33 (www-data)", commands: ["stat -c %u:%g /mnt/ncdata  (exit 0)"] }],
+    };
+  },
   createJob: (a) => {
     const id = newId("j");
     jobs.unshift({

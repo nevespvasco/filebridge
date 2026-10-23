@@ -28,7 +28,7 @@ pub use detect::{DetectInput, Detection, Detector, HostDetector, LxcDetector};
 pub use direct::DirectOptions;
 pub use profile::{NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
 pub use rules::{NextcloudNfc, NextcloudReserved};
-pub use setup::{ProfileParts, Setup, SetupError, SetupRequest};
+pub use setup::{Advice, AdviceReason, Mode, ProfileParts, Setup, SetupError, SetupRequest};
 pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};
 pub use ssh::{SshConnector, SshShell};
 pub use webdav::NextcloudWebdavProfile;

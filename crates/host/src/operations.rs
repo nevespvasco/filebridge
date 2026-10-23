@@ -13,9 +13,9 @@ use filebridge_ipc::{
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest, IssueView,
-    JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
-    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
-    SourceInfo, StorageView,
+    JobFilter, JobPage, JobSummary, LogEntry, NextcloudAdvice, NextcloudWebdavRequest, Operations,
+    PROTOCOL_VERSION, Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest,
+    RuleCount, SendOptions, SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -113,6 +113,16 @@ impl Operations for EngineOperations {
     async fn detect_nextcloud(&self, req: DetectNextcloudRequest) -> Res<DetectNextcloudResponse> {
         match &self.nextcloud {
             Some(wizard) => wizard.run(&self.engine, req, None).await,
+            None => Err(ErrorBody {
+                code: "unsupported".into(),
+                message: "this service has no Nextcloud support".into(),
+            }),
+        }
+    }
+
+    async fn probe_nextcloud(&self, req: DetectNextcloudRequest) -> Res<NextcloudAdvice> {
+        match &self.nextcloud {
+            Some(wizard) => Ok(wizard.probe(req).await),
             None => Err(ErrorBody {
                 code: "unsupported".into(),
                 message: "this service has no Nextcloud support".into(),

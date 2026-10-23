@@ -701,6 +701,19 @@
     "hint": {
       "host": "The Proxmox node or the Nextcloud server itself",
       "sshUser": "Usually root"
+    },
+    "advice": {
+      "title": "Not sure which to pick? Let filebridge check the server",
+      "intro": "filebridge signs in over SSH and looks for Nextcloud as direct mode would, then recommends a mode. Nothing is changed on the server and nothing is saved.",
+      "check": "Check the server",
+      "checking": "Checking…",
+      "recommended": "Recommended: {mode}",
+      "ready": "SSH reaches the machine Nextcloud runs on with the rights direct mode needs, so big sends can go straight into its data folder.",
+      "unreachable": "SSH did not connect to this server, so direct mode can't work from here. WebDAV needs only Nextcloud's address and an app password.",
+      "rights": "Nextcloud is there, but this SSH user lacks the rights direct mode needs (root or passwordless sudo, and writing the user's files folder). WebDAV needs none of that.",
+      "not_found": "No usable Nextcloud was found on this server over SSH. WebDAV needs only Nextcloud's address and an app password.",
+      "untrusted": "The server's key was not trusted, so filebridge did not sign in. WebDAV needs only Nextcloud's address and an app password.",
+      "override": "You can still pick the other mode above."
     }
   },
   "immich": {
