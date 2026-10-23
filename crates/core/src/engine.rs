@@ -11,7 +11,7 @@ use filebridge_integration_api::{JobContext, ProfileView};
 use filebridge_model::AppSettings;
 use filebridge_names::{Choice, Entry, NamePlan, Planned};
 use filebridge_store::{Decision, EntryState, IssueRow, JobRow, ManifestCounts, NewJob, Store};
-use tokio::sync::{Mutex, broadcast, watch};
+use tokio::sync::{Mutex, Notify, broadcast, watch};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -19,6 +19,7 @@ use crate::analyse::{self, bytes_path, os_bytes};
 use crate::backoff::Backoff;
 use crate::decisions;
 use crate::lifecycle::{JobLock, JobLocks};
+use crate::schedules::WallClock;
 use crate::settings::LocalClock;
 use crate::{
     AnalysisSummary, CoreError, Counts, DecisionInput, Event, IssueView, JobKind, JobState,
@@ -44,6 +45,8 @@ pub struct EngineOptions {
     pub local_clock: LocalClock,
     /// How often a transfer measures the destination's free space (docs/design/specs/D03).
     pub space_check_every: Duration,
+    /// The time and time zone schedules run by (docs/adr/0019).
+    pub wall_clock: WallClock,
 }
 
 impl Default for EngineOptions {
@@ -55,6 +58,7 @@ impl Default for EngineOptions {
             max_verify_rounds: 3,
             local_clock: LocalClock::default(),
             space_check_every: Duration::from_secs(120),
+            wall_clock: WallClock::default(),
         }
     }
 }
@@ -96,6 +100,10 @@ pub struct Engine {
     pub(crate) skips: broadcast::Sender<(String, u64)>,
     /// Folder size measurements running now (`sizes.rs`).
     pub(crate) sizes: crate::sizes::Scans,
+    /// Held while a schedule's runs are looked at or created, so two never start at once.
+    pub(crate) schedule_lock: Mutex<()>,
+    /// Wakes the scheduler: a schedule was saved, or a run became Ready.
+    pub(crate) schedules_changed: Notify,
 }
 
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
@@ -124,6 +132,8 @@ impl Engine {
             locks: JobLocks::default(),
             skips: broadcast::channel(64).0,
             sizes: crate::sizes::Scans::default(),
+            schedule_lock: Mutex::new(()),
+            schedules_changed: Notify::new(),
         })
     }
 
@@ -332,6 +342,13 @@ impl Engine {
     /// without the profile. Cancel those jobs first, or let them finish.
     pub async fn delete_profile(&self, id: &str) -> Result<()> {
         let profile = self.get_profile(id).await.ok();
+        let schedules = self.store.schedules_of_profile(id).await?;
+        if !schedules.is_empty() {
+            return Err(CoreError::Invalid(format!(
+                "{} schedule(s) send to this destination: remove them before deleting it",
+                schedules.len()
+            )));
+        }
         let unfinished = self.store.unfinished_jobs_of_profile(id).await?;
         if !unfinished.is_empty() {
             let mut states: Vec<&str> = unfinished.iter().map(|j| j.state.as_str()).collect();
@@ -520,6 +537,7 @@ impl Engine {
                 sources: roots,
                 label: None,
                 again_of: None,
+                schedule_id: None,
             })
             .await?;
         let sources: Vec<String> = sources.iter().map(|s| s.display().to_string()).collect();
@@ -611,6 +629,7 @@ impl Engine {
             counts,
             label: row.label,
             again_of: row.again_of,
+            schedule_id: row.schedule_id,
         })
     }
 
@@ -652,11 +671,16 @@ impl Engine {
             self.scan_destination(&job_id, &profile, options.target_dir.as_deref(), &names)
                 .await?
         } else {
+            // A scheduled run sends only what changed since the schedule last sent it.
+            let sent = match &row.schedule_id {
+                Some(schedule_id) => Some(self.sent_before(schedule_id, &row.sources).await?),
+                None => None,
+            };
             let events = self.events.clone();
             let jid = job_id.clone();
             tokio::task::spawn_blocking(move || {
                 let (mut files, mut bytes) = (0, 0);
-                analyse::analyse_sources(&sources, &names, |src, f, b| {
+                analyse::analyse_sources(&sources, &names, sent.as_ref(), |src, f, b| {
                     files += f;
                     bytes += b;
                     let _ = events.send(Event::ScanProgress {
@@ -692,6 +716,9 @@ impl Engine {
         if let Some(from) = &row.again_of {
             self.carry_decisions(&job_id, from).await?;
         }
+        if let Some(schedule_id) = &row.schedule_id {
+            self.settle_run_names(&job_id, schedule_id).await?;
+        }
 
         let mut preflight = self.preflight(&profile, &job_id).await?;
         {
@@ -720,6 +747,7 @@ impl Engine {
                     "files": analysis.files, "bytes": analysis.bytes,
                     "scan_errors": analysis.scan_errors.len(),
                     "skipped_symlinks": analysis.skipped_symlinks,
+                    "unchanged": analysis.unchanged,
                     "preflight": preflight,
                 }),
             )
@@ -735,6 +763,7 @@ impl Engine {
             pending_decisions: pending,
             scan_errors: analysis.scan_errors,
             skipped_symlinks: analysis.skipped_symlinks,
+            unchanged: analysis.unchanged,
             preflight,
         })
     }
@@ -992,6 +1021,8 @@ impl Engine {
             && self.store.pending_issue_count(job.id()).await? == 0
         {
             job.go(JobState::Ready, None).await?;
+            // A scheduled run that was waiting for these decisions starts on its own.
+            self.schedules_changed.notify_one();
         }
         Ok(())
     }
@@ -1102,6 +1133,12 @@ impl Engine {
                     let options: SendOptions =
                         serde_json::from_value(row.options).unwrap_or_default();
                     sent_into = Some((row.profile_id, options.target_dir));
+                }
+                // The schedule's next runs give the same names the same decisions.
+                if let Some(schedule_id) = &row.schedule_id {
+                    self.store
+                        .save_schedule_decisions(schedule_id, job_id)
+                        .await?;
                 }
             }
             job.go(JobState::Transferring, None).await?;

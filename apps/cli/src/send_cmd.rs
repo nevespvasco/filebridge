@@ -81,6 +81,7 @@ pub async fn send(g: &Global, args: SendArgs) -> Result<()> {
                 verify: args.verify,
                 concurrency: args.concurrency,
                 target_dir: args.into,
+                keep_older: false,
             },
         )
         .await?;
@@ -380,7 +381,7 @@ fn print_analysis(s: &AnalysisSummary) {
 }
 
 /// Prints progress until the job stops. Ctrl-C pauses the job instead of killing the transfer.
-async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
+pub(crate) async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
     let mut rx = engine.subscribe();
     let tty = std::io::stderr().is_terminal();
     let mut last_line = Instant::now() - Duration::from_secs(1);
@@ -511,7 +512,7 @@ pub fn human_bytes(b: u64) -> String {
     }
 }
 
-fn human_secs(s: u64) -> String {
+pub(crate) fn human_secs(s: u64) -> String {
     match s {
         0..60 => format!("{s}s"),
         60..3600 => format!("{}m{:02}s", s / 60, s % 60),

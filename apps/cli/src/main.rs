@@ -1,8 +1,9 @@
 //! filebridge CLI: the same engine as the app, without a UI (servers, scripts).
 //!
-//! Engine commands (`profile`, `send`, `settings`, `jobs`, …) run `core` in-process. The Phase 0
-//! commands (`scan`, `fixture`, `bench`) stay for benchmarking rename-in-transit. `completions`
-//! and `man` print what an install puts in place for the shell and `man` (apps/cli/README.md).
+//! Engine commands (`profile`, `send`, `schedule`, `settings`, `jobs`, …) run `core` in-process.
+//! The Phase 0 commands (`scan`, `fixture`, `bench`) stay for benchmarking rename-in-transit.
+//! `completions` and `man` print what an install puts in place for the shell and `man`
+//! (apps/cli/README.md).
 
 mod app;
 mod bench;
@@ -10,6 +11,7 @@ mod fixture;
 mod prepare;
 mod profile_cmd;
 mod report_cmd;
+mod schedule_cmd;
 mod send_cmd;
 mod settings_cmd;
 
@@ -89,6 +91,10 @@ enum Cmd {
     Resume { job: Option<String> },
     /// Stop a job for good. Nothing is deleted.
     Cancel { job: String },
+    /// Scheduled sends: add, list, remove, run now (filebridge-service runs them at their
+    /// times).
+    #[command(subcommand)]
+    Schedule(schedule_cmd::ScheduleCmd),
     /// The app-wide bandwidth limit and send window (default: show them).
     Settings {
         #[command(subcommand)]
@@ -161,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Start { job } => send_cmd::start(g, &job).await,
         Cmd::Resume { job } => send_cmd::resume(g, job).await,
         Cmd::Cancel { job } => send_cmd::cancel(g, &job).await,
+        Cmd::Schedule(cmd) => schedule_cmd::run(g, cmd).await,
         Cmd::Settings { cmd } => settings_cmd::run(g, cmd).await,
         Cmd::Jobs { limit } => send_cmd::jobs(g, limit).await,
         Cmd::Job { job } => send_cmd::show(g, &job).await,

@@ -44,6 +44,7 @@ detail to build each crate on its own.
 | [0016](adr/0016-nextcloud-bulk-upload.md) | Small files to Nextcloud go by its bulk upload (`transport-nextcloud`, in front of rclone); the rest through rclone |
 | [0017](adr/0017-sha256-for-the-manifest.md) | The manifest uses SHA-256, on the source and at the destination; no xxHash |
 | [0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md) | Personal use, the name stays `filebridge`; scheduled sends in Phase 3, copy-only continuous sync (never deletes at the destination) in Phase 5 |
+| [0019](adr/0019-scheduled-sends.md) | Scheduled sends: a run is an ordinary job that sends only files new or changed (size, mtime) since the schedule last sent them; a changed file keeps its older version at the destination under a dated name; missed times run once; in the service only |
 | [0020](adr/0020-immich-external-library.md) | Immich as an external library: files over SFTP (or into a local folder), then a library scan through its API; an `Integration`, not a `Transport` |
 | [0021](adr/0021-full-destination-pauses-the-job.md) | A full destination (`ErrorKind::Full`) pauses the job, resumable; free space is watched during a send |
 | [0022](adr/0022-smb-and-s3-as-rclone-backends.md) | SMB and S3 are `Backend` variants of `transport-rclone`; `Backend` answers its kind and password slot, so `core` never lists the variants |

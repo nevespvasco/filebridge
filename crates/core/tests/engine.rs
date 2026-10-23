@@ -11,9 +11,10 @@ use filebridge_core::backoff::Backoff;
 use filebridge_core::{
     AppSettings, BrowseTarget, CoreError, DecisionInput, Engine, EngineOptions, EntryFilter,
     EntryStatus, Event, FileCategory, IssueDecision, JobErrorCode, JobFilter, JobGroup, JobKind,
-    JobState, LocalClock, LogLevel, Profile, ReclaimBlocker, Registry, ReportChangeKind,
-    ReportFormat, ReportRequest, ReportScope, SealProblem, SendOptions, SendWindow, SourceProblem,
-    Store, StoreError, TargetSpec,
+    JobState, LocalClock, LogLevel, Profile, ReclaimBlocker, Recurrence, Registry,
+    ReportChangeKind, ReportFormat, ReportRequest, ReportScope, ScheduleInput, ScheduleOutcome,
+    SealProblem, SendOptions, SendWindow, SourceProblem, Store, StoreError, TargetSpec, WallClock,
+    Weekday,
 };
 use filebridge_integration_api::{
     AfterTransferReport, Integration, IntegrationEvent, IntegrationSink, JobContext, NameRule,
@@ -181,12 +182,17 @@ fn engine_with_batch(
             max_verify_rounds: 3,
             local_clock: LocalClock::fixed(|| NOON),
             space_check_every: Duration::from_millis(50),
+            wall_clock: WallClock::fixed(|| MONDAY, 0),
         },
     )
 }
 
 /// The tests' local time: send windows are set around it.
 const NOON: u32 = 12 * 3600;
+
+/// The schedules' clock: 2026-10-19 00:00 UTC, a Monday (ticks pass their own time).
+const MONDAY: i64 = 1_792_368_000_000;
+const HOUR: i64 = 3_600_000;
 
 fn window(start_hour: u16, end_hour: u16) -> AppSettings {
     AppSettings {
@@ -1994,6 +2000,7 @@ async fn options_change_until_the_job_is_sent() {
         verify: true,
         concurrency: 2,
         target_dir: None,
+        keep_older: false,
     };
     // Draft.
     s.engine.set_options(&job, verify.clone()).await.unwrap();
@@ -3344,4 +3351,432 @@ async fn the_disks_mounted_here_are_listed() {
     for v in s.engine.volumes().await.unwrap() {
         assert!(Path::new(&v.path).is_absolute(), "{v:?}");
     }
+}
+
+// ---- scheduled sends (docs/adr/0019) ----------------------------------------------------------
+
+fn every_hour(s: &Setup) -> ScheduleInput {
+    ScheduleInput {
+        id: None,
+        name: "Acme every hour".into(),
+        sources: vec![s.src.to_string_lossy().into_owned()],
+        profile_id: s.profile_id.clone(),
+        options: SendOptions {
+            verify: true,
+            ..Default::default()
+        },
+        recurrence: Recurrence::Hours {
+            every: 1,
+            minute: 0,
+        },
+        enabled: true,
+    }
+}
+
+/// Runs the schedules due at `now` and waits for the runs they started to finish.
+async fn tick(s: &Setup, now: i64) -> Vec<String> {
+    let started = s.engine.tick_schedules(now).await.unwrap();
+    for job in &started {
+        let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(job))
+            .await
+            .expect("run finishes")
+            .unwrap();
+        assert!(state.is_terminal(), "{state:?}");
+    }
+    started
+}
+
+#[tokio::test]
+async fn a_schedule_sends_only_what_changed_and_keeps_older_versions() {
+    let s = setup().await;
+    // Already at the destination before the first run: one file as it is at the source, one
+    // with other contents.
+    std::fs::create_dir_all(s.dest.join("Acme/Fotos")).unwrap();
+    std::fs::write(s.dest.join("Acme/Fotos/Inverno.jpg"), b"winter").unwrap();
+    std::fs::write(s.dest.join("Acme/Relatório.pdf"), b"someone else's report").unwrap();
+
+    let schedule = s.engine.save_schedule(every_hour(&s)).await.unwrap();
+    assert_eq!(schedule.next_run_at, Some(MONDAY + HOUR));
+    assert!(
+        schedule.options.keep_older,
+        "every run keeps older versions"
+    );
+    assert!(tick(&s, MONDAY + HOUR - 1).await.is_empty(), "not due yet");
+
+    // First run: everything is new.
+    let first = tick(&s, MONDAY + HOUR).await;
+    assert_eq!(first.len(), 1);
+    let job = s.engine.job(&first[0]).await.unwrap();
+    assert_eq!(job.state, JobState::Completed);
+    assert_eq!(job.schedule_id.as_deref(), Some(schedule.id.as_str()));
+    assert_eq!(job.label.as_deref(), Some("Acme every hour"));
+    let files = dest_files(&s.dest);
+    let kept: Vec<_> = files
+        .iter()
+        .filter(|f| f.starts_with("Acme/Relatório (filebridge "))
+        .collect();
+    assert_eq!(kept.len(), 1, "{files:?}");
+    assert_eq!(
+        std::fs::read(s.dest.join(kept[0])).unwrap(),
+        b"someone else's report"
+    );
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Relatório.pdf")).unwrap(),
+        b"report"
+    );
+    assert!(
+        !files.iter().any(|f| f.contains("Inverno (filebridge")),
+        "the same file is not kept twice: {files:?}"
+    );
+    assert!(
+        s.integration
+            .changed
+            .lock()
+            .unwrap()
+            .contains(&kept[0].to_string()),
+        "the integration hears of the kept version too"
+    );
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.last_outcome, Some(ScheduleOutcome::Started));
+    assert_eq!(view.last_run_at, Some(MONDAY + HOUR));
+    assert_eq!(view.next_run_at, Some(MONDAY + 2 * HOUR));
+    assert_eq!(view.files_sent, 3);
+    assert_eq!(view.last_job_id.as_deref(), Some(first[0].as_str()));
+    assert_eq!(view.last_job_state, Some(JobState::Completed));
+
+    // Nothing changed: no run is kept.
+    assert!(tick(&s, MONDAY + 2 * HOUR).await.is_empty());
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.last_outcome, Some(ScheduleOutcome::NothingChanged));
+    assert_eq!(view.last_job_id.as_deref(), Some(first[0].as_str()));
+
+    // One file changed, one new: only those go, and the changed one keeps its older version.
+    std::fs::write(s.src.join("Fotos/Inverno.jpg"), b"winter, edited").unwrap();
+    std::fs::write(s.src.join("Fotos/Primavera.jpg"), b"spring").unwrap();
+    let second = tick(&s, MONDAY + 3 * HOUR).await;
+    assert_eq!(second.len(), 1);
+    let job = s.engine.job(&second[0]).await.unwrap();
+    assert_eq!(job.state, JobState::Completed);
+    assert_eq!(job.counts.files, 2, "only what changed is in the run");
+    assert_eq!(job.counts.verified_ok, 2);
+    let files = dest_files(&s.dest);
+    assert_eq!(
+        std::fs::read(s.dest.join("Acme/Fotos/Inverno.jpg")).unwrap(),
+        b"winter, edited"
+    );
+    let older: Vec<_> = files
+        .iter()
+        .filter(|f| f.starts_with("Acme/Fotos/Inverno (filebridge "))
+        .collect();
+    assert_eq!(older.len(), 1, "{files:?}");
+    assert_eq!(std::fs::read(s.dest.join(older[0])).unwrap(), b"winter");
+    assert!(files.contains(&"Acme/Fotos/Primavera.jpg".to_owned()));
+    assert_eq!(
+        files.len(),
+        6,
+        "nothing at the destination is lost: {files:?}"
+    );
+    let entries = s
+        .engine
+        .files_page(&second[0], EntryFilter::default(), None, 50)
+        .await
+        .unwrap();
+    let kept_as: Vec<_> = entries
+        .items
+        .iter()
+        .filter_map(|e| e.kept_as.clone())
+        .collect();
+    assert_eq!(kept_as, [older[0].clone()]);
+    assert_eq!(
+        s.engine
+            .get_schedule(&schedule.id)
+            .await
+            .unwrap()
+            .files_sent,
+        4
+    );
+}
+
+#[tokio::test]
+async fn missed_times_run_once_and_a_run_still_going_skips_the_next() {
+    let s = setup().await;
+    let schedule = s.engine.save_schedule(every_hour(&s)).await.unwrap();
+    // The window is closed: the run analyses and then waits for it.
+    s.engine.save_settings(closed_window()).await.unwrap();
+
+    // Off for five hours: one run, and the next time is after now.
+    let now = MONDAY + 5 * HOUR + 10;
+    let started = s.engine.tick_schedules(now).await.unwrap();
+    assert_eq!(started.len(), 1);
+    wait_for_state(&s.engine, &started[0], JobState::Waiting).await;
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.next_run_at, Some(MONDAY + 6 * HOUR));
+
+    // Still waiting at the next time: no second run.
+    assert!(
+        s.engine
+            .tick_schedules(MONDAY + 6 * HOUR)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.last_outcome, Some(ScheduleOutcome::StillRunning));
+    assert_eq!(view.next_run_at, Some(MONDAY + 7 * HOUR));
+    assert_eq!(view.last_job_id.as_deref(), Some(started[0].as_str()));
+    assert!(s.engine.run_schedule_now(&schedule.id).await.is_err());
+
+    // The window opens: the run goes on as any send.
+    s.engine
+        .save_settings(AppSettings::default())
+        .await
+        .unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&started[0]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+}
+
+#[tokio::test]
+async fn a_run_left_half_way_is_carried_on() {
+    let s = setup().await;
+    let schedule = s.engine.save_schedule(every_hour(&s)).await.unwrap();
+    // As if the service stopped right after creating the run.
+    s.store
+        .insert_job(filebridge_store::NewJob {
+            id: "run-1".into(),
+            kind: "transfer".into(),
+            profile_id: s.profile_id.clone(),
+            state: "draft".into(),
+            options: serde_json::to_value(SendOptions {
+                keep_older: true,
+                ..Default::default()
+            })
+            .unwrap(),
+            sources: vec![s.src.to_string_lossy().into_owned().into_bytes()],
+            label: None,
+            again_of: None,
+            schedule_id: Some(schedule.id.clone()),
+        })
+        .await
+        .unwrap();
+    // Not due yet, but the run left half-way goes on.
+    let started = tick(&s, MONDAY).await;
+    assert_eq!(started, ["run-1"]);
+    assert_eq!(
+        s.engine.job("run-1").await.unwrap().state,
+        JobState::Completed
+    );
+    assert_eq!(
+        s.engine
+            .get_schedule(&schedule.id)
+            .await
+            .unwrap()
+            .files_sent,
+        3
+    );
+}
+
+#[tokio::test]
+async fn proposals_are_accepted_and_names_without_one_wait_for_the_user() {
+    let s = setup().await;
+    let windows = s
+        .engine
+        .save_profile(Profile {
+            id: String::new(),
+            name: "Windows share".into(),
+            destination: Destination {
+                transport: "fake".into(),
+                backend: Backend::Local,
+                root: s.dest.to_string_lossy().into_owned(),
+            },
+            integration: None,
+            integration_settings: serde_json::json!({}),
+            target: TargetSpec {
+                family: filebridge_core::Family::Windows,
+                case_sensitive: false,
+                max_name_bytes: None,
+                max_path_bytes: Some(40),
+            },
+        })
+        .await
+        .unwrap();
+    std::fs::write(s.src.join("a:b.txt"), b"colon").unwrap();
+    let mut input = every_hour(&s);
+    input.profile_id = windows.id.clone();
+    let schedule = s.engine.save_schedule(input).await.unwrap();
+
+    // A forbidden character has a proposal: accepted, and the run goes.
+    let first = tick(&s, MONDAY + HOUR).await;
+    assert_eq!(first.len(), 1);
+    assert_eq!(
+        s.engine.job(&first[0]).await.unwrap().state,
+        JobState::Completed
+    );
+    assert!(dest_files(&s.dest).contains(&"Acme/a_b.txt".to_owned()));
+
+    // A name no cut can fit has none: the run waits for the user.
+    let deep = s.src.join("d".repeat(30));
+    std::fs::create_dir(&deep).unwrap();
+    std::fs::write(deep.join("f".repeat(20)), b"x").unwrap();
+    let second = s.engine.tick_schedules(MONDAY + 2 * HOUR).await.unwrap();
+    assert_eq!(second.len(), 1);
+    let run = second[0].clone();
+    assert_eq!(
+        s.engine
+            .get_schedule(&schedule.id)
+            .await
+            .unwrap()
+            .last_job_id,
+        Some(run.clone())
+    );
+    assert_eq!(
+        s.engine.job(&run).await.unwrap().state,
+        JobState::AwaitingApproval
+    );
+    s.engine
+        .decide_all(&run, None, DecisionInput::Skip)
+        .await
+        .unwrap();
+    // Ready: the scheduler starts it on its next look, due or not.
+    let started = tick(&s, MONDAY + 2 * HOUR + 1).await;
+    assert_eq!(started, std::slice::from_ref(&run));
+    assert_eq!(s.engine.job(&run).await.unwrap().state, JobState::Completed);
+
+    // The skipped file stays skipped while it doesn't change.
+    assert!(tick(&s, MONDAY + 3 * HOUR).await.is_empty());
+    assert_eq!(
+        s.engine
+            .get_schedule(&schedule.id)
+            .await
+            .unwrap()
+            .last_outcome,
+        Some(ScheduleOutcome::NothingChanged)
+    );
+}
+
+#[tokio::test]
+async fn schedules_are_checked_switched_off_run_now_and_removed() {
+    let s = setup().await;
+    let bad = |f: &dyn Fn(&mut ScheduleInput)| {
+        let mut input = every_hour(&s);
+        f(&mut input);
+        input
+    };
+    for input in [
+        bad(&|i| i.name = "  ".into()),
+        bad(&|i| i.sources.clear()),
+        bad(&|i| {
+            i.sources
+                .push(s.src.join("Fotos").to_string_lossy().into_owned())
+        }),
+        bad(&|i| {
+            i.recurrence = Recurrence::Days {
+                days: vec![],
+                minute: 0,
+            }
+        }),
+        bad(&|i| i.profile_id = "nope".into()),
+    ] {
+        assert!(s.engine.save_schedule(input).await.is_err());
+    }
+
+    let schedule = s.engine.save_schedule(every_hour(&s)).await.unwrap();
+    // Switched off: no next time, never runs on its own.
+    let mut input = every_hour(&s);
+    input.id = Some(schedule.id.clone());
+    input.enabled = false;
+    input.name = "Weekdays".into();
+    input.recurrence = Recurrence::Days {
+        days: vec![Weekday::Mon, Weekday::Fri],
+        minute: 22 * 60,
+    };
+    let off = s.engine.save_schedule(input.clone()).await.unwrap();
+    assert_eq!((off.enabled, off.next_run_at), (false, None));
+    assert_eq!(off.name, "Weekdays");
+    assert!(tick(&s, MONDAY + 30 * HOUR).await.is_empty());
+    input.enabled = true;
+    let on = s.engine.save_schedule(input.clone()).await.unwrap();
+    assert_eq!(on.next_run_at, Some(MONDAY + 22 * HOUR));
+    // Its files and destination are fixed once saved.
+    input.sources = vec![s.src.join("Fotos").to_string_lossy().into_owned()];
+    assert!(s.engine.save_schedule(input).await.is_err());
+
+    // Run now, then nothing new to run.
+    let job = s
+        .engine
+        .run_schedule_now(&schedule.id)
+        .await
+        .unwrap()
+        .unwrap();
+    s.engine.wait(&job).await.unwrap();
+    assert_eq!(dest_files(&s.dest).len(), 3);
+    assert_eq!(s.engine.run_schedule_now(&schedule.id).await.unwrap(), None);
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(
+        view.next_run_at,
+        Some(MONDAY + 22 * HOUR),
+        "its next time stays"
+    );
+
+    // Its destination can't go while it is there; removing it keeps its runs.
+    assert!(s.engine.delete_profile(&s.profile_id).await.is_err());
+    s.engine.delete_schedule(&schedule.id).await.unwrap();
+    assert!(s.engine.list_schedules().await.unwrap().is_empty());
+    let run = s.engine.job(&job).await.unwrap();
+    assert_eq!((run.state, run.schedule_id), (JobState::Completed, None));
+    s.engine.delete_profile(&s.profile_id).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_file_skipped_in_a_scheduled_run_goes_with_the_next_run() {
+    let s = setup().await;
+    for i in 0..12 {
+        std::fs::write(s.src.join(format!("f{i:02}.txt")), b"x").unwrap();
+    }
+    s.engine.save_schedule(every_hour(&s)).await.unwrap();
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(30);
+    let started = s.engine.tick_schedules(MONDAY + HOUR).await.unwrap();
+    let run = started[0].clone();
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    s.engine.pause(&run).await.unwrap();
+    let pending = s
+        .store
+        .files_with_transfer_state(&run, EntryState::Pending, None, 100)
+        .await
+        .unwrap();
+    let skipped = pending.last().expect("a file not sent yet").entry.clone();
+    s.engine.skip_entry(&run, skipped.idx).await.unwrap();
+    *s.transport.per_file.lock().unwrap() = Duration::ZERO;
+    s.engine.resume(&run).await.unwrap();
+    let state = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&run))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(state, JobState::Completed);
+    let name = String::from_utf8(skipped.raw_path.clone()).unwrap();
+    let at_dest = |files: &[String]| files.iter().any(|f| f.ends_with(name.as_str()));
+    assert!(!at_dest(&dest_files(&s.dest)), "skipped in this run");
+
+    // The skip was for that run only (D04): the next run sends it, and only it.
+    let next = tick(&s, MONDAY + 2 * HOUR).await;
+    assert_eq!(next.len(), 1);
+    assert_eq!(s.engine.job(&next[0]).await.unwrap().counts.files, 1);
+    assert!(at_dest(&dest_files(&s.dest)));
+}
+
+#[tokio::test]
+async fn a_run_whose_source_is_gone_fails_and_says_why() {
+    let s = setup().await;
+    let schedule = s.engine.save_schedule(every_hour(&s)).await.unwrap();
+    std::fs::rename(&s.src, s.src.with_file_name("Moved")).unwrap();
+    assert!(tick(&s, MONDAY + HOUR).await.is_empty());
+    let view = s.engine.get_schedule(&schedule.id).await.unwrap();
+    assert_eq!(view.last_outcome, Some(ScheduleOutcome::Failed));
+    assert!(view.last_error.is_some());
+    assert_eq!(view.last_job_state, Some(JobState::Failed));
+    // A failed run is finished: the next time tries again.
+    assert_eq!(view.next_run_at, Some(MONDAY + 2 * HOUR));
 }

@@ -18,7 +18,7 @@ use filebridge_ipc::{
     ImmichRequest, IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudAdvice,
     NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, PinnedSource, Pong, Profile, ProfileTest,
     RecentSource, ReclaimStatus, ReportChangeKind, ReportCheck, ReportDiff, ReportRequest,
-    RuleCount, SendOptions, SourceInfo, StorageView, VolumeView,
+    RuleCount, ScheduleInput, ScheduleView, SendOptions, SourceInfo, StorageView, VolumeView,
 };
 use filebridge_thumbnail::{Lookup, Thumbnails};
 use tokio::sync::{Semaphore, broadcast};
@@ -566,6 +566,22 @@ impl Operations for EngineOperations {
 
     async fn service_log(&self) -> Res<Vec<String>> {
         Ok(crate::RecentLog::global().lines())
+    }
+
+    async fn list_schedules(&self) -> Res<Vec<ScheduleView>> {
+        self.engine.list_schedules().await.map_err(to_error)
+    }
+
+    async fn save_schedule(&self, input: ScheduleInput) -> Res<ScheduleView> {
+        self.engine.save_schedule(input).await.map_err(to_error)
+    }
+
+    async fn delete_schedule(&self, id: String) -> Res<()> {
+        self.engine.delete_schedule(&id).await.map_err(to_error)
+    }
+
+    async fn run_schedule_now(&self, id: String) -> Res<Option<String>> {
+        self.engine.run_schedule_now(&id).await.map_err(to_error)
     }
 }
 

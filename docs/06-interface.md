@@ -26,11 +26,12 @@ whoever wants to can see the equivalent commands in a "Details" panel.
 
 | Screen | Shows |
 |---|---|
-| Jobs | List of sends: state, progress, speed, ETA, automatic retries |
+| Jobs | List of sends: state, progress, speed, ETA, automatic retries. A scheduled run says "Scheduled" (its detail links to Schedules), and a file whose older version was kept at the destination shows the kept name |
 | Job detail | Current file, errors, log, manifest, Pause / Resume / Verify buttons |
 | Destinations | Saved profiles, connection test, Nextcloud mode. For an SSH destination, a failed test or space check, and Browse, first check each server's host key: an unknown one gets the "Trust this server?" prompt (ADR 0015) and what failed runs again; a changed one is only shown as an error |
 | Integrations | Active plugins and their settings |
 | Repair destination | Analyse and fix names in an existing remote folder |
+| Schedules | Scheduled sends ([ADR 0019](adr/0019-scheduled-sends.md)): one card per schedule (recurrence in words, sources → destination, next run, last run and its outcome with a link to its transfer, files sent so far), with On/Off, Run now, Edit and Remove (asks first; its runs stay). New/Edit: files and folders, destination, folder there, "On days" (weekdays + time) or "Every few hours" (N hours from a time), verify, and what a run does (only what changed, older versions kept, waits for the send hours). Sources, destination and folder can't change once saved |
 | Settings | Bandwidth limit and send window (kept by the service, ADR 0010), notifications, language (pt and en) |
 
 ## Principles
@@ -77,4 +78,5 @@ apps/desktop/src/
 | `create_repair_job(profile_id, dir)` (as built; then `analyse`, the decisions and `start`, like a send), `planned_renames(job_id)` (what the confirmation counts) | Repair destination; "Continue" and "Send again" on a repair open this page, never the New transfer wizard |
 | `get_settings()` / `save_settings(settings)` | Settings: app-wide bandwidth limit and send window (implemented) |
 | `service_log()` | Settings → "Copy log": the engine's recent log lines, secrets scrubbed, for bug reports (implemented: design D07) |
+| `list_schedules()` / `save_schedule(input)` / `delete_schedule(id)` / `run_schedule_now(id)` | Schedules (implemented, ADR 0019); the `schedule_ran` event refreshes the list |
 | `remove_access(profile_id)` | "Remove access" wizard |

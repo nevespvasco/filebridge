@@ -244,6 +244,7 @@ function clearFilters() {
             <EntryThumb :job-id="jobId" :idx="rows[it.index].idx" :category="rows[it.index].category" :size="28" :preview="!remote" />
             <span class="ellipsis" :title="rows[it.index].name">{{ rows[it.index].name }}</span>
             <AppIcon v-if="rows[it.index].source_name" name="renamed" class="muted" :label="$t('queue.renamed', { name: rows[it.index].source_name })" />
+            <AppIcon v-if="rows[it.index].kept_as" name="schedule" class="muted" :label="$t('entry.keptAs', { name: rows[it.index].kept_as })" />
           </span>
           <span class="cell path muted ellipsis" role="gridcell" :title="rows[it.index].dir">{{ rows[it.index].dir || "/" }}</span>
           <span class="cell n num small" role="gridcell">{{ fmt.bytes(rows[it.index].size) }}</span>

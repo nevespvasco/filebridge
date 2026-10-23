@@ -156,6 +156,59 @@ CREATE TABLE pinned_sources (
     r#"
 CREATE INDEX manifest_path ON manifest_entries(job_id, raw_path, idx);
 "#,
+    // 12: scheduled sends (docs/adr/0019): the schedules, the files each has sent and the name
+    // decisions of its runs (what the next run compares with and carries), the run a job is,
+    // and where a run kept the destination's older version of a file it replaced.
+    r#"
+CREATE TABLE schedules (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    profile_id   TEXT NOT NULL REFERENCES profiles(id),
+    options      TEXT NOT NULL,
+    recurrence   TEXT NOT NULL,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    next_run_at  INTEGER,
+    last_run_at  INTEGER,
+    last_outcome TEXT,
+    last_error   TEXT,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+CREATE INDEX schedules_due ON schedules(enabled, next_run_at);
+
+CREATE TABLE schedule_sources (
+    schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    position    INTEGER NOT NULL,
+    path        BLOB NOT NULL,
+    PRIMARY KEY (schedule_id, position)
+);
+
+CREATE TABLE schedule_files (
+    schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    root        BLOB NOT NULL,
+    raw_path    BLOB NOT NULL,
+    size        INTEGER NOT NULL,
+    mtime       INTEGER,
+    dest_path   TEXT NOT NULL,
+    job_id      TEXT,
+    sent_at     INTEGER NOT NULL,
+    PRIMARY KEY (schedule_id, root, raw_path)
+) WITHOUT ROWID;
+
+CREATE TABLE schedule_decisions (
+    schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
+    root        BLOB NOT NULL,
+    raw_path    BLOB NOT NULL,
+    rule        TEXT NOT NULL,
+    decision    TEXT NOT NULL,
+    custom_name TEXT,
+    PRIMARY KEY (schedule_id, root, raw_path, rule)
+) WITHOUT ROWID;
+
+ALTER TABLE jobs ADD COLUMN schedule_id TEXT REFERENCES schedules(id) ON DELETE SET NULL;
+CREATE INDEX jobs_schedule ON jobs(schedule_id, created_at);
+ALTER TABLE manifest_entries ADD COLUMN kept_as TEXT;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

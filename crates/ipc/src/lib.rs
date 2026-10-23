@@ -31,11 +31,12 @@ pub use filebridge_model::{
     ExportResult, FOLDER_SIZES_LISTED, Family, FolderNameCheck, FolderSize, FolderSizes, HashView,
     IssueDecision, IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort,
     JobState, JobSummary, LogEntry, LogLevel, MAX_PINNED_SOURCES, PinnedSource, PreflightView,
-    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
+    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, RefusedIssue,
     RemoteEntryView, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff,
     ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount, SOURCE_CHILDREN_CAP,
-    SealProblem, SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView,
-    StatusCount, StorageView, TargetSpec, VolumeView, job_operations,
+    ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem, SendOptions, SendWindow, SourceInfo,
+    SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, VolumeView,
+    Weekday, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -79,7 +80,10 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///     (ADR 0025).
 /// 32: `probe_nextcloud`; `DetectNextcloudRequest.dedicated_user`,
 ///     `DetectNextcloudResponse.server_setup` (ADR 0024).
-pub const PROTOCOL_VERSION: u32 = 32;
+/// 33: scheduled sends (ADR 0019): `list_schedules`, `save_schedule`, `delete_schedule`,
+///     `run_schedule_now`, the `schedule_ran` event; `JobSummary.schedule_id`,
+///     `SendOptions.keep_older`, `EntryView.kept_as`, `AnalysisSummary.unchanged`.
+pub const PROTOCOL_VERSION: u32 = 33;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

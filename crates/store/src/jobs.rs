@@ -39,6 +39,8 @@ pub struct NewJob {
     pub label: Option<String>,
     /// The job this one repeats (Send again).
     pub again_of: Option<String>,
+    /// The schedule this job is a run of (docs/adr/0019).
+    pub schedule_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +71,8 @@ pub struct JobRow {
     pub reclaim_dismissed_at: Option<i64>,
     /// What the last source re-check found (JSON, D10).
     pub reclaim_check: Option<serde_json::Value>,
+    /// The schedule this job is a run of; `None` once the schedule is removed.
+    pub schedule_id: Option<String>,
 }
 
 /// A job's move to a new state, written in one transaction with what the stage that just
@@ -92,7 +96,7 @@ pub struct StateChange {
 
 const COLUMNS: &str = "id, kind, profile_id, state, options, error, attempt, next_retry_at, \
                        created_at, updated_at, finished_at, warnings, verify_rounds, label, \
-                       again_of, reclaim_dismissed_at, reclaim_check, error_code";
+                       again_of, reclaim_dismissed_at, reclaim_check, error_code, schedule_id";
 
 /// A row, plus its options and warnings as JSON text.
 type RawJob = (JobRow, String, String);
@@ -121,6 +125,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<RawJob> {
                 .get::<_, Option<String>>(16)?
                 .and_then(|s| serde_json::from_str(&s).ok()),
             error_code: row.get(17)?,
+            schedule_id: row.get(18)?,
         },
         row.get(4)?,
         row.get(11)?,
@@ -163,8 +168,8 @@ impl Store {
             let tx = c.transaction()?;
             tx.execute(
                 "INSERT INTO jobs (id, kind, profile_id, state, options, created_at, updated_at,
-                                   label, again_of)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)",
+                                   label, again_of, schedule_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9)",
                 params![
                     job.id,
                     job.kind,
@@ -173,7 +178,8 @@ impl Store {
                     options,
                     now,
                     job.label,
-                    job.again_of
+                    job.again_of,
+                    job.schedule_id
                 ],
             )?;
             {
@@ -579,6 +585,7 @@ mod tests {
                 sources: vec![b"/a/Patol\xf3gica".to_vec(), b"/b".to_vec()],
                 label: None,
                 again_of: None,
+                schedule_id: None,
             })
             .await
             .unwrap();

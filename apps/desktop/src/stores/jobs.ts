@@ -10,6 +10,7 @@ import { notify } from "@/lib/platform";
 import { i18n } from "@/i18n";
 import { useConnection } from "./connection";
 import { useProfiles } from "./profiles";
+import { useSchedules } from "./schedules";
 import { useSettings } from "./settings";
 
 type Of<T extends Event_Serialize["type"]> = Extract<Event_Serialize, { type: T }>;
@@ -131,6 +132,11 @@ export const useJobs = defineStore("jobs", () => {
   }
 
   function onEvent(ev: Event_Serialize) {
+    if (ev.type === "schedule_ran") {
+      useSchedules().onRan();
+      if (ev.job_id) void loadPage(0);
+      return;
+    }
     // A folder measurement isn't about a job (its panel listens for it).
     if (!("job_id" in ev)) return;
     const id = ev.job_id;

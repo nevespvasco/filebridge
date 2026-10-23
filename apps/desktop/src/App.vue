@@ -129,6 +129,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
           <span v-if="attention" class="attention" role="img" :aria-label="$t('nav.attention', { n: attention }, attention)" :title="$t('nav.attention', { n: attention }, attention)" />
           <span v-if="active" class="badge badge-accent num" :aria-label="$t('nav.active', { n: active }, active)">{{ active }}</span>
         </RouterLink>
+        <RouterLink to="/schedules" :title="$t('nav.tips.schedules')">
+          <AppIcon name="schedule" :size="20" /><span class="label">{{ $t("nav.schedules") }}</span>
+        </RouterLink>
         <RouterLink to="/destinations" :title="$t('nav.tips.destinations')">
           <AppIcon name="destinations" :size="20" /><span class="label">{{ $t("nav.destinations") }}</span>
         </RouterLink>

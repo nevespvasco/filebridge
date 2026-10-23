@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: "/jobs/:id", name: "job", component: () => import("@/views/JobDetailView.vue"), props: true },
     { path: "/compare/:a/:b?", name: "compare", component: () => import("@/views/CompareView.vue"), props: true },
     { path: "/repair/:id", name: "repair", component: () => import("@/views/RepairView.vue"), props: true },
+    { path: "/schedules", name: "schedules", component: () => import("@/views/SchedulesView.vue") },
     { path: "/destinations", name: "destinations", component: () => import("@/views/DestinationsView.vue") },
     { path: "/settings", name: "settings", component: () => import("@/views/SettingsView.vue") },
   ],

@@ -16,6 +16,10 @@ pub struct SendOptions {
     /// (docs/design/specs/D11). Absent from options saved before it existed.
     #[serde(default)]
     pub target_dir: Option<String>,
+    /// Never replace a file at the destination: one already there with other contents is first
+    /// renamed to a dated name (scheduled runs, docs/adr/0019). Absent from older options.
+    #[serde(default)]
+    pub keep_older: bool,
 }
 
 impl Default for SendOptions {
@@ -24,6 +28,7 @@ impl Default for SendOptions {
             verify: false,
             concurrency: 8,
             target_dir: None,
+            keep_older: false,
         }
     }
 }
@@ -64,6 +69,8 @@ pub struct JobSummary {
     pub label: Option<String>,
     /// The job this one repeats (Send again).
     pub again_of: Option<String>,
+    /// The schedule this job is a run of (docs/adr/0019).
+    pub schedule_id: Option<String>,
 }
 
 /// A job error the UI words itself, with what to do about it (`destination_full`: the
@@ -187,6 +194,8 @@ pub struct AnalysisSummary {
     pub pending_decisions: u64,
     pub scan_errors: Vec<String>,
     pub skipped_symlinks: u64,
+    /// Files a scheduled run left out: sent before and unchanged since (docs/adr/0019).
+    pub unchanged: u64,
     pub preflight: Vec<PreflightView>,
 }
 

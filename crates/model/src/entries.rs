@@ -138,6 +138,9 @@ pub struct EntryView {
     pub size: u64,
     pub category: FileCategory,
     pub status: EntryStatus,
+    /// Where the destination's older version of this file was kept before it was sent
+    /// (scheduled runs, docs/adr/0019), relative to the profile root.
+    pub kept_as: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

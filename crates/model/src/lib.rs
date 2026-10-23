@@ -12,6 +12,7 @@ mod log;
 mod profile;
 mod report;
 mod rules;
+mod schedule;
 mod settings;
 mod sources;
 mod state;
@@ -31,6 +32,9 @@ pub use report::{
     SealProblem,
 };
 pub use rules::{JobGroup, Op, can_go, job_operations};
+pub use schedule::{
+    MAX_SCHEDULE_NAME, Recurrence, ScheduleInput, ScheduleOutcome, ScheduleView, Weekday,
+};
 pub use settings::{AppSettings, MIN_BANDWIDTH_LIMIT, SendWindow, WindowStatus};
 pub use sources::{
     FOLDER_SIZES_LISTED, FolderSize, FolderSizes, MAX_PINNED_SOURCES, PinnedSource, VolumeView,

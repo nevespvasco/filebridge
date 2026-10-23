@@ -1,6 +1,6 @@
 # crates/store
 
-SQLite persistence: **jobs, manifests, profiles, issues, events, settings.** **Landed in:** Phase 1 (1b).
+SQLite persistence: **jobs, manifests, profiles, issues, events, settings, schedules.** **Landed in:** Phase 1 (1b).
 
 ## Design
 - One dedicated thread owns the `rusqlite` connection. `Store` is a cheap `Clone` handle; every
@@ -24,6 +24,7 @@ SQLite persistence: **jobs, manifests, profiles, issues, events, settings.** **L
 | Events | `append_event`, `events_page`, `last_event` (newest of a kind: integration checkpoints) |
 | Settings | `get_setting` / `set_setting`, `get_setting_json` / `set_setting_json` |
 | Pinned sources | `pinned_sources` (in pin order), `set_pinned` (pin or unpin; answers how many are pinned) |
+| Schedules (ADR 0019) | `insert_schedule`, `update_schedule`, `get_schedule`, `list_schedules`, `due_schedules`, `next_schedule_time`, `record_schedule_run`, `delete_schedule`; `sent_files` / `sent_file_count` (written by `set_transfer_states` when a scheduled run's file is `done` or `skipped`); `save_schedule_decisions` / `carry_schedule_decisions`; `latest_run`, `unfinished_runs`, `delete_job`; `set_kept_as` / `kept_versions` |
 
 Lists use keyset pagination (`after_idx` / `after_id` + `limit`), so the UI never loads a whole
 manifest.

@@ -61,6 +61,8 @@ filebridge report <job> [--format csv|json|sealed] [--only problems|renamed] [--
 filebridge report diff <job-or-report.json> <job-or-report.json> [--only KIND]   # ADR 0025
 filebridge report check <report.json|report.html>
 filebridge completions <shell> | man [--dir DIR]
+filebridge schedule add <paths…> --to <profile> --name N (--at HH:MM [--days mon,wed|daily] | --every-hours N [--at HH:MM]) [--into DIR] [--verify] [--disabled]
+filebridge schedule list | remove <schedule> | run-now <schedule>
 filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbooks/real-server-tests.md § 1)
 ```
 `filebridge --help` and `filebridge <command> --help` describe every option.
@@ -77,6 +79,10 @@ filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbook
   `removed`, `changed`, `renamed`, `newly_verified`, `new_problem`), the totals on stderr, and
   exits 1 when there are changes, like `diff`. `report check` exits 1 when a sealed report (or
   its HTML copy) changed since the export.
+- `schedule` manages scheduled sends (ADR 0019); `filebridge-service` runs them at their times,
+  so `add` and `remove` need it stopped, like every command that changes state. `run-now` runs
+  one here and follows it like `send`; each run sends only what is new or changed since the
+  last, and keeps a changed file's older version at the destination under a dated name.
 - Logs: `FILEBRIDGE_LOG=debug` (or `rclone=debug` for the sidecar's own log).
 
 ## Phase 0 scope (kept)

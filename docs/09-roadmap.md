@@ -106,8 +106,14 @@ How to run each gate against the real servers and the phone:
       the library scan with progress (and a resumed job doesn't ask twice), the analysis warns
       about files Immich will skip, and the wizard checks with a probe file that Immich sees
       the destination folder.
-- [ ] Scheduled sends: a saved send runs at set times and sends only what changed, in the
-      service; its own ADR first ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
+- [x] Scheduled sends: a saved send runs at set times and sends only what changed, in the
+      service ([ADR 0019](adr/0019-scheduled-sends.md), after
+      [ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)). Weekdays + time
+      or every N hours; a changed file keeps its older version at the destination under a dated
+      name; missed times run once; one run at a time. Schedules screen in the window,
+      `filebridge schedule add/list/remove/run-now`. Tested in `core` with a fake clock and the
+      local-disk fake transport, and over the socket; not yet left running for days on the real
+      servers.
 - [x] Published CLI: `cargo install --path apps/cli --locked`, `filebridge --version` with
       `git describe`, `filebridge completions <shell>`, `filebridge man`; the .deb and .rpm
       carry it as `/usr/bin/filebridge` with its man pages and completions
@@ -134,7 +140,7 @@ How to run each gate against the real servers and the phone:
 > `crates/core` untouched. Immich's follow-ups then extended the contracts (ADR 0029), which
 > touched `core` once for every integration; no Immich code is in `core`.
 > Since then: the published CLI, login start on macOS and Windows and the Windows sidecar
-> script (below); the other Phase 3 items are still open.
+> script (below), and scheduled sends (ADR 0019); the other Phase 3 items are still open.
 
 ## Phase 4 — Mobile
 
@@ -176,7 +182,10 @@ back mid-send; the Job resumes and the verification has zero differences.
 ## Phase 5 — Continuous sync (copy-only)
 
 *Accepted in scope* ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
-Starts after Phase 3's scheduled sends, which it builds on.
+Starts after Phase 3's scheduled sends, which it builds on: a watched folder is a schedule whose
+trigger is "on change" instead of a recurrence, and its runs reuse their change detection,
+carried name decisions, keep-older and one-run-at-a-time rule
+([ADR 0019](adr/0019-scheduled-sends.md#continuous-sync-phase-5-builds-on-this)).
 
 - [ ] ADR before any code: how folders are watched (OS file events, with a periodic scan as the
       fallback), how changes are batched into Jobs, and how a watch survives the service

@@ -2,6 +2,8 @@
 //! and serves `crates/ipc` on a user-only local socket (ADR 0008). Closing the app's window
 //! never stops a send.
 //!
+//! It also runs scheduled sends at their times (ADR 0019).
+//!
 //! Stopping the service (Ctrl-C, SIGTERM, logout) leaves running jobs as they are stored; the
 //! next start resumes them.
 
@@ -179,6 +181,9 @@ async fn run(cli: &Cli) -> Result<()> {
     if !resumed.is_empty() {
         tracing::info!("resumed {} interrupted jobs", resumed.len());
     }
+    // Scheduled sends run here, never in the window (ADR 0019). A time missed while the
+    // service was off runs once now.
+    tokio::spawn(engine.clone().run_scheduler());
     tokio::select! {
         r = filebridge_ipc::serve(listener, operations) => {
             r.context("serving ipc")?;

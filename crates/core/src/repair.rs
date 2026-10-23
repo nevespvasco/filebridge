@@ -88,6 +88,7 @@ impl Engine {
                 sources: Vec::new(),
                 label: None,
                 again_of: None,
+                schedule_id: None,
             })
             .await?;
         self.log(
