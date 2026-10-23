@@ -242,6 +242,8 @@ nothing about the engine, so specs reuse them.
 | `DropOverlay` | `show` | Full-window layer while files are dragged over it: dashed accent frame, "Drop to add". `aria-hidden`, `pointer-events: none` | D02 (`FileDropZone`) |
 | `GuidedTour` | — (reads the tour store) | Mounted once in `App.vue`. Spotlight on a `data-tour` element (`box-shadow` with `--overlay`), a card with count, dots, Skip / Back / Next. `role="dialog"`, `#app` inert, focus trapped and restored, Esc skips, ← / → move. Steps are data in `src/lib/tour.ts` | D02 |
 | `TourButton` | `tour` | The `?` next to a page title: plays its guide again | D02 |
+| `SourceCard` | `name, parent?, icon, disabled?, tip, action = "plus"`; slot `side` | A quick-source card (Recently sent, Pinned, Disks): the main button adds its path, a side button (pin, unpin, whole disk) sits beside it, never inside it. A missing source is dimmed and dashed, `aria-disabled` | D02 |
+| `FolderSizesDrawer` | `path` | A `Drawer` with a folder's size per item inside it, biggest first, a bar each; numbers grow while the service counts; Stop / Count again; folders open in turn with `Breadcrumbs` | D02 |
 
 ### Long lists
 

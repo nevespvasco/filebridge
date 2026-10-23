@@ -54,6 +54,8 @@ const runningOut = computed(() => {
   return t("storage.runningOut", { name: destination.value, free: fmt.bytes(sp.free_bytes), left: fmt.bytes(sp.left_bytes) });
 });
 const full = computed(() => job.value?.state === "paused" && job.value.error_code === "destination_full");
+/** Paused because a source can't be read (a disk unplugged, docs/design/specs/D02). */
+const sourceGone = computed(() => job.value?.state === "paused" && job.value.error_code === "source_unavailable");
 
 const integrationLabel = computed(() => {
   const i = live.value?.integration;
@@ -119,6 +121,11 @@ const waitingLabel = computed(() => {
     <div v-if="full" class="full" role="alert">
       <p class="small warn-text">{{ $t("storage.full", { name: destination }) }}</p>
       <p class="small">{{ $t("storage.fullHelp") }}</p>
+      <p v-if="job.error" class="small muted ellipsis" :title="job.error">{{ job.error }}</p>
+    </div>
+    <div v-else-if="sourceGone" class="full" role="alert">
+      <p class="small warn-text">{{ $t("sourceTools.gone") }}</p>
+      <p class="small">{{ $t("sourceTools.goneHelp") }}</p>
       <p v-if="job.error" class="small muted ellipsis" :title="job.error">{{ job.error }}</p>
     </div>
     <p v-else-if="job.error" class="error small">{{ job.error }}</p>

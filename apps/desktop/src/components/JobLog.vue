@@ -174,6 +174,9 @@ function describe(e: LogEntry): Line {
       if (str(e, "error_code") === "destination_full") {
         return { icon: "warning", text: t("storage.fullLog"), detail: str(e, "error") || undefined };
       }
+      if (str(e, "error_code") === "source_unavailable") {
+        return { icon: "warning", text: t("sourceTools.goneLog"), detail: str(e, "error") || undefined };
+      }
       return { icon: to === "failed" ? "failCircle" : "activity", text: t("joblog.state", { to: te(`state.${to}`) ? t(`state.${to}`) : to }), detail: str(e, "error") || undefined };
     }
     case "retry":

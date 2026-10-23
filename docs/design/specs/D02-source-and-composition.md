@@ -7,7 +7,9 @@
 - Layers touched: `apps/desktop`; `crates/model` (Category table, view types); `crates/core`
   (category at analysis; `sources.rs`: the quick check of chosen sources and the nested-source
   guard in `create_job`); `crates/store` (migration **M-category**, two queries); `crates/ipc`
-  (`recent_sources`, `job_categories`, `inspect_sources`)
+  (`recent_sources`, `job_categories`, `inspect_sources`). Later (see "As built"): pinned sources
+  (store migration 9), mounted disks and folder sizes (`crates/scanner`, `core/src/sizes.rs`),
+  and a source that can't be read pausing the job (`core/src/batch.rs`, ADR 0026)
 - Depends on: [01](../01-design-system.md) (`StorageMeter`, Category tokens); the space-fit bar
   uses [D03](D03-destination-storage.md) when it exists and falls back to free space only.
 
@@ -177,6 +179,55 @@ DOES IT FIT?                                         Nextcloud home
   sources) recomputes it, because the Category is stored per Entry at analysis time.
 - Category is decided by the **source** name's extension, not the corrected destination name. A
   Name rule never changes an extension's meaning, and the source is what the user recognises.
+
+### As built
+
+The three items first left out (pinning, mounted disks, a breakdown by folder) were added later,
+with a fourth that mounted disks need:
+
+- **Pinned** (E6): a pin on each Recently-sent card and on each chosen row (not one with a
+  problem) keeps a path at hand. Pins are a table of their own (store migration 9,
+  `pinned_sources(path, pinned_at)`, in pin order), not a settings list: one row per pin, no
+  read-modify-write. `pinned_sources()` answers them with `exists` checked now; `pin_source(path,
+  pinned)` takes absolute paths only (it needn't exist: a disk may be unplugged), at most
+  `MAX_PINNED_SOURCES` (100). Step 1 shows a **Pinned** grid above Disks and Recently sent from
+  (a pinned path isn't repeated among the recents); a pin whose path is gone is dimmed, "Not
+  found", and can only be unpinned. Home shows them as a row of buttons that start a transfer
+  ([D01](D01-home.md#as-built)). Pins work on phones too.
+- **Disks** (F6): `volumes()` lists the disks mounted on the service's computer
+  (`filebridge_scanner::volumes`, read-only). Linux reads `/proc/self/mountinfo`: a block device
+  (not a snap's loop device, not a network share) mounted under `/run/media/`, `/media/` or
+  `/mnt/`, or anywhere outside the system's own folders when sysfs says the disk can be
+  unplugged (`removable`, or on a USB bus; an encrypted disk is asked about the device below
+  it). udisks, which file managers use, mounts under `/run/media/$USER` or `/media/$USER`, so its
+  disks show up without talking to it over D-Bus; a disk plugged in but not mounted isn't
+  listed. macOS lists `/Volumes` (not the startup disk's link), Windows the drive letters other
+  than the system drive; elsewhere nothing. Free and total space come from `statvfs` on Unix. A
+  **Disks** grid in step 1 opens the folder picker on the disk; "Whole disk" adds its mount
+  folder (not offered for a drive letter's root, which the source check refuses). The list is
+  read again when the window gains focus. Hidden on phones (`canListVolumes()` in
+  `lib/platform.ts`).
+- **Sizes** (a breakdown by folder): a chosen folder's **Sizes** button opens a side panel
+  (`FolderSizesDrawer`). `folder_sizes(scan_id, path)` walks the folder in the service
+  (`filebridge_scanner::folder_sizes`: metadata only, links neither followed nor counted, like
+  the analysis) and answers files and bytes per item directly inside it, most bytes first (at
+  most `FOLDER_SIZES_LISTED` = 200 listed, the rest summed), with the entries it couldn't read
+  counted apart. While it runs, `Event::FolderSizesProgress { scan_id, sizes }` carries the
+  numbers so far (the first at once, then every 250 ms; advisory: the call's answer is the
+  result). `cancel_folder_sizes(scan_id)` stops it, and so does the caller going away; a
+  stopped one answers what it counted, `complete: false`. At most 4 run at once. A folder
+  inside opens in turn (breadcrumbs go back), stopping the one before; closing the panel stops
+  it too. It doesn't use the `entries` query of [D05](D05-files-and-entry-detail.md): it is
+  before any analysis, and it doesn't apply the destination's Name rules.
+- **A source that can't be read pauses the job** ([ADR 0026](../../adr/0026-unreadable-source-pauses-the-job.md)):
+  with disks offered as sources, one can be unplugged mid-send. Before each batch, and for the
+  sources of the files that failed, the runner checks each source's root; one that is gone,
+  unreadable, or an empty folder while it still has files to send sends the job to `Paused`
+  with `error_code: source_unavailable`, its files back to send (not `Failed`, no
+  `EntryFailed`). Verification does the same when a source file can't be hashed. Resume carries
+  on, or pauses again at once if the disk is still away. The window shows "A source can't be
+  read… plug the disk back in, then press Resume" in the job's progress, notifies once, and the
+  job log names it; the CLI prints the same advice.
 
 ## States
 
@@ -367,15 +418,14 @@ LIMIT ?`, decoding each `path` BLOB and dropping the non-UTF-8 ones.
 
 ## Out of scope
 
-- **Pinning** sources (E6 Favorites / Quick Access): later. The settings table can hold a
-  `pinned_sources` list when it is wanted.
-- Mounted volumes as quick sources (F6 SD card, external disk): later. It needs a per-OS volume
-  listing in the window.
-- Counting a folder's whole size in step 1. Step 1 shows a file's size and a folder's direct
-  items only; the recursive count is done once, in the analysis, with the Name rules of the chosen
-  destination.
-- A breakdown by folder ("Fotos/2019 is 120 GB"). It could come later on the same `entries` query
-  as [D05](D05-files-and-entry-detail.md).
+- ~~Pinning sources~~, ~~mounted volumes as quick sources~~ and ~~a breakdown by folder~~: built
+  later, see [As built](#as-built).
+- Counting a folder's whole size in step 1's list. Step 1 shows a file's size and a folder's
+  direct items only; the recursive count is done once, in the analysis, with the Name rules of
+  the chosen destination. The **Sizes** panel counts on request only.
+- Mounting a disk that is plugged in but not mounted (udisks over D-Bus): the file manager does
+  that, and the disk then appears.
+- Reordering pins by hand.
 
 ## Open questions
 

@@ -131,6 +131,8 @@ export const useJobs = defineStore("jobs", () => {
   }
 
   function onEvent(ev: Event_Serialize) {
+    // A folder measurement isn't about a job (its panel listens for it).
+    if (!("job_id" in ev)) return;
     const id = ev.job_id;
     const l = liveOf(id);
     const now = Date.now();
@@ -180,7 +182,8 @@ export const useJobs = defineStore("jobs", () => {
         if (ev.to !== "retrying") l.retry = undefined;
         if (ev.to !== "waiting") l.window = undefined;
         if (!RUNNING.includes(ev.to)) l.space = undefined;
-        // Paused with an error: the engine paused it (a full destination), not the user.
+        // Paused with an error: the engine paused it (a full destination, a source gone), not
+        // the user.
         if (ev.to === "paused" && ev.error) void pausedByEngine(id);
         refreshSoon(id);
         if (!j) void loadPage(0);
@@ -211,10 +214,14 @@ export const useJobs = defineStore("jobs", () => {
 
   async function pausedByEngine(id: string) {
     const job = await refresh(id);
-    if (!job || job.error_code !== "destination_full" || !useSettings().notifications) return;
+    if (!job || !job.error_code || !useSettings().notifications) return;
     const t = i18n.global.t;
     const where = [jobLabel(job), useProfiles().byId[job.profile_id]?.name].filter(Boolean).join(" → ");
-    await notify(t("storage.fullNotifyTitle"), t("storage.fullNotifyBody", { where }));
+    if (job.error_code === "destination_full") {
+      await notify(t("storage.fullNotifyTitle"), t("storage.fullNotifyBody", { where }));
+    } else if (job.error_code === "source_unavailable") {
+      await notify(t("sourceTools.goneNotifyTitle"), t("sourceTools.goneNotifyBody", { where }));
+    }
   }
 
   async function init() {

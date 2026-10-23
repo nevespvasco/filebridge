@@ -1,22 +1,30 @@
 <script setup lang="ts">
 // Step 1, what to send (docs/design/specs/D02). Each chosen source is checked as it is added
-// (what it is, how big, what is wrong with it); Next waits until nothing needs fixing.
+// (what it is, how big, what is wrong with it); Next waits until nothing needs fixing. Pinned
+// sources, the disks mounted here and the recent ones are one click away; a chosen folder's
+// sizes open in a side panel.
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { RecentSource } from "@/bindings";
 import AppIcon from "@/components/AppIcon.vue";
+import DiskList from "@/components/DiskList.vue";
 import FileDropZone from "@/components/FileDropZone.vue";
+import FolderSizesDrawer from "@/components/FolderSizesDrawer.vue";
+import PinnedSources from "@/components/PinnedSources.vue";
 import RecentSources from "@/components/RecentSources.vue";
 import SourceList from "@/components/SourceList.vue";
 import TourButton from "@/components/TourButton.vue";
 import { useFmt } from "@/composables/useFmt";
 import { api } from "@/lib/api";
 import { baseName } from "@/lib/format";
+import { pickPaths } from "@/lib/platform";
+import { useSourceShortcuts } from "@/stores/sourceShortcuts";
 import { useTour } from "@/stores/tour";
 import { useWizard } from "@/stores/wizard";
 
 const wizard = useWizard();
 const tour = useTour();
+const shortcuts = useSourceShortcuts();
 const fmt = useFmt();
 const { t } = useI18n();
 
@@ -33,16 +41,30 @@ async function loadRecent() {
   }
 }
 const recentShown = computed(() =>
-  recent.value.filter((r) => !wizard.sources.includes(r.path)).slice(0, has.value ? 3 : 6),
+  recent.value
+    .filter((r) => !wizard.sources.includes(r.path) && !shortcuts.isPinned(r.path))
+    .slice(0, has.value ? 3 : 6),
 );
+const pinnedShown = computed(() => shortcuts.pinned.filter((p) => !wizard.sources.includes(p.path)));
 function onFocus() {
   void loadRecent();
+  void shortcuts.loadPinned();
+  void shortcuts.loadVolumes();
   if (has.value) void wizard.inspect();
 }
 
+/** The folder picker, opened on a disk. */
+async function chooseOn(path: string) {
+  wizard.addSources(await pickPaths({ directory: true, defaultPath: path }));
+}
+
+/** The chosen folder whose sizes are shown. */
+const sizesOf = ref<string | null>(null);
+
 /** The guide starts by itself once, after the page has what it points at. */
 async function arrive() {
-  await loadRecent();
+  void shortcuts.loadVolumes();
+  await Promise.all([loadRecent(), shortcuts.loadPinned()]);
   await nextTick();
   tour.maybeStart("source");
 }
@@ -140,8 +162,12 @@ const blocked = computed(() => wizard.sourceBlockers.length);
         :covered-by="wizard.coveredBy"
         @remove="remove"
         @replace="wizard.replaceSource"
+        @sizes="(p) => (sizesOf = p)"
       />
     </section>
+
+    <PinnedSources v-if="pinnedShown.length" :items="pinnedShown" @add="(p) => wizard.addSources([p])" />
+    <DiskList v-if="shortcuts.volumes.length" :items="shortcuts.volumes" @choose="chooseOn" @add="(p) => wizard.addSources([p])" />
 
     <RecentSources v-if="recentShown.length" class="recent" data-tour="source-recent" :items="recentShown" @add="(p) => wizard.addSources([p])" />
 
@@ -159,6 +185,8 @@ const blocked = computed(() => wizard.sourceBlockers.length);
       <span v-else-if="blocked" class="why-disabled warn-text">{{ $t("source.blocked", { n: blocked }, blocked) }}</span>
       <button class="btn btn-primary" :disabled="!wizard.canLeaveSource" @click="wizard.step = 2">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
+
+    <FolderSizesDrawer :path="sizesOf" @close="sizesOf = null" />
   </div>
 </template>
 

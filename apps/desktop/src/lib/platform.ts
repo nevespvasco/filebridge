@@ -29,12 +29,18 @@ export function isMobile(): boolean {
   return current !== "desktop";
 }
 
+/** Whether the disks mounted on the computer are offered as sources (not on a phone: its
+ *  storage is one place, reached with the folder picker). */
+export function canListVolumes(): boolean {
+  return !isMobile();
+}
+
 /** Whether "show in the file manager" exists here (not on a phone). */
 export function canReveal(): boolean {
   return !isMobile();
 }
 
-export type PickOptions = { directory: boolean; multiple?: boolean; title?: string };
+export type PickOptions = { directory: boolean; multiple?: boolean; title?: string; defaultPath?: string };
 
 /** Mock mode only: a browser can't open the OS picker, so `src/dev/mock.ts` puts one here. */
 let mockPicker: ((opts: PickOptions) => Promise<string[]>) | null = null;
@@ -51,6 +57,7 @@ export async function pickPaths(opts: PickOptions): Promise<string[]> {
     directory: opts.directory,
     multiple: opts.multiple ?? true,
     title: opts.title,
+    defaultPath: opts.defaultPath,
   });
   if (picked == null) return [];
   return Array.isArray(picked) ? picked : [picked];

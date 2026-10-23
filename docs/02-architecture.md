@@ -95,6 +95,9 @@ Rules:
 - A full destination moves a transfer to `Paused` with an error code (`destination_full`), not
   to `Failed`: the files that didn't fit stay to send, and Resume carries on once space is
   freed ([ADR 0021](adr/0021-full-destination-pauses-the-job.md)). A user pause has no error.
+- A source that can't be read (a disk unplugged mid-send) pauses the job the same way, with the
+  code `source_unavailable`; Resume carries on once it is back
+  ([ADR 0026](adr/0026-unreadable-source-pauses-the-job.md)).
 
 ## Process model
 

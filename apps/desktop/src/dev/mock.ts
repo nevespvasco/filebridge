@@ -23,6 +23,7 @@ import {
   type ErrorBody,
   type Event_Serialize,
   type FileCategory,
+  type FolderSizes_Serialize,
   type HostKeyView_Serialize,
   type InFlightView_Serialize,
   type IssueDecision,
@@ -36,6 +37,8 @@ import {
   type JobFilter,
   type JobGroup,
   type JobSummary_Serialize,
+  type PinnedSource,
+  type VolumeView_Serialize,
   type LogEntry,
   type ImmichRequest_Deserialize,
   type NextcloudWebdavRequest,
@@ -608,6 +611,42 @@ const mockUnit: UserUnit = {
   agent: "pinned",
   contents: `[Unit]\nDescription=filebridge background service (file transfers)\nAfter=network-online.target\n\n[Service]\nEnvironment="SSH_AUTH_SOCK=%t/keyring/ssh"\nExecStart="${MOCK_EXEC}" run\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`,
 };
+
+// Pinned sources, the disks "mounted" here, and folder measurements (docs/design/specs/D02).
+const pins: PinnedSource[] = [
+  { path: "/home/demo/Fotos", pinned_at: now - 9 * 86_400_000, exists: true },
+  { path: "/media/demo/disco-antigo/Scans", pinned_at: now - 8 * 86_400_000, exists: false },
+];
+const MOCK_VOLUMES: VolumeView_Serialize[] = [
+  { path: "/run/media/demo/DISCO_EXT", label: "DISCO_EXT", removable: true, total_bytes: 2_000_398_934_016, free_bytes: 1_233_000_000_000 },
+  { path: "/run/media/demo/CARTAO_SD", label: "CARTAO_SD", removable: true, total_bytes: 63_864_569_856, free_bytes: 12_400_000_000 },
+  { path: "/mnt/arquivo", label: "arquivo", removable: false, total_bytes: 4_000_787_030_016, free_bytes: 950_000_000_000 },
+];
+const measuring = new Map<string, { stop: boolean }>();
+
+/** A pretend folder's items: a few subfolders and files, sized from the path's hash. */
+function fakeSizes(path: string): FolderSizes_Serialize {
+  const p = normalPath(path);
+  const h = hash(p);
+  const names = ["2019", "2020", "2021", "2022", "2023", "Viagens", "Família", "Ecrã", "notas.txt", "video.mp4"];
+  const items = names.slice(0, 4 + (h % 7)).map((name, i) => {
+    const is_dir = !name.includes(".");
+    const bytes = ((h >>> (i % 16)) % 900_000_000) * (is_dir ? 40 : 1) + 1_000;
+    return { name, path: `${p}/${name}`, is_dir, files: is_dir ? 10 + ((h >>> i) % 5000) : 1, bytes };
+  });
+  items.sort((a, b) => b.bytes - a.bytes);
+  const files = items.reduce((n, i) => n + i.files, 0);
+  const bytes = items.reduce((n, i) => n + i.bytes, 0);
+  return { path, items, rest_items: 0, rest_files: 0, rest_bytes: 0, files, dirs: items.filter((i) => i.is_dir).length * 3, bytes, errors: p.includes("Privado") ? 2 : 0, complete: true };
+}
+
+/** `whole` with every count scaled to `share` of the way through. */
+function partly(whole: FolderSizes_Serialize, share: number): FolderSizes_Serialize {
+  const items = whole.items
+    .map((i) => ({ ...i, files: Math.round(i.files * share), bytes: Math.round(i.bytes * share) }))
+    .sort((a, b) => b.bytes - a.bytes);
+  return { ...whole, items, files: Math.round(whole.files * share), bytes: Math.round(whole.bytes * share), dirs: Math.round(whole.dirs * share), complete: false };
+}
 
 const handlers: Handlers = {
   serviceEndpoint: () => "/run/user/1000/filebridge/service.sock (mock)",
@@ -1247,6 +1286,45 @@ const handlers: Handlers = {
     // An unplugged disk, to show a source that is no longer there.
     out.set("/media/demo/disco-antigo/Scans", { path: "/media/demo/disco-antigo/Scans", last_job_id: "j-old", last_profile_id: "p-disk", last_sent_at: now - 20 * 86_400_000, exists: false });
     return [...out.values()].slice(0, a.limit as number);
+  },
+  pinnedSources: () => pins.map((p) => ({ ...p })),
+  pinSource: (a) => {
+    const path = a.path as string;
+    const at = pins.findIndex((p) => p.path === path);
+    if (a.pinned) {
+      if (!path.startsWith("/")) throw fail("invalid", `not an absolute path: ${path}`);
+      if (at < 0) pins.push({ path, pinned_at: Date.now(), exists: !FAKE_GONE.some((g) => path.startsWith(g)) });
+    } else if (at >= 0) {
+      pins.splice(at, 1);
+    }
+    return null;
+  },
+  volumes: () => MOCK_VOLUMES,
+  folderSizes: async (a) => {
+    const id = a.scanId as string;
+    const path = a.path as string;
+    const info = inspectOne(path);
+    if (info.problem || !info.is_dir) throw fail("invalid", `can't measure ${path}: not a readable folder`);
+    const whole = fakeSizes(path);
+    const run = { stop: false };
+    measuring.set(id, run);
+    try {
+      const steps = 16;
+      for (let i = 1; i < steps; i++) {
+        await sleep(250);
+        if (run.stop) return partly(whole, i / steps);
+        send({ type: "folder_sizes_progress", scan_id: id, sizes: partly(whole, i / steps) });
+      }
+      await sleep(250);
+      return run.stop ? partly(whole, 0.95) : whole;
+    } finally {
+      measuring.delete(id);
+    }
+  },
+  cancelFolderSizes: (a) => {
+    const run = measuring.get(a.scanId as string);
+    if (run) run.stop = true;
+    return null;
   },
   jobLog: (a) => {
     find(a.jobId);
