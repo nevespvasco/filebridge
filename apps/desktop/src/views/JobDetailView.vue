@@ -128,6 +128,9 @@ const details = computed(() => [
         <button class="link small" @click="router.push({ name: 'jobs' })"><AppIcon name="back" /> {{ $t("jobs.title") }}</button>
         <h1>{{ job ? jobLabel(job) : $t("jobDetail.title") }}</h1>
         <p v-if="job?.label" class="small muted sub">{{ defaultLabel(job.sources) }}</p>
+        <p v-if="job?.schedule_id" class="small muted sub">
+          <RouterLink to="/schedules"><AppIcon name="schedule" /> {{ $t("jobs.scheduledRun") }}</RouterLink>
+        </p>
       </div>
       <div class="actions">
         <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t(job.kind === "repair" ? "repair.continue" : "jobDetail.continue") }}</button>

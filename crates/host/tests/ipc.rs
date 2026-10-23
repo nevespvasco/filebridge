@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use filebridge_core::{
-    AppSettings, DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Registry,
-    SendOptions, SendWindow, Store, TargetSpec,
+    AppSettings, DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Recurrence,
+    Registry, ScheduleInput, ScheduleOutcome, SendOptions, SendWindow, Store, TargetSpec, Weekday,
 };
 use filebridge_host::EngineOperations;
 use filebridge_ipc::{Client, Endpoint, Operations, PROTOCOL_VERSION, bind, serve};
@@ -368,4 +368,95 @@ async fn settings_over_the_socket() {
     };
     assert_eq!(client.save_settings(bad).await.unwrap_err().code, "invalid");
     assert_eq!(client.get_settings().await.unwrap(), settings, "unchanged");
+}
+
+#[tokio::test]
+async fn schedules_over_the_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_endpoint, client, profile_id) = service(dir.path()).await;
+    let src = dir.path().join("Fotos");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("a.jpg"), b"a").unwrap();
+    let mut events = client.events().await.unwrap();
+
+    let input = ScheduleInput {
+        id: None,
+        name: "Nightly".into(),
+        sources: vec![src.to_string_lossy().into_owned()],
+        profile_id: profile_id.clone(),
+        options: SendOptions::default(),
+        recurrence: Recurrence::Days {
+            days: vec![Weekday::Mon, Weekday::Thu],
+            minute: 3 * 60,
+        },
+        enabled: true,
+    };
+    let saved = client.save_schedule(input.clone()).await.unwrap();
+    assert!(saved.next_run_at.is_some());
+    assert!(saved.options.keep_older);
+    assert_eq!(
+        client.list_schedules().await.unwrap(),
+        std::slice::from_ref(&saved)
+    );
+
+    let bad = ScheduleInput {
+        recurrence: Recurrence::Hours {
+            every: 0,
+            minute: 0,
+        },
+        ..input.clone()
+    };
+    assert_eq!(client.save_schedule(bad).await.unwrap_err().code, "invalid");
+
+    let job = client
+        .run_schedule_now(saved.id.clone())
+        .await
+        .unwrap()
+        .expect("a run with the new file");
+    let ran = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(Event::ScheduleRan {
+                schedule_id,
+                job_id,
+                outcome,
+            }) = events.recv().await
+            {
+                return (schedule_id, job_id, outcome);
+            }
+        }
+    })
+    .await
+    .expect("a ScheduleRan event arrives");
+    assert_eq!(
+        ran,
+        (
+            saved.id.clone(),
+            Some(job.clone()),
+            ScheduleOutcome::Started
+        )
+    );
+    let finished = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let j = client.job(job.clone()).await.unwrap();
+            if j.state.is_terminal() {
+                return j;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(finished.state, JobState::Completed);
+    assert_eq!(finished.schedule_id.as_deref(), Some(saved.id.as_str()));
+    assert_eq!(
+        client.run_schedule_now(saved.id.clone()).await.unwrap(),
+        None
+    );
+
+    client.delete_schedule(saved.id.clone()).await.unwrap();
+    assert!(client.list_schedules().await.unwrap().is_empty());
+    assert_eq!(
+        client.delete_schedule(saved.id).await.unwrap_err().code,
+        "not_found"
+    );
 }

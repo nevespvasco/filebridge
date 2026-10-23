@@ -101,6 +101,7 @@ impl Engine {
                 sources: row.sources.clone(),
                 label: row.label.clone(),
                 again_of: Some(job_id.to_owned()),
+                schedule_id: None,
             })
             .await?;
         let sources: Vec<String> = row
@@ -127,6 +128,18 @@ impl Engine {
         if copied == 0 {
             return Ok(());
         }
+        let kept = copied - self.recheck_carried(job_id).await?;
+        self.log(
+            Some(job_id),
+            "decisions",
+            serde_json::json!({ "carried": true, "count": kept, "again_of": from }),
+        )
+        .await
+    }
+
+    /// Puts back to pending the carried-over decisions that this job's rules refuse. Returns
+    /// how many.
+    pub(crate) async fn recheck_carried(&self, job_id: &str) -> Result<u64> {
         let names = self.job_name_plan(job_id).await?;
         let entries = self.entries(job_id).await?;
         let mut refused = Vec::new();
@@ -145,15 +158,10 @@ impl Engine {
                 refused.push(id);
             }
         }
-        let kept = copied - refused.len() as u64;
+        let n = refused.len() as u64;
         if !refused.is_empty() {
             self.store.reset_issues(job_id, refused).await?;
         }
-        self.log(
-            Some(job_id),
-            "decisions",
-            serde_json::json!({ "carried": true, "count": kept, "again_of": from }),
-        )
-        .await
+        Ok(n)
     }
 }

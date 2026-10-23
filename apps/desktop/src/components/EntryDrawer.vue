@@ -112,6 +112,10 @@ async function reveal() {
           <dd>{{ v.source_name ?? v.name }}</dd>
           <dt>{{ $t("entry.atDestination") }}</dt>
           <dd>{{ v.name }}</dd>
+          <template v-if="v.kept_as">
+            <dt>{{ $t("entry.olderVersion") }}</dt>
+            <dd>{{ $t("entry.keptAs", { name: v.kept_as }) }}</dd>
+          </template>
           <template v-if="detail.issues.length">
             <dt>{{ $t("entry.changedBy") }}</dt>
             <dd>

@@ -123,6 +123,16 @@ macro_rules! for_each_operation {
             GetSettings get_settings() -> $crate::AppSettings;
             /// Validates, saves and applies them at once, to running sends too.
             SaveSettings save_settings(settings: $crate::AppSettings) -> ();
+            /// Every scheduled send, with its next and last run (ADR 0019).
+            ListSchedules list_schedules() -> Vec<$crate::ScheduleView>;
+            /// Creates a schedule (no `id`) or changes its name, recurrence, `verify` and
+            /// `enabled`; its sources, destination and folder are fixed once saved.
+            SaveSchedule save_schedule(input: $crate::ScheduleInput) -> $crate::ScheduleView;
+            /// Forgets a schedule and what it sent; its runs stay as ordinary transfers.
+            DeleteSchedule delete_schedule(id: String) -> ();
+            /// Runs a schedule now (enabled or not): the run's job, or `None` when nothing
+            /// changed since its last run. Refused while a run is unfinished.
+            RunScheduleNow run_schedule_now(id: String) -> Option<String>;
         }
     };
 }

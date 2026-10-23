@@ -175,6 +175,7 @@ fn view(r: &EntryRow) -> EntryView {
         size: e.entry.size,
         category: FileCategory::parse(&e.entry.category).unwrap_or(FileCategory::Other),
         status: EntryStatus::from_states(e.transfer_state.as_str(), e.verify_state.as_str()),
+        kept_as: e.kept_as.clone(),
     }
 }
 

@@ -154,6 +154,7 @@ function describe(e: LogEntry): Line {
         return { icon: "renamed", text: t("joblog.createdRepair", { folder: d.repair ? `/${d.repair}` : t("repair.root"), destination }) };
       }
       const sources = Array.isArray(d.sources) ? (d.sources as string[]).map(base) : [];
+      if (typeof d.schedule_id === "string") return { icon: "schedule", text: t("joblog.createdScheduled", { sources: sources.join(", "), destination }) };
       return { icon: "plus", text: t("joblog.created", { sources: sources.join(", "), destination }) };
     }
     case "options": {
@@ -163,9 +164,17 @@ function describe(e: LogEntry): Line {
       return {
         icon: "review",
         text: t("joblog.analysis", { files: fmt.count(n(e, "files")), size: fmt.bytes(n(e, "bytes")) }),
-        detail: n(e, "scan_errors") ? t("joblog.scanErrors", { n: n(e, "scan_errors") }, n(e, "scan_errors")) : undefined,
+        detail:
+          [
+            n(e, "unchanged") ? t("joblog.unchanged", { n: fmt.count(n(e, "unchanged")) }, n(e, "unchanged")) : "",
+            n(e, "scan_errors") ? t("joblog.scanErrors", { n: n(e, "scan_errors") }, n(e, "scan_errors")) : "",
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined,
       };
     case "decisions": {
+      if (d.carried) return { icon: "check", text: t("joblog.decisionsCarried", { count: fmt.count(n(e, "count")) }, n(e, "count")) };
+      if (d.auto) return { icon: "check", text: t("joblog.decisionsAuto", { count: fmt.count(n(e, "count")) }, n(e, "count")) };
       const decision = str(e, "decision");
       return { icon: "check", text: t("joblog.decisions", { count: fmt.count(n(e, "count")), decision: te(`decision.${decision}`) ? t(`decision.${decision}`) : decision }, n(e, "count")) };
     }
@@ -188,6 +197,8 @@ function describe(e: LogEntry): Line {
         text: t("joblog.round", { sent: fmt.count(n(e, "sent")), size: fmt.bytes(n(e, "bytes")) }, n(e, "sent")),
         detail: n(e, "failed") ? `${t("joblog.roundFailed", { n: fmt.count(n(e, "failed")) }, n(e, "failed"))}${str(e, "first_error") ? ` — ${str(e, "first_error")}` : ""}` : undefined,
       };
+    case "kept_older":
+      return { icon: "schedule", text: t("joblog.keptOlder", { n: fmt.count(n(e, "count")) }, n(e, "count")) };
     case "verify": {
       const off = n(e, "mismatch") + n(e, "missing") + n(e, "unverifiable");
       return off

@@ -77,6 +77,9 @@ pub struct ManifestEntry {
     pub transfer_state: EntryState,
     pub verify_state: EntryState,
     pub error: Option<String>,
+    /// Where the destination's older version of this file was kept before it was sent
+    /// (`SendOptions::keep_older`, docs/adr/0019).
+    pub kept_as: Option<String>,
 }
 
 /// Totals for one job's manifest (files only, except `dirs`).
@@ -169,7 +172,7 @@ pub(crate) fn like_escape(text: &str) -> String {
 }
 
 const COLUMNS: &str = "idx, source, raw_path, parent_idx, is_dir, size, mtime, hash, hash_algo, \
-                       dest_path, transfer_state, verify_state, error, category";
+                       dest_path, transfer_state, verify_state, error, category, kept_as";
 
 fn from_row(row: &Row<'_>) -> rusqlite::Result<(ManifestEntry, String, String)> {
     Ok((
@@ -190,6 +193,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<(ManifestEntry, String, String)> 
             transfer_state: EntryState::Pending,
             verify_state: EntryState::Pending,
             error: row.get(12)?,
+            kept_as: row.get(14)?,
         },
         row.get(10)?,
         row.get(11)?,
@@ -281,8 +285,70 @@ impl Store {
                     stmt.execute(params![job_id, idx, state.as_str(), error])?;
                 }
             }
+            // A scheduled run's sent files are what its next run compares with (ADR 0019):
+            // recorded with the state that says they were sent. Files skipped by a name
+            // decision too (with no destination), so they come back only once they change.
+            let scheduled: Option<String> = tx
+                .query_row(
+                    "SELECT schedule_id FROM jobs WHERE id = ?1",
+                    [&job_id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .flatten();
+            if let Some(schedule_id) = scheduled {
+                let mut stmt = tx.prepare_cached(
+                    "INSERT INTO schedule_files
+                         (schedule_id, root, raw_path, size, mtime, dest_path, job_id, sent_at)
+                     SELECT ?1, s.path, m.raw_path, m.size, m.mtime,
+                            CASE WHEN ?5 THEN COALESCE(m.dest_path, '') ELSE '' END, m.job_id, ?4
+                     FROM manifest_entries m
+                     JOIN job_sources s ON s.job_id = m.job_id AND s.position = m.source
+                     WHERE m.job_id = ?2 AND m.idx = ?3 AND m.is_dir = 0
+                     ON CONFLICT (schedule_id, root, raw_path) DO UPDATE SET
+                         size = excluded.size, mtime = excluded.mtime,
+                         dest_path = excluded.dest_path, job_id = excluded.job_id,
+                         sent_at = excluded.sent_at",
+                )?;
+                let now = crate::now_ms();
+                for (idx, state, _) in &updates {
+                    if matches!(state, EntryState::Done | EntryState::Skipped) {
+                        let sent = *state == EntryState::Done;
+                        stmt.execute(params![schedule_id, job_id, idx, now, sent])?;
+                    }
+                }
+            }
             tx.commit()?;
             Ok(())
+        })
+        .await
+    }
+
+    /// Records where the destination's older version of an entry was kept (ADR 0019).
+    pub async fn set_kept_as(&self, job_id: &str, idx: u64, kept_as: String) -> Result<()> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            c.execute(
+                "UPDATE manifest_entries SET kept_as = ?3 WHERE job_id = ?1 AND idx = ?2",
+                params![job_id, idx, kept_as],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// The older versions a job kept at the destination, `(idx, kept_as)` in scanner order.
+    pub async fn kept_versions(&self, job_id: &str) -> Result<Vec<(u64, String)>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let mut stmt = c.prepare_cached(
+                "SELECT idx, kept_as FROM manifest_entries
+                 WHERE job_id = ?1 AND kept_as IS NOT NULL ORDER BY idx",
+            )?;
+            let rows = stmt
+                .query_map([&job_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(rows)
         })
         .await
     }
@@ -468,7 +534,7 @@ impl Store {
             );
             let mut stmt = c.prepare_cached(&sql)?;
             let rows = stmt.query_map(rusqlite::params_from_iter(args), |r| {
-                Ok((from_row(r)?, r.get::<_, bool>(14)?, r.get::<_, u8>(15)?))
+                Ok((from_row(r)?, r.get::<_, bool>(15)?, r.get::<_, u8>(16)?))
             })?;
             rows.map(|r| {
                 let (t, renamed, rank) = r?;

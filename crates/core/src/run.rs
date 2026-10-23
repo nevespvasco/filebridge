@@ -20,6 +20,7 @@ use crate::analyse::{bytes_path, source_parent};
 use crate::batch::{Batch, Sent, Stop, Tally};
 use crate::engine::PREFLIGHT_TIMEOUT;
 use crate::inhibit::{SleepGuard, inhibit};
+use crate::keep::{KeepCtx, Kept};
 use crate::lifecycle::Outcome;
 use crate::repair::RepairEnd;
 use crate::{CoreError, Engine, Event, JobKind, JobState, Profile, Result, SendOptions};
@@ -53,6 +54,8 @@ struct Ctx {
     warnings: Vec<String>,
     /// Keeps the computer awake while the job runs; let go while it waits for the window.
     awake: Option<SleepGuard>,
+    /// When the job was created: a scheduled run's start, in the names of kept versions.
+    created_at: i64,
 }
 
 impl Engine {
@@ -83,6 +86,7 @@ impl Engine {
             cancel: cancel.clone(),
             warnings: Vec::new(),
             awake: None,
+            created_at: row.created_at,
         };
         let mut state = JobState::parse(&row.state)?;
         loop {
@@ -310,6 +314,24 @@ impl Engine {
                 if entries.is_empty() {
                     break;
                 }
+                // Never overwrite: other contents under a file's name are kept first (ADR 0019).
+                let entries = if ctx.options.keep_older {
+                    let keep = KeepCtx {
+                        job_id: &ctx.job_id,
+                        transport: transport.as_ref(),
+                        dest: &ctx.profile.destination,
+                        sources: &ctx.sources,
+                        started_at: ctx.created_at,
+                        cancel: &ctx.cancel,
+                    };
+                    match self.keep_older(&keep, entries).await? {
+                        Kept::Go(entries) => entries,
+                        Kept::Retry(e) => return Ok(StageEnd::Retry(e)),
+                        Kept::Cancelled => return Ok(StageEnd::Cancelled),
+                    }
+                } else {
+                    entries
+                };
                 let stop = async {
                     tokio::select! {
                         _ = ctx.cancel.cancelled() => Stop::Cancelled,
@@ -528,9 +550,13 @@ impl Engine {
 
     // ---- stage 6 -----------------------------------------------------------------------
 
-    /// The destination paths of the files sent: what stage 6 is told changed.
+    /// The destination paths of the files sent, and of the older versions kept: what stage 6 is
+    /// told changed.
     async fn sent_files(&self, job_id: &str) -> Result<Vec<RemotePath>> {
         let mut changed = Vec::new();
+        for (_, kept) in self.store.kept_versions(job_id).await? {
+            changed.push(RemotePath::new(kept)?);
+        }
         let mut after = None;
         loop {
             let page = self.store.entries_page(job_id, after, PAGE).await?;
@@ -677,7 +703,7 @@ fn verify_batches(
     batches
 }
 
-fn sha256_file(path: &std::path::Path) -> Result<Vec<u8>> {
+pub(crate) fn sha256_file(path: &std::path::Path) -> Result<Vec<u8>> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];

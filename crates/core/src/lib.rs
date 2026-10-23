@@ -13,6 +13,7 @@ mod decisions;
 mod engine;
 mod files;
 pub mod inhibit;
+mod keep;
 mod lifecycle;
 mod profile;
 mod reclaim;
@@ -20,6 +21,7 @@ mod registry;
 mod repair;
 pub mod report;
 mod run;
+mod schedules;
 mod settings;
 mod sources;
 mod storage;
@@ -33,12 +35,14 @@ pub use filebridge_model::{
     EntrySort, EntryStatus, EntryView, Event, ExportResult, Family, FileCategory, FolderNameCheck,
     InFlightView, IssueDecision, IssueSeverity, IssueView, JobErrorCode, JobFilter, JobGroup,
     JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile,
-    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, ReportFormat, ReportRequest,
-    ReportScope, RuleCount, SendOptions, SendWindow, SourceInfo, SourceProblem, StorageView,
-    TargetSpec, UnknownValue, job_operations,
+    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, ReportFormat,
+    ReportRequest, ReportScope, RuleCount, ScheduleInput, ScheduleOutcome, ScheduleView,
+    SendOptions, SendWindow, SourceInfo, SourceProblem, StorageView, TargetSpec, UnknownValue,
+    Weekday, job_operations,
 };
 pub use registry::Registry;
 pub use repair::MAX_REPAIR_ENTRIES;
+pub use schedules::WallClock;
 pub use settings::LocalClock;
 
 pub use filebridge_store::{Store, StoreError};

@@ -145,6 +145,7 @@ function clearFilters() {
                 <strong class="ellipsis block" :title="jobLabel(jobs.byId[id])">{{ jobLabel(jobs.byId[id]) }}</strong>
                 <span v-if="jobs.byId[id].label" class="small muted ellipsis block" :title="jobs.byId[id].sources.join('\n')">{{ defaultLabel(jobs.byId[id].sources) }}</span>
                 <span v-if="jobs.byId[id].again_of" class="small muted block"><AppIcon name="again" /> {{ $t("jobs.again") }}</span>
+                <span v-if="jobs.byId[id].schedule_id" class="small muted block"><AppIcon name="schedule" /> {{ $t("jobs.scheduled") }}</span>
               </td>
               <td class="c-where ellipsis" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
               <td class="c-state"><JobStateBadge :state="jobs.byId[id].state" /></td>

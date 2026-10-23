@@ -12,6 +12,7 @@ import {
   PhBroom,
   PhCaretDown,
   PhCaretRight,
+  PhCalendarCheck,
   PhCheck,
   PhCheckCircle,
   PhCircle,
@@ -77,6 +78,7 @@ export const ICONS = {
   transfers: PhArrowsLeftRight,
   destinations: PhHardDrives,
   settings: PhGearSix,
+  schedule: PhCalendarCheck,
   // Destination kinds
   local: PhHardDrive,
   sftp: PhTerminalWindow,

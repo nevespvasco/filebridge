@@ -30,10 +30,11 @@ pub use filebridge_model::{
     EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event, ExportResult,
     Family, FolderNameCheck, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
     JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
-    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
+    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, RefusedIssue,
     RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
-    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
-    StorageView, TargetSpec, job_operations,
+    ScheduleInput, ScheduleOutcome, ScheduleView, SendOptions, SendWindow, SourceInfo,
+    SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, Weekday,
+    job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -65,7 +66,10 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
 ///     destination pauses the job).
 /// 24: `add_immich` (ADR 0020).
-pub const PROTOCOL_VERSION: u32 = 24;
+/// 25: scheduled sends (ADR 0019): `list_schedules`, `save_schedule`, `delete_schedule`,
+///     `run_schedule_now`, the `schedule_ran` event; `JobSummary.schedule_id`,
+///     `SendOptions.keep_older`, `EntryView.kept_as`, `AnalysisSummary.unchanged`.
+pub const PROTOCOL_VERSION: u32 = 25;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

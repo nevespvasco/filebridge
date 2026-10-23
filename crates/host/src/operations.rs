@@ -14,8 +14,8 @@ use filebridge_ipc::{
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest, IssueView,
     JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
-    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
-    SourceInfo, StorageView,
+    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount,
+    ScheduleInput, ScheduleView, SendOptions, SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -434,6 +434,22 @@ impl Operations for EngineOperations {
 
     async fn save_settings(&self, settings: AppSettings) -> Res<()> {
         self.engine.save_settings(settings).await.map_err(to_error)
+    }
+
+    async fn list_schedules(&self) -> Res<Vec<ScheduleView>> {
+        self.engine.list_schedules().await.map_err(to_error)
+    }
+
+    async fn save_schedule(&self, input: ScheduleInput) -> Res<ScheduleView> {
+        self.engine.save_schedule(input).await.map_err(to_error)
+    }
+
+    async fn delete_schedule(&self, id: String) -> Res<()> {
+        self.engine.delete_schedule(&id).await.map_err(to_error)
+    }
+
+    async fn run_schedule_now(&self, id: String) -> Res<Option<String>> {
+        self.engine.run_schedule_now(&id).await.map_err(to_error)
     }
 }
 

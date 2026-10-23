@@ -151,6 +151,20 @@ export const commands = {
 	getSettings: () => typedError<AppSettings_Serialize, ErrorBody>(__TAURI_INVOKE("get_settings")),
 	/**  Validates, saves and applies them at once, to running sends too. */
 	saveSettings: (settings: AppSettings_Deserialize) => typedError<null, ErrorBody>(__TAURI_INVOKE("save_settings", { settings })),
+	/**  Every scheduled send, with its next and last run (ADR 0019). */
+	listSchedules: () => typedError<ScheduleView_Serialize[], ErrorBody>(__TAURI_INVOKE("list_schedules")),
+	/**
+	 *  Creates a schedule (no `id`) or changes its name, recurrence, `verify` and
+	 *  `enabled`; its sources, destination and folder are fixed once saved.
+	 */
+	saveSchedule: (input: ScheduleInput_Deserialize) => typedError<ScheduleView_Serialize, ErrorBody>(__TAURI_INVOKE("save_schedule", { input })),
+	/**  Forgets a schedule and what it sent; its runs stay as ordinary transfers. */
+	deleteSchedule: (id: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("delete_schedule", { id })),
+	/**
+	 *  Runs a schedule now (enabled or not): the run's job, or `None` when nothing
+	 *  changed since its last run. Refused while a run is unfinished.
+	 */
+	runScheduleNow: (id: string) => typedError<string | null, ErrorBody>(__TAURI_INVOKE("run_schedule_now", { id })),
 	/**  The socket path or pipe name the window connects to (for the Details panel). */
 	serviceEndpoint: () => __TAURI_INVOKE<string>("service_endpoint"),
 	/**
@@ -189,7 +203,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 24 as const;
+export const PROTOCOL_VERSION = 25 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -261,6 +275,8 @@ export type AnalysisSummary_Deserialize = {
 	pending_decisions: number,
 	scan_errors: string[],
 	skipped_symlinks: number,
+	/**  Files a scheduled run left out: sent before and unchanged since (docs/adr/0019). */
+	unchanged: number,
 	preflight: PreflightView_Deserialize[],
 };
 
@@ -274,6 +290,8 @@ export type AnalysisSummary_Serialize = {
 	pending_decisions: number,
 	scan_errors: string[],
 	skipped_symlinks: number,
+	/**  Files a scheduled run left out: sent before and unchanged since (docs/adr/0019). */
+	unchanged: number,
 	preflight: PreflightView_Serialize[],
 };
 
@@ -680,6 +698,11 @@ export type EntryView_Deserialize = {
 	size: number,
 	category: FileCategory,
 	status: EntryStatus,
+	/**
+	 *  Where the destination's older version of this file was kept before it was sent
+	 *  (scheduled runs, docs/adr/0019), relative to the profile root.
+	 */
+	kept_as?: string | null,
 };
 
 /**  One row of the Files tab. */
@@ -695,6 +718,11 @@ export type EntryView_Serialize = {
 	size: number,
 	category: FileCategory,
 	status: EntryStatus,
+	/**
+	 *  Where the destination's older version of this file was kept before it was sent
+	 *  (scheduled runs, docs/adr/0019), relative to the profile root.
+	 */
+	kept_as: string | null,
 };
 
 /**
@@ -736,7 +764,12 @@ in_flight: InFlightView_Deserialize[] } |
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current?: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
-waiting?: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path?: string | null } | { type: "job_finished"; job_id: string; state: JobState; error?: string | null };
+waiting?: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path?: string | null } | { type: "job_finished"; job_id: string; state: JobState; error?: string | null } | 
+/**
+ *  A schedule's time came, or it was run now (docs/adr/0019); `job_id` is the run it
+ *  started, if any.
+ */
+{ type: "schedule_ran"; schedule_id: string; job_id?: string | null; outcome: ScheduleOutcome };
 
 export type Event_Serialize = { type: "job_state_changed"; job_id: string; from: JobState; to: JobState; error: string | null } | { type: "scan_progress"; job_id: string; files: number; bytes: number; current: string | null } | { type: "transfer_progress"; job_id: string; bytes_done: number; bytes_total: number; files_done: number; files_total: number; bytes_per_sec: number | null; eta_secs: number | null; 
 /**  Files in flight now (at most the job's concurrency), in the order they started. */
@@ -762,7 +795,12 @@ in_flight: InFlightView_Serialize[] } |
 /**  i18n key, e.g. `"nextcloud.scan"`. */
 step: string; done: number; total: number; items: number; current: string | null; 
 /**  i18n key while the tool is busy without output (e.g. a slow disk). */
-waiting: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path: string | null } | { type: "job_finished"; job_id: string; state: JobState; error: string | null };
+waiting: string | null } | { type: "integration_problem"; job_id: string; code: string; message: string; path: string | null } | { type: "job_finished"; job_id: string; state: JobState; error: string | null } | 
+/**
+ *  A schedule's time came, or it was run now (docs/adr/0019); `job_id` is the run it
+ *  started, if any.
+ */
+{ type: "schedule_ran"; schedule_id: string; job_id: string | null; outcome: ScheduleOutcome };
 
 export type ExportResult = {
 	path: string,
@@ -1090,6 +1128,8 @@ export type JobSummary_Deserialize = {
 	label?: string | null,
 	/**  The job this one repeats (Send again). */
 	again_of?: string | null,
+	/**  The schedule this job is a run of (docs/adr/0019). */
+	schedule_id?: string | null,
 };
 
 export type JobSummary_Serialize = {
@@ -1113,6 +1153,8 @@ export type JobSummary_Serialize = {
 	label: string | null,
 	/**  The job this one repeats (Send again). */
 	again_of: string | null,
+	/**  The schedule this job is a run of (docs/adr/0019). */
+	schedule_id: string | null,
 };
 
 /**  Reference to a secret stored in the OS keyring. Never the secret itself. */
@@ -1290,6 +1332,13 @@ export type ReclaimStatus_Serialize = {
 	dismissed: boolean,
 };
 
+/**  When a schedule runs, in the service machine's local time. */
+export type Recurrence = 
+/**  On each of `days` at `minute` past midnight. */
+{ kind: "days"; days: Weekday[]; minute: number } | 
+/**  Every day at `minute` past midnight, then every `every` hours until midnight. */
+{ kind: "hours"; every: number; minute: number };
+
 /**  An issue `decide_many` left as it was, and why. */
 export type RefusedIssue = {
 	id: number,
@@ -1339,6 +1388,109 @@ export type RuleCount = {
 	no_proposal: number,
 };
 
+/**
+ *  A schedule as the window or the CLI saves it. Without `id` it is new; with one, it replaces
+ *  that schedule's name, recurrence, `verify` and `enabled` (its sources, destination and target
+ *  folder are fixed once saved).
+ */
+export type ScheduleInput = ScheduleInput_Serialize | ScheduleInput_Deserialize;
+
+/**
+ *  A schedule as the window or the CLI saves it. Without `id` it is new; with one, it replaces
+ *  that schedule's name, recurrence, `verify` and `enabled` (its sources, destination and target
+ *  folder are fixed once saved).
+ */
+export type ScheduleInput_Deserialize = {
+	id?: string | null,
+	name: string,
+	/**  Absolute paths of the files and folders it sends. */
+	sources: string[],
+	profile_id: string,
+	options: SendOptions_Deserialize,
+	recurrence: Recurrence,
+	enabled: boolean,
+};
+
+/**
+ *  A schedule as the window or the CLI saves it. Without `id` it is new; with one, it replaces
+ *  that schedule's name, recurrence, `verify` and `enabled` (its sources, destination and target
+ *  folder are fixed once saved).
+ */
+export type ScheduleInput_Serialize = {
+	id: string | null,
+	name: string,
+	/**  Absolute paths of the files and folders it sends. */
+	sources: string[],
+	profile_id: string,
+	options: SendOptions_Serialize,
+	recurrence: Recurrence,
+	enabled: boolean,
+};
+
+/**  What happened the last time a schedule's time came. */
+export type ScheduleOutcome = 
+/**  A run was created; its job is `last_job_id`. */
+"started" | 
+/**  Nothing was new or changed: no run was kept. */
+"nothing_changed" | 
+/**  The previous run was not finished: no new one started. */
+"still_running" | 
+/**  The run could not be created or analysed; `last_error` says why. */
+"failed";
+
+/**  A schedule as the window shows it. */
+export type ScheduleView = ScheduleView_Serialize | ScheduleView_Deserialize;
+
+/**  A schedule as the window shows it. */
+export type ScheduleView_Deserialize = {
+	id: string,
+	name: string,
+	/**  Source roots, lossily decoded for display. */
+	sources: string[],
+	profile_id: string,
+	options: SendOptions_Deserialize,
+	recurrence: Recurrence,
+	enabled: boolean,
+	/**  When it runs next (Unix ms); `None` while disabled. */
+	next_run_at?: number | null,
+	/**  When its time last came (Unix ms), whatever happened then. */
+	last_run_at?: number | null,
+	last_outcome?: ScheduleOutcome | null,
+	last_error?: string | null,
+	/**  Its newest run, and that job's state. */
+	last_job_id?: string | null,
+	last_job_state?: JobState | null,
+	/**  Files it has sent so far (one per source file, whatever the number of runs). */
+	files_sent: number,
+	created_at: number,
+	updated_at: number,
+};
+
+/**  A schedule as the window shows it. */
+export type ScheduleView_Serialize = {
+	id: string,
+	name: string,
+	/**  Source roots, lossily decoded for display. */
+	sources: string[],
+	profile_id: string,
+	options: SendOptions_Serialize,
+	recurrence: Recurrence,
+	enabled: boolean,
+	/**  When it runs next (Unix ms); `None` while disabled. */
+	next_run_at: number | null,
+	/**  When its time last came (Unix ms), whatever happened then. */
+	last_run_at: number | null,
+	last_outcome: ScheduleOutcome | null,
+	last_error: string | null,
+	/**  Its newest run, and that job's state. */
+	last_job_id: string | null,
+	last_job_state: JobState | null,
+	/**  Files it has sent so far (one per source file, whatever the number of runs). */
+	files_sent: number,
+	created_at: number,
+	updated_at: number,
+};
+
 /**  Per-job choices made in step 4 of the wizard. */
 export type SendOptions = SendOptions_Serialize | SendOptions_Deserialize;
 
@@ -1353,6 +1505,11 @@ export type SendOptions_Deserialize = {
 	 *  (docs/design/specs/D11). Absent from options saved before it existed.
 	 */
 	target_dir?: string | null,
+	/**
+	 *  Never replace a file at the destination: one already there with other contents is first
+	 *  renamed to a dated name (scheduled runs, docs/adr/0019). Absent from older options.
+	 */
+	keep_older?: boolean,
 };
 
 /**  Per-job choices made in step 4 of the wizard. */
@@ -1366,6 +1523,11 @@ export type SendOptions_Serialize = {
 	 *  (docs/design/specs/D11). Absent from options saved before it existed.
 	 */
 	target_dir: string | null,
+	/**
+	 *  Never replace a file at the destination: one already there with other contents is first
+	 *  renamed to a dated name (scheduled runs, docs/adr/0019). Absent from older options.
+	 */
+	keep_older: boolean,
 };
 
 /**
@@ -1622,6 +1784,9 @@ export type UserUnit = {
 };
 
 export type Value = null | boolean | number | string | Value[] | { [key in string]: Value };
+
+/**  A day of the week. */
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

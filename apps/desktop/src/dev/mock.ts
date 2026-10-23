@@ -40,6 +40,9 @@ import {
   type ImmichRequest_Deserialize,
   type NextcloudWebdavRequest,
   type ReclaimStatus_Serialize,
+  type Recurrence,
+  type ScheduleInput_Deserialize,
+  type ScheduleView_Serialize,
   type RecentSource,
   type StorageView_Serialize as StorageView,
   type Profile_Serialize,
@@ -93,10 +96,51 @@ const jobs: JobSummary_Serialize[] = [
     updated_at: now - 80_000_000,
     finished_at: now - 80_000_000,
     sources: ["/home/demo/Documentos"],
-    options: { verify: true, concurrency: 8, target_dir: null },
+    options: { verify: true, concurrency: 8, target_dir: null, keep_older: false },
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
     label: "Documentos do escritório",
     again_of: null,
+    schedule_id: null,
+  },
+];
+
+/** The first time `r` comes after `after`, in the browser's local time (docs/adr/0019). */
+function nextRun(r: Recurrence, after: number): number | null {
+  const minutes = r.kind === "days" ? [r.minute] : Array.from({ length: Math.ceil((1440 - r.minute) / (r.every * 60)) }, (_, k) => r.minute + k * r.every * 60);
+  const day0 = new Date(after);
+  day0.setHours(0, 0, 0, 0);
+  for (let d = 0; d <= 8; d++) {
+    const day = new Date(day0);
+    day.setDate(day0.getDate() + d);
+    const weekday = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const)[day.getDay()];
+    if (r.kind === "days" && !r.days.includes(weekday)) continue;
+    for (const m of minutes) {
+      const at = new Date(day);
+      at.setHours(Math.floor(m / 60), m % 60);
+      if (at.getTime() > after) return at.getTime();
+    }
+  }
+  return null;
+}
+
+const schedules: ScheduleView_Serialize[] = [
+  {
+    id: "s-docs",
+    name: "Documentos todas as noites",
+    sources: ["/home/demo/Documentos"],
+    profile_id: "p-disk",
+    options: { verify: true, concurrency: 8, target_dir: null, keep_older: true },
+    recurrence: { kind: "days", days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], minute: 3 * 60 },
+    enabled: true,
+    next_run_at: nextRun({ kind: "days", days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], minute: 3 * 60 }, now),
+    last_run_at: now - 9 * 3_600_000,
+    last_outcome: "nothing_changed",
+    last_error: null,
+    last_job_id: "j-old",
+    last_job_state: "completed",
+    files_sent: 1234,
+    created_at: now - 3 * 86_400_000,
+    updated_at: now - 3 * 86_400_000,
   },
 ];
 
@@ -104,6 +148,7 @@ const jobs: JobSummary_Serialize[] = [
 if (import.meta.env.VITE_MOCK_EMPTY === "1") {
   profiles.length = 0;
   jobs.length = 0;
+  schedules.length = 0;
 }
 
 // The job log, as the engine records it (docs/design/specs/D07): parameters only.
@@ -318,7 +363,7 @@ function entryAt(job: JobSummary_Serialize, idx: number): EntryView & { renamed:
   else if (sent && job.counts.verified_ok && idx % 1499 === 5) status = "different";
   else if (idx % 1777 === 11) status = "skipped";
   const size = Math.max(1_000, Math.round(f.size * (0.4 + ((idx * 7919) % 100) / 80)));
-  return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, renamed };
+  return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, renamed, kept_as: null };
 }
 
 const PROBLEMS: EntryStatus[] = ["different", "missing", "unverifiable", "failed"];
@@ -733,6 +778,7 @@ const handlers: Handlers = {
       counts: counts(0, 0, 0),
       label: null,
       again_of: null,
+      schedule_id: null,
     });
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
@@ -905,10 +951,11 @@ const handlers: Handlers = {
       updated_at: Date.now(),
       finished_at: null,
       sources: [],
-      options: { verify: false, concurrency: 8, target_dir: dir },
+      options: { verify: false, concurrency: 8, target_dir: dir, keep_older: false },
       counts: counts(0, 0, 0),
       label: null,
       again_of: null,
+      schedule_id: null,
     });
     // What an old rsync leaves behind: garbled and NFD names, nothing that blocks.
     const base = (rulesByJob.size + 1) * 10_000_000;
@@ -953,6 +1000,7 @@ const handlers: Handlers = {
       pending_decisions: pending,
       scan_errors: ["/home/demo/Fotos/privado: permission denied"],
       skipped_symlinks: 2,
+      unchanged: 0,
       preflight: [{ source: "transport", ...spaceOf(job.profile_id), writable: true, checks: [{ id: "writable", status: "ok", message: "test file written and removed" }] }],
     };
     return summary;
@@ -1069,7 +1117,7 @@ const handlers: Handlers = {
     const old = find(a.jobId);
     if (!["completed", "completed_with_warnings", "cancelled", "failed"].includes(old.state)) throw fail("invalid", "only a finished transfer can do that");
     const id = newId("j");
-    jobs.unshift({ ...structuredClone(old), id, state: "draft", error: null, attempt: 0, next_retry_at: null, created_at: Date.now(), updated_at: Date.now(), finished_at: null, counts: counts(0, 0, 0), profile_id: (a.profileId as string | null) ?? old.profile_id, again_of: old.id });
+    jobs.unshift({ ...structuredClone(old), id, state: "draft", error: null, attempt: 0, next_retry_at: null, created_at: Date.now(), updated_at: Date.now(), finished_at: null, counts: counts(0, 0, 0), profile_id: (a.profileId as string | null) ?? old.profile_id, again_of: old.id, schedule_id: null });
     log(id, "created", { sources: old.sources, profile_id: old.profile_id, options: old.options, again_of: old.id });
     return id;
   },
@@ -1254,6 +1302,55 @@ const handlers: Handlers = {
     const limit = a.limit as number;
     if (a.afterId != null) return list.filter((e) => e.id > (a.afterId as number)).slice(0, limit);
     return list.filter((e) => a.beforeId == null || e.id < (a.beforeId as number)).reverse().slice(0, limit);
+  },
+  listSchedules: () => schedules,
+  saveSchedule: (a) => {
+    const input = a.input as ScheduleInput_Deserialize;
+    const name = input.name.trim();
+    if (!name) throw fail("invalid", "give the schedule a name");
+    if (!input.sources.length) throw fail("invalid", "pick at least one file or folder");
+    const r = input.recurrence;
+    if (r.kind === "days" && !r.days.length) throw fail("invalid", "pick at least one day");
+    if (r.kind === "hours" && (r.every < 1 || r.every > 24)) throw fail("invalid", "the hours between runs must be from 1 to 24");
+    const old = schedules.find((x) => x.id === input.id);
+    if (input.id && !old) throw fail("not_found", `schedule ${input.id} not found`);
+    const view: ScheduleView_Serialize = {
+      id: old?.id ?? newId("s"),
+      name,
+      sources: old?.sources ?? input.sources,
+      profile_id: old?.profile_id ?? input.profile_id,
+      options: { verify: input.options.verify, concurrency: input.options.concurrency, target_dir: input.options.target_dir ?? null, keep_older: true },
+      recurrence: r,
+      enabled: input.enabled,
+      next_run_at: input.enabled ? nextRun(r, Date.now()) : null,
+      last_run_at: old?.last_run_at ?? null,
+      last_outcome: old?.last_outcome ?? null,
+      last_error: old?.last_error ?? null,
+      last_job_id: old?.last_job_id ?? null,
+      last_job_state: old?.last_job_state ?? null,
+      files_sent: old?.files_sent ?? 0,
+      created_at: old?.created_at ?? Date.now(),
+      updated_at: Date.now(),
+    };
+    if (old) schedules.splice(schedules.indexOf(old), 1, view);
+    else schedules.push(view);
+    return view;
+  },
+  deleteSchedule: (a) => {
+    const i = schedules.findIndex((x) => x.id === a.id);
+    if (i < 0) throw fail("not_found", `schedule ${a.id as string} not found`);
+    schedules.splice(i, 1);
+    return null;
+  },
+  // The mock has nothing new to send: the run finds no changes, as after a quiet day.
+  runScheduleNow: (a) => {
+    const sc = schedules.find((x) => x.id === a.id);
+    if (!sc) throw fail("not_found", `schedule ${a.id as string} not found`);
+    sc.last_run_at = Date.now();
+    sc.last_outcome = "nothing_changed";
+    sc.last_error = null;
+    send({ type: "schedule_ran", schedule_id: sc.id, job_id: null, outcome: "nothing_changed" });
+    return null;
   },
   getSettings: () => settings,
   saveSettings: (a) => {

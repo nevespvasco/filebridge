@@ -1,4 +1,4 @@
-//! SQLite persistence: jobs, manifests, profiles, issues, events and settings.
+//! SQLite persistence: jobs, manifests, profiles, issues, events, settings and schedules.
 //!
 //! One dedicated thread owns the connection; every call is a closure sent to it, so writes are
 //! serialised and async callers never block the runtime. Rows here are plain data: `core` owns
@@ -11,6 +11,7 @@ mod issues;
 mod jobs;
 mod manifest;
 mod profiles;
+mod schedules;
 mod schema;
 mod settings;
 
@@ -29,6 +30,7 @@ pub use manifest::{
     EntryKey, EntryOrder, EntryQuery, EntryRow, EntryState, ManifestCounts, ManifestEntry, NewEntry,
 };
 pub use profiles::{ProfileRow, StoredTest};
+pub use schedules::{ScheduleRow, ScheduleRun, SentFile};
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
 
@@ -138,6 +140,7 @@ pub(crate) mod test_util {
                 sources: vec![b"/home/u/Backup".to_vec()],
                 label: None,
                 again_of: None,
+                schedule_id: None,
             })
             .await
             .unwrap();

@@ -98,6 +98,11 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
   Only `Transient` is retried; `core` decides on the kind and never reads the message. Each
   adapter maps its own errors to kinds (rclone: `transport-rclone/src/client.rs`, `kind_of`).
   Integration errors still carry a `retryable` flag.
+- **Nothing is overwritten by a scheduled run** ([ADR 0019](adr/0019-scheduled-sends.md)).
+  `core` keeps the destination's older version itself, over the contract: `list` to find a
+  taken name, `hash_many` to tell the same file from another, and `move_path` (the checked move
+  below, intermediate `.fb-keep-<job>-<idx>`) to rename it to a dated name before `transfer`.
+  No adapter needs to know; a transport without `MOVE` fails those files with the reason.
 - **Renames at the destination are one algorithm, not one per adapter.** `move_path` takes a
   `MoveRequest { from, to, via, is_dir, size, mtime }`; its default (`checked_move` in
   `transport-api`) lists the folder, refuses a `to` that another entry answers to (exactly, in

@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DoneView, InFlightView, JobState};
+use crate::{DoneView, InFlightView, JobState, ScheduleOutcome};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -102,6 +102,13 @@ pub enum Event {
         state: JobState,
         error: Option<String>,
     },
+    /// A schedule's time came, or it was run now (docs/adr/0019); `job_id` is the run it
+    /// started, if any.
+    ScheduleRan {
+        schedule_id: String,
+        job_id: Option<String>,
+        outcome: ScheduleOutcome,
+    },
 }
 
 impl Event {
@@ -121,6 +128,7 @@ impl Event {
             | Self::IntegrationProgress { job_id, .. }
             | Self::IntegrationProblem { job_id, .. }
             | Self::JobFinished { job_id, .. } => job_id,
+            Self::ScheduleRan { job_id, .. } => job_id.as_deref().unwrap_or_default(),
         }
     }
 }

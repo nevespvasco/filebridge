@@ -18,6 +18,8 @@ filebridge issues <job> [--rule R] [--all]
 filebridge decide <job> <issue> accept|keep|skip|edit [--name N]
 filebridge start <job> | resume [<job>] | cancel <job> | jobs | job <job>
 filebridge settings [show] | settings set [--bwlimit 20M|off] [--window 22:00-07:00|off]
+filebridge schedule add <paths…> --to <profile> --name N (--at HH:MM [--days mon,wed|daily] | --every-hours N [--at HH:MM]) [--into DIR] [--verify] [--disabled]
+filebridge schedule list | remove <schedule> | run-now <schedule>
 filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbooks/real-server-tests.md § 1)
 ```
 - Job ids accept a unique prefix (the 8 characters `jobs` prints).
@@ -29,6 +31,10 @@ filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbook
 - `settings set` changes the app-wide bandwidth limit (rclone sizes: `20M` = 20 MiB/s, a plain
   number is KiB/s) and the daily send window, in local time (ADR 0010). A send started outside
   the window waits (`→ waiting`) and goes on its own when it opens.
+- `schedule` manages scheduled sends (ADR 0019); `filebridge-service` runs them at their times,
+  so `add` and `remove` need it stopped, like every command that changes state. `run-now` runs
+  one here and follows it like `send`; each run sends only what is new or changed since the
+  last, and keeps a changed file's older version at the destination under a dated name.
 - Logs: `FILEBRIDGE_LOG=debug` (or `rclone=debug` for the sidecar's own log).
 
 ## Phase 0 scope (kept)
