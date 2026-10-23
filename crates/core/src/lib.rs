@@ -21,6 +21,7 @@ mod repair;
 pub mod report;
 mod run;
 mod settings;
+mod sizes;
 mod sources;
 mod storage;
 mod transfers;
@@ -31,11 +32,11 @@ pub use filebridge_model::{
     AnalysisSummary, AppSettings, BrowseResult, BrowseTarget, CategoryCount, CheckView, Counts,
     DecisionInput, DoneView, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     EntrySort, EntryStatus, EntryView, Event, ExportResult, Family, FileCategory, FolderNameCheck,
-    InFlightView, IssueDecision, IssueSeverity, IssueView, JobErrorCode, JobFilter, JobGroup,
-    JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView, Profile,
-    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, ReportFormat, ReportRequest,
-    ReportScope, RuleCount, SendOptions, SendWindow, SourceInfo, SourceProblem, StorageView,
-    TargetSpec, UnknownValue, job_operations,
+    FolderSize, FolderSizes, InFlightView, IssueDecision, IssueSeverity, IssueView, JobErrorCode,
+    JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
+    PinnedSource, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus,
+    ReportFormat, ReportRequest, ReportScope, RuleCount, SendOptions, SendWindow, SourceInfo,
+    SourceProblem, StorageView, TargetSpec, UnknownValue, VolumeView, job_operations,
 };
 pub use registry::Registry;
 pub use repair::MAX_REPAIR_ENTRIES;

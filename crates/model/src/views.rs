@@ -74,12 +74,16 @@ pub enum JobErrorCode {
     /// The destination has no room left (a full disk, a quota reached): the job paused, and
     /// resumes once space is freed (docs/design/specs/D03).
     DestinationFull,
+    /// A source can't be read any more (a disk unplugged, a network share gone): the job
+    /// paused, and resumes once it is back (docs/design/specs/D02).
+    SourceUnavailable,
 }
 
 impl JobErrorCode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::DestinationFull => "destination_full",
+            Self::SourceUnavailable => "source_unavailable",
         }
     }
 
@@ -87,6 +91,7 @@ impl JobErrorCode {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "destination_full" => Some(Self::DestinationFull),
+            "source_unavailable" => Some(Self::SourceUnavailable),
             _ => None,
         }
     }

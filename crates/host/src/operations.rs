@@ -12,10 +12,10 @@ use filebridge_ipc::{
     AccessReport, ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget,
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest, IssueView,
-    JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
-    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
-    SourceInfo, StorageView,
+    ErrorBody, ExportResult, FolderNameCheck, FolderSizes, Handler, HostKeyView, ImmichRequest,
+    IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations,
+    PROTOCOL_VERSION, PinnedSource, Pong, Profile, ProfileTest, RecentSource, ReclaimStatus,
+    ReportRequest, RuleCount, SendOptions, SourceInfo, StorageView, VolumeView,
 };
 use tokio::sync::broadcast;
 
@@ -424,6 +424,30 @@ impl Operations for EngineOperations {
             });
         }
         self.engine.inspect_sources(paths).await.map_err(to_error)
+    }
+
+    async fn pinned_sources(&self) -> Res<Vec<PinnedSource>> {
+        self.engine.pinned_sources().await.map_err(to_error)
+    }
+
+    async fn pin_source(&self, path: String, pinned: bool) -> Res<()> {
+        self.engine.pin_source(path, pinned).await.map_err(to_error)
+    }
+
+    async fn volumes(&self) -> Res<Vec<VolumeView>> {
+        self.engine.volumes().await.map_err(to_error)
+    }
+
+    async fn folder_sizes(&self, scan_id: String, path: String) -> Res<FolderSizes> {
+        self.engine
+            .folder_sizes(scan_id, path)
+            .await
+            .map_err(to_error)
+    }
+
+    async fn cancel_folder_sizes(&self, scan_id: String) -> Res<()> {
+        self.engine.cancel_folder_sizes(&scan_id);
+        Ok(())
     }
 
     async fn job_log(

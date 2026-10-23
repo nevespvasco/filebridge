@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Home: does anything need me, what is sending, where things went, what happened, and what space
-// can be freed (docs/design/specs/D01-home.md). Every section is a bounded query and degrades on
-// its own.
+// can be freed (docs/design/specs/D01-home.md), and the pinned folders a new transfer starts
+// from (D02). Every section is a bounded query and degrades on its own.
 import { computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
@@ -14,18 +14,21 @@ import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
 import { useFmt } from "@/composables/useFmt";
+import { baseName } from "@/lib/format";
 import { continueJob, jobLabel } from "@/lib/jobs";
 import { useConnection } from "@/stores/connection";
 import { useHome } from "@/stores/home";
 import { useJobs } from "@/stores/jobs";
 import { profileKind, useProfiles } from "@/stores/profiles";
 import { useReclaim } from "@/stores/reclaim";
+import { useSourceShortcuts } from "@/stores/sourceShortcuts";
 import { useWizard } from "@/stores/wizard";
 
 const home = useHome();
 const jobs = useJobs();
 const profiles = useProfiles();
 const reclaim = useReclaim();
+const shortcuts = useSourceShortcuts();
 const wizard = useWizard();
 const conn = useConnection();
 const router = useRouter();
@@ -36,6 +39,7 @@ onMounted(() => {
   void home.load();
   void profiles.load().then(() => profiles.loadAllStorage());
   void reclaim.loadEligible();
+  void shortcuts.loadPinned();
 });
 // A job changing state can move it between sections.
 watch(
@@ -142,6 +146,9 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
                 <strong class="ellipsis">{{ jobLabel(j) }} <span class="muted">→ {{ profiles.byId[j.profile_id]?.name ?? "—" }}</span></strong>
                 <JobStateBadge :state="j.state" />
               </div>
+              <span v-if="j.state === 'paused' && j.error_code" class="small warn-text">
+                {{ j.error_code === "source_unavailable" ? $t("sourceTools.goneLog") : $t("storage.fullLog") }}
+              </span>
               <template v-if="j.state === 'waiting'">
                 <span class="small warn-text">{{ jobs.live[j.id]?.window ? $t("progress.window", { time: fmt.time(jobs.live[j.id]!.window!.opens_at) }) : $t("state.waiting") }}</span>
               </template>
@@ -162,6 +169,22 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 
         <section class="block" :aria-label="$t('home.drop')">
           <FileDropZone class="drop" @add="onAdd" />
+        </section>
+
+        <section v-if="shortcuts.pinned.length" class="block" aria-labelledby="h-pinned">
+          <h2 id="h-pinned">{{ $t("sourceTools.homePinned") }}</h2>
+          <ul class="pins">
+            <li v-for="p in shortcuts.pinned" :key="p.path">
+              <button
+                class="btn btn-small"
+                type="button"
+                :disabled="!p.exists"
+                :title="p.exists ? p.path : $t('sourceTools.pinnedMissing', { path: p.path })"
+                :aria-label="$t('sourceTools.homePinnedSend', { name: baseName(p.path) || p.path })"
+                @click="onAdd([p.path])"
+              ><AppIcon :name="p.exists ? 'folder' : 'missing'" /> {{ baseName(p.path) || p.path }}</button>
+            </li>
+          </ul>
         </section>
 
         <section v-if="home.recent.length" class="block" aria-labelledby="h-recent">
@@ -267,4 +290,6 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
   .need .btn { margin-left: auto; }
   .offline { flex-direction: column; align-items: flex-start; padding: 1rem; }
 }
+.pins { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pins .btn { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

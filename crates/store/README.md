@@ -23,6 +23,7 @@ SQLite persistence: **jobs, manifests, profiles, issues, events, settings.** **L
 | Issues | `insert_issues`, `clear_issues`, `issues_page` (by rule), `issue_summary`, `pending_issue_count`, `decide_issue` |
 | Events | `append_event`, `events_page` |
 | Settings | `get_setting` / `set_setting`, `get_setting_json` / `set_setting_json` |
+| Pinned sources | `pinned_sources` (in pin order), `set_pinned` (pin or unpin; answers how many are pinned) |
 
 Lists use keyset pagination (`after_idx` / `after_id` + `limit`), so the UI never loads a whole
 manifest.

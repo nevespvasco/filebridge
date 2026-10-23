@@ -2,7 +2,14 @@
 //!
 //! Read-only: the scanner never writes to, renames or deletes anything under the source.
 //! A sequential walk producing [`names::Entry`] values, with each entry's modification time
-//! alongside. Parallel walking and hashing land in later phases.
+//! alongside. Parallel walking and hashing land in later phases. Also: a folder's size split by
+//! what is directly inside it ([`folder_sizes`]), and the disks mounted here ([`volumes`]).
+
+mod sizes;
+mod volumes;
+
+pub use sizes::{ChildSize, SIZES_REPORT_EVERY, SizeTally, folder_sizes};
+pub use volumes::{Volume, volumes};
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};

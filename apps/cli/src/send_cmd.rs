@@ -403,6 +403,9 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
                     JobState::Paused if job.error_code == Some(JobErrorCode::DestinationFull) => println!(
                         "! the destination is full ({}); free space there, then continue with \
                          `filebridge resume {short}`", job.error.unwrap_or_default()),
+                    JobState::Paused if job.error_code == Some(JobErrorCode::SourceUnavailable) => println!(
+                        "! a source can't be read ({}); plug its disk back in, then continue with \
+                         `filebridge resume {short}`", job.error.unwrap_or_default()),
                     JobState::Paused => println!("paused; continue with `filebridge resume {short}`"),
                     other => println!("job {short} is {}{}", other.as_str(),
                         job.error.map(|e| format!(": {e}")).unwrap_or_default()),
@@ -420,7 +423,7 @@ async fn follow(engine: &Arc<Engine>, job_id: &str) -> Result<()> {
             }
             ev = rx.recv() => {
                 let ev = match ev {
-                    Ok(ev) if ev.job_id() == job_id => ev,
+                    Ok(ev) if ev.job_id() == Some(job_id) => ev,
                     Ok(_) | Err(RecvError::Lagged(_)) => continue,
                     Err(RecvError::Closed) => continue,
                 };

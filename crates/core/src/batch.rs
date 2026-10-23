@@ -11,6 +11,10 @@
 //! "Failure") a fatal error on a file bigger than the free space measured right after: either
 //! way the files go back to `Partial`, not `Failed`, and the batch ends [`Sent::Full`] so the
 //! Job pauses until someone frees space (docs/design/specs/D03).
+//!
+//! A source that can't be read any more (a disk unplugged) pauses the Job the same way, with
+//! its files back to `Partial`: checked before a batch starts, and for the Sources of the files
+//! that failed (docs/design/specs/D02).
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -26,6 +30,7 @@ use tokio::sync::broadcast;
 
 use crate::analyse::{bytes_path, source_parent};
 use crate::engine::PREFLIGHT_TIMEOUT;
+use crate::sources::source_unavailable;
 use crate::{CoreError, Event, Result};
 use filebridge_model::{DoneView, FileCategory, InFlightView};
 
@@ -52,6 +57,9 @@ pub(crate) enum Sent {
     /// The destination is full: the files it refused for that went back to `Partial`, the
     /// others have their outcome.
     Full(String),
+    /// A Source can't be read (a disk unplugged): its files are `Pending` (checked before the
+    /// call) or back to `Partial`, the others have their outcome.
+    SourceGone(String),
     /// Stopped by `stop`; files still in flight stay `Partial`.
     Stopped(Stop),
 }
@@ -133,6 +141,10 @@ impl Batch<'_> {
         if items.is_empty() {
             return Ok(Sent::Answered { retry: None });
         }
+        let used: Vec<u32> = kept.iter().map(|e| e.entry.source).collect();
+        if let Some(why) = self.gone_sources(&used).await.into_values().next() {
+            return Ok(Sent::SourceGone(why));
+        }
         let job = TransferJob {
             id: format!("{}-{}", self.job_id, kept[0].entry.idx),
             source_roots: roots,
@@ -183,13 +195,26 @@ impl Batch<'_> {
             Ok(r) => r,
             Err(e) if e.is_retryable() => return Ok(Sent::Retry(e.message)),
             Err(e) if e.kind == ErrorKind::Full => return Ok(Sent::Full(e.message)),
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                return match self.gone_sources(&used).await.into_values().next() {
+                    Some(why) => Ok(Sent::SourceGone(why)),
+                    None => Err(e.into()),
+                };
+            }
         };
         let mut items = result.items;
-        self.explain_failures(&kept, &mut items).await;
+        let failed_from: Vec<u32> = kept
+            .iter()
+            .zip(&items)
+            .filter(|(_, o)| matches!(o, ItemOutcome::Failed(err) if err.kind != ErrorKind::Full))
+            .map(|(e, _)| e.entry.source)
+            .collect();
+        let gone = self.gone_sources(&failed_from).await;
+        self.explain_failures(&kept, &mut items, &gone).await;
 
         let mut retry = None;
         let mut full = None;
+        let mut source_gone = None;
         let mut any_done = false;
         for (i, (e, outcome)) in kept.iter().zip(items).enumerate() {
             match outcome {
@@ -202,6 +227,11 @@ impl Batch<'_> {
                     if !saved.contains(&i) {
                         updates.push((e.entry.idx, EntryState::Done, None));
                     }
+                }
+                ItemOutcome::Failed(err) if gone.contains_key(&e.entry.source) => {
+                    // Its disk is gone, not the file: it goes again once the disk is back.
+                    source_gone.get_or_insert_with(|| gone[&e.entry.source].clone());
+                    updates.push((e.entry.idx, EntryState::Partial, Some(err.message)));
                 }
                 ItemOutcome::Failed(err) if err.kind == ErrorKind::Full => {
                     // Not this file's fault: it goes again once there is room.
@@ -234,20 +264,51 @@ impl Batch<'_> {
         if any_done {
             self.store.set_job_retry(self.job_id, 0, None).await?;
         }
-        Ok(match full {
-            Some(e) => Sent::Full(e),
-            None => Sent::Answered { retry },
+        Ok(match (full, source_gone) {
+            (Some(e), _) => Sent::Full(e),
+            (None, Some(e)) => Sent::SourceGone(e),
+            (None, None) => Sent::Answered { retry },
         })
+    }
+
+    /// The Sources among `used` (indexes, repeats allowed) that can't be read now, with why.
+    async fn gone_sources(&self, used: &[u32]) -> HashMap<u32, String> {
+        let mut distinct: Vec<u32> = used.to_vec();
+        distinct.sort_unstable();
+        distinct.dedup();
+        let paths: Vec<(u32, PathBuf)> = distinct
+            .into_iter()
+            .filter_map(|i| Some((i, self.sources.get(i as usize)?.clone())))
+            .collect();
+        if paths.is_empty() {
+            return HashMap::new();
+        }
+        tokio::task::spawn_blocking(move || {
+            paths
+                .into_iter()
+                .filter_map(|(i, p)| Some((i, source_unavailable(&p)?)))
+                .collect()
+        })
+        .await
+        .unwrap_or_default()
     }
 
     /// Turns the fatal failures of files bigger than the destination's free space, measured now,
     /// into `Full`: a server that reports a full disk without saying so (OpenSSH's sftp-server
     /// answers "Failure"). Nothing changes when no file failed that way, or the destination
     /// doesn't report its space.
-    async fn explain_failures(&self, kept: &[ManifestEntry], items: &mut [ItemOutcome]) {
-        let unexplained =
-            |o: &ItemOutcome| matches!(o, ItemOutcome::Failed(e) if e.kind == ErrorKind::Other);
-        if !items.iter().any(unexplained) {
+    /// Files of a Source in `gone` are left as they are: their disk is the reason.
+    async fn explain_failures(
+        &self,
+        kept: &[ManifestEntry],
+        items: &mut [ItemOutcome],
+        gone: &HashMap<u32, String>,
+    ) {
+        let unexplained = |(e, o): (&ManifestEntry, &ItemOutcome)| {
+            matches!(o, ItemOutcome::Failed(err) if err.kind == ErrorKind::Other)
+                && !gone.contains_key(&e.entry.source)
+        };
+        if !kept.iter().zip(items.iter()).any(unexplained) {
             return;
         }
         let measured = tokio::time::timeout(PREFLIGHT_TIMEOUT, self.transport.preflight(self.dest));
@@ -260,6 +321,7 @@ impl Batch<'_> {
         for (e, outcome) in kept.iter().zip(items.iter_mut()) {
             if let ItemOutcome::Failed(err) = outcome
                 && err.kind == ErrorKind::Other
+                && !gone.contains_key(&e.entry.source)
                 && e.entry.size > free
             {
                 *err = TransportError::full(format!(

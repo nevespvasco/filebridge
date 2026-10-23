@@ -387,3 +387,69 @@ async fn settings_over_the_socket() {
     assert_eq!(client.save_settings(bad).await.unwrap_err().code, "invalid");
     assert_eq!(client.get_settings().await.unwrap(), settings, "unchanged");
 }
+
+#[tokio::test]
+async fn source_shortcuts_over_the_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_endpoint, client, _profile_id) = service(dir.path()).await;
+    let fotos = dir.path().join("Fotos");
+    for d in 0..20 {
+        let sub = fotos.join(format!("{d:02}"));
+        std::fs::create_dir_all(&sub).unwrap();
+        for f in 0..100 {
+            std::fs::write(sub.join(format!("{f}.jpg")), b"jpg").unwrap();
+        }
+    }
+    let path = fotos.display().to_string();
+
+    // Pins.
+    client.pin_source(path.clone(), true).await.unwrap();
+    let pins = client.pinned_sources().await.unwrap();
+    assert_eq!(
+        (pins.len(), pins[0].path.as_str(), pins[0].exists),
+        (1, path.as_str(), true)
+    );
+    let refused = client
+        .pin_source("relative".into(), true)
+        .await
+        .unwrap_err();
+    assert_eq!(refused.code, "invalid");
+    client.pin_source(path.clone(), false).await.unwrap();
+    assert!(client.pinned_sources().await.unwrap().is_empty());
+
+    // The disks mounted here: whatever they are, the call answers.
+    client.volumes().await.unwrap();
+
+    // A measurement streams its progress and stops when asked; requests on one connection
+    // run side by side.
+    let mut events = client.events().await.unwrap();
+    let measuring = {
+        let client = client.clone();
+        let path = path.clone();
+        tokio::spawn(async move { client.folder_sizes("w-1".into(), path).await })
+    };
+    let progress = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(Event::FolderSizesProgress { scan_id, sizes }) = events.recv().await {
+                return (scan_id, sizes);
+            }
+        }
+    })
+    .await
+    .expect("progress arrives");
+    assert_eq!(progress.0, "w-1");
+    client.cancel_folder_sizes("w-1".into()).await.unwrap();
+    let sizes = measuring.await.unwrap().unwrap();
+    assert_eq!(sizes.path, path);
+    if sizes.complete {
+        assert_eq!(
+            (sizes.files, sizes.bytes, sizes.items.len()),
+            (2000, 6000, 20)
+        );
+    }
+    let gone = client
+        .folder_sizes("w-2".into(), dir.path().join("nope").display().to_string())
+        .await
+        .unwrap_err();
+    assert_eq!(gone.code, "invalid");
+}

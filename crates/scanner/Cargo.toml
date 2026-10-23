@@ -10,5 +10,8 @@ publish.workspace = true
 filebridge-names.workspace = true
 walkdir.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true

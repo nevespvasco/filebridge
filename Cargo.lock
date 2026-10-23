@@ -1807,6 +1807,7 @@ name = "filebridge-scanner"
 version = "0.0.1"
 dependencies = [
  "filebridge-names",
+ "libc",
  "tempfile",
  "walkdir",
 ]

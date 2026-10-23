@@ -94,6 +94,8 @@ pub struct Engine {
     /// Files skipped during a send, `(job_id, idx)`, already persisted: a runner sending one of
     /// them stops that batch and goes on without it (docs/design/specs/D04).
     pub(crate) skips: broadcast::Sender<(String, u64)>,
+    /// Folder size measurements running now (`sizes.rs`).
+    pub(crate) sizes: crate::sizes::Scans,
 }
 
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
@@ -121,6 +123,7 @@ impl Engine {
             generation: AtomicU64::new(0),
             locks: JobLocks::default(),
             skips: broadcast::channel(64).0,
+            sizes: crate::sizes::Scans::default(),
         })
     }
 

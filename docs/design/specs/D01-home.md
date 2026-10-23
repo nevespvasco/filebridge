@@ -4,8 +4,8 @@
 - Inspired by: E1, E3, E4, E5 (CloudVault dashboard), G2, G3, G6 (slothUI My Cloud), F6, F7
   (Vault & Vine home), D3 (UpLink Recent)
 - Layers touched: `apps/desktop` only. Reads the operations of [D03](D03-destination-storage.md),
-  [D06](D06-transfers-list.md), [D07](D07-job-log-and-activity.md) and [D10](D10-reclaimable-source.md);
-  adds none of its own.
+  [D06](D06-transfers-list.md), [D07](D07-job-log-and-activity.md), [D10](D10-reclaimable-source.md)
+  and `pinned_sources` of [D02](D02-source-and-composition.md#as-built); adds none of its own.
 - Depends on: [01](../01-design-system.md), [02](../02-information-architecture.md). Each section
   works with whatever of D03/D06/D07/D10 has shipped and is hidden until its data source exists.
 
@@ -118,6 +118,12 @@ There are no separate quick-action buttons (E3): New transfer is the page's prim
 - Home's drop zone and the wizard's share one component, which now listens to window drops only
   while it is on screen, so the kept-alive wizard no longer takes drops meant for other pages.
 - One column below 1100px.
+- **Pinned folders** (E6, with [D02](D02-source-and-composition.md#as-built)): under the drop
+  zone, one button per pinned source; it starts a transfer with that folder, like a drop. A pin
+  whose path is gone (a disk unplugged) is disabled and says so in its tooltip. Hidden when
+  nothing is pinned. Reads `pinned_sources()`.
+- A transfer the engine paused shows why in Now sending, in one line: the destination is full
+  (`destination_full`), or a source can't be read (`source_unavailable`, ADR 0026).
 
 ## States
 
@@ -178,7 +184,7 @@ Namespace `home.*`. Examples:
 ## Out of scope
 
 - A notification bell or inbox (E7, rejected).
-- Pinned folders on Home (E6): later, with [D02](D02-source-and-composition.md#out-of-scope).
+- ~~Pinned folders on Home (E6)~~: built, see [As built](#as-built).
 - Charts of transfer history (bytes per day). Nothing asks for them yet.
 
 ## Open questions

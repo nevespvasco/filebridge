@@ -1,12 +1,14 @@
 <script setup lang="ts">
 // The chosen sources (docs/design/specs/D02): what each one is, what is wrong with it and the
-// one-click fix. Removing from this list never touches the files.
+// one-click fix; a folder's sizes, and a pin to keep it at hand. Removing from this list never
+// touches the files.
 import { computed, nextTick, ref } from "vue";
 import { SOURCE_CHILDREN_CAP, type SourceInfo_Serialize, type SourceProblem } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { CATEGORY_ICON } from "@/lib/categories";
 import { baseName, parentPath } from "@/lib/format";
 import type { IconName } from "@/lib/icons";
+import { useSourceShortcuts } from "@/stores/sourceShortcuts";
 import AppIcon from "./AppIcon.vue";
 import RelativeTime from "./RelativeTime.vue";
 
@@ -16,8 +18,9 @@ const props = defineProps<{
   /** Path → the chosen source that already contains it. */
   coveredBy: Record<string, string>;
 }>();
-const emit = defineEmits<{ remove: [path: string]; replace: [old: string, next: string] }>();
+const emit = defineEmits<{ remove: [path: string]; replace: [old: string, next: string]; sizes: [path: string] }>();
 const fmt = useFmt();
+const shortcuts = useSourceShortcuts();
 
 const PAGE = 100;
 const limit = ref(PAGE);
@@ -91,6 +94,23 @@ async function remove(path: string, i: number) {
         </p>
         <p v-else class="small muted details"><span class="skeleton" />{{ $t("source.checking") }}</p>
       </div>
+      <span class="actions">
+      <button
+        v-if="info[p]?.is_dir && !info[p].problem"
+        class="btn btn-small"
+        type="button"
+        :title="$t('sourceTools.sizesTip')"
+        @click="emit('sizes', p)"
+      ><AppIcon name="sizes" /> <span class="label">{{ $t("sourceTools.sizes") }}</span></button>
+      <button
+        v-if="info[p] && !info[p].problem"
+        class="btn btn-small"
+        type="button"
+        :aria-pressed="shortcuts.isPinned(p)"
+        :aria-label="$t(shortcuts.isPinned(p) ? 'sourceTools.unpin' : 'sourceTools.pin', { name: baseName(p) || p })"
+        :title="shortcuts.isPinned(p) ? $t('sourceTools.unpinTip') : $t('sourceTools.pinTip')"
+        @click="shortcuts.setPinned(p, !shortcuts.isPinned(p))"
+      ><AppIcon :name="shortcuts.isPinned(p) ? 'unpin' : 'pin'" /></button>
       <button
         class="btn btn-small remove"
         type="button"
@@ -98,6 +118,7 @@ async function remove(path: string, i: number) {
         :aria-label="$t('source.remove', { path: p })"
         @click="remove(p, i)"
       ><AppIcon name="close" /></button>
+      </span>
     </li>
     <li v-if="sources.length > limit" class="more">
       <button class="link" type="button" @click="limit += PAGE">
@@ -118,6 +139,7 @@ async function remove(path: string, i: number) {
   border-bottom: 1px solid var(--rule);
 }
 .sources li:last-child { border-bottom: 0; }
+.actions { display: flex; gap: 0.35rem; align-items: center; }
 .sources li.bad { background: color-mix(in srgb, var(--warn-soft) 55%, transparent); border-radius: var(--radius-sm); }
 .icon { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); }
 .icon.warn { background: var(--warn-soft); color: var(--warn-strong); }
@@ -148,6 +170,7 @@ async function remove(path: string, i: number) {
   .name-line { flex-wrap: wrap; row-gap: 0; }
   .name { flex: 0 1 auto; max-width: 100%; }
   .parent { flex-basis: 100%; }
+  .actions .label { display: none; }
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

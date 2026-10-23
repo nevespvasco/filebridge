@@ -2819,3 +2819,202 @@ async fn verification_and_integration_run_outside_the_window() {
     );
     assert_eq!(engine.job(&job).await.unwrap().counts.verified_ok, 3);
 }
+
+/// Where the source goes while its "disk" is unplugged.
+fn unplugged(s: &Setup) -> PathBuf {
+    s.src.with_file_name("Acme-unplugged")
+}
+
+/// Pauses on the source, then finishes once it is back.
+async fn paused_until_the_source_is_back(
+    s: &Setup,
+    job: &str,
+    events: &mut tokio::sync::broadcast::Receiver<Event>,
+) {
+    let paused = s.engine.job(job).await.unwrap();
+    assert_eq!(paused.state, JobState::Paused);
+    assert_eq!(paused.error_code, Some(JobErrorCode::SourceUnavailable));
+    assert!(
+        paused.error.as_deref().unwrap_or_default().contains("Acme"),
+        "{:?}",
+        paused.error
+    );
+    assert_eq!(
+        paused.counts.failed, 0,
+        "an unplugged disk isn't the files' failure"
+    );
+    while let Ok(e) = events.try_recv() {
+        assert!(!matches!(e, Event::EntryFailed { .. }), "{e:?}");
+    }
+
+    // Resumed while still unplugged: it pauses again, nothing lost.
+    assert_eq!(run_to_end(s, job).await, JobState::Paused);
+
+    std::fs::rename(unplugged(s), &s.src).unwrap();
+    assert_eq!(run_to_end(s, job).await, JobState::Completed);
+    let done = s.engine.job(job).await.unwrap();
+    assert_eq!((done.counts.done, done.error_code), (3, None));
+    assert_eq!(dest_files(&s.dest).len(), 3);
+}
+
+#[tokio::test]
+async fn a_source_unplugged_before_the_send_pauses_the_job() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    let mut events = s.engine.subscribe();
+    std::fs::rename(&s.src, unplugged(&s)).unwrap();
+    assert_eq!(run_to_end(&s, &job).await, JobState::Paused);
+    assert_eq!(s.engine.job(&job).await.unwrap().counts.pending, 3);
+    assert_eq!(
+        s.transport.calls.load(Ordering::SeqCst),
+        0,
+        "nothing was sent"
+    );
+    paused_until_the_source_is_back(&s, &job, &mut events).await;
+}
+
+#[tokio::test]
+async fn a_source_unplugged_during_the_send_pauses_the_job() {
+    let s = setup().await;
+    *s.transport.per_file.lock().unwrap() = Duration::from_millis(200);
+    let job = ready_job(&s, SendOptions::default()).await;
+    let mut events = s.engine.subscribe();
+    s.engine.start(&job).await.unwrap();
+    // Unplugged once the first file has arrived.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(Event::TransferProgress {
+                files_done: 1.., ..
+            }) = events.recv().await
+            {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("a file arrives");
+    std::fs::rename(&s.src, unplugged(&s)).unwrap();
+    let end = tokio::time::timeout(Duration::from_secs(20), s.engine.wait(&job))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(end, JobState::Paused);
+    let paused = s.engine.job(&job).await.unwrap();
+    assert_eq!((paused.counts.done, paused.counts.pending), (1, 2));
+    *s.transport.per_file.lock().unwrap() = Duration::ZERO;
+    paused_until_the_source_is_back(&s, &job, &mut events).await;
+}
+
+#[tokio::test]
+async fn pinned_sources_are_kept_in_order() {
+    let s = setup().await;
+    assert!(s.engine.pinned_sources().await.unwrap().is_empty());
+    let src = s.src.display().to_string();
+    let gone = "/nowhere/Fotos".to_owned();
+    s.engine.pin_source(src.clone(), true).await.unwrap();
+    s.engine.pin_source(gone.clone(), true).await.unwrap();
+    s.engine.pin_source(src.clone(), true).await.unwrap();
+    let pins = s.engine.pinned_sources().await.unwrap();
+    let got: Vec<_> = pins.iter().map(|p| (p.path.as_str(), p.exists)).collect();
+    assert_eq!(got, [(src.as_str(), true), (gone.as_str(), false)]);
+
+    let refused = s.engine.pin_source("Fotos".into(), true).await;
+    assert!(matches!(refused, Err(CoreError::Invalid(_))), "{refused:?}");
+
+    s.engine.pin_source(src, false).await.unwrap();
+    let pins = s.engine.pinned_sources().await.unwrap();
+    assert_eq!(pins.len(), 1);
+    assert_eq!(pins[0].path, gone);
+}
+
+#[tokio::test]
+async fn a_folder_is_measured_by_what_it_holds() {
+    let s = setup().await;
+    let sizes = s
+        .engine
+        .folder_sizes("m-1".into(), s.src.display().to_string())
+        .await
+        .unwrap();
+    assert!(sizes.complete);
+    assert_eq!((sizes.files, sizes.dirs, sizes.bytes), (3, 1, 18));
+    let items: Vec<_> = sizes
+        .items
+        .iter()
+        .map(|i| (i.name.as_str(), i.is_dir, i.files, i.bytes))
+        .collect();
+    assert_eq!(
+        items,
+        [
+            ("Fotos", true, 2, 12),
+            ("Relato\u{301}rio.pdf", false, 1, 6)
+        ],
+        "most bytes first"
+    );
+    assert_eq!(
+        sizes.items[0].path.as_deref(),
+        Some(s.src.join("Fotos").to_str().unwrap())
+    );
+    // The id is free again once it ended.
+    s.engine
+        .folder_sizes("m-1".into(), s.src.join("Fotos").display().to_string())
+        .await
+        .unwrap();
+
+    for bad in [
+        s.src.join("Relato\u{301}rio.pdf"),
+        PathBuf::from("Fotos"),
+        "/".into(),
+    ] {
+        let refused = s
+            .engine
+            .folder_sizes("m-2".into(), bad.display().to_string())
+            .await;
+        assert!(matches!(refused, Err(CoreError::Invalid(_))), "{bad:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_folder_measurement_streams_and_can_be_cancelled() {
+    let s = setup().await;
+    // Enough entries for a few progress reports.
+    let big = s.src.join("Muitos");
+    for d in 0..40 {
+        let dir = big.join(format!("d{d}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in 0..100 {
+            std::fs::write(dir.join(format!("f{f}")), b"x").unwrap();
+        }
+    }
+    let path = big.display().to_string();
+    let engine = s.engine.clone();
+    let mut events = s.engine.subscribe();
+    let running = tokio::spawn({
+        let path = path.clone();
+        async move { engine.folder_sizes("m-1".into(), path).await }
+    });
+    let (scan_id, sizes) = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(Event::FolderSizesProgress { scan_id, sizes }) = events.recv().await {
+                return (scan_id, sizes);
+            }
+        }
+    })
+    .await
+    .expect("the first report comes at once");
+    assert_eq!(scan_id, "m-1");
+    assert!(!sizes.complete && sizes.files > 0, "{sizes:?}");
+    s.engine.cancel_folder_sizes("m-1");
+    let answer = running.await.unwrap().unwrap();
+    assert_eq!(answer.path, path);
+    // Either it was stopped part way, or it had already counted everything.
+    assert!(answer.complete == (answer.files == 4000), "{answer:?}");
+    s.engine.cancel_folder_sizes("not-running");
+}
+
+#[tokio::test]
+async fn the_disks_mounted_here_are_listed() {
+    let s = setup().await;
+    for v in s.engine.volumes().await.unwrap() {
+        assert!(Path::new(&v.path).is_absolute(), "{v:?}");
+    }
+}

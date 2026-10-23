@@ -28,12 +28,13 @@ pub use filebridge_model::{
     ActivityItem, AnalysisSummary, AppSettings, BlockerView, BrowseResult, BrowseTarget,
     CategoryCount, CheckView, Counts, DecideManyResult, DecisionInput, EntryCursor, EntryDetail,
     EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event, ExportResult,
-    Family, FolderNameCheck, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
-    JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
-    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
-    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
-    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
-    StorageView, TargetSpec, job_operations,
+    FOLDER_SIZES_LISTED, Family, FolderNameCheck, FolderSize, FolderSizes, HashView, IssueDecision,
+    IssueSeverity, IssueView, JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary,
+    LogEntry, LogLevel, MAX_PINNED_SOURCES, PinnedSource, PreflightView, Profile, ProfileTest,
+    RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue, RemoteEntryView, ReportFormat,
+    ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP, SendOptions, SendWindow,
+    SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec,
+    VolumeView, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -69,7 +70,10 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 26: `last_target_dir` (D11).
 /// 27: `skip_entry` (D04).
 /// 28: `Backend::Smb`, `Backend::S3` (ADR 0022).
-pub const PROTOCOL_VERSION: u32 = 28;
+/// 29: `pinned_sources`, `pin_source`, `volumes`, `folder_sizes`, `cancel_folder_sizes`, the
+///     `folder_sizes_progress` event; `JobErrorCode::SourceUnavailable` (a source that can't be
+///     read pauses the job).
+pub const PROTOCOL_VERSION: u32 = 29;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -370,6 +374,44 @@ impl Endpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_measurement_on_the_wire() {
+        let call = Envelope {
+            id: 3,
+            request: Request::FolderSizes {
+                scan_id: "w-1".into(),
+                path: "/home/demo/Fotos".into(),
+            },
+        };
+        let wire = serde_json::to_value(&call).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!({ "id": 3, "request": {
+                "type": "folder_sizes", "scan_id": "w-1", "path": "/home/demo/Fotos"
+            }})
+        );
+        // Its progress isn't about a job.
+        let event = Event::FolderSizesProgress {
+            scan_id: "w-1".into(),
+            sizes: FolderSizes {
+                path: "/home/demo/Fotos".into(),
+                items: Vec::new(),
+                rest_items: 0,
+                rest_files: 0,
+                rest_bytes: 0,
+                files: 0,
+                dirs: 0,
+                bytes: 0,
+                errors: 0,
+                complete: false,
+            },
+        };
+        assert_eq!(event.job_id(), None);
+        let wire = serde_json::to_value(Outgoing::Event { event }).unwrap();
+        assert_eq!(wire["event"]["type"], "folder_sizes_progress");
+        assert_eq!(wire["event"]["scan_id"], "w-1");
+    }
 
     #[test]
     fn no_request_prints_a_password() {

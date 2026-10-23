@@ -1,12 +1,15 @@
 //! Chosen sources checked before anything is sent (docs/design/specs/D02): what each one is,
 //! how big a file is, how many items a folder holds, what is wrong with it, and whether another
 //! chosen source already contains it. Nothing is read beyond metadata and folder listings, and
-//! nothing is written.
+//! nothing is written. Also the quick ways to a source: pinned ones and the disks mounted here.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use filebridge_model::{FileCategory, SOURCE_CHILDREN_CAP, SourceInfo, SourceProblem};
+use filebridge_model::{
+    FileCategory, MAX_PINNED_SOURCES, PinnedSource, SOURCE_CHILDREN_CAP, SourceInfo, SourceProblem,
+    VolumeView,
+};
 
 use crate::analyse::os_bytes;
 use crate::{CoreError, Engine, Result};
@@ -17,6 +20,75 @@ impl Engine {
         tokio::task::spawn_blocking(move || inspect(&paths))
             .await
             .map_err(|e| CoreError::Invalid(format!("source check failed: {e}")))
+    }
+
+    /// The pinned sources, in the order they were pinned, each checked for whether it is there.
+    pub async fn pinned_sources(&self) -> Result<Vec<PinnedSource>> {
+        let rows = self.store.pinned_sources().await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| PinnedSource {
+                exists: Path::new(&r.path).exists(),
+                path: r.path,
+                pinned_at: r.pinned_at,
+            })
+            .collect())
+    }
+
+    /// Pins an absolute path (it needn't exist: a disk may be unplugged), or unpins it.
+    pub async fn pin_source(&self, path: String, pinned: bool) -> Result<()> {
+        if pinned {
+            if !Path::new(&path).is_absolute() {
+                return Err(CoreError::Invalid(format!("not an absolute path: {path}")));
+            }
+            let pins = self.store.pinned_sources().await?;
+            if pins.len() >= MAX_PINNED_SOURCES as usize && !pins.iter().any(|p| p.path == path) {
+                return Err(CoreError::Invalid(format!(
+                    "at most {MAX_PINNED_SOURCES} sources can be pinned"
+                )));
+            }
+        }
+        self.store.set_pinned(&path, pinned).await?;
+        Ok(())
+    }
+
+    /// The disks mounted on this computer that files can be sent from. Paths that aren't valid
+    /// text are left out (a job is created from text).
+    pub async fn volumes(&self) -> Result<Vec<VolumeView>> {
+        let found = tokio::task::spawn_blocking(filebridge_scanner::volumes)
+            .await
+            .map_err(|e| CoreError::Invalid(format!("disk listing failed: {e}")))?;
+        Ok(found
+            .into_iter()
+            .filter_map(|v| {
+                Some(VolumeView {
+                    path: v.path.into_os_string().into_string().ok()?,
+                    label: v.label,
+                    removable: v.removable,
+                    total_bytes: v.total_bytes,
+                    free_bytes: v.free_bytes,
+                })
+            })
+            .collect())
+    }
+}
+
+/// Why a job's source can't be read now, if it can't: gone or unreadable (a disk unplugged, a
+/// network share dropped), or a folder that is empty while it still has files to send (the
+/// mount folder of a disk that isn't mounted). The runner pauses the job then instead of
+/// failing its files (docs/design/specs/D02).
+pub(crate) fn source_unavailable(path: &Path) -> Option<String> {
+    let shown = path.display();
+    match std::fs::metadata(path) {
+        Err(e) => Some(format!("{shown} can't be read: {e}")),
+        Ok(m) if m.is_dir() => match std::fs::read_dir(path).map(|mut d| d.next().is_none()) {
+            Err(e) => Some(format!("{shown} can't be read: {e}")),
+            Ok(true) => Some(format!(
+                "{shown} is empty: the disk it is on may not be mounted"
+            )),
+            Ok(false) => None,
+        },
+        Ok(_) => None,
     }
 }
 
