@@ -5,7 +5,8 @@ OS keyring wrapper. **Built** in Phase 2.
 ## Responsibility
 - `SecretStore` over the `keyring` crate: Keychain (macOS), Credential Manager (Windows),
   Secret Service (Linux).
-- Opaque references `filebridge/<profile-id>/<kind>` (`app-password`, `ssh-key`).
+- Opaque references `filebridge/<profile-id>/<kind>` (`app-password`, `ssh-key`, `api-key`: a
+  tool's API key, e.g. Immich's). Deleting a profile removes every kind.
 - Generate Ed25519 SSH key pairs for profiles; expose the public key for `authorized_keys`.
 - `Redacted<T>` wrapper whose `Debug`/`Display` print `***`.
 

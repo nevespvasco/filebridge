@@ -1,5 +1,6 @@
-//! Secrets in the OS keyring (ADR 0004): a profile's app password and its SSH key. SQLite, the
-//! config, logs and error messages only ever hold a [`KeyringRef`], never the secret.
+//! Secrets in the OS keyring (ADR 0004): a profile's app password, its SSH key and a tool's API
+//! key. SQLite, the config, logs and error messages only ever hold a [`KeyringRef`], never the
+//! secret.
 //!
 //! [`KeyringStore`] is the real one: Keychain on macOS and iOS, Credential Manager on Windows,
 //! Secret Service on Linux (GNOME Keyring, KWallet). There is no file fallback: without a keyring
@@ -32,15 +33,22 @@ pub enum SecretKind {
     AppPassword,
     /// The private key filebridge generated for the profile (OpenSSH format).
     SshKey,
+    /// A tool's API key, e.g. Immich's.
+    ApiKey,
 }
 
 impl SecretKind {
-    pub const ALL: [SecretKind; 2] = [SecretKind::AppPassword, SecretKind::SshKey];
+    pub const ALL: [SecretKind; 3] = [
+        SecretKind::AppPassword,
+        SecretKind::SshKey,
+        SecretKind::ApiKey,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::AppPassword => "app-password",
             Self::SshKey => "ssh-key",
+            Self::ApiKey => "api-key",
         }
     }
 }
@@ -223,6 +231,13 @@ fn android_unavailable() -> SecretError {
 #[derive(Default)]
 pub struct MemoryStore(Mutex<HashMap<String, Zeroizing<String>>>);
 
+impl MemoryStore {
+    /// Nothing stored: what a test checks after a wizard that gave up.
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().expect("secret map lock").is_empty()
+    }
+}
+
 impl SecretStore for MemoryStore {
     fn get(&self, r: &KeyringRef) -> Result<Secret> {
         let map = self.0.lock().expect("secret map lock");
@@ -256,6 +271,10 @@ mod tests {
         assert_eq!(
             reference("p-1", SecretKind::SshKey).0,
             "filebridge/p-1/ssh-key"
+        );
+        assert_eq!(
+            reference("p-1", SecretKind::ApiKey).0,
+            "filebridge/p-1/api-key"
         );
     }
 

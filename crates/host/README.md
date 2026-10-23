@@ -9,7 +9,7 @@ Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`).
 - **rclone:** `find_rclone()` (explicit path, then next to the executable: `filebridge-rclone`,
   the installed app's sidecar, then `rclone`; then PATH, then `~/.local/bin`) and the `Rcd`
   sidecar.
-- **Built-in plugins:** `RcloneTransport` (plan A, `Strategy::PerFile`) and `Nextcloud`.
+- **Built-in plugins:** `RcloneTransport` (plan A), `Nextcloud` and `Immich` (ADR 0020).
   `HostOptions::transport` picks rclone, none (commands that never reach a destination), or
   the local-disk fake (`filebridge-service --fake-transport`: tests and the UI's dev mode, no
   rclone). `Host::with_registry` opens a data directory with plugins the caller brings.
@@ -17,6 +17,11 @@ Wiring shared by the binaries that host the engine (`apps/service`, `apps/cli`).
   `Nextcloud::set_up` input and saves the profile it builds (with the transport this host
   registered),
   shared by `filebridge profile add-nextcloud` and the service.
+- **Immich wizard** (`src/immich.rs`, `add_immich`): keeps the API key (and an SFTP password) in
+  the keyring under a fresh profile id, looks at the destination folder and its space with this
+  host's transport, runs the plugin's `Immich::set_up` checks, and saves the profile only when
+  nothing failed; otherwise the secrets go again. Tested against the plugin's `MockImmich`,
+  through a whole send that ends with one library scan.
 - **SSH host keys:** `scan_host_key` and `trust_host_key` (`src/host_keys.rs`, ADR 0015) answer
   with the SSH plugin's scan and append; a changed key is `host_key_changed`.
 - **The engine behind the ipc seam:** `EngineOperations` implements `filebridge_ipc::Operations`

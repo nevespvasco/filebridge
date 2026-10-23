@@ -27,6 +27,7 @@ filebridge/
 │   ├── transport-nextcloud/     # small files to Nextcloud by bulk upload, in front of rclone
 │   ├── transport-rclone/        # implementation over rclone's rc API
 │   ├── integration-api/         # Integration trait + types
+│   ├── integration-immich/      # Immich external library: checks, scan through its API
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules
 ├── sidecars/                    # desktop sidecars (prepare-desktop.sh → bin/, not committed),
 │                                #   RCLONE_VERSION, licenses/; librclone/ builds rclone as a library
@@ -50,6 +51,7 @@ flowchart TB
     host --> trc["transport-rclone"]
     host --> tnc["transport-nextcloud"]
     host --> inc["integration-nextcloud"]
+    host --> iim["integration-immich"]
     ipc --> model
     ipc --> tapi
     core --> model
@@ -65,6 +67,8 @@ flowchart TB
     inc --> iapi
     inc --> tapi
     inc --> names
+    iim --> iapi
+    iim --> tapi
     iapi --> tapi
     iapi --> names
     scanner --> names

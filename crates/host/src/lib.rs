@@ -7,6 +7,7 @@
 
 mod access;
 mod host_keys;
+mod immich;
 mod nextcloud;
 mod operations;
 
@@ -16,6 +17,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use filebridge_core::{Engine, EngineOptions, Registry, Store};
+use filebridge_integration_immich::Immich;
 use filebridge_integration_nextcloud::{Nextcloud, ShellConnector, SshConnector};
 use filebridge_secrets::{KeyringStore, MemoryStore, SecretStore, StoreResolver};
 use filebridge_transport_fake::FakeTransport;
@@ -24,6 +26,7 @@ use filebridge_transport_rclone::{RcClient, Rcd, RcloneTransport};
 
 pub use operations::EngineOperations;
 
+use immich::ImmichWizard;
 use nextcloud::NextcloudWizard;
 
 pub const DB_FILE: &str = "filebridge.db";
@@ -98,6 +101,8 @@ pub struct Host {
     pub data_dir: PathBuf,
     /// The Nextcloud plugin registered in the engine, for its profile wizard.
     nextcloud: Option<Arc<Nextcloud>>,
+    /// The Immich plugin registered in the engine, for its profile wizard.
+    immich: Option<Arc<Immich>>,
     /// Id of the transport registered in the engine, for profiles the wizards save.
     transport: Option<&'static str>,
     /// SSH sign-ins (with profiles' own keys from the keyring), for the key operations.
@@ -165,9 +170,12 @@ impl Host {
             transport = Some(RcloneTransport::ID);
         }
         // SSH sign-ins read a profile's own key (ADR 0012) from the same keyring.
-        let ssh: Arc<dyn ShellConnector> = Arc::new(SshConnector::with_secrets(resolver));
+        let ssh: Arc<dyn ShellConnector> = Arc::new(SshConnector::with_secrets(resolver.clone()));
         let nextcloud = Arc::new(Nextcloud::new(ssh.clone()));
         registry.add_integration(nextcloud.clone());
+        // Immich's API key comes from the same keyring (ADR 0020).
+        let immich = Arc::new(Immich::new(resolver));
+        registry.add_integration(immich.clone());
         let mut host = Self::with_registry(opts, access, registry)?;
         // The rcd starts unlimited: give it the saved bandwidth limit before anything is sent.
         host.engine
@@ -176,6 +184,7 @@ impl Host {
             .context("read the settings")?;
         host._rclone = rclone;
         host.nextcloud = Some(nextcloud);
+        host.immich = Some(immich);
         host.ssh = Some(ssh);
         host.transport = transport;
         Ok(host)
@@ -202,8 +211,16 @@ impl Host {
         EngineOperations::with_plugins(
             self.engine.clone(),
             self.nextcloud_wizard(),
+            self.immich_wizard(),
             self.ssh.clone(),
         )
+    }
+
+    fn immich_wizard(&self) -> Option<ImmichWizard> {
+        Some(ImmichWizard {
+            immich: self.immich.clone()?,
+            transport: self.transport?,
+        })
     }
 
     fn nextcloud_wizard(&self) -> Option<NextcloudWizard> {
@@ -231,6 +248,7 @@ impl Host {
             engine,
             data_dir: dir,
             nextcloud: None,
+            immich: None,
             transport: None,
             ssh: None,
             _rclone: None,

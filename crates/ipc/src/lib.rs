@@ -64,7 +64,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///     (`test_profile`, `profile_storage`, `delete_profile`) no longer collides with it.
 /// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
 ///     destination pauses the job).
-pub const PROTOCOL_VERSION: u32 = 23;
+/// 24: `add_immich` (ADR 0020).
+pub const PROTOCOL_VERSION: u32 = 24;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,6 +188,30 @@ pub struct NextcloudWebdavRequest {
     pub folder: String,
 }
 
+/// Immich profile wizard (ADR 0020): files go by `destination` (SFTP, or a local folder) into a
+/// folder of an Immich external library, which is scanned after each send. The API key goes to
+/// the OS keyring and nowhere else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ImmichRequest {
+    /// Name for the profile saved when every check passes.
+    pub name: String,
+    /// Where the files go: an SFTP server or a local folder, with its root folder. Its
+    /// `password`, if any, comes from [`ImmichRequest::password`].
+    pub destination: Destination,
+    /// The SFTP password, if the server signs in with one (kept in the keyring too).
+    pub password: Option<Password>,
+    /// What the user typed: `photos.example.com` (https), or an address ending in `/api`.
+    pub server: String,
+    /// An API key of an Immich administrator (Account settings → API keys), with at least
+    /// `library.read` and `library.update`.
+    pub api_key: Password,
+    /// The external library; `None` picks the one that imports `import_path`.
+    pub library_id: Option<String>,
+    /// The destination's folder as Immich sees it (e.g. `/mnt/photos` in its container);
+    /// `None` means the same path as the destination's root.
+    pub import_path: Option<String>,
+}
+
 /// Nextcloud direct-mode profile wizard (detection over SSH: a Proxmox LXC, or Nextcloud on the
 /// SSH host itself).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -222,7 +247,7 @@ pub struct DetectNextcloudResponse {
     #[serde(default)]
     pub detector: String,
     pub steps: Vec<DetectStepView>,
-    /// Containers seen, when the choice was ambiguous.
+    /// Containers (Nextcloud) or libraries (Immich) seen, when the choice was ambiguous.
     pub containers: Vec<String>,
     /// The saved profile, when every step passed.
     pub profile: Option<Profile>,
@@ -327,6 +352,21 @@ mod tests {
                     user: "alice".into(),
                     app_password: Password::new("app-pass-AbCdE"),
                     folder: String::new(),
+                },
+            },
+            Request::AddImmich {
+                req: ImmichRequest {
+                    name: "Fotos".into(),
+                    destination: Destination {
+                        transport: "rclone".into(),
+                        backend: Backend::Local,
+                        root: "/srv/photos".into(),
+                    },
+                    password: Some(Password::new("s3cret-sftp-pass")),
+                    server: "photos.example.com".into(),
+                    api_key: Password::new("app-pass-AbCdE"),
+                    library_id: None,
+                    import_path: None,
                 },
             },
         ];

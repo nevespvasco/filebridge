@@ -84,6 +84,31 @@ pub enum ProfileCmd {
         #[arg(long, default_value = "")]
         folder: String,
     },
+    /// Immich (ADR 0020): files go over SFTP (or to a local folder with --local) into a folder of
+    /// an Immich external library, which is scanned after each send. The API key (an
+    /// administrator's, Account settings → API keys) is asked without echo, or read from stdin.
+    AddImmich {
+        #[arg(long)]
+        name: String,
+        /// The Immich address, e.g. `photos.example.com` (https).
+        #[arg(long)]
+        server: String,
+        /// The destination folder: absolute on the SFTP server, or on this machine with --local.
+        #[arg(long)]
+        root: String,
+        /// Send to a folder on this machine instead of over SFTP.
+        #[arg(long, conflicts_with = "host")]
+        local: bool,
+        #[command(flatten)]
+        ssh: Option<SshArgs>,
+        /// The external library's id (default: the one library that imports the folder).
+        #[arg(long)]
+        library: Option<String>,
+        /// The folder as Immich sees it, when Immich runs in a container that mounts it
+        /// elsewhere, e.g. `/mnt/photos` (default: the same path as --root).
+        #[arg(long)]
+        import_path: Option<String>,
+    },
     /// Nextcloud direct mode, over SSH to the Proxmox node (Nextcloud in an LXC) or to the
     /// machine Nextcloud runs on: detects the container, data folder, `occ` and owner, then
     /// saves the profile. Runs read-only commands on the host.
@@ -245,13 +270,59 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 })
                 .await
                 .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
-            for step in &res.steps {
-                let mark = match step.status.as_str() {
-                    "ok" => "✓",
-                    "warn" => "!",
-                    _ => "✗",
-                };
-                println!("  {mark} {:<10} {}", step.id, step.message);
+            print_steps(&res.steps);
+            let Some(saved) = res.profile else {
+                bail!("the profile was not saved; fix the failed step and try again");
+            };
+            println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
+            Ok(())
+        }
+        ProfileCmd::AddImmich {
+            name,
+            server,
+            root,
+            local,
+            ssh,
+            library,
+            import_path,
+        } => {
+            let backend = match (local, ssh) {
+                (true, _) => Backend::Local,
+                (false, Some(ssh)) => ssh.backend(),
+                (false, None) => bail!("give the SFTP server with --host, or use --local"),
+            };
+            let root = if local {
+                std::path::absolute(&root)?.to_string_lossy().into_owned()
+            } else if root.starts_with('/') {
+                root
+            } else {
+                bail!("--root must be an absolute path on the server");
+            };
+            let app = App::open(g, Access::Exclusive, true).await?;
+            let api_key = read_password("Immich API key: ")?;
+            let res = app
+                .ops
+                .add_immich(filebridge_ipc::ImmichRequest {
+                    name,
+                    destination: Destination {
+                        transport: RcloneTransport::ID.into(),
+                        backend,
+                        root,
+                    },
+                    password: None,
+                    server,
+                    api_key: filebridge_ipc::Password::new(api_key),
+                    library_id: library,
+                    import_path,
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+            print_steps(&res.steps);
+            if !res.containers.is_empty() {
+                println!("libraries (pass one with --library):");
+                for l in &res.containers {
+                    println!("  {l}");
+                }
             }
             let Some(saved) = res.profile else {
                 bail!("the profile was not saved; fix the failed step and try again");
@@ -544,6 +615,18 @@ fn print_access(report: &filebridge_ipc::AccessReport) -> Result<()> {
 }
 
 /// A password without echo on a terminal; the first line of stdin when piped.
+/// A wizard's steps, one line each: ✓, ! or ✗, the step and what it found.
+fn print_steps(steps: &[filebridge_ipc::DetectStepView]) {
+    for step in steps {
+        let mark = match step.status.as_str() {
+            "ok" => "✓",
+            "warn" => "!",
+            _ => "✗",
+        };
+        println!("  {mark} {:<11} {}", step.id, step.message);
+    }
+}
+
 fn read_password(prompt: &str) -> Result<String> {
     use std::io::{BufRead, IsTerminal};
     let value = if std::io::stdin().is_terminal() {

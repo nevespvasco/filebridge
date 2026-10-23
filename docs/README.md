@@ -44,6 +44,7 @@ detail to build each crate on its own.
 | [0016](adr/0016-nextcloud-bulk-upload.md) | Small files to Nextcloud go by its bulk upload (`transport-nextcloud`, in front of rclone); the rest through rclone |
 | [0017](adr/0017-sha256-for-the-manifest.md) | The manifest uses SHA-256, on the source and at the destination; no xxHash |
 | [0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md) | Personal use, the name stays `filebridge`; scheduled sends in Phase 3, copy-only continuous sync (never deletes at the destination) in Phase 5 |
+| [0020](adr/0020-immich-external-library.md) | Immich as an external library: files over SFTP (or into a local folder), then a library scan through its API; an `Integration`, not a `Transport` |
 | [0021](adr/0021-full-destination-pauses-the-job.md) | A full destination (`ErrorKind::Full`) pauses the job, resumable; free space is watched during a send |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes

@@ -41,6 +41,13 @@ export const commands = {
 	 *  pass. Same answer as `detect_nextcloud`.
 	 */
 	addNextcloudWebdav: (req: NextcloudWebdavRequest) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_nextcloud_webdav", { req })),
+	/**
+	 *  Immich profile wizard (ADR 0020): checks the destination, the Immich address, the
+	 *  API key, the external library and its folder, and saves the profile (the key in
+	 *  the keyring) when they pass. Same answer as `detect_nextcloud`; ambiguous
+	 *  libraries are listed in `containers`.
+	 */
+	addImmich: (req: ImmichRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_immich", { req })),
 	/**  A draft job; nothing is read from the sources yet. */
 	createJob: (sources: string[], profileId: string, options: SendOptions_Deserialize) => typedError<string, ErrorBody>(__TAURI_INVOKE("create_job", { sources, profileId, options })),
 	/**  Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready). */
@@ -182,7 +189,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 23 as const;
+export const PROTOCOL_VERSION = 24 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -518,7 +525,7 @@ export type DetectNextcloudResponse_Deserialize = {
 	 */
 	detector?: string,
 	steps: DetectStepView[],
-	/**  Containers seen, when the choice was ambiguous. */
+	/**  Containers (Nextcloud) or libraries (Immich) seen, when the choice was ambiguous. */
 	containers: string[],
 	/**  The saved profile, when every step passed. */
 	profile?: Profile_Deserialize | null,
@@ -531,7 +538,7 @@ export type DetectNextcloudResponse_Serialize = {
 	 */
 	detector: string,
 	steps: DetectStepView[],
-	/**  Containers seen, when the choice was ambiguous. */
+	/**  Containers (Nextcloud) or libraries (Immich) seen, when the choice was ambiguous. */
 	containers: string[],
 	/**  The saved profile, when every step passed. */
 	profile: Profile_Serialize | null,
@@ -843,6 +850,75 @@ export type HostKeyView_Serialize = {
 	fingerprint: string | null,
 	/**  For `changed`: the line of `known_hosts_file` with the key on record. */
 	line: number | null,
+};
+
+/**
+ *  Immich profile wizard (ADR 0020): files go by `destination` (SFTP, or a local folder) into a
+ *  folder of an Immich external library, which is scanned after each send. The API key goes to
+ *  the OS keyring and nowhere else.
+ */
+export type ImmichRequest = ImmichRequest_Serialize | ImmichRequest_Deserialize;
+
+/**
+ *  Immich profile wizard (ADR 0020): files go by `destination` (SFTP, or a local folder) into a
+ *  folder of an Immich external library, which is scanned after each send. The API key goes to
+ *  the OS keyring and nowhere else.
+ */
+export type ImmichRequest_Deserialize = {
+	/**  Name for the profile saved when every check passes. */
+	name: string,
+	/**
+	 *  Where the files go: an SFTP server or a local folder, with its root folder. Its
+	 *  `password`, if any, comes from [`ImmichRequest::password`].
+	 */
+	destination: Destination_Deserialize,
+	/**  The SFTP password, if the server signs in with one (kept in the keyring too). */
+	password?: Password | null,
+	/**  What the user typed: `photos.example.com` (https), or an address ending in `/api`. */
+	server: string,
+	/**
+	 *  An API key of an Immich administrator (Account settings → API keys), with at least
+	 *  `library.read` and `library.update`.
+	 */
+	api_key: Password,
+	/**  The external library; `None` picks the one that imports `import_path`. */
+	library_id?: string | null,
+	/**
+	 *  The destination's folder as Immich sees it (e.g. `/mnt/photos` in its container);
+	 *  `None` means the same path as the destination's root.
+	 */
+	import_path?: string | null,
+};
+
+/**
+ *  Immich profile wizard (ADR 0020): files go by `destination` (SFTP, or a local folder) into a
+ *  folder of an Immich external library, which is scanned after each send. The API key goes to
+ *  the OS keyring and nowhere else.
+ */
+export type ImmichRequest_Serialize = {
+	/**  Name for the profile saved when every check passes. */
+	name: string,
+	/**
+	 *  Where the files go: an SFTP server or a local folder, with its root folder. Its
+	 *  `password`, if any, comes from [`ImmichRequest::password`].
+	 */
+	destination: Destination_Serialize,
+	/**  The SFTP password, if the server signs in with one (kept in the keyring too). */
+	password: Password | null,
+	/**  What the user typed: `photos.example.com` (https), or an address ending in `/api`. */
+	server: string,
+	/**
+	 *  An API key of an Immich administrator (Account settings → API keys), with at least
+	 *  `library.read` and `library.update`.
+	 */
+	api_key: Password,
+	/**  The external library; `None` picks the one that imports `import_path`. */
+	library_id: string | null,
+	/**
+	 *  The destination's folder as Immich sees it (e.g. `/mnt/photos` in its container);
+	 *  `None` means the same path as the destination's root.
+	 */
+	import_path: string | null,
 };
 
 /**  A file being sent right now (docs/design/specs/D04-transfer-queue.md). */

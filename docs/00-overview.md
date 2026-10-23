@@ -8,8 +8,9 @@ choose files or folders, choose a destination, review problems, send, and update
 tool (today: Nextcloud).
 
 - The **core is generic**: it sends files anywhere a `Transport` can reach.
-- **Nextcloud is the first of several integration plugins** (`Integration`). Future candidates:
-  Immich, Jellyfin, Paperless, Seafile, Syncthing.
+- **Nextcloud is the first of several integration plugins** (`Integration`); Immich, as an
+  external library, is the second ([ADR 0020](adr/0020-immich-external-library.md)). Future
+  candidates: Jellyfin, Paperless, Seafile, Syncthing.
 
 ## The 5-step wizard
 

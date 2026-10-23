@@ -15,6 +15,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 filebridge-core.workspace = true
 filebridge-integration-api.workspace = true
+filebridge-integration-immich.workspace = true
 filebridge-integration-nextcloud.workspace = true
 filebridge-ipc.workspace = true
 filebridge-secrets.workspace = true
@@ -29,6 +30,7 @@ uuid.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+filebridge-integration-immich = { workspace = true, features = ["fake"] }
 interprocess.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "time"] }

@@ -96,6 +96,7 @@ const consequences = computed(() => [
   t("repair.confirm.onlyNames"),
   t("repair.confirm.taken"),
   ...(profile.value?.integration === "nextcloud" ? [t("repair.confirm.nextcloud")] : []),
+  ...(profile.value?.integration === "immich" ? [t("repair.confirm.immich")] : []),
 ]);
 
 async function openConfirm() {
