@@ -43,7 +43,8 @@ points at every other place. Bump `PROTOCOL_VERSION` with it.
 - The `model` and `transport-api` types that requests, responses and events carry (`Profile`,
   `SendOptions`, `JobSummary`, `Event`, `Destination`, …) are re-exported, so clients depend on
   this crate only.
-- `UserUnit`: not a request. What `filebridge-service show-user-unit --json` prints and the
+- `UserUnit` (with `LoginEntry`, `UnitAgent`): not a request. What `filebridge-service
+  show-user-unit --json` prints (the systemd unit, LaunchAgent or Run key value) and the
   window reads for "Start the engine when I log in"; here because both binaries depend on this
   crate and neither on the other.
 

@@ -1,15 +1,34 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "build": {
-    "beforeBuildCommand": "bash ../../sidecars/prepare-desktop.sh && pnpm build"
+    "beforeBuildCommand": "node scripts/prepare-sidecars.mjs && pnpm build"
   },
   "bundle": {
     "externalBin": [
       "../../../sidecars/bin/filebridge-service",
-      "../../../sidecars/bin/filebridge-rclone"
+      "../../../sidecars/bin/filebridge-rclone",
+      "../../../sidecars/bin/filebridge"
     ],
     "resources": {
       "../../../sidecars/licenses/rclone-COPYING.txt": "licenses/rclone-COPYING.txt"
+    },
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/man/man1": "../../../sidecars/bin/share/man/man1",
+          "/usr/share/bash-completion/completions/filebridge": "../../../sidecars/bin/share/completions/filebridge.bash",
+          "/usr/share/zsh/vendor-completions/_filebridge": "../../../sidecars/bin/share/completions/_filebridge",
+          "/usr/share/fish/vendor_completions.d/filebridge.fish": "../../../sidecars/bin/share/completions/filebridge.fish"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/man/man1": "../../../sidecars/bin/share/man/man1",
+          "/usr/share/bash-completion/completions/filebridge": "../../../sidecars/bin/share/completions/filebridge.bash",
+          "/usr/share/zsh/site-functions/_filebridge": "../../../sidecars/bin/share/completions/_filebridge",
+          "/usr/share/fish/vendor_completions.d/filebridge.fish": "../../../sidecars/bin/share/completions/filebridge.fish"
+        }
+      }
     }
   }
 }

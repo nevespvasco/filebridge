@@ -8,11 +8,13 @@ use anyhow::{Result, bail};
 pub struct Args {
     /// Folder to create (must be missing or empty).
     dir: PathBuf,
+    /// How many files.
     #[arg(long, default_value_t = 1000)]
     files: usize,
     /// Bytes per file.
     #[arg(long, default_value_t = 64 * 1024)]
     size: usize,
+    /// How many folders they are spread over.
     #[arg(long, default_value_t = 20)]
     dirs: usize,
     /// Share of accented names written in NFD.

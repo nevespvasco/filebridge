@@ -65,8 +65,8 @@ flowchart TB
 - [x] One install, no terminal: the installers carry `filebridge-service` and the pinned rclone
       as Tauri sidecars (`pnpm bundle`, [apps/desktop](../apps/desktop/README.md#bundle-one-install-no-terminal)),
       and Settings → "Start the engine when I log in" installs or removes the `systemd --user`
-      unit after showing what it writes. *Linux only; on Windows and macOS the app still starts
-      the service when it opens (autostart there is listed under Phase 3).*
+      unit after showing what it writes. *Linux here; macOS and Windows followed in Phase 3
+      ([ADR 0028](adr/0028-login-start-on-every-desktop-os.md)).*
 
 How to run each gate against the real servers and the phone:
 [runbooks/real-server-tests.md](runbooks/real-server-tests.md); the Phase 0 results go in
@@ -99,16 +99,29 @@ How to run each gate against the real servers and the phone:
       against a real server.
 - [ ] Scheduled sends: a saved send runs at set times and sends only what changed, in the
       service; its own ADR first ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
-- [ ] Published CLI.
-- [ ] "Start the engine when I log in" on Windows (Run key or Task Scheduler) and macOS
-      (LaunchAgent), and the sidecar script for those builds.
+- [x] Published CLI: `cargo install --path apps/cli --locked`, `filebridge --version` with
+      `git describe`, `filebridge completions <shell>`, `filebridge man`; the .deb and .rpm
+      carry it as `/usr/bin/filebridge` with its man pages and completions
+      ([apps/cli](../apps/cli/README.md)). For personal use: not on crates.io.
+- [x] "Start the engine when I log in" on macOS (a LaunchAgent) and Windows (a Run key value
+      that starts the app with `--start-engine`, so no console window)
+      ([ADR 0028](adr/0028-login-start-on-every-desktop-os.md)). *The entries are unit-tested
+      and the Windows code compiles for `x86_64-pc-windows-msvc`; not yet run on a Mac or a
+      Windows PC.*
+- [x] The sidecar script for those builds: `sidecars/prepare-desktop.ps1` (Windows), and both
+      scripts can download the pinned rclone checked against its release's `SHA256SUMS` (and
+      its PGP signature when gpg has rclone's key), so a build machine needs no rclone of its
+      own (`RCLONE_DOWNLOAD=1`, [sidecars](../sidecars/README.md)). *The PowerShell script was
+      run with PowerShell 7 on Linux, not yet on Windows.* No AppImage: Tauri downloads and
+      runs unpinned tools to build one, and the engine can't start at login from it.
 - [ ] *Deferred (personal use, ADR 0018):* signed installers and automatic updates.
 
 **Gate (test):** a new plugin enters without changing `core`.
 
 > **Status (2026-10-23):** met for `integration-immich` (`git diff main -- crates/core` is
 > empty; see [03 — Extension contracts](03-extension-contracts.md#phase-3-acceptance-test)).
-> The other Phase 3 items are still open.
+> Since then: the published CLI, login start on macOS and Windows and the Windows sidecar
+> script (below); the other Phase 3 items are still open.
 
 ## Phase 4 — Mobile
 

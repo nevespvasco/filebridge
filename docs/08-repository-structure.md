@@ -11,7 +11,8 @@ filebridge/
 │   │   └── src-tauri/           # Tauri commands — thin IPC client of filebridge-service;
 │   │       │                    #   on phones the engine itself (ADR 0014)
 │   │       └── gen/android/     # Android project: FilebridgePlugin, SendService, SecretVault
-│   ├── cli/                     # same logic, no UI (servers, scripts)
+│   ├── cli/                     # same logic, no UI (servers, scripts); `filebridge`, installed
+│   │                            #   with `cargo install` or in the .deb/.rpm
 │   └── service/                 # filebridge-service: hosts the engine, serves ipc (ADR 0008)
 ├── crates/
 │   ├── core/                    # Job, pipeline, states, Registry, progress events
@@ -29,8 +30,9 @@ filebridge/
 │   ├── integration-api/         # Integration trait + types
 │   ├── integration-immich/      # Immich external library: checks, scan through its API
 │   └── integration-nextcloud/   # WebDAV, direct mode, occ, own rules
-├── sidecars/                    # desktop sidecars (prepare-desktop.sh → bin/, not committed),
-│                                #   RCLONE_VERSION, licenses/; librclone/ builds rclone as a library
+├── sidecars/                    # desktop sidecars (prepare-desktop.sh / .ps1 → bin/, not
+│                                #   committed), RCLONE_VERSION, licenses/; librclone/ builds
+│                                #   rclone as a library
 └── docs/
 ```
 
@@ -90,9 +92,12 @@ flowchart TB
   the TS types come from Rust and never drift.
 - The desktop app runs the `filebridge-service` binary (to start it, and its `show-user-unit`,
   `install-user-unit` and `uninstall-user-unit` behind Settings → "Start the engine when I log
-  in") but never links it. The installers carry it and the pinned rclone as Tauri sidecars
-  (`apps/desktop/src-tauri/tauri.bundle.conf.json`, filled by `sidecars/prepare-desktop.sh`),
-  installed beside the app's binary, which is where the window and the service look first.
+  in", [ADR 0028](adr/0028-login-start-on-every-desktop-os.md)) but never links it. The
+  installers carry it, the CLI and the pinned rclone as Tauri sidecars
+  (`apps/desktop/src-tauri/tauri.bundle.conf.json`, filled by `sidecars/prepare-desktop.sh`, or
+  `prepare-desktop.ps1` on Windows), installed beside the app's binary, which is where the
+  window and the service look first. The .deb and .rpm also install the CLI's man pages and
+  shell completions.
 
 Enforce in CI (Phase 1): a `cargo deny`/`cargo-depgraph` check or a small script that fails if
 `crates/core/Cargo.toml` lists a `transport-*`/`integration-*` implementation crate.

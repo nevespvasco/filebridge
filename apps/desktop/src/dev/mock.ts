@@ -599,12 +599,13 @@ function hostKeyProblem(id: unknown): string | null {
 /** "Start the engine when I log in": the systemd user unit, not installed at first. */
 const MOCK_EXEC = "/usr/bin/filebridge-service";
 const mockUnit: UserUnit = {
+  kind: "systemd_unit",
   path: "/home/demo/.config/systemd/user/filebridge-service.service",
   exec: MOCK_EXEC,
   installed: false,
   enabled: false,
   current: false,
-  systemd: true,
+  manager: true,
   agent: "pinned",
   contents: `[Unit]\nDescription=filebridge background service (file transfers)\nAfter=network-online.target\n\n[Service]\nEnvironment="SSH_AUTH_SOCK=%t/keyring/ssh"\nExecStart="${MOCK_EXEC}" run\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n`,
 };

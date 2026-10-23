@@ -19,8 +19,10 @@ pub struct SshArgs {
     /// SSH host (name from ~/.ssh/config is not resolved; give the address).
     #[arg(long)]
     host: String,
+    /// SSH port.
     #[arg(long, default_value_t = 22)]
     port: u16,
+    /// SSH user.
     #[arg(long, default_value = "root")]
     user: String,
     /// Private key file; when absent the SSH agent is used.
@@ -49,8 +51,10 @@ impl SshArgs {
 pub enum ProfileCmd {
     /// A folder on this machine (or a mounted disk).
     AddLocal {
+        /// The profile's name, used by `send --to` and the other commands.
         #[arg(long)]
         name: String,
+        /// The destination folder.
         #[arg(long)]
         root: PathBuf,
         /// Use Windows-compatible names (forbidden characters, trailing dots, CON/NUL…).
@@ -59,6 +63,7 @@ pub enum ProfileCmd {
     },
     /// A folder on an SFTP server.
     AddSftp {
+        /// The profile's name, used by `send --to` and the other commands.
         #[arg(long)]
         name: String,
         #[command(flatten)]
@@ -66,12 +71,14 @@ pub enum ProfileCmd {
         /// Absolute folder on the server.
         #[arg(long)]
         root: String,
+        /// Use Windows-compatible names (the server's files are shared with Windows).
         #[arg(long)]
         windows: bool,
     },
     /// Nextcloud over its own WebDAV API with an app password (the default mode; nothing to set
     /// up on the server). The app password is asked without echo, or read from stdin.
     AddNextcloudWebdav {
+        /// The profile's name, used by `send --to` and the other commands.
         #[arg(long)]
         name: String,
         /// The Nextcloud address, e.g. `cloud.example.com` (https), or its WebDAV address.
@@ -88,6 +95,7 @@ pub enum ProfileCmd {
     /// an Immich external library, which is scanned after each send. The API key (an
     /// administrator's, Account settings → API keys) is asked without echo, or read from stdin.
     AddImmich {
+        /// The profile's name, used by `send --to` and the other commands.
         #[arg(long)]
         name: String,
         /// The Immich address, e.g. `photos.example.com` (https).
@@ -113,6 +121,7 @@ pub enum ProfileCmd {
     /// machine Nextcloud runs on: detects the container, data folder, `occ` and owner, then
     /// saves the profile. Runs read-only commands on the host.
     AddNextcloud {
+        /// The profile's name, used by `send --to` and the other commands.
         #[arg(long)]
         name: String,
         #[command(flatten)]
@@ -129,20 +138,26 @@ pub enum ProfileCmd {
         /// Nextcloud install dir where it runs (default: the usual places).
         #[arg(long)]
         install_dir: Option<String>,
+        /// Permissions of the folders a send creates there (octal).
         #[arg(long, default_value = NextcloudDirectProfile::DEFAULT_DIR_MODE)]
         dir_mode: String,
+        /// Permissions of the files a send writes there (octal).
         #[arg(long, default_value = NextcloudDirectProfile::DEFAULT_FILE_MODE)]
         file_mode: String,
         /// Print every command detection ran.
         #[arg(long)]
         verbose: bool,
     },
+    /// Every saved profile.
     List,
     /// Connection test (transport and integration preflight).
     Test {
+        /// Profile name or id.
         profile: String,
     },
+    /// Forget a profile. Nothing at the destination is touched; its stored secrets go too.
     Remove {
+        /// Profile name or id.
         profile: String,
     },
     /// Give an SSH profile filebridge's own key (ADR 0012): generated here, added with `restrict`
@@ -167,6 +182,7 @@ pub enum ProfileCmd {
         /// SSH host (name from ~/.ssh/config is not resolved; give the address).
         #[arg(long)]
         host: String,
+        /// SSH port.
         #[arg(long, default_value_t = 22)]
         port: u16,
         /// Defaults to ~/.ssh/known_hosts.

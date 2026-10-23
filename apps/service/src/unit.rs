@@ -1,10 +1,13 @@
 //! `systemd --user` unit (Linux): replaces running sends inside `tmux` (docs/07), and is what
-//! the app's Settings switch "Start the engine when I log in" installs and removes.
+//! the app's Settings switch "Start the engine when I log in" installs and removes there
+//! ([`crate::login`]).
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use filebridge_ipc::{UnitAgent, UserUnit};
+use filebridge_ipc::{LoginEntry, UnitAgent, UserUnit};
+
+use crate::login::Options;
 
 pub const UNIT_NAME: &str = "filebridge-service.service";
 
@@ -139,26 +142,11 @@ fn systemctl(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-/// This binary, as the unit runs it. Refused inside an AppImage: what runs there lives in a
-/// mount that is gone once the AppImage exits.
-fn this_exe() -> Result<PathBuf> {
-    if std::env::var_os("APPIMAGE").is_some() {
-        bail!(
-            "running from an AppImage, whose files are gone once it exits: install the .deb or .rpm to start the engine at login"
-        );
-    }
-    Ok(std::env::current_exe()?.canonicalize()?)
-}
-
 /// The unit as it is and as installing would write it, for `show-user-unit`.
-pub fn show(data_dir: Option<&Path>, rclone: Option<&Path>) -> Result<UserUnit> {
-    if !cfg!(target_os = "linux") {
-        bail!("the systemd user unit is Linux-only");
-    }
-    let exe = this_exe()?;
+pub fn show(exe: &Path, o: &Options) -> Result<UserUnit> {
     let path = unit_path()?;
     let agent = Agent::current();
-    let contents = render(&exe, data_dir, rclone, agent.pin.as_deref());
+    let contents = render(exe, o.data_dir, o.rclone, agent.pin.as_deref());
     let on_disk = std::fs::read_to_string(&path).ok();
     let answers = |args: &[&str]| {
         std::process::Command::new("systemctl")
@@ -170,29 +158,30 @@ pub fn show(data_dir: Option<&Path>, rclone: Option<&Path>) -> Result<UserUnit> 
             .is_ok_and(|s| s.success())
     };
     // Succeeds only with a user manager to talk to.
-    let systemd = answers(&["show-environment"]);
+    let manager = answers(&["show-environment"]);
     Ok(UserUnit {
+        kind: LoginEntry::SystemdUnit,
         path: path.display().to_string(),
         exec: exe.display().to_string(),
         installed: on_disk.is_some(),
-        enabled: systemd && answers(&["is-enabled", "--quiet", UNIT_NAME]),
+        enabled: manager && answers(&["is-enabled", "--quiet", UNIT_NAME]),
         current: on_disk.as_deref() == Some(contents.as_str()),
-        systemd,
+        manager,
         contents,
         agent: agent.reach,
     })
 }
 
-pub fn install(data_dir: Option<&Path>, rclone: Option<&Path>, start: bool) -> Result<()> {
-    if !cfg!(target_os = "linux") {
-        bail!("the systemd user unit is Linux-only; on this OS the app starts the service");
-    }
-    let exe = this_exe()?;
+/// Writes and enables the unit; how the engine it starts reaches the SSH agent.
+pub fn install(exe: &Path, o: &Options, start: bool) -> Result<UnitAgent> {
     let path = unit_path()?;
     std::fs::create_dir_all(path.parent().expect("has a parent"))?;
     let agent = Agent::current();
-    std::fs::write(&path, render(&exe, data_dir, rclone, agent.pin.as_deref()))
-        .with_context(|| format!("write {}", path.display()))?;
+    std::fs::write(
+        &path,
+        render(exe, o.data_dir, o.rclone, agent.pin.as_deref()),
+    )
+    .with_context(|| format!("write {}", path.display()))?;
     systemctl(&["daemon-reload"])?;
     if start {
         systemctl(&["enable", "--now", UNIT_NAME])?;
@@ -200,10 +189,7 @@ pub fn install(data_dir: Option<&Path>, rclone: Option<&Path>, start: bool) -> R
         systemctl(&["enable", UNIT_NAME])?;
     }
     println!("installed {}", path.display());
-    if let Some(hint) = agent_hint(agent.reach) {
-        eprintln!("{hint}");
-    }
-    Ok(())
+    Ok(agent.reach)
 }
 
 /// `systemctl --user show-environment`: what the unit's process starts with. Empty if it fails.
@@ -215,20 +201,6 @@ fn manager_environment() -> String {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
         .unwrap_or_default()
-}
-
-/// With [`UnitAgent::Missing`], SSH destinations that sign in with the agent fail under the
-/// unit, though they work from this shell: says how to fix it.
-pub fn agent_hint(reach: UnitAgent) -> Option<String> {
-    (reach == UnitAgent::Missing).then(|| {
-        format!(
-            "! the service can't reach your SSH agent (its socket changes at each login and \
-             systemd's user manager doesn't have it): SSH destinations that sign in with it \
-             will fail. After each login run `systemctl --user import-environment \
-             SSH_AUTH_SOCK` and `systemctl --user restart {UNIT_NAME}`, or give those \
-             destinations filebridge's own key"
-        )
-    })
 }
 
 pub fn uninstall() -> Result<()> {
@@ -306,18 +278,11 @@ mod tests {
             let manager = decide(Some(sock), "PATH=/usr/bin\nSSH_AUTH_SOCK=/tmp/x\n");
             assert_eq!(manager.reach, UnitAgent::Manager, "{sock}");
             assert_eq!(manager.pin, None);
-            assert_eq!(agent_hint(manager.reach), None);
             let missing = decide(Some(sock), "PATH=/usr/bin\n");
             assert_eq!(missing.reach, UnitAgent::Missing, "{sock}");
-            assert!(
-                agent_hint(missing.reach)
-                    .unwrap()
-                    .contains("import-environment SSH_AUTH_SOCK")
-            );
         }
         // No agent here either: nothing the unit could be given, nothing to warn about.
         let none = decide(None, "");
         assert_eq!((none.reach, none.pin), (UnitAgent::None, None));
-        assert_eq!(agent_hint(UnitAgent::None), None);
     }
 }

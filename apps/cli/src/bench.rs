@@ -38,8 +38,10 @@ pub struct Args {
     /// SFTP host; without it the destination is a local folder.
     #[arg(long)]
     sftp_host: Option<String>,
+    /// SFTP port (default 22).
     #[arg(long)]
     sftp_port: Option<u16>,
+    /// SFTP user (default: rclone's, the local user).
     #[arg(long)]
     sftp_user: Option<String>,
     /// Private key; without it the SSH agent is used.

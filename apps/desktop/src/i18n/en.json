@@ -756,15 +756,24 @@
     "autostartWhy": {
       "app_image": "Not available while filebridge runs from an AppImage. Install the .deb or .rpm package to use it.",
       "no_service": "filebridge-service was not found next to the app, so this can't be set up.",
-      "no_systemd": "Needs a systemd user session, which this computer doesn't have."
+      "no_systemd": "Needs a systemd user session, which this computer doesn't have.",
+      "no_launchd": "Needs to run in your macOS desktop session, where launchd starts it at login."
     },
     "autostartOutdated": "It is set to start another copy of the engine. Update it to start this one ({exec}).",
     "autostartUpdate": "Update",
-    "autostartFile": "Show the file",
+    "autostartFile": {
+      "systemd_unit": "Show the file",
+      "launch_agent": "Show the file",
+      "run_key": "Show the command"
+    },
     "autostartOn": {
       "title": "Start the engine when you log in?",
       "update": "Update the login start?",
-      "write": "Writes {path}, which tells systemd to run {exec} each time you log in.",
+      "write": {
+        "systemd_unit": "Writes {path}, which tells systemd to run {exec} each time you log in.",
+        "launch_agent": "Writes {path}, which tells macOS (launchd) to run {exec} each time you log in.",
+        "run_key": "Adds {path} to the Windows registry, which runs {exec} each time you log in. It starts the copy engine without opening a window."
+      },
       "login": "From your next login the copy engine runs before you open filebridge, and unfinished sends continue by themselves.",
       "now": "The copy engine running now keeps running: nothing stops.",
       "undo": "You can turn it off here at any time.",
@@ -775,9 +784,17 @@
     },
     "autostartOff": {
       "title": "Stop starting the engine when you log in?",
-      "remove": "Turns it off in systemd and deletes {path}.",
+      "remove": {
+        "systemd_unit": "Turns it off in systemd and deletes {path}.",
+        "launch_agent": "Stops it in launchd and deletes {path}.",
+        "run_key": "Deletes {path} from the Windows registry."
+      },
       "login": "From your next login the copy engine starts only when you open filebridge.",
-      "now": "If systemd started the copy engine running now, it stops and filebridge starts it again at once: running sends pause for a moment and continue.",
+      "now": {
+        "systemd_unit": "If systemd started the copy engine running now, it stops and filebridge starts it again at once: running sends pause for a moment and continue.",
+        "launch_agent": "If launchd started the copy engine running now, it stops and filebridge starts it again at once: running sends pause for a moment and continue.",
+        "run_key": "The copy engine running now keeps running: nothing stops."
+      },
       "confirm": "Turn off"
     },
     "sending": "Sending",

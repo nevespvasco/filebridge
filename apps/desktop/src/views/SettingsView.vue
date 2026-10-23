@@ -26,17 +26,18 @@ function resetGuides() {
   settings.resetGuides();
   guidesReset.value = true;
 }
-// "Start the engine when I log in" (Linux: the systemd user unit). Read when the screen opens;
-// every change shows what it will do and asks first.
+// "Start the engine when I log in": the systemd user unit (Linux), a LaunchAgent (macOS) or a
+// Run key value (Windows). Read when the screen opens; every change shows what it will do and
+// asks first.
 const autostart = ref<Autostart | null>(null);
 const autostartError = ref<string | null>(null);
 const autostartBusy = ref(false);
-/** What the open dialog does: turn on, update an outdated unit, or turn off. */
+/** What the open dialog does: turn on, update an outdated entry, or turn off. */
 const autostartAsk = ref<"on" | "update" | "off" | null>(null);
 const unit = computed(() => (autostart.value?.kind === "unit" ? autostart.value.unit : null));
 const autostartOn = computed(() => !!unit.value?.installed && unit.value.enabled);
-/** Hidden where it doesn't exist yet (Windows, macOS, phones); shown off with the reason
- *  where it can't work (an AppImage, no systemd). */
+/** Hidden on phones; shown off with the reason where it can't work (an AppImage, no systemd
+ *  or launchd session). */
 const autostartShown = computed(
   () => !isMobile() && autostart.value != null && !(autostart.value.kind === "unsupported" && autostart.value.reason === "os"),
 );
@@ -45,10 +46,10 @@ const autostartConsequences = computed(() => {
   if (!u) return [];
   const at = { path: u.path, exec: u.exec };
   if (autostartAsk.value === "off") {
-    return [t("settings.autostartOff.remove", at), t("settings.autostartOff.login"), t("settings.autostartOff.now")];
+    return [t(`settings.autostartOff.remove.${u.kind}`, at), t("settings.autostartOff.login"), t(`settings.autostartOff.now.${u.kind}`)];
   }
   const agent = u.agent === "pinned" ? [t("settings.autostartOn.agentPinned")] : u.agent === "missing" ? [t("settings.autostartOn.agentMissing")] : [];
-  return [t("settings.autostartOn.write", at), ...agent, t("settings.autostartOn.login"), t("settings.autostartOn.now"), t("settings.autostartOn.undo")];
+  return [t(`settings.autostartOn.write.${u.kind}`, at), ...agent, t("settings.autostartOn.login"), t("settings.autostartOn.now"), t("settings.autostartOn.undo")];
 });
 async function loadAutostart() {
   if (isMobile()) return;
@@ -280,7 +281,7 @@ async function save() {
       @cancel="autostartAsk = null"
     >
       <details v-if="autostartAsk !== 'off' && unit" class="unit-file">
-        <summary class="small">{{ $t("settings.autostartFile") }}</summary>
+        <summary class="small">{{ $t(`settings.autostartFile.${unit.kind}`) }}</summary>
         <pre class="mono small">{{ unit.contents }}</pre>
       </details>
     </ConfirmDialog>

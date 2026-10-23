@@ -365,6 +365,22 @@ impl Starter<'_> {
     }
 }
 
+/// The app started with `--start-engine` (`filebridge_ipc::START_ENGINE_ARG`; the Windows Run
+/// value does it at login, ADR 0028): starts the service as the window would, with `args` (the
+/// entry's `--data-dir` / `--rclone`), unless one already answers. No window opens; the caller
+/// exits after.
+pub fn start_engine(args: Vec<OsString>) -> Result<(), String> {
+    if tauri::async_runtime::block_on(Client::connect(&endpoint())).is_ok() {
+        return Ok(());
+    }
+    let bin = find_service_binary()
+        .ok_or_else(|| format!("{SERVICE_BIN} was not found next to the app or on PATH"))?;
+    let mut args = args;
+    args.push("run".into());
+    spawn_detached(&bin, &Launch { args, env: None })
+        .map_err(|e| format!("could not start {}: {e}", bin.display()))
+}
+
 /// How a service is started: its arguments, and the `FILEBRIDGE_*` variables it gets
 /// (`None`: this app's own environment).
 #[derive(Debug, Default, PartialEq)]
