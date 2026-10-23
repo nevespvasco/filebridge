@@ -37,6 +37,7 @@ import {
   type JobGroup,
   type JobSummary_Serialize,
   type LogEntry,
+  type ImmichRequest_Deserialize,
   type NextcloudWebdavRequest,
   type ReclaimStatus_Serialize,
   type RecentSource,
@@ -444,6 +445,11 @@ function runTransfer(job: JobSummary_Serialize) {
           send({ type: "integration_progress", job_id: job.id, step: "nextcloud.scan", done: c, total: 3, items: c * 400, current: `demo/files/Backup/Fotos/${2010 + c}`, waiting: null });
         }
       }
+      if (profiles.find((p) => p.id === job.profile_id)?.integration === "immich") {
+        setState(job, "integrating");
+        send({ type: "integration_progress", job_id: job.id, step: "immich.scan", done: 0, total: 0, items: 0, current: null, waiting: null });
+        await sleep(600);
+      }
       job.counts.pending = 0;
       setState(job, "completed");
     }
@@ -739,6 +745,59 @@ const handlers: Handlers = {
     };
     profiles.push(profile);
     return { detector: "webdav", steps, containers: [], profile };
+  },
+  addImmich: async (a) => {
+    const req = a.req as ImmichRequest_Deserialize;
+    await sleep(700);
+    if (/^http:\/\//.test(req.server) && !/^http:\/\/(localhost|127\.|\[::1\])/.test(req.server))
+      throw fail("invalid", "the address must start with https://: the API key must not travel unencrypted");
+    const server = `https://${req.server.replace(/^https?:\/\//, "").replace(/\/(api\/?)?$/, "")}`;
+    const root = req.destination.root;
+    const importPath = (req.import_path || root).replace(/\/+$/, "");
+    const step = (id: string, status: string, message: string) => ({ id, status, message, commands: [] as string[] });
+    const steps = [step("destination", "ok", `folder ${root} found`), step("space", "ok", "1834.2 GB free of 4000.8 GB"), step("server", "ok", `Immich v1.132.3 answers at ${server}`)];
+    // Demo: any API key shorter than 20 characters is refused, like a mistyped one.
+    if (req.api_key.length < 20) {
+      steps.push(step("api-key", "fail", "Immich refused the API key (Immich answered 401 Unauthorized: Invalid API key)"));
+      return { detector: "immich", steps, containers: [], profile: null };
+    }
+    steps.push(step("api-key", "ok", "the API key signs in as an Immich administrator"));
+    // Demo: two libraries, /mnt/photos and /mnt/scans.
+    const libraries = [
+      { id: "6f1c2a4e-0b7d-4c55-9a8e-3d2f1b0c9e77", name: "Fotos", path: "/mnt/photos" },
+      { id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", name: "Scans", path: "/mnt/scans" },
+    ];
+    const lib = req.library_id ? libraries.find((l) => l.id === req.library_id) : libraries.find((l) => importPath === l.path || importPath.startsWith(`${l.path}/`));
+    if (!lib) {
+      steps.push(step("library", "fail", `no external library imports ${importPath}; Immich has ${libraries.map((l) => `${l.name} (${l.id}: ${l.path})`).join("; ")}`));
+      return { detector: "immich", steps, containers: libraries.map((l) => `${l.id} ${l.name} (${l.path})`), profile: null };
+    }
+    steps.push(step("library", "ok", `library ${lib.name} (1204 assets) imports ${lib.path}`));
+    if (importPath !== lib.path && !importPath.startsWith(`${lib.path}/`)) {
+      steps.push(step("import-path", "fail", `${importPath} is outside the library ${lib.name}, which imports ${lib.path}`));
+      return { detector: "immich", steps, containers: [], profile: null };
+    }
+    steps.push(step("import-path", "ok", importPath === lib.path ? `the destination is the library's folder ${lib.path}` : `the destination ${importPath} is inside the library's folder ${lib.path}`));
+    steps.push(step("readable", "ok", `Immich can read ${lib.path}`));
+    const id = newId("p");
+    const b = req.destination.backend;
+    const profile: Profile_Serialize = {
+      id,
+      name: req.name,
+      destination: {
+        transport: "rclone",
+        backend:
+          b.kind === "sftp"
+            ? { kind: "sftp", host: b.host, port: b.port ?? null, user: b.user ?? null, key_file: b.key_file ?? null, known_hosts_file: b.known_hosts_file ?? null, password: req.password ? `filebridge/${id}/app-password` : null, key: null }
+            : { kind: "local" },
+        root,
+      },
+      integration: "immich",
+      integration_settings: { server, api_key: `filebridge/${id}/api-key`, library_id: lib.id, import_path: importPath },
+      target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
+    };
+    profiles.push(profile);
+    return { detector: "immich", steps, containers: [], profile };
   },
   installAppKey: async (a) => {
     const p = profiles.find((x) => x.id === a.profileId);

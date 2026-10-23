@@ -1681,6 +1681,7 @@ dependencies = [
  "async-trait",
  "filebridge-core",
  "filebridge-integration-api",
+ "filebridge-integration-immich",
  "filebridge-integration-nextcloud",
  "filebridge-ipc",
  "filebridge-secrets",
@@ -1708,6 +1709,21 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+]
+
+[[package]]
+name = "filebridge-integration-immich"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "filebridge-integration-api",
+ "filebridge-integration-immich",
+ "filebridge-transport-api",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

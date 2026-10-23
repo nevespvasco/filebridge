@@ -7,7 +7,7 @@ tool lives behind them; `core` only knows the contracts.
 |---|---|---|---|
 | `Transport` | Move bytes from source to a destination, with progress, resume and hashing | rclone (local, SFTP, WebDAV) | SMB, S3, Google Drive, another engine |
 | `NameRule` | Detect and fix name problems for a destination | NFC, forbidden characters, mojibake, length | Per-filesystem rules |
-| `Integration` | Validate before and update the tool after the send | Nextcloud | Immich, Jellyfin, Paperless, Seafile, Syncthing |
+| `Integration` | Validate before and update the tool after the send | Nextcloud; Immich (Phase 3, external library: [ADR 0020](adr/0020-immich-external-library.md)) | Jellyfin, Paperless, Seafile, Syncthing |
 
 ## Traits
 
@@ -81,10 +81,12 @@ These live in `transport-api`, `integration-api` and `names` (shared primitives 
 ## Design rules
 
 - **An integration declares its own name rules.** Nextcloud brings the NFC rule and its
-  forbidden-name list (`.htaccess`, `.part`); Immich will bring its own. Active rules for a job =
+  forbidden-name list (`.htaccess`, `.part`); Immich brings none (it imports any name its file
+  system holds). Active rules for a job =
   general rules (that `applies_to` the target) ∪ the integration's rules.
 - **An integration receives the exact list of changed paths**, so it updates only those (the
-  `files:scan --path` that was done by hand).
+  `files:scan --path` that was done by hand). A tool that can't update by path uses the list
+  only for its report: Immich's API scans a whole library.
 - `Integration::required_caps` is checked against the chosen `Transport::capabilities` when a
   profile is created; incompatible combinations are rejected in the UI, not at send time.
 - Plugins never touch SQLite or the keyring directly; `core` gives them what they need through
@@ -133,3 +135,9 @@ pub struct Registry {
 "A new plugin enters without changing `core`": adding e.g. `transport-smb` or
 `integration-immich` must only touch the new crate, the app's registry setup and the UI's
 plugin-settings form. A diff touching `crates/core` fails the test.
+
+**Passed for `integration-immich`** (2026-10-23, [ADR 0020](adr/0020-immich-external-library.md)):
+`git diff main -- crates/core` is empty. Besides the crate, the registry line and the UI's form,
+its profile wizard added what every wizard needs around them: one ipc operation (`add_immich`),
+its host side (`crates/host/src/immich.rs`), a CLI command, and a secret kind (`api-key`) in
+`crates/secrets`, which `core` deletes with the profile's other secrets without knowing it.

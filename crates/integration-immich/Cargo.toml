@@ -1,0 +1,26 @@
+[package]
+name = "filebridge-integration-immich"
+description = "Immich integration: an external library fed over SFTP, rescanned after the send"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# `fake::MockImmich`, a small HTTP server that answers like Immich's API, for tests here and in
+# the hosts.
+fake = ["tokio/net", "tokio/io-util", "tokio/rt"]
+
+[dependencies]
+async-trait.workspace = true
+filebridge-integration-api.workspace = true
+filebridge-transport-api.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls-native-roots", "rustls-tls-webpki-roots"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+url.workspace = true
+
+[dev-dependencies]
+filebridge-integration-immich = { path = ".", features = ["fake"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

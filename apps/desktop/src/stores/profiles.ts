@@ -1,7 +1,7 @@
 // Saved destinations, their connection tests and the Nextcloud direct-mode detection.
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
-import type { DetectNextcloudRequest_Deserialize, DetectNextcloudResponse_Serialize, NextcloudWebdavRequest, Profile_Deserialize, Profile_Serialize, ProfileTest_Serialize, StorageView_Serialize as StorageView } from "@/bindings";
+import type { DetectNextcloudRequest_Deserialize, DetectNextcloudResponse_Serialize, ImmichRequest_Deserialize, NextcloudWebdavRequest, Profile_Deserialize, Profile_Serialize, ProfileTest_Serialize, StorageView_Serialize as StorageView } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 
 export type TestState = { running: boolean; result?: ProfileTest_Serialize; error?: string };
@@ -90,7 +90,15 @@ export const useProfiles = defineStore("profiles", () => {
     return res;
   }
 
-  return { list, loaded, loadError, tests, storage, checking, low, byId, load, ensure, save, remove, test, loadStorage, loadAllStorage, detectNextcloud, addNextcloudWebdav };
+  /** Immich wizard (ADR 0020): the API key (and an SFTP password) go to the keyring, never into a
+   *  profile. */
+  async function addImmich(req: ImmichRequest_Deserialize): Promise<DetectNextcloudResponse_Serialize> {
+    const res = await api.addImmich(req);
+    if (res.profile) await load();
+    return res;
+  }
+
+  return { list, loaded, loadError, tests, storage, checking, low, byId, load, ensure, save, remove, test, loadStorage, loadAllStorage, detectNextcloud, addNextcloudWebdav, addImmich };
 });
 
 /** Free space reported by a connection test, if any. */
@@ -99,8 +107,9 @@ export function freeBytes(t: ProfileTest_Serialize | undefined): number | null {
 }
 
 /** What kind of destination a profile is, for labels and icons. */
-export function profileKind(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" {
+export function profileKind(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" | "immich" {
   if (p.integration === "nextcloud") return "nextcloud";
+  if (p.integration === "immich") return "immich";
   return p.destination.backend.kind;
 }
 
@@ -159,7 +168,7 @@ export function sshKeyAction(p: Profile_Serialize): "install" | "remove" | null 
 }
 
 /** How a send reaches the destination, for the Review step: Nextcloud's two modes differ. */
-export function sendMode(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" | "nextcloudWebdav" {
+export function sendMode(p: Profile_Serialize): "local" | "sftp" | "webdav" | "nextcloud" | "nextcloudWebdav" | "immich" {
   if (p.integration === "nextcloud" && p.destination.backend.kind === "webdav") return "nextcloudWebdav";
   return profileKind(p);
 }

@@ -390,7 +390,8 @@
       "sftp": "Copy over SFTP",
       "nextcloud": "Nextcloud (direct mode): files are copied, then Nextcloud indexes them",
       "nextcloudWebdav": "Nextcloud (WebDAV): files go through Nextcloud, which indexes them as they arrive",
-      "webdav": "Copy over WebDAV"
+      "webdav": "Copy over WebDAV",
+      "immich": "Immich (external library): files are copied into the library's folder, then Immich scans it"
     },
     "verify": "Verify every file at the end",
     "verifyHint": "After copying, filebridge reads every file again at the source and at the destination and confirms they're identical (SHA-256). It takes longer, but you know for sure nothing was lost.",
@@ -441,6 +442,9 @@
       "permissions": "Setting owner and permissions in Nextcloud",
       "scan": "Indexing in Nextcloud",
       "waiting-for-disk": "waiting for the disk…"
+    },
+    "immich": {
+      "scan": "Asking Immich to scan the library"
     }
   },
   "counts": {
@@ -585,12 +589,14 @@
       "local": "Local folder",
       "sftp": "SFTP",
       "nextcloud": "Nextcloud",
-      "webdav": "WebDAV"
+      "webdav": "WebDAV",
+      "immich": "Immich"
     },
     "kindsHint": {
       "local": "An external disk, a USB stick or another folder on this computer",
       "sftp": "A server or NAS you reach over SSH (Synology, TrueNAS, Raspberry Pi…)",
-      "nextcloud": "Your Nextcloud, over the internet with an app password, or directly on its server"
+      "nextcloud": "Your Nextcloud, over the internet with an app password, or directly on its server",
+      "immich": "Your Immich photo server: files go into a folder of an external library, which Immich then scans"
     },
     "name": "Name",
     "nameHintLocal": "External disk",
@@ -694,6 +700,45 @@
     "hint": {
       "host": "The Proxmox node or the Nextcloud server itself",
       "sshUser": "Usually root"
+    }
+  },
+  "immich": {
+    "intro": "filebridge copies the files into a folder of an Immich external library (over SFTP, or into a folder of this computer), then asks Immich to scan that library. Immich only reads the folder: it never moves or deletes your files.",
+    "via": "How files reach the library's folder",
+    "viaSftp": "Over SFTP",
+    "viaLocal": "Folder on this computer",
+    "viaHint": {
+      "sftp": "The server that holds Immich's library folder (a NAS, or the Immich machine itself), reached over SSH.",
+      "local": "Immich reads a folder of this computer, or of a disk mounted here."
+    },
+    "nameHint": "Photos in Immich",
+    "server": "Immich address",
+    "apiKey": "API key",
+    "importPath": "This folder as Immich sees it",
+    "library": "Library id",
+    "libraryHint": "automatic",
+    "https": "Use https://: the API key must not travel unencrypted.",
+    "check": "Check and save",
+    "checking": "Checking…",
+    "pickLibrary": "Immich's libraries: pick the one for this folder and check again (or fix the folder).",
+    "steps": {
+      "destination": "Destination folder",
+      "space": "Space",
+      "server": "Immich server",
+      "api-key": "API key",
+      "library": "External library",
+      "import-path": "Library folder",
+      "readable": "Immich can read it"
+    },
+    "help": {
+      "server": "The address where Immich opens in the browser, e.g. photos.example.com. It must use https:// (for example behind a reverse proxy with a certificate); plain http:// works only on this computer.",
+      "apiKey": "Create one in Immich, signed in as an administrator: Account settings → API keys → New API key. Give it at least library.read and library.update (or all permissions). filebridge keeps it in the system keyring.",
+      "importPath": "If Immich runs in Docker, it sees the folder under another path (e.g. /mnt/photos for /srv/photos on the server): type that path here. Empty = the same path as the folder above.",
+      "library": "The external library that imports this folder (Administration → External libraries). Empty = filebridge finds it by the folder."
+    },
+    "hint": {
+      "apiKey": "Kept in the system keyring, not in filebridge.",
+      "importPath": "Empty = the same as the folder above"
     }
   },
   "settings": {
@@ -1116,7 +1161,8 @@
       "where": "Names change directly on {destination}, in {folder}.",
       "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this job's report.",
       "taken": "A new name that is already taken is left as it was and reported.",
-      "nextcloud": "Nextcloud then rescans the folders that changed, so it shows the new names."
+      "nextcloud": "Nextcloud then rescans the folders that changed, so it shows the new names.",
+      "immich": "Immich then scans the library. It sees each renamed file as a new photo: the old entry goes offline, and its albums, favourites and descriptions don't move to the new one."
     }
   },
   "webdav": {

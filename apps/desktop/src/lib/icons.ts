@@ -39,6 +39,7 @@ import {
   PhHardDrives,
   PhHourglass,
   PhHouse,
+  PhImages,
   PhInfo,
   PhKey,
   PhLinkSimple,
@@ -81,6 +82,7 @@ export const ICONS = {
   sftp: PhTerminalWindow,
   nextcloud: PhCloud,
   webdav: PhCloud,
+  immich: PhImages,
   // Guides and notices
   lightbulb: PhLightbulb,
   pointing: PhHandPointing,

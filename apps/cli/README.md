@@ -8,6 +8,8 @@ Headless CLI over the **same `core`** as the desktop app — for servers and scr
 filebridge profile add-local    --name N --root DIR [--windows]
 filebridge profile add-sftp     --name N --host H [--port] [--user] [--key-file] [--known-hosts] --root /DIR
 filebridge profile add-nextcloud --name N --host SERVER --nc-user U [--folder Backup] [--ctid] [--verbose]
+filebridge profile add-immich --name N --server photos.example.com (--host H [--user] [--key-file] | --local)
+                             --root DIR [--import-path /mnt/photos] [--library ID]   # ADR 0020
 filebridge profile list | test <profile> | remove <profile>
 filebridge send <paths…> --to <profile> [--verify] [--concurrency 8] [--yes]
 filebridge issues <job> [--rule R] [--all]

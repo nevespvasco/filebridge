@@ -40,6 +40,7 @@ detail to build each crate on its own.
 | [0014](adr/0014-engine-in-the-app-on-phones.md) | On phones the engine runs in the app (Android foreground service) and rclone is linked in as librclone |
 | [0015](adr/0015-trust-unknown-host-key-in-the-app.md) | An unknown SSH host key is trusted in the wizard after the user checks its fingerprint; a changed key never is |
 | [0016](adr/0016-nextcloud-bulk-upload.md) | Small files to Nextcloud go by its bulk upload (`transport-nextcloud`, in front of rclone); the rest through rclone |
+| [0020](adr/0020-immich-external-library.md) | Immich as an external library: files over SFTP (or into a local folder), then a library scan through its API; an `Integration`, not a `Transport` |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

@@ -79,11 +79,20 @@ flowchart TB
 
 ## Phase 3 — Scale (more destinations and tools)
 
-- [ ] New `Transport`s (SMB, S3) and a second integration (e.g. Immich).
+- [ ] New `Transport`s (SMB, S3).
+- [x] A second integration: **Immich** as an external library, files over SFTP (or into a local
+      folder) and a library scan through its API after the send
+      ([ADR 0020](adr/0020-immich-external-library.md), `crates/integration-immich`). Wizard in
+      the window, `filebridge profile add-immich`; tested against a mocked Immich API, not yet
+      against a real server.
 - [ ] Scheduled sends and published CLI.
 - [ ] Signed installers and automatic updates.
 
 **Gate (test):** a new plugin enters without changing `core`.
+
+> **Status (2026-10-23):** met for `integration-immich` (`git diff main -- crates/core` is
+> empty; see [03 — Extension contracts](03-extension-contracts.md#phase-3-acceptance-test)).
+> The other Phase 3 items are still open.
 
 ## Phase 4 — Mobile
 

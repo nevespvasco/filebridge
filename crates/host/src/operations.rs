@@ -12,19 +12,21 @@ use filebridge_ipc::{
     AccessReport, ActivityItem, AnalysisSummary, AppSettings, BrowseResult, BrowseTarget,
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
-    ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, IssueView, JobFilter, JobPage,
-    JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile,
-    ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo,
-    StorageView,
+    ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, ImmichRequest, IssueView,
+    JobFilter, JobPage, JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
+    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
+    SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
+use crate::immich::ImmichWizard;
 use crate::nextcloud::NextcloudWizard;
 
 /// Answers each operation with the engine; plugin-specific ones with the plugins.
 pub struct EngineOperations {
     engine: Arc<Engine>,
     nextcloud: Option<NextcloudWizard>,
+    immich: Option<ImmichWizard>,
     /// For the SSH-key operations (ADR 0012).
     ssh: Option<Arc<dyn ShellConnector>>,
 }
@@ -35,6 +37,7 @@ impl EngineOperations {
         Self {
             engine,
             nextcloud: None,
+            immich: None,
             ssh: None,
         }
     }
@@ -42,11 +45,13 @@ impl EngineOperations {
     pub(crate) fn with_plugins(
         engine: Arc<Engine>,
         nextcloud: Option<NextcloudWizard>,
+        immich: Option<ImmichWizard>,
         ssh: Option<Arc<dyn ShellConnector>>,
     ) -> Self {
         Self {
             engine,
             nextcloud,
+            immich,
             ssh,
         }
     }
@@ -124,6 +129,16 @@ impl Operations for EngineOperations {
             None => Err(ErrorBody {
                 code: "unsupported".into(),
                 message: "this service has no Nextcloud support".into(),
+            }),
+        }
+    }
+
+    async fn add_immich(&self, req: ImmichRequest) -> Res<DetectNextcloudResponse> {
+        match &self.immich {
+            Some(wizard) => wizard.run(&self.engine, req).await,
+            None => Err(ErrorBody {
+                code: "unsupported".into(),
+                message: "this service has no Immich support".into(),
             }),
         }
     }

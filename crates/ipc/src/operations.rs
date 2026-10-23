@@ -37,6 +37,11 @@ macro_rules! for_each_operation {
             /// and the space, and saves the profile (its app password in the keyring) when they
             /// pass. Same answer as `detect_nextcloud`.
             AddNextcloudWebdav add_nextcloud_webdav(req: $crate::NextcloudWebdavRequest) -> $crate::DetectNextcloudResponse;
+            /// Immich profile wizard (ADR 0020): checks the destination, the Immich address, the
+            /// API key, the external library and its folder, and saves the profile (the key in
+            /// the keyring) when they pass. Same answer as `detect_nextcloud`; ambiguous
+            /// libraries are listed in `containers`.
+            AddImmich add_immich(req: $crate::ImmichRequest) -> $crate::DetectNextcloudResponse;
             /// A draft job; nothing is read from the sources yet.
             CreateJob create_job(sources: Vec<String>, profile_id: String, options: $crate::SendOptions) -> String;
             /// Replaces a job's send options before it is sent (Draft, AwaitingApproval, Ready).
