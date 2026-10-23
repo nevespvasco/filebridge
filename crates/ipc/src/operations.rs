@@ -65,6 +65,10 @@ macro_rules! for_each_operation {
             Pause pause(job_id: String) -> ();
             Resume resume(job_id: String) -> ();
             Cancel cancel(job_id: String) -> ();
+            /// Leaves one file not sent yet out of a started send (Transferring, Retrying,
+            /// Waiting, Paused): Skipped at once, never sent by a resume, stopping the batch
+            /// that is sending it. Shown skipped in the Files tab and the report.
+            SkipEntry skip_entry(job_id: String, idx: u64) -> ();
             /// A page of the jobs matching `filter`, with how many match in all.
             ListJobs list_jobs(filter: $crate::JobFilter, limit: u32, offset: u32) -> $crate::JobPage;
             /// Names a job (any state); a blank name clears it.

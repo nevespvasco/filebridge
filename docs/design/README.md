@@ -122,6 +122,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `browse(target, dir, prefix) -> BrowseResult` | new | D11 |
 | `check_folder_name(target, name) -> FolderNameCheck` | new | D11 |
 | `last_target_dir(profile_id) -> Option<String>` | new (protocol 26) | D11 |
+| `skip_entry(job_id, idx)` | new (protocol 27) | D04 |
 | `create_repair_job(profile_id, dir) -> String` | new (protocol 16), Phase 2 | [04](../04-name-correction.md#repair-destination-mode) |
 | `set_profile_password(profile_id, password) -> Profile` | new (protocol 17), Phase 2 | [ADR 0004](../adr/0004-os-keyring-secrets.md) |
 | `add_nextcloud_webdav(req) -> DetectNextcloudResponse` | new (protocol 18), Phase 2 | [05](../05-integration-nextcloud.md) |
@@ -133,6 +134,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 |---|---|
 | `JobGroup` (active, needs_you, not_sent, finished, cancelled) as pure data | D06 |
 | `Op::SetLabel` (every state), `Op::SendAgain` (terminal states), `Op::Export` (terminal states) | D06, D09 |
+| `Op::SkipEntry` (Transferring, Retrying, Waiting, Paused) | D04 |
 | `EntryStatus::from_states`, `log_level(kind, data)`, `LOW_SPACE_*` constants | D05, D07, D03 |
 
 ### Contract changes (`crates/transport-api`)

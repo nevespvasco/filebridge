@@ -93,6 +93,8 @@ pub struct ManifestCounts {
     pub bytes_done: u64,
     /// Bytes of the files still to send (pending or partial).
     pub bytes_left: u64,
+    /// Bytes of the files left out (skipped by a decision or during the send).
+    pub bytes_skipped: u64,
     pub verified_ok: u64,
     pub mismatch: u64,
     pub missing: u64,
@@ -283,6 +285,47 @@ impl Store {
             }
             tx.commit()?;
             Ok(())
+        })
+        .await
+    }
+
+    /// The runner's [`Self::set_transfer_states`]: an entry the user skipped stays `Skipped`, so
+    /// a batch that was sending it when [`Self::skip_file`] ran never undoes the skip.
+    pub async fn record_transfer_states(
+        &self,
+        job_id: &str,
+        updates: Vec<(u64, EntryState, Option<String>)>,
+    ) -> Result<()> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE manifest_entries SET transfer_state = ?3, error = ?4
+                     WHERE job_id = ?1 AND idx = ?2 AND transfer_state != 'skipped'",
+                )?;
+                for (idx, state, error) in &updates {
+                    stmt.execute(params![job_id, idx, state.as_str(), error])?;
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Leaves one file out of the send (docs/design/specs/D04): `Skipped`, if it is a file not
+    /// sent yet (`Pending` or `Partial`). Returns whether it was; the caller says why not.
+    pub async fn skip_file(&self, job_id: &str, idx: u64) -> Result<bool> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let n = c.execute(
+                "UPDATE manifest_entries SET transfer_state = 'skipped', error = NULL
+                 WHERE job_id = ?1 AND idx = ?2 AND is_dir = 0
+                   AND transfer_state IN ('pending', 'partial')",
+                params![job_id, idx],
+            )?;
+            Ok(n == 1)
         })
         .await
     }
@@ -625,7 +668,10 @@ impl Store {
                         counts.bytes_done += bytes;
                     }
                     EntryState::Failed => counts.failed += n,
-                    EntryState::Skipped => counts.skipped += n,
+                    EntryState::Skipped => {
+                        counts.skipped += n;
+                        counts.bytes_skipped += bytes;
+                    }
                     EntryState::Mismatch | EntryState::Missing => {}
                 }
                 match EntryState::parse(&row.get::<_, String>(2)?)? {
@@ -1002,6 +1048,69 @@ mod tests {
             .unwrap();
         let c = store.manifest_counts(&job).await.unwrap();
         assert_eq!((c.verified_ok, c.mismatch, c.missing), (1, 1, 0));
+    }
+
+    #[tokio::test]
+    async fn a_skipped_file_stays_skipped() {
+        let (store, job) = store_with_job().await;
+        store
+            .insert_entries(
+                &job,
+                vec![
+                    dir(0, b"d"),
+                    file(1, b"d/a", 10),
+                    file(2, b"d/b", 20),
+                    file(3, b"d/c", 30),
+                ],
+            )
+            .await
+            .unwrap();
+        store
+            .set_transfer_states(
+                &job,
+                vec![(2, EntryState::Partial, None), (3, EntryState::Done, None)],
+            )
+            .await
+            .unwrap();
+        assert!(store.skip_file(&job, 1).await.unwrap(), "pending");
+        assert!(store.skip_file(&job, 2).await.unwrap(), "partial");
+        assert!(!store.skip_file(&job, 3).await.unwrap(), "already sent");
+        assert!(!store.skip_file(&job, 0).await.unwrap(), "a folder");
+        assert!(!store.skip_file(&job, 9).await.unwrap(), "no such entry");
+
+        // The batch that was sending it answers afterwards: the skip stands.
+        store
+            .record_transfer_states(
+                &job,
+                vec![
+                    (2, EntryState::Done, None),
+                    (3, EntryState::Failed, Some("x".into())),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store.get_entry(&job, 2).await.unwrap().transfer_state,
+            EntryState::Skipped
+        );
+        assert_eq!(
+            store.get_entry(&job, 3).await.unwrap().transfer_state,
+            EntryState::Failed
+        );
+        // A resume sends neither skipped file again.
+        store
+            .reset_transfer_states(&job, &[EntryState::Partial], EntryState::Pending)
+            .await
+            .unwrap();
+        assert!(
+            store
+                .files_with_transfer_state(&job, EntryState::Pending, None, 10)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let c = store.manifest_counts(&job).await.unwrap();
+        assert_eq!((c.skipped, c.bytes_skipped), (2, 30));
     }
 
     #[tokio::test]

@@ -72,7 +72,7 @@ pub fn log_level(kind: &str, data: &Value) -> LogLevel {
             "completed_with_warnings" => LogLevel::Warn,
             _ => LogLevel::Info,
         },
-        "retry" | "space_low" => LogLevel::Warn,
+        "retry" | "space_low" | "entry_skipped" => LogLevel::Warn,
         "transfer_round" if n("failed") > 0 => LogLevel::Warn,
         "verify" if n("mismatch") + n("missing") + n("unverifiable") > 0 => LogLevel::Warn,
         "analysis" if n("scan_errors") > 0 => LogLevel::Warn,

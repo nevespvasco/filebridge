@@ -235,6 +235,10 @@ impl Operations for EngineOperations {
         self.engine.pause(&job_id).await.map_err(to_error)
     }
 
+    async fn skip_entry(&self, job_id: String, idx: u64) -> Res<()> {
+        self.engine.skip_entry(&job_id, idx).await.map_err(to_error)
+    }
+
     async fn resume(&self, job_id: String) -> Res<()> {
         self.engine.resume(&job_id).await.map_err(to_error)
     }

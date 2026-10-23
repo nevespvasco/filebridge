@@ -164,6 +164,40 @@ doc comment): a slow subscriber may miss some, and that is fine. It is **not** w
 
 No store, IPC operation or migration changes.
 
+### Skip one file (as built)
+
+Built after the queue, from the Out of scope item and the open question below.
+
+- **Operation**: `skip_entry(job_id, idx)` (protocol 27), `Op::SkipEntry`, allowed in
+  `Transferring`, `Retrying`, `Waiting` and `Paused` (every state where the transfer stage has
+  started and not finished; `JOB_OPERATIONS.skip_entry`). Only a **file not sent yet**
+  (`Pending` or `Partial`) can be skipped; a folder, a file already sent, failed or skipped, and
+  any entry of a Repair job are refused with the reason.
+- **Persisted first**: the entry goes `Skipped` in the Manifest at once (`Store::skip_file`, one
+  guarded `UPDATE`), with an `entry_skipped` event (`{ idx, path, size }`, level warn) in the job
+  log. No migration: it is the same `Skipped` state a "skip" name decision uses, so a resume
+  never sends it (only `Pending` files are picked, and a resume moves `Partial` back to
+  `Pending`, not `Skipped`).
+- **A file in flight**: the engine announces the skip to the runner (`Engine::skips`, a broadcast
+  of `(job_id, idx)`). A batch holding that file stops like a pause does (`Stop::Skipped`), the
+  files it finished are kept, the others of the batch go back to `Pending`, and the stage goes on
+  with the next batch, so those others start again from the beginning. The runner subscribes
+  before it reads each page, so a skip either removes the file from the page or reaches the batch
+  that has it. Every write of the runner to an entry's transfer state
+  (`Store::record_transfer_states`) leaves a `Skipped` entry as it is, so a batch answering just
+  after the skip never undoes it.
+- **Everywhere else** the existing `Skipped` handling applies: verification passes over it (only
+  `Done` files are verified), the Files tab and the report show it **skipped**, and it is a
+  `skipped` blocker of its source in [D10](D10-reclaimable-source.md), so that source is never
+  reclaimable. Progress totals leave skipped bytes out (`ManifestCounts.bytes_skipped`), so a
+  skipped big file doesn't keep the bar under 100 %. A skip is the user's choice: the job still
+  ends `Completed`, not with a warning.
+- **UI**: a ✕ on each row of **Sending now** (also on the greyed rows of a paused job), and
+  **Skip this file** in Entry detail for a file not sent yet. Both ask first
+  (`SkipEntryDialog`): the file won't be sent with this transfer; while sending, the other files in
+  flight start again; it stays skipped in the list and the report and keeps its folder from being
+  safe to free, and a new transfer or Send again can send it later.
+
 ## i18n
 
 | Key | en | pt |
@@ -198,9 +232,7 @@ No store, IPC operation or migration changes.
 
 ## Out of scope
 
-- **Cancel or skip one file** (B4's ✕). Skipping mid-send changes the Manifest, needs its own
-  operation (`skip_entry(job_id, idx)`, allowed in `Transferring` and `Paused`), and must be
-  reflected in verify and the report. Later; see the open question.
+- ~~**Cancel or skip one file** (B4's ✕).~~ Built: see [Skip one file](#skip-one-file-as-built).
 - A full history of every arrival (that is the Manifest: [D05](D05-files-and-entry-detail.md)).
 - Per-file speed graphs.
 
@@ -208,4 +240,5 @@ No store, IPC operation or migration changes.
 
 - Is **skip this file** worth building? It helps when one huge file blocks a slot on a slow link.
   But the file then stays Skipped, and only a new transfer or Send again
-  ([D06](D06-transfers-list.md#send-again)) brings it back.
+  ([D06](D06-transfers-list.md#send-again)) brings it back. **Answered: yes**, with that
+  consequence said in its confirmation ([Skip one file](#skip-one-file-as-built)).

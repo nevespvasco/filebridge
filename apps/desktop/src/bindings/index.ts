@@ -77,6 +77,12 @@ export const commands = {
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
 	cancel: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("cancel", { jobId })),
+	/**
+	 *  Leaves one file not sent yet out of a started send (Transferring, Retrying,
+	 *  Waiting, Paused): Skipped at once, never sent by a resume, stopping the batch
+	 *  that is sending it. Shown skipped in the Files tab and the report.
+	 */
+	skipEntry: (jobId: string, idx: number) => typedError<null, ErrorBody>(__TAURI_INVOKE("skip_entry", { jobId, idx })),
 	/**  A page of the jobs matching `filter`, with how many match in all. */
 	listJobs: (filter: JobFilter_Deserialize, limit: number, offset: number) => typedError<JobPage_Serialize, ErrorBody>(__TAURI_INVOKE("list_jobs", { filter, limit, offset })),
 	/**  Names a job (any state); a blank name clears it. */
@@ -197,9 +203,9 @@ export const events = {
 };
 
 /* Constants */
-export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
+export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"skip_entry":["transferring","paused","retrying","waiting"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 26 as const;
+export const PROTOCOL_VERSION = 27 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 

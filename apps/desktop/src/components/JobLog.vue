@@ -178,6 +178,8 @@ function describe(e: LogEntry): Line {
     }
     case "retry":
       return { icon: "retry", text: t("joblog.retry", { in: fmt.duration(n(e, "in_secs")), attempt: n(e, "attempt") }), detail: str(e, "error") || undefined };
+    case "entry_skipped":
+      return { icon: "skipped", text: t("joblog.entrySkipped", { path: str(e, "path") }), detail: fmt.bytes(n(e, "size")) };
     case "space_low":
       return { icon: "warning", text: t("storage.runningOutLog", { free: fmt.bytes(n(e, "free_bytes")), left: fmt.bytes(n(e, "left_bytes")) }) };
     case "send_window_wait":

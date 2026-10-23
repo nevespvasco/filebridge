@@ -874,7 +874,16 @@
       "other": "Finished"
     },
     "unknown": "Event: {kind}",
-    "createdRepair": "Repair of {folder} on {destination} created"
+    "createdRepair": "Repair of {folder} on {destination} created",
+    "entrySkipped": "Skipped at your request: {path}"
+  },
+  "skip": {
+    "label": "Skip {name}",
+    "title": "Skip “{name}”?",
+    "notSent": "{name} won't be sent with this transfer. Everything else continues.",
+    "restart": "The other files being sent right now start again from the beginning.",
+    "stays": "It stays marked as skipped in the file list and the report, so its folder can't be shown as safe to free. A new transfer or Send again can send it later.",
+    "confirm": "Skip this file"
   },
   "composition": {
     "title": "What you're sending",

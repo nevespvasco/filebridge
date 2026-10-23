@@ -874,7 +874,16 @@
       "other": "Terminada"
     },
     "unknown": "Evento: {kind}",
-    "createdRepair": "Reparação de {folder} em {destination} criada"
+    "createdRepair": "Reparação de {folder} em {destination} criada",
+    "entrySkipped": "Saltado a seu pedido: {path}"
+  },
+  "skip": {
+    "label": "Saltar {name}",
+    "title": "Saltar “{name}”?",
+    "notSent": "{name} não será enviado nesta transferência. Tudo o resto continua.",
+    "restart": "Os outros ficheiros que estão a ser enviados agora recomeçam do início.",
+    "stays": "Fica marcado como saltado na lista de ficheiros e no relatório, por isso a sua pasta não pode ser mostrada como segura para libertar. Uma nova transferência ou Enviar de novo pode enviá-lo mais tarde.",
+    "confirm": "Saltar este ficheiro"
   },
   "composition": {
     "title": "O que vai enviar",

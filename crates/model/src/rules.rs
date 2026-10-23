@@ -23,6 +23,9 @@ pub enum Op {
     SendAgain,
     /// Write a finished job's report.
     Export,
+    /// Leave one file out of a send that has started (docs/design/specs/D04): while the
+    /// transfer stage runs, waits or is paused.
+    SkipEntry,
 }
 
 impl Op {
@@ -37,6 +40,7 @@ impl Op {
             Op::Cancel | Op::Recover => !state.is_terminal(),
             Op::SetLabel => true,
             Op::SendAgain | Op::Export => state.is_terminal(),
+            Op::SkipEntry => matches!(state, Transferring | Retrying | Waiting | Paused),
         }
     }
 }
@@ -56,6 +60,7 @@ pub fn job_operations() -> std::collections::BTreeMap<&'static str, Vec<JobState
         ("set_label", Op::SetLabel),
         ("send_again", Op::SendAgain),
         ("export_report", Op::Export),
+        ("skip_entry", Op::SkipEntry),
     ]
     .into_iter()
     .map(|(name, op)| {
@@ -184,6 +189,10 @@ mod tests {
             [Transferring, Retrying, Waiting, Verifying, Integrating]
         );
         assert_eq!(allowed(Op::Run), allowed(Op::Pause));
+        assert_eq!(
+            allowed(Op::SkipEntry),
+            [Transferring, Paused, Retrying, Waiting]
+        );
         assert_eq!(
             allowed(Op::Cancel).len(),
             10,
