@@ -135,6 +135,22 @@ pub enum ProfileCmd {
         #[arg(long, short)]
         yes: bool,
     },
+    /// Check an SSH server's host key and add it to known_hosts once you have compared its
+    /// fingerprint with the server's (ADR 0015, the app's "Trust this server?"). A host with a
+    /// different key on record is never changed here.
+    TrustHost {
+        /// SSH host (name from ~/.ssh/config is not resolved; give the address).
+        #[arg(long)]
+        host: String,
+        #[arg(long, default_value_t = 22)]
+        port: u16,
+        /// Defaults to ~/.ssh/known_hosts.
+        #[arg(long)]
+        known_hosts: Option<PathBuf>,
+        /// Don't ask: trust only if the server presents this fingerprint (`SHA256:…`).
+        #[arg(long)]
+        fingerprint: Option<String>,
+    },
     /// Store an SFTP profile's password in the system keyring (asked without echo, or read
     /// from stdin when piped; never an argument, which shells keep in their history).
     SetPassword {
@@ -389,6 +405,12 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
             print_access(&report)
         }
+        ProfileCmd::TrustHost {
+            host,
+            port,
+            known_hosts,
+            fingerprint,
+        } => trust_host(g, host, port, known_hosts, fingerprint).await,
         ProfileCmd::SetPassword { profile, remove } => {
             let app = App::open(g, Access::Exclusive, false).await?;
             let p = app.profile(&profile).await?;
@@ -415,6 +437,94 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             println!("removed {}", p.name);
             Ok(())
         }
+    }
+}
+
+async fn trust_host(
+    g: &Global,
+    host: String,
+    port: u16,
+    known_hosts: Option<PathBuf>,
+    expected: Option<String>,
+) -> Result<()> {
+    use filebridge_ipc::HostKeyStatus;
+    // Read access: known_hosts is not in the data directory, so this works beside the service.
+    let app = App::open(g, Access::Read, true).await?;
+    let file = known_hosts.map(|p| p.to_string_lossy().into_owned());
+    let scan = app
+        .ops
+        .scan_host_key(host.clone(), port, file.clone())
+        .await
+        .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+    let key_type = scan.key_type.clone().unwrap_or_default();
+    let presented = scan.fingerprint.clone().unwrap_or_default();
+    match scan.status {
+        HostKeyStatus::Known => {
+            println!(
+                "{host}:{port} is already trusted in {} ({key_type} {presented})",
+                scan.known_hosts_file
+            );
+            return Ok(());
+        }
+        HostKeyStatus::Changed => bail!(
+            "{} line {} holds another key for {host}:{port}, and it now presents {}: the server \
+             changed or the connection is being intercepted. If whoever runs it confirms the \
+             change, remove the old line (`ssh-keygen -R {}`) and try again",
+            scan.known_hosts_file,
+            scan.line.map_or("?".into(), |l| l.to_string()),
+            if presented.is_empty() {
+                "none of the key types on record".to_owned()
+            } else {
+                format!("{key_type} {presented}")
+            },
+            if port == 22 {
+                host.clone()
+            } else {
+                format!("'[{host}]:{port}'")
+            },
+        ),
+        HostKeyStatus::Unknown => {}
+    }
+    println!("{host}:{port} presents {key_type} {presented}");
+    match &expected {
+        Some(fp) if *fp != presented => {
+            bail!("the server presents {presented}, not {fp}; nothing was added")
+        }
+        Some(_) => {}
+        None => {
+            println!(
+                "Compare it with what the server shows for its own key: \
+                 `ssh-keygen -lf /etc/ssh/ssh_host_{}_key.pub`",
+                host_key_file_type(&key_type)
+            );
+            if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                bail!("not a terminal; pass --fingerprint {presented} to trust it without asking");
+            }
+            if !crate::send_cmd::confirm(&format!(
+                "Trust this key and add it to {}?",
+                scan.known_hosts_file
+            ))? {
+                println!("nothing was added");
+                return Ok(());
+            }
+        }
+    }
+    let trusted = app
+        .ops
+        .trust_host_key(host.clone(), port, file, presented)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;
+    println!("{host}:{port} added to {}", trusted.known_hosts_file);
+    Ok(())
+}
+
+/// The `<type>` in `/etc/ssh/ssh_host_<type>_key.pub` for an SSH key type name.
+fn host_key_file_type(key_type: &str) -> &str {
+    match key_type {
+        "ssh-ed25519" => "ed25519",
+        t if t.starts_with("ecdsa-") => "ecdsa",
+        "ssh-rsa" | "rsa-sha2-256" | "rsa-sha2-512" => "rsa",
+        _ => "<type>",
     }
 }
 

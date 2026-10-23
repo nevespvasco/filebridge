@@ -59,6 +59,11 @@ unknown one shows "Trust this server?" with the server, key type, fingerprint, h
 on the server (`ssh-keygen -lf /etc/ssh/ssh_host_<type>_key.pub`) and the file it will be added
 to, with Cancel focused. Saving an SFTP destination therefore needs the server to be reachable.
 
+The CLI has the same step as its own command (added 2026-10-23), since its `profile add-…`
+commands never ask: `filebridge profile trust-host --host H [--port] [--known-hosts]` shows the
+key type and fingerprint and asks before trusting; `--fingerprint SHA256:…` trusts without asking
+only if the server presents that key. A changed key is refused there too.
+
 ## Consequences
 - SSH profiles can be set up without a terminal, on the desktop and on phones.
 - The security of the first connection rests on the user comparing the fingerprint, exactly as

@@ -9,12 +9,14 @@ filebridge profile add-local    --name N --root DIR [--windows]
 filebridge profile add-sftp     --name N --host H [--port] [--user] [--key-file] [--known-hosts] --root /DIR
 filebridge profile add-nextcloud --name N --host SERVER --nc-user U [--folder Backup] [--ctid] [--verbose]
 filebridge profile list | test <profile> | remove <profile>
+filebridge profile trust-host --host H [--port 22] [--known-hosts F] [--fingerprint SHA256:…]
+filebridge profile install-key <profile> | remove-access <profile> [--yes]
 filebridge send <paths…> --to <profile> [--verify] [--concurrency 8] [--yes]
 filebridge issues <job> [--rule R] [--all]
 filebridge decide <job> <issue> accept|keep|skip|edit [--name N]
 filebridge start <job> | resume [<job>] | cancel <job> | jobs | job <job>
 filebridge settings [show] | settings set [--bwlimit 20M|off] [--window 22:00-07:00|off]
-filebridge scan | fixture | bench        # Phase 0 benchmark tools
+filebridge scan | fixture | bench        # Phase 0 benchmark tools (docs/runbooks/real-server-tests.md § 1)
 ```
 - Job ids accept a unique prefix (the 8 characters `jobs` prints).
 - The engine runs **in-process**: Ctrl-C pauses the job, and `kill -9` leaves it resumable
