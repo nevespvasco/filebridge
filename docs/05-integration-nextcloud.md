@@ -34,8 +34,11 @@ network (like the 500 GB initial migration).
   password in the OS keyring under a fresh profile id, signs in (lists the user's files), looks
   at the folder (missing = created by the first send) and the quota, and saves the profile only
   when sign-in works; a refused sign-in removes the password again.
-- Preflight adds nothing to the transport's (sign-in, quota); after the transfer there is nothing
-  to do. Verification hashes by download (Nextcloud can't give SHA-256), so it costs a second
+- Preflight adds nothing to the transport's (sign-in, quota: `transport-nextcloud` reads the
+  user's WebDAV quota properties and reports them when tighter than rclone's numbers, so the
+  "may run out of space" warning during a send uses the quota); after the transfer there is
+  nothing to do. In direct mode the quota comes from `occ user:info` in the integration's
+  preflight, asked once per transfer stage (D03). Verification hashes by download (Nextcloud can't give SHA-256), so it costs a second
   pass over the data.
 - A wrong app password is an `Auth` error (WebDAV's 401), not a retry; the transfer stops at the
   first one instead of signing in once per file (Nextcloud's brute-force protection counts

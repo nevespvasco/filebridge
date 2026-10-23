@@ -6,7 +6,11 @@
 
 ## Responsibility
 - `NextcloudBulk::over(inner, secrets)` answers to `inner`'s id and passes every method but
-  `transfer` to it.
+  `transfer` and `preflight` to it.
+- `preflight`: `inner`'s report, plus the Nextcloud user's quota (`PROPFIND` Depth 0 on the
+  files root for `quota-available-bytes`/`quota-used-bytes`) as a `quota` check, and as the
+  free, used and total space when tighter than `inner`'s. No limit (a negative
+  `quota-available-bytes`, `-3` for unlimited) or no answer leaves `inner`'s report as it is.
 - `transfer`, for a WebDAV destination with vendor `nextcloud` whose server offers
   `dav.bulkupload` (asked once per server):
   - Files up to 4 MiB are candidates. Their folders are listed once through `inner`. A file
@@ -16,7 +20,8 @@
   - Requests carry at most 100 files and 16 MiB, up to 5 at once (fewer when the job's
     concurrency is lower), within the app's bandwidth limit.
   - What bulk upload doesn't store goes to `inner` in one call, so its errors are classified as
-    they always were. A refused sign-in (401) stops the batch as `Auth`.
+    they always were. A refused sign-in (401) stops the batch as `Auth`; no room (`507`, a
+    quota reached) fails that request's files `Full`, not sent again through `inner`.
 - Progress: `ItemDone` per stored file; stats for the whole batch, `inner`'s added to bulk's.
 
 Measured against Nextcloud 31 (Docker, PostgreSQL, 127.0.0.1), 1,200 small files through the
@@ -34,6 +39,9 @@ One `multipart/related` part per file: `X-File-Path` (from the user's files root
 `rclone serve webdav` (all through rclone). Set `FILEBRIDGE_TEST_NEXTCLOUD_URL`
 (`…/remote.php/dav/files/<user>/`), `_USER` and `_PASS` (an app password) to run it against a
 real Nextcloud too, with 151 files sent twice (the second time all skipped) and a wrong password.
+`tests/mock_server.rs`: against a mock Nextcloud on `127.0.0.1` over `FakeTransport`: a bulk
+request answered `507` (its files fail `Full`, none go to `inner`), and the quota in `preflight`
+(tighter than `inner`'s, and unlimited).
 
 ## Allowed dependencies
 `transport-api`, `names` (`loose_key`), `reqwest` (rustls), `md5`, `getrandom`, `serde_json`,

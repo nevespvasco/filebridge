@@ -29,10 +29,10 @@ use std::time::{Duration, UNIX_EPOCH};
 use async_trait::async_trait;
 use filebridge_names::loose_key;
 use filebridge_transport_api::{
-    Backend, Destination, Digest, ErrorKind, HashAlgo, InFlight, ItemOutcome, MoveRequest,
-    PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result, SecretResolver,
-    SecretValue, StatsSnapshot, TransferJob, TransferResult, Transport, TransportCaps,
-    TransportError,
+    Backend, Check, CheckStatus, Destination, Digest, ErrorKind, HashAlgo, InFlight, ItemOutcome,
+    MoveRequest, PreflightReport, ProgressEvent, ProgressSink, RemoteEntry, RemotePath, Result,
+    SecretResolver, SecretValue, StatsSnapshot, TransferJob, TransferResult, Transport,
+    TransportCaps, TransportError,
 };
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -145,6 +145,43 @@ impl NextcloudBulk {
             }
         }
         Ok(Some(s))
+    }
+
+    /// The Nextcloud user's quota, `(available, used)`, from the WebDAV quota properties of
+    /// their files root. Best effort: `None` for any other destination, no limit, or no answer.
+    async fn quota(&self, dest: &Destination) -> Option<(u64, u64)> {
+        let Backend::Webdav {
+            url,
+            user,
+            password: Some(password),
+            vendor: Some(vendor),
+        } = &dest.backend
+        else {
+            return None;
+        };
+        let site = Site::of(url).filter(|_| vendor == "nextcloud")?;
+        let password = self.secrets.resolve(password).await.ok()?;
+        let r = self
+            .http
+            .request(
+                reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid method"),
+                &site.files,
+            )
+            .basic_auth(user, Some(password.expose()))
+            .header("Depth", "0")
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/xml; charset=utf-8",
+            )
+            .body(bulk::QUOTA_PROPFIND)
+            .timeout(Duration::from_secs(30))
+            .send()
+            .await
+            .ok()?;
+        if r.status() != StatusCode::MULTI_STATUS {
+            return None;
+        }
+        bulk::quota(&r.text().await.ok()?)
     }
 
     /// Step 1: which candidates are already there (done), which go to the inner transport, and
@@ -703,8 +740,23 @@ impl Transport for NextcloudBulk {
         self.inner.capabilities()
     }
 
+    /// The inner transport's report, with the Nextcloud user's quota when it is tighter than
+    /// the space the inner transport found (docs/design/specs/D03).
     async fn preflight(&self, dest: &Destination) -> Result<PreflightReport> {
-        self.inner.preflight(dest).await
+        let mut report = self.inner.preflight(dest).await?;
+        if let Some((available, used)) = self.quota(dest).await {
+            report.checks.push(Check {
+                id: "quota".into(),
+                status: CheckStatus::Ok,
+                message: format!("quota: {used} bytes used, {available} bytes left"),
+            });
+            if report.free_bytes.is_none_or(|f| available < f) {
+                report.free_bytes = Some(available);
+                report.used_bytes = Some(used);
+                report.total_bytes = Some(used.saturating_add(available));
+            }
+        }
+        Ok(report)
     }
 
     async fn transfer(

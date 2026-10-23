@@ -108,9 +108,14 @@ result (`stale = true` when older than 1 hour).
     emits `Event::DestinationSpace { free_bytes, left_bytes }`, `left_bytes` being the pending
     and partial files (`ManifestCounts::bytes_left`). `JobProgress` shows `storage.runningOut`
     while the job is running and `free < left`; the job log gets one `space_low` row (warn) per
-    stage run. A destination whose `preflight` has no `free_bytes` emits nothing. Only the
-    transport is measured, not the Nextcloud quota (`occ` is too slow to repeat; over WebDAV
-    rclone's `about` already reports the quota).
+    stage run. A destination whose `preflight` has no `free_bytes` emits nothing. The
+    Nextcloud quota counts too (built 2026-10-23): over WebDAV, `transport-nextcloud`'s
+    `preflight` reads the user's `quota-available-bytes`/`quota-used-bytes` (`PROPFIND`, Depth 0,
+    on the files root) and reports them when tighter than the inner transport's numbers, so
+    every check sees it; in direct mode the integration's `preflight` (`occ user:info`, too slow
+    to repeat) is asked once at the start of the stage, and what the stage sends since then
+    counts against it. The smaller of the transport's and the integration's free space is the
+    one compared.
   - **"Destination is full".** `ErrorKind::Full` in `transport-api`. rclone (`kind_of`): WebDAV
     `507`, and `no space left on device`, `disk quota exceeded`, Windows' `not enough space on
     the disk`, `SSH_FX_NO_SPACE_ON_FILESYSTEM`, `SSH_FX_QUOTA_EXCEEDED`; after its first `Full`
@@ -126,10 +131,11 @@ result (`stale = true` when older than 1 hour).
     (`a_full_destination_stops_the_round`), and the engine with the fake transport's `free` /
     `full_unexplained` knobs (`a_full_destination_pauses_the_job_until_space_is_freed`,
     `a_full_disk_that_says_only_failure_is_found_by_measuring`,
-    `the_send_warns_when_the_destination_may_run_out_of_space`). Nextcloud's bulk `507` has no
-    automated test (no HTTP mock in the crate).
-  - Not built: a warning based on the Nextcloud quota during a send; resuming by itself once
-    space is freed (the user presses Resume).
+    `the_send_warns_when_the_destination_may_run_out_of_space`,
+    `the_integrations_quota_counts_in_the_space_warning`), and Nextcloud's bulk `507` and quota
+    against a mock Nextcloud (`crates/transport-nextcloud/tests/mock_server.rs`: the request's
+    files fail `Full` and are not sent again through rclone).
+  - Not built: resuming by itself once space is freed (the user presses Resume).
 
 ## States
 
