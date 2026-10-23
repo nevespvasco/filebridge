@@ -193,6 +193,25 @@ const NO_SPACE: &[&str] = &[
     "not enough space on the disk",
     "ssh_fx_no_space_on_filesystem",
     "ssh_fx_quota_exceeded",
+    // MinIO's drives under their free-space threshold.
+    "xminiostoragefull",
+];
+
+/// S3's error codes for a key it doesn't know or a secret that doesn't match, lowercased. They
+/// come with `StatusCode: 403`, which for S3 is also a bucket the key may not use
+/// (`AccessDenied`, left `Other`).
+const S3_AUTH: &[&str] = &[
+    "api error invalidaccesskeyid",
+    "api error signaturedoesnotmatch",
+    "api error expiredtoken",
+];
+
+/// S3's error codes for a server that is busy or failing for now, lowercased.
+const S3_TRANSIENT: &[&str] = &[
+    "api error slowdown",
+    "api error serviceunavailable",
+    "api error internalerror",
+    "api error requesttimeout",
 ];
 
 /// The kind of an rclone error, from the HTTP status of an rc call (`None` for an async job's
@@ -217,13 +236,25 @@ pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
     let has = |needle: &str| msg.contains(needle);
     if NO_SPACE.iter().any(|n| has(n)) {
         ErrorKind::Full
+    } else if S3_AUTH.iter().any(|c| has(c)) || has("logon is invalid") || has("logon failure") {
+        // S3 refusing the key ("…does not exist in our records" is the key, not a file), or
+        // SMB the user (`STATUS_LOGON_FAILURE`).
+        ErrorKind::Auth
+    } else if has("network name not found") {
+        // SMB's `STATUS_BAD_NETWORK_NAME`: no such share. Not a folder a send would create.
+        ErrorKind::Other
     } else if status == Some(StatusCode::NOT_FOUND)
         || has("not found")
         || has("no such file")
         || has("does not exist")
     {
         ErrorKind::NotFound
-    } else if has("hash unsupported") || has("hash type not supported") || has("not supported") {
+    } else if has("hash unsupported")
+        || has("didn't find backend called")
+        || has("hash type not supported")
+        || has("not supported")
+        || has("doesn't support")
+    {
         ErrorKind::Unsupported
     } else if matches!(
         status,
@@ -233,6 +264,11 @@ pub(crate) fn kind_of(status: Option<StatusCode>, message: &str) -> ErrorKind {
     {
         // The rc's own status (its credentials), or SSH refusing the sign-in.
         ErrorKind::Auth
+    } else if S3_TRANSIENT.iter().any(|c| has(c)) {
+        ErrorKind::Transient
+    } else if has("api error accessdenied") {
+        // S3's 403 for this bucket or object: like WebDAV's, the server refusing this.
+        ErrorKind::Other
     } else if status.is_none_or(|s| s.is_server_error()) {
         // An async job's failure without a known cause is most often the network.
         ErrorKind::Transient
@@ -277,6 +313,71 @@ mod tests {
         );
         assert_eq!(k(None, "connection reset by peer"), ErrorKind::Transient);
         assert_eq!(k(Some(400), "bad parameter"), ErrorKind::Other);
+    }
+
+    #[test]
+    fn s3_and_smb_errors_get_a_kind() {
+        let k = |msg: &str| kind_of(Some(StatusCode::INTERNAL_SERVER_ERROR), msg);
+        let s3 = |code: &str, text: &str| {
+            format!(
+                "error in ListJSON: operation error S3: ListObjectsV2, https response error \
+                 StatusCode: 403, RequestID: , HostID: , api error {code}: {text}"
+            )
+        };
+        assert_eq!(
+            k(&s3(
+                "SignatureDoesNotMatch",
+                "The request signature we calculated does not match the signature you provided."
+            )),
+            ErrorKind::Auth
+        );
+        assert_eq!(
+            k(&s3(
+                "InvalidAccessKeyId",
+                "The AWS Access Key Id you provided does not exist in our records."
+            )),
+            ErrorKind::Auth
+        );
+        // A key that may not use this bucket: the server refuses this, not the sign-in.
+        assert_eq!(k(&s3("AccessDenied", "Access Denied.")), ErrorKind::Other);
+        assert_eq!(
+            k(&s3("SlowDown", "Please reduce your request rate.")),
+            ErrorKind::Transient
+        );
+        assert_eq!(
+            k(&s3(
+                "XMinioStorageFull",
+                "Storage backend has reached its minimum free drive threshold."
+            )),
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k("S3 bucket bucket1 doesn't support about"),
+            ErrorKind::Unsupported
+        );
+        // Phones' librclone has no `s3` backend (ADR 0022).
+        assert_eq!(
+            k("didn't find backend called \"s3\""),
+            ErrorKind::Unsupported
+        );
+        assert_eq!(
+            k(
+                "couldn't connect SMB: response error: The attempted logon is invalid. This is \
+               either due to a bad username or authentication information."
+            ),
+            ErrorKind::Auth
+        );
+        assert_eq!(
+            k("Failed to copy: response error: There is not enough space on the disk."),
+            ErrorKind::Full
+        );
+        assert_eq!(
+            k(
+                "couldn't initialize SMB: response error: {Network Name Not Found} The specified \
+               share name cannot be found on the remote server."
+            ),
+            ErrorKind::Other
+        );
     }
 
     #[test]

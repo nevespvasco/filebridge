@@ -13,7 +13,8 @@ use filebridge_transport_api::{Backend, Destination, Result, SecretValue, Transp
 /// it lives, the [`Scrubber`] that made it removes these values from every message.
 #[derive(Debug, Default)]
 pub struct Creds {
-    /// The password, obscured by rclone (`core/obscure`): its `pass=` parameter.
+    /// The password as rclone takes it: obscured (`core/obscure`) for its `pass=` parameter
+    /// (SFTP, WebDAV, SMB), as given for S3's `secret_access_key=`.
     pub pass: Option<SecretValue>,
     /// filebridge's own SSH key (ADR 0012), PEM on one line with `\n` escapes: rclone's
     /// `key_pem` parameter. Never written to a file.
@@ -131,9 +132,9 @@ fn forms(secret: &str) -> Vec<String> {
 }
 
 /// The connection-string parameters that carry secrets; their values never leave this crate.
-const SECRET_PARAMS: [&str; 2] = ["pass", "key_pem"];
+const SECRET_PARAMS: [&str; 3] = ["pass", "key_pem", "secret_access_key"];
 
-/// fs string for `sub` (relative, may be empty) under the destination root.
+/// fs string for the folder `sub` (relative, may be empty) under the destination root.
 pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
     let path = join(&dest.root, sub);
     match &dest.backend {
@@ -198,7 +199,80 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
             }
             Ok(format!(":webdav,{}:{path}", connection(params)))
         }
+        Backend::Smb {
+            host,
+            port,
+            user,
+            domain,
+            share,
+            password,
+        } => {
+            let mut params = vec![("host", host.clone())];
+            if let Some(port) = port {
+                params.push(("port", port.to_string()));
+            }
+            // rclone signs in as the local user when none is given; an SMB profile without one
+            // is the guest.
+            params.push(("user", user.clone().unwrap_or_else(|| "guest".into())));
+            if let Some(domain) = domain {
+                params.push(("domain", domain.clone()));
+            }
+            if password.is_some() {
+                params.push(("pass", needed(&creds.pass, "SMB")?));
+            }
+            let path = join(share.trim_matches('/'), &inside(&dest.root, sub));
+            Ok(format!(":smb,{}:{path}", connection(params)))
+        }
+        Backend::S3 {
+            provider,
+            endpoint,
+            region,
+            bucket,
+            access_key_id,
+            secret_access_key,
+            path_style,
+        } => {
+            let mut params = vec![(
+                "provider",
+                provider.clone().unwrap_or_else(|| "Other".into()),
+            )];
+            if let Some(endpoint) = endpoint {
+                params.push(("endpoint", endpoint.clone()));
+            }
+            if let Some(region) = region {
+                params.push(("region", region.clone()));
+            }
+            if let Some(id) = access_key_id {
+                params.push(("access_key_id", id.clone()));
+            }
+            if secret_access_key.is_some() {
+                let secret = creds.pass.as_ref().ok_or_else(|| {
+                    TransportError::new(
+                        filebridge_transport_api::ErrorKind::Auth,
+                        "the S3 secret access key is not in the keyring; set it again",
+                    )
+                })?;
+                params.push(("secret_access_key", secret.expose().to_owned()));
+            }
+            params.push(("force_path_style", path_style.to_string()));
+            // A folder inside the bucket ends in `/`: otherwise rclone first asks whether it is
+            // a file, and when the key is refused it takes the refusal for "a file", so a wrong
+            // secret would read "is a file not a directory" instead of the server's answer.
+            let folder = inside(&dest.root, sub);
+            let bucket = bucket.trim_matches('/');
+            let path = match folder.as_str() {
+                "" => bucket.to_owned(),
+                f => format!("{bucket}/{f}/"),
+            };
+            Ok(format!(":s3,{}:{path}", connection(params)))
+        }
     }
+}
+
+/// `sub` under `root` for backends whose root is a folder inside a share or a bucket: both
+/// relative, without the slashes at their ends.
+fn inside(root: &str, sub: &str) -> String {
+    join(root.trim_matches('/'), sub)
 }
 
 fn connection(params: Vec<(&str, String)>) -> String {
@@ -353,6 +427,81 @@ mod tests {
             dest_fs(&dest, &Creds::default(), "Backup").unwrap(),
             ":sftp,host=\"nas.lan\",port=\"2222\",user=\"ana\",key_file=\"/k/id,ed25519\",\
              known_hosts_file=\"/k/known_hosts\",skip_links=\"true\":/srv/files/Backup"
+        );
+    }
+
+    #[test]
+    fn smb_connection_string() {
+        let dest = |user: Option<&str>, password: bool, root: &str| Destination {
+            transport: "rclone".into(),
+            backend: Backend::Smb {
+                host: "nas.lan".into(),
+                port: Some(4450),
+                user: user.map(Into::into),
+                domain: Some("CASA".into()),
+                share: "/backup/".into(),
+                password: password.then(|| {
+                    filebridge_transport_api::KeyringRef("filebridge/p/app-password".into())
+                }),
+            },
+            root: root.into(),
+        };
+        let creds = Creds {
+            pass: Some(SecretValue::new("obscured".into())),
+            ..Creds::default()
+        };
+        assert_eq!(
+            dest_fs(&dest(Some("ana"), true, "/Fotos/"), &creds, "2026").unwrap(),
+            ":smb,host=\"nas.lan\",port=\"4450\",user=\"ana\",domain=\"CASA\",\
+             pass=\"obscured\":backup/Fotos/2026"
+        );
+        assert_eq!(
+            dest_fs(&dest(None, false, ""), &Creds::default(), "").unwrap(),
+            ":smb,host=\"nas.lan\",port=\"4450\",user=\"guest\",domain=\"CASA\":backup"
+        );
+        let err = dest_fs(&dest(Some("ana"), true, ""), &Creds::default(), "").unwrap_err();
+        assert_eq!(err.kind, filebridge_transport_api::ErrorKind::Auth);
+    }
+
+    #[test]
+    fn s3_connection_string() {
+        let dest = |root: &str| Destination {
+            transport: "rclone".into(),
+            backend: Backend::S3 {
+                provider: Some("Minio".into()),
+                endpoint: Some("http://minio.lan:9000".into()),
+                region: Some("us-east-1".into()),
+                bucket: "fotos".into(),
+                access_key_id: Some("AKIDEXAMPLE".into()),
+                secret_access_key: Some(filebridge_transport_api::KeyringRef(
+                    "filebridge/p/app-password".into(),
+                )),
+                path_style: true,
+            },
+            root: root.into(),
+        };
+        let creds = Creds {
+            pass: Some(SecretValue::new("s3cret/Key+1".into())),
+            ..Creds::default()
+        };
+        let params = "provider=\"Minio\",endpoint=\"http://minio.lan:9000\",\
+                      region=\"us-east-1\",access_key_id=\"AKIDEXAMPLE\",\
+                      secret_access_key=\"s3cret/Key+1\",force_path_style=\"true\"";
+        // Folders inside the bucket end in `/`; the bucket itself doesn't.
+        assert_eq!(
+            dest_fs(&dest("/backup/"), &creds, "2026/x").unwrap(),
+            format!(":s3,{params}:fotos/backup/2026/x/")
+        );
+        assert_eq!(
+            dest_fs(&dest(""), &creds, "").unwrap(),
+            format!(":s3,{params}:fotos")
+        );
+        let err = dest_fs(&dest(""), &Creds::default(), "").unwrap_err();
+        assert_eq!(err.kind, filebridge_transport_api::ErrorKind::Auth);
+        // The secret is plain in the connection string, so it is scrubbed by name too.
+        assert_eq!(
+            redact(&dest_fs(&dest(""), &creds, "").unwrap()),
+            format!(":s3,{}:fotos", params.replace("\"s3cret/Key+1\"", "***"))
         );
     }
 

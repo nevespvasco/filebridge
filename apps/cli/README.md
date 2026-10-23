@@ -10,6 +10,11 @@ filebridge profile add-sftp     --name N --host H [--port] [--user] [--key-file]
 filebridge profile add-nextcloud --name N --host SERVER --nc-user U [--folder Backup] [--ctid] [--verbose]
 filebridge profile add-immich --name N --server photos.example.com (--host H [--user] [--key-file] | --local)
                              --root DIR [--import-path /mnt/photos] [--library ID]   # ADR 0020
+filebridge profile add-smb  --name N --host H --share S [--port 445] [--user U] [--domain D]
+                            [--folder F] [--windows true|false]   # password asked; ADR 0022
+filebridge profile add-s3   --name N --bucket B [--endpoint URL] [--region R] [--provider Minio]
+                            [--access-key-id K] [--folder F] [--virtual-hosted]   # secret asked
+filebridge profile set-password <profile> [--remove]   # SFTP/SMB password or S3 secret key
 filebridge profile list | test <profile> | remove <profile>
 filebridge profile trust-host --host H [--port 22] [--known-hosts F] [--fingerprint SHA256:…]
 filebridge profile install-key <profile> | remove-access <profile> [--yes]

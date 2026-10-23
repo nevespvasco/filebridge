@@ -65,7 +65,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 23: `Event::DestinationSpace`; `JobSummary.error_code` (`destination_full`: a full
 ///     destination pauses the job).
 /// 24: `add_immich` (ADR 0020).
-pub const PROTOCOL_VERSION: u32 = 24;
+/// 25: `Backend::Smb`, `Backend::S3` (ADR 0022).
+pub const PROTOCOL_VERSION: u32 = 25;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

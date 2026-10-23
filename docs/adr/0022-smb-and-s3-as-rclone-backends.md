@@ -45,8 +45,10 @@ contract made `core` know every backend.
 - **Preflight**: S3 has no `about` (no free space to report); a destination that can't report
   space is checked by listing its root instead, so the connection test still says whether it is
   reachable and signed in, and the free space is unknown (as for WebDAV servers without quota).
-- **Phones** (ADR 0014): librclone links the `smb` and `s3` backends too, so a phone can send to
-  a NAS share or a MinIO. The S3 backend brings the AWS SDK, a few MB per ABI.
+- **Phones** (ADR 0014): librclone links the `smb` backend too (+1.7 MB per ABI: 21.6 MB), so
+  a phone can send to a NAS share. Not `s3`: it brings the AWS SDK, +11.6 MB per ABI (33.2 MB
+  with both), for a destination a phone rarely needs. The phone's form doesn't offer S3, and a
+  profile that names it there fails as `Unsupported` (rclone's "didn't find backend").
 
 ## Consequences
 - `crates/core` doesn't change for SMB and S3, nor for a later rclone backend: a new backend is
@@ -57,4 +59,6 @@ contract made `core` know every backend.
   it. Sends only create files, so nothing changes for them; "Repair destination" renames a
   folder by moving each file in it.
 - SMB is tested against a real Samba only when `FILEBRIDGE_TEST_SMB_*` is set (rclone has no
-  `serve smb`); S3 runs the contract suite against `rclone serve s3` in every test run.
+  `serve smb`; passed against Samba 4.23 in Docker, `crates/transport-rclone/README.md`); S3
+  runs the contract suite against `rclone serve s3` in every test run.
+- S3 on a phone is one line in `sidecars/librclone/shim/main.go` away, at the size above.

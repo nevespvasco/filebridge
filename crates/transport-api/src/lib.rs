@@ -161,6 +161,43 @@ pub enum Backend {
         /// Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV.
         vendor: Option<String>,
     },
+    /// A Windows or Samba share (SMB2/3). `root` is a folder inside `share` (empty for the
+    /// share itself), `/`-separated (ADR 0022).
+    Smb {
+        host: String,
+        /// Default 445.
+        port: Option<u16>,
+        /// `None` signs in as the guest.
+        user: Option<String>,
+        /// The user's domain or workgroup; `None` = `WORKGROUP`.
+        domain: Option<String>,
+        /// The share's name, e.g. `backup` in `\\nas\backup`.
+        share: String,
+        /// The password in the keyring.
+        password: Option<KeyringRef>,
+    },
+    /// An S3 bucket: AWS or a compatible server (MinIO, Ceph, Garage…). `root` is a folder
+    /// inside `bucket` (empty for the bucket itself), with no leading `/` (ADR 0022).
+    S3 {
+        /// rclone's provider name (`AWS`, `Minio`, `Ceph`, …); `None` = `Other`.
+        provider: Option<String>,
+        /// The server's address, e.g. `https://minio.example.com:9000`; `None` = AWS.
+        endpoint: Option<String>,
+        region: Option<String>,
+        bucket: String,
+        /// Names the key, like a user name; `None` signs in anonymously (public buckets).
+        access_key_id: Option<String>,
+        /// The secret access key in the keyring.
+        secret_access_key: Option<KeyringRef>,
+        /// Path-style addressing (`endpoint/bucket/key`), which MinIO and most self-hosted
+        /// servers need; `false` for virtual-hosted buckets (`bucket.endpoint/key`).
+        #[serde(default = "path_style_default")]
+        path_style: bool,
+    },
+}
+
+fn path_style_default() -> bool {
+    true
 }
 
 impl Backend {
@@ -171,6 +208,8 @@ impl Backend {
             Backend::Local => "local",
             Backend::Sftp { .. } => "sftp",
             Backend::Webdav { .. } => "webdav",
+            Backend::Smb { .. } => "smb",
+            Backend::S3 { .. } => "s3",
         }
     }
 
@@ -181,7 +220,12 @@ impl Backend {
     pub fn password_mut(&mut self) -> Option<&mut Option<KeyringRef>> {
         match self {
             Backend::Local => None,
-            Backend::Sftp { password, .. } | Backend::Webdav { password, .. } => Some(password),
+            Backend::Sftp { password, .. }
+            | Backend::Webdav { password, .. }
+            | Backend::Smb { password, .. } => Some(password),
+            Backend::S3 {
+                secret_access_key, ..
+            } => Some(secret_access_key),
         }
     }
 }

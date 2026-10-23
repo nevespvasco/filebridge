@@ -189,7 +189,7 @@ export const events = {
 /* Constants */
 export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 24 as const;
+export const PROTOCOL_VERSION = 25 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -332,7 +332,40 @@ url: string; user: string;
 /**  The password (a Nextcloud app password) in the keyring. */
 password?: KeyringRef | null; 
 /**  Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV. */
-vendor?: string | null };
+vendor?: string | null } | 
+/**
+ *  A Windows or Samba share (SMB2/3). `root` is a folder inside `share` (empty for the
+ *  share itself), `/`-separated (ADR 0022).
+ */
+{ kind: "smb"; host: string; 
+/**  Default 445. */
+port?: number | null; 
+/**  `None` signs in as the guest. */
+user?: string | null; 
+/**  The user's domain or workgroup; `None` = `WORKGROUP`. */
+domain?: string | null; 
+/**  The share's name, e.g. `backup` in `\\nas\backup`. */
+share: string; 
+/**  The password in the keyring. */
+password?: KeyringRef | null } | 
+/**
+ *  An S3 bucket: AWS or a compatible server (MinIO, Ceph, Garage…). `root` is a folder
+ *  inside `bucket` (empty for the bucket itself), with no leading `/` (ADR 0022).
+ */
+{ kind: "s3"; 
+/**  rclone's provider name (`AWS`, `Minio`, `Ceph`, …); `None` = `Other`. */
+provider?: string | null; 
+/**  The server's address, e.g. `https://minio.example.com:9000`; `None` = AWS. */
+endpoint?: string | null; region?: string | null; bucket: string; 
+/**  Names the key, like a user name; `None` signs in anonymously (public buckets). */
+access_key_id?: string | null; 
+/**  The secret access key in the keyring. */
+secret_access_key?: KeyringRef | null; 
+/**
+ *  Path-style addressing (`endpoint/bucket/key`), which MinIO and most self-hosted
+ *  servers need; `false` for virtual-hosted buckets (`bucket.endpoint/key`).
+ */
+path_style?: boolean };
 
 export type Backend_Serialize = { kind: "local" } | { kind: "sftp"; host: string; port: number | null; user: string | null; 
 /**  Private key file; when absent the SSH agent is used. */
@@ -354,7 +387,40 @@ url: string; user: string;
 /**  The password (a Nextcloud app password) in the keyring. */
 password: KeyringRef | null; 
 /**  Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV. */
-vendor: string | null };
+vendor: string | null } | 
+/**
+ *  A Windows or Samba share (SMB2/3). `root` is a folder inside `share` (empty for the
+ *  share itself), `/`-separated (ADR 0022).
+ */
+{ kind: "smb"; host: string; 
+/**  Default 445. */
+port: number | null; 
+/**  `None` signs in as the guest. */
+user: string | null; 
+/**  The user's domain or workgroup; `None` = `WORKGROUP`. */
+domain: string | null; 
+/**  The share's name, e.g. `backup` in `\\nas\backup`. */
+share: string; 
+/**  The password in the keyring. */
+password: KeyringRef | null } | 
+/**
+ *  An S3 bucket: AWS or a compatible server (MinIO, Ceph, Garage…). `root` is a folder
+ *  inside `bucket` (empty for the bucket itself), with no leading `/` (ADR 0022).
+ */
+{ kind: "s3"; 
+/**  rclone's provider name (`AWS`, `Minio`, `Ceph`, …); `None` = `Other`. */
+provider: string | null; 
+/**  The server's address, e.g. `https://minio.example.com:9000`; `None` = AWS. */
+endpoint: string | null; region: string | null; bucket: string; 
+/**  Names the key, like a user name; `None` signs in anonymously (public buckets). */
+access_key_id: string | null; 
+/**  The secret access key in the keyring. */
+secret_access_key: KeyringRef | null; 
+/**
+ *  Path-style addressing (`endpoint/bucket/key`), which MinIO and most self-hosted
+ *  servers need; `false` for virtual-hosted buckets (`bucket.endpoint/key`).
+ */
+path_style: boolean };
 
 export type BlockerView = BlockerView_Serialize | BlockerView_Deserialize;
 

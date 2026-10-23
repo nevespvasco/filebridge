@@ -391,7 +391,9 @@
       "nextcloud": "Nextcloud (direct mode): files are copied, then Nextcloud indexes them",
       "nextcloudWebdav": "Nextcloud (WebDAV): files go through Nextcloud, which indexes them as they arrive",
       "webdav": "Copy over WebDAV",
-      "immich": "Immich (external library): files are copied into the library's folder, then Immich scans it"
+      "immich": "Immich (external library): files are copied into the library's folder, then Immich scans it",
+      "smb": "Copy to an SMB share",
+      "s3": "Copy to an S3 bucket"
     },
     "verify": "Verify every file at the end",
     "verifyHint": "After copying, filebridge reads every file again at the source and at the destination and confirms they're identical (SHA-256). It takes longer, but you know for sure nothing was lost.",
@@ -590,13 +592,17 @@
       "sftp": "SFTP",
       "nextcloud": "Nextcloud",
       "webdav": "WebDAV",
-      "immich": "Immich"
+      "immich": "Immich",
+      "smb": "SMB share",
+      "s3": "S3"
     },
     "kindsHint": {
       "local": "An external disk, a USB stick or another folder on this computer",
       "sftp": "A server or NAS you reach over SSH (Synology, TrueNAS, Raspberry Pi…)",
       "nextcloud": "Your Nextcloud, over the internet with an app password, or directly on its server",
-      "immich": "Your Immich photo server: files go into a folder of an external library, which Immich then scans"
+      "immich": "Your Immich photo server: files go into a folder of an external library, which Immich then scans",
+      "smb": "A shared folder on Windows or a NAS (Samba): \\\\nas\\backup",
+      "s3": "An S3 bucket: AWS, or a server such as MinIO, Ceph or Garage"
     },
     "name": "Name",
     "nameHintLocal": "External disk",
@@ -1294,5 +1300,60 @@
     "close": "Close",
     "unreachable": "Could not check the server's key: {error}",
     "checking": "Checking the server's key…"
+  },
+  "smb": {
+    "share": "Share",
+    "domain": "Domain",
+    "folder": "Folder in the share",
+    "folderHint": "empty = the share itself",
+    "help": {
+      "host": "The address of the computer or NAS that shares the folder: its name on the network or its IP address.",
+      "share": "The shared folder's name: what comes after the server in \\\\server\\name. On a NAS it is the shared folder you created (e.g. “backup”).",
+      "port": "The SMB port. Leave 445 unless whoever set up the server told you otherwise.",
+      "user": "The user you sign in to the share with. Empty signs in as the guest, for shares open to everyone.",
+      "domain": "The user's domain or workgroup. Leave empty unless the server is in a Windows domain (most homes use WORKGROUP).",
+      "password": "That user's password on the server. It is kept in your system's keyring (Keychain, Credential Manager, GNOME Keyring), never in filebridge's files.",
+      "folder": "A folder inside the share where the copies go, with “/” between folders. It is created by the first send if it isn't there."
+    },
+    "hint": {
+      "share": "Its name alone, e.g. backup",
+      "port": "Usually 445",
+      "user": "Empty = guest",
+      "domain": "Empty = WORKGROUP",
+      "folder": "e.g. Fotos/2026; empty = straight into the share"
+    }
+  },
+  "s3": {
+    "nameHint": "Backup bucket",
+    "endpoint": "Server address",
+    "region": "Region",
+    "provider": "Server kind",
+    "providerOther": "Other / generic",
+    "bucket": "Bucket",
+    "bucketSlash": "Only the bucket's name here; the folder inside it goes in “Folder in the bucket”.",
+    "accessKeyId": "Access key id",
+    "anonymous": "empty = anonymous (public bucket)",
+    "secret": "Secret access key",
+    "pathStyle": "Path-style addressing (MinIO and most self-hosted servers)",
+    "https": "Use https://: the requests are signed, but the files would travel unencrypted.",
+    "folder": "Folder in the bucket",
+    "folderHint": "empty = the bucket itself",
+    "help": {
+      "endpoint": "The address of the S3 server, with https:// and its port if it has one. Leave empty for Amazon S3 (AWS).",
+      "region": "The bucket's region, e.g. eu-west-1. On AWS it is shown next to the bucket; most self-hosted servers accept anything or leave it empty.",
+      "provider": "Which server it is, so its particular ways are respected. If yours isn't listed, keep “Other / generic”.",
+      "bucket": "The bucket the copies go into. It must exist already, or the key must be allowed to create it.",
+      "accessKeyId": "The key's id, created in the server's console (AWS: IAM → Access keys; MinIO: Access Keys). It is not secret; the secret access key is.",
+      "secret": "The key's secret, shown once when the key is created. It is kept in your system's keyring (Keychain, Credential Manager, GNOME Keyring), never in filebridge's files.",
+      "pathStyle": "On: the address is server/bucket, which MinIO and most self-hosted servers need. Off: bucket.server, for AWS buckets and servers that ask for it.",
+      "folder": "A folder inside the bucket where the copies go, with “/” between folders. S3 has no empty folders: it appears with the first file."
+    },
+    "hint": {
+      "endpoint": "Empty = Amazon S3 (AWS)",
+      "bucket": "Its name alone, e.g. backup",
+      "region": "Empty = the server's default",
+      "accessKeyId": "Empty = no key, for a public bucket",
+      "folder": "e.g. backup/fotos; empty = straight into the bucket"
+    }
   }
 }

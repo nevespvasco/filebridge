@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// New destination: a local folder, an SFTP server, Nextcloud (its own form), or an Immich
-// external library fed over SFTP or into a local folder (ADR 0020).
+// New destination: a local folder, an SFTP server, an SMB share or an S3 bucket (ADR 0022),
+// Nextcloud (its own form), or an Immich external library fed over SFTP or into a local folder
+// (ADR 0020).
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref, shallowRef } from "vue";
 import type { Backend_Deserialize, DetectNextcloudResponse_Serialize, Family, Profile_Deserialize, Profile_Serialize } from "@/bindings";
 import FolderBrowser from "./FolderBrowser.vue";
 import { api, errorMessage } from "@/lib/api";
-import { pickPaths } from "@/lib/platform";
+import { isMobile, pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import { useI18n } from "vue-i18n";
 import HelpTip from "./HelpTip.vue";
@@ -14,14 +15,22 @@ import HostKeyPrompt from "./HostKeyPrompt.vue";
 import ImmichFields, { type ImmichForm } from "./ImmichFields.vue";
 import NextcloudDetect from "./NextcloudDetect.vue";
 import NextcloudWebdav from "./NextcloudWebdav.vue";
+import S3Fields, { type S3Form } from "./S3Fields.vue";
 import SegmentedControl from "./SegmentedControl.vue";
+import SmbFields, { type SmbForm } from "./SmbFields.vue";
 
 const emit = defineEmits<{ saved: [profile: Profile_Serialize]; cancel: [] }>();
 const profiles = useProfiles();
 const { t } = useI18n();
 
-type Kind = "local" | "sftp" | "nextcloud" | "immich";
+type Kind = "local" | "sftp" | "smb" | "s3" | "nextcloud" | "immich";
 const kind = ref<Kind>("local");
+/** Phones' rclone has no S3 backend (ADR 0022). */
+const kinds = computed<Kind[]>(() => (isMobile() ? ["local", "sftp", "smb", "nextcloud", "immich"] : ["local", "sftp", "smb", "s3", "nextcloud", "immich"]));
+/** A share or a bucket: their own fields, and a folder inside them instead of a full path. */
+const share = computed(() => kind.value === "smb" || kind.value === "s3");
+const smb = reactive<SmbForm>({ host: "", port: 445, share: "", user: "", domain: "" });
+const s3 = reactive<S3Form>({ endpoint: "", region: "", provider: "Other", bucket: "", accessKeyId: "", pathStyle: true });
 /** How files reach Immich's library folder: over SFTP, or into a folder of this computer. */
 const immichVia = ref<"sftp" | "local">("sftp");
 const immichVias = computed(() => [
@@ -30,7 +39,7 @@ const immichVias = computed(() => [
 ]);
 /** Which destination fields the form shows: an SFTP server or a local folder (Immich has both). */
 const sftp = computed(() => kind.value === "sftp" || (kind.value === "immich" && immichVia.value === "sftp"));
-const local = computed(() => !sftp.value);
+const local = computed(() => !sftp.value && !share.value);
 const immich = reactive<ImmichForm>({ server: "", importPath: "", libraryId: "" });
 /** Kept apart from the form; goes to the keyring through the service and is cleared once saved. */
 const apiKey = ref("");
@@ -52,7 +61,8 @@ const form = reactive({
   family: "unix" as Family,
   case_sensitive: true,
 });
-/** SFTP only, optional; goes to the OS keyring after the profile is saved, never into it. */
+/** SFTP and SMB's password, or S3's secret access key; optional. Goes to the OS keyring after the
+ *  profile is saved, never into it. */
 const password = ref("");
 /** The profile saved by a try whose password didn't reach the keyring: a retry saves it again
  *  under the same id (no second destination) and stores the password. */
@@ -66,13 +76,26 @@ const missing = computed(() => {
   if (!form.name.trim()) m.push(t("profile.name"));
   if (sftp.value && !form.host.trim()) m.push(t("profile.host"));
   if (sftp.value && !(form.port > 0)) m.push(t("profile.port"));
-  if (!form.root.trim()) m.push(local.value ? t("profile.folder") : t("profile.remoteFolder"));
+  if (kind.value === "smb" && !smb.host.trim()) m.push(t("profile.host"));
+  if (kind.value === "smb" && !smb.share.trim()) m.push(t("smb.share"));
+  if (kind.value === "smb" && !(smb.port > 0)) m.push(t("profile.port"));
+  if (kind.value === "s3" && !s3.bucket.trim()) m.push(t("s3.bucket"));
+  if (kind.value === "s3" && s3.accessKeyId.trim() && !password.value) m.push(t("s3.secret"));
+  if (!share.value && !form.root.trim()) m.push(local.value ? t("profile.folder") : t("profile.remoteFolder"));
   if (kind.value === "immich" && !immich.server.trim()) m.push(t("immich.server"));
   if (kind.value === "immich" && !apiKey.value.trim()) m.push(t("immich.apiKey"));
   return m;
 });
 const rootNotAbsolute = computed(() => sftp.value && !!form.root.trim() && !form.root.trim().startsWith("/"));
-const valid = computed(() => !missing.value.length && !rootNotAbsolute.value);
+const bucketHasSlash = computed(() => kind.value === "s3" && s3.bucket.trim().replace(/^\/+|\/+$/g, "").includes("/"));
+const valid = computed(() => !missing.value.length && !rootNotAbsolute.value && !bucketHasSlash.value);
+
+/** Picking a kind: an SMB share is most often Windows or Samba with Windows' rules. */
+function pickKind(k: Kind) {
+  kind.value = k;
+  if (k === "smb") setFamily("windows");
+  else if (k === "s3") setFamily("unix");
+}
 
 function setFamily(f: Family) {
   form.family = f;
@@ -85,10 +108,36 @@ async function pick(field: "root" | "key_file") {
   if (p) form[field] = p;
 }
 
+/** A trimmed text field, `null` when empty. */
+function opt(v: string): string | null {
+  return v.trim() || null;
+}
+
 /** The profile the form describes (not saved). */
 function build(root: string): Profile_Deserialize {
   const backend: Backend_Deserialize =
-      sftp.value
+    kind.value === "smb"
+      ? {
+          kind: "smb",
+          host: smb.host.trim(),
+          port: smb.port === 445 ? null : smb.port,
+          user: opt(smb.user),
+          domain: opt(smb.domain),
+          share: smb.share.trim().replace(/^\/+|\/+$/g, ""),
+          password: null,
+        }
+      : kind.value === "s3"
+      ? {
+          kind: "s3",
+          provider: s3.provider === "Other" ? null : s3.provider,
+          endpoint: opt(s3.endpoint),
+          region: opt(s3.region),
+          bucket: s3.bucket.trim().replace(/^\/+|\/+$/g, ""),
+          access_key_id: opt(s3.accessKeyId),
+          secret_access_key: null,
+          path_style: s3.pathStyle,
+        }
+      : sftp.value
         ? {
             kind: "sftp",
             host: form.host.trim(),
@@ -102,7 +151,8 @@ function build(root: string): Profile_Deserialize {
   return {
     id: savedId.value ?? "",
     name: form.name.trim(),
-    destination: { transport: "rclone", backend, root },
+    // A share's or a bucket's folder is relative to it.
+    destination: { transport: "rclone", backend, root: share.value ? root.replace(/^\/+|\/+$/g, "") : root },
     integration: null,
     integration_settings: null,
     target: { family: form.family, case_sensitive: form.case_sensitive },
@@ -173,7 +223,9 @@ async function save() {
       return;
     }
     let saved = await profiles.save(build(form.root.trim()));
-    if (kind.value === "sftp" && password.value) {
+    // A password needs a user (SMB) and an S3 secret a key id: without one, there is no secret.
+    const withSecret = kind.value === "sftp" || (kind.value === "smb" && !!smb.user.trim()) || (kind.value === "s3" && !!s3.accessKeyId.trim());
+    if (withSecret && password.value) {
       savedId.value = saved.id;
       saved = await api.setProfilePassword(saved.id, password.value);
       password.value = "";
@@ -194,13 +246,13 @@ async function save() {
     <h3 class="q-title">{{ $t("profile.kindQuestion") }}</h3>
     <div class="kinds" role="radiogroup" :aria-label="$t('profile.kind')">
       <button
-        v-for="k in (['local', 'sftp', 'nextcloud', 'immich'] as const)"
+        v-for="k in kinds"
         :key="k"
         type="button"
         role="radio"
         class="kind"
         :aria-checked="kind === k"
-        @click="kind = k"
+        @click="pickKind(k)"
       >
         <strong><AppIcon :name="k" :size="20" /> {{ $t(`profile.kinds.${k}`) }}</strong>
         <span class="small muted">{{ $t(`profile.kindsHint.${k}`) }}</span>
@@ -227,7 +279,7 @@ async function save() {
           <span class="label-line">{{ $t("profile.name") }}<span class="req" aria-hidden="true">*</span>
             <HelpTip :text="$t('profile.help.name')" :example="$t('profile.help.nameExample')" :label="$t('profile.name')" />
           </span>
-          <input v-model="form.name" required :placeholder="kind === 'immich' ? $t('immich.nameHint') : local ? $t('profile.nameHintLocal') : $t('profile.nameHintSftp')" />
+          <input v-model="form.name" required :placeholder="kind === 'immich' ? $t('immich.nameHint') : kind === 's3' ? $t('s3.nameHint') : local ? $t('profile.nameHintLocal') : $t('profile.nameHintSftp')" />
           <span class="hint">{{ $t("profile.hint.name") }}</span>
         </label>
         <template v-if="sftp">
@@ -253,7 +305,16 @@ async function save() {
             <span class="hint">{{ $t("profile.hint.user") }}</span>
           </label>
         </template>
-        <label class="field wide">
+        <SmbFields v-if="kind === 'smb'" v-model:fields="smb" v-model:password="password" />
+        <S3Fields v-if="kind === 's3'" v-model:fields="s3" v-model:secret="password" />
+        <label v-if="share" class="field wide">
+          <span class="label-line">{{ $t(`${kind}.folder`) }}
+            <HelpTip :text="$t(`${kind}.help.folder`)" :example="kind === 'smb' ? 'Fotos/2026' : 'backup/fotos'" :label="$t(`${kind}.folder`)" />
+          </span>
+          <input v-model="form.root" spellcheck="false" :placeholder="$t(`${kind}.folderHint`)" />
+          <span class="hint">{{ $t(`${kind}.hint.folder`) }}</span>
+        </label>
+        <label v-else class="field wide">
           <span class="label-line">{{ local ? $t("profile.folder") : $t("profile.remoteFolder") }}<span class="req" aria-hidden="true">*</span>
             <HelpTip
               :text="local ? $t('profile.help.folder') : $t('profile.help.remoteFolder')"
@@ -346,7 +407,7 @@ async function save() {
 <style scoped>
 .nc-mode { display: grid; gap: 0.35rem; margin: 0.5rem 0 1rem; }
 .q-title { margin: 0 0 0.6rem; font-size: 1rem; }
-.kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+.kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
 .kind {
   all: unset;
   box-sizing: border-box;

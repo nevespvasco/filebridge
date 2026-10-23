@@ -69,6 +69,58 @@ pub enum ProfileCmd {
         #[arg(long)]
         windows: bool,
     },
+    /// A folder in a Windows or Samba share (SMB2/3). The password is asked without echo, or
+    /// read from stdin; without --user the share is reached as the guest, with no password.
+    AddSmb {
+        #[arg(long)]
+        name: String,
+        /// The server's address, e.g. `nas.local`.
+        #[arg(long)]
+        host: String,
+        #[arg(long)]
+        port: Option<u16>,
+        /// The share's name, e.g. `backup` for `\\nas.local\backup`.
+        #[arg(long)]
+        share: String,
+        #[arg(long)]
+        user: Option<String>,
+        /// The user's domain or workgroup (default WORKGROUP).
+        #[arg(long)]
+        domain: Option<String>,
+        /// Folder inside the share, e.g. `Fotos/2026` (default: the share itself).
+        #[arg(long, default_value = "")]
+        folder: String,
+        /// Use Windows-compatible names (forbidden characters, trailing dots, CON/NUL…). On by
+        /// default: most shares are Windows or Samba with Windows rules.
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        windows: bool,
+    },
+    /// A folder in an S3 bucket: AWS or a compatible server (MinIO, Ceph, Garage…). The secret
+    /// access key is asked without echo, or read from stdin; without --access-key-id the bucket
+    /// is reached anonymously.
+    AddS3 {
+        #[arg(long)]
+        name: String,
+        /// The server's address, e.g. `https://minio.example.com:9000` (default: AWS).
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long)]
+        region: Option<String>,
+        /// rclone's provider name: AWS, Minio, Ceph, … (default Other).
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        bucket: String,
+        #[arg(long)]
+        access_key_id: Option<String>,
+        /// Folder inside the bucket, e.g. `backup/fotos` (default: the bucket itself).
+        #[arg(long, default_value = "")]
+        folder: String,
+        /// Virtual-hosted addressing (`bucket.endpoint`) instead of path-style
+        /// (`endpoint/bucket`), which MinIO and most self-hosted servers need.
+        #[arg(long)]
+        virtual_hosted: bool,
+    },
     /// Nextcloud over its own WebDAV API with an app password (the default mode; nothing to set
     /// up on the server). The app password is asked without echo, or read from stdin.
     AddNextcloudWebdav {
@@ -176,7 +228,7 @@ pub enum ProfileCmd {
         #[arg(long)]
         fingerprint: Option<String>,
     },
-    /// Store an SFTP profile's password in the system keyring (asked without echo, or read
+    /// Store a profile's password (SFTP, SMB) or S3 secret access key in the system keyring (asked without echo, or read
     /// from stdin when piped; never an argument, which shells keep in their history).
     SetPassword {
         profile: String,
@@ -250,6 +302,73 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 },
             )
             .await
+        }
+        ProfileCmd::AddSmb {
+            name,
+            host,
+            port,
+            share,
+            user,
+            domain,
+            folder,
+            windows,
+        } => {
+            let (host, share) = (host.trim().to_owned(), share.trim().trim_matches('/'));
+            if host.is_empty() || share.is_empty() {
+                bail!("give the server with --host and the share with --share");
+            }
+            let user = some(user);
+            let password = match &user {
+                Some(u) => Some(read_password(&format!("Password for {u}@{host}: "))?),
+                None => None,
+            };
+            let backend = Backend::Smb {
+                host,
+                port,
+                user,
+                domain: some(domain),
+                share: share.to_owned(),
+                password: None,
+            };
+            let app = App::open(g, Access::Exclusive, true).await?;
+            save_with_secret(
+                &app,
+                profile(name, backend, &folder, target(windows)),
+                password,
+            )
+            .await
+        }
+        ProfileCmd::AddS3 {
+            name,
+            endpoint,
+            region,
+            provider,
+            bucket,
+            access_key_id,
+            folder,
+            virtual_hosted,
+        } => {
+            let bucket = bucket.trim().trim_matches('/');
+            if bucket.is_empty() || bucket.contains('/') {
+                bail!("--bucket is the bucket's name alone; the folder inside it is --folder");
+            }
+            let access_key_id = some(access_key_id);
+            let secret = match &access_key_id {
+                Some(_) => Some(read_password("Secret access key: ")?),
+                None => None,
+            };
+            let backend = Backend::S3 {
+                provider: some(provider),
+                endpoint: some(endpoint),
+                region: some(region),
+                bucket: bucket.to_owned(),
+                access_key_id,
+                secret_access_key: None,
+                path_style: !virtual_hosted,
+            };
+            let app = App::open(g, Access::Exclusive, true).await?;
+            // Object names take any character but `/` splits them into folders.
+            save_with_secret(&app, profile(name, backend, &folder, target(false)), secret).await
         }
         ProfileCmd::AddNextcloudWebdav {
             name,
@@ -411,6 +530,15 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                         format!("sftp {}@{host}", user.as_deref().unwrap_or(""))
                     }
                     Backend::Webdav { url, .. } => format!("webdav {url}"),
+                    Backend::Smb {
+                        host, share, user, ..
+                    } => format!(
+                        "smb {}{host}/{share}",
+                        user.as_deref().map(|u| format!("{u}@")).unwrap_or_default()
+                    ),
+                    Backend::S3 {
+                        endpoint, bucket, ..
+                    } => format!("s3 {}/{bucket}", endpoint.as_deref().unwrap_or("aws")),
                 };
                 println!(
                     "{}  {:<24} {backend}:{}{}",
@@ -483,7 +611,8 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             fingerprint,
         } => trust_host(g, host, port, known_hosts, fingerprint).await,
         ProfileCmd::SetPassword { profile, remove } => {
-            let app = App::open(g, Access::Exclusive, false).await?;
+            // With the transport: the changed profile is checked against it before it's saved.
+            let app = App::open(g, Access::Exclusive, true).await?;
             let p = app.profile(&profile).await?;
             let password = if remove {
                 None
@@ -640,6 +769,52 @@ fn read_password(prompt: &str) -> Result<String> {
         anyhow::bail!("an empty password; use --remove to delete the stored one");
     }
     Ok(value)
+}
+
+/// A trimmed option, `None` when empty.
+fn some(v: Option<String>) -> Option<String> {
+    v.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
+}
+
+/// A new profile with no integration; `folder` is relative to the share or bucket.
+fn profile(name: String, backend: Backend, folder: &str, target: TargetSpec) -> Profile {
+    Profile {
+        id: String::new(),
+        name,
+        destination: Destination {
+            transport: RcloneTransport::ID.into(),
+            backend,
+            root: folder.trim().trim_matches('/').to_owned(),
+        },
+        integration: None,
+        integration_settings: serde_json::Value::Null,
+        target,
+    }
+}
+
+/// Saves `profile`, then its secret (a password, an S3 secret key) into the system keyring.
+async fn save_with_secret(app: &App, profile: Profile, secret: Option<String>) -> Result<()> {
+    let saved = app.ops.save_profile(profile).await?;
+    if let Some(secret) = secret {
+        app.ops
+            .set_profile_password(
+                saved.id.clone(),
+                Some(filebridge_ipc::Password::new(secret)),
+            )
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "profile {:?} saved, but its secret didn't reach the keyring ({e}); \
+                     store it with `filebridge profile set-password {:?}`",
+                    saved.name,
+                    saved.name
+                )
+            })?;
+        println!("its secret is in the system keyring");
+    }
+    println!("saved profile {:?} ({})", saved.name, &saved.id[..8]);
+    println!("test it with: filebridge profile test {:?}", saved.name);
+    Ok(())
 }
 
 async fn save(app: &App, profile: Profile) -> Result<()> {
