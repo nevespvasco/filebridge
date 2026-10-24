@@ -12,6 +12,7 @@ import AccessDialog from "@/components/AccessDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
 import EmptyState from "@/components/EmptyState.vue";
+import LoadError from "@/components/LoadError.vue";
 import FolderBrowser from "@/components/FolderBrowser.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
@@ -201,13 +202,15 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       </div>
       <button v-if="!creating && profiles.list.length" data-tour="dest-new" class="btn btn-primary" :disabled="conn.offline" :title="conn.offline ? $t('conn.disconnected') : undefined" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
     </header>
-    <p v-if="profiles.loadError" class="error">{{ profiles.loadError }}</p>
     <p v-if="error" class="error">{{ error }}</p>
 
     <ProfileForm v-if="creating" class="form" @saved="onSaved" @cancel="creating = false" />
     <SkeletonRows v-if="!profiles.loaded" :rows="2" class="card" />
+    <!-- With the engine down, a list already read stays on screen, greyed. A failed read is never
+         "no destinations yet". -->
+    <LoadError v-else-if="profiles.loadError && !(conn.offline && profiles.list.length)" :message="$t('load.destinations')" :error="profiles.loadError" @retry="profiles.load()" />
 
-    <EmptyState v-if="profiles.loaded && !profiles.list.length && !creating" icon="destinations" :title="$t('destinations.empty')" :hint="$t('destinations.emptyHint')">
+    <EmptyState v-else-if="!profiles.list.length && !creating" icon="destinations" :title="$t('destinations.empty')" :hint="$t('destinations.emptyHint')">
       <button class="btn btn-primary" :disabled="conn.offline" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
     </EmptyState>
 

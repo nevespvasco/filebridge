@@ -8,12 +8,15 @@ import { useFmt } from "@/composables/useFmt";
 import { api } from "@/lib/api";
 import { jobLabel, repairLabel } from "@/lib/jobs";
 import type { IconName } from "@/lib/icons";
+import { useConnection } from "@/stores/connection";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
+import LoadError from "./LoadError.vue";
 import RelativeTime from "./RelativeTime.vue";
 
 const props = withDefaults(defineProps<{ limit?: number }>(), { limit: 8 });
 const jobs = useJobs();
+const conn = useConnection();
 const { t } = useI18n();
 const fmt = useFmt();
 
@@ -32,6 +35,13 @@ async function load() {
   }
 }
 onMounted(load);
+// Back after the engine was down: read again what it couldn't answer meanwhile.
+watch(
+  () => conn.connected,
+  (up) => {
+    if (up && failed.value) void load();
+  },
+);
 // A job changing state is when a milestone may have been written.
 let timer: ReturnType<typeof setTimeout> | undefined;
 watch(
@@ -81,7 +91,7 @@ void fmt;
 
 <template>
   <div class="activity">
-    <p v-if="failed" class="small error">{{ $t("activity.error") }} <button class="btn btn-small" @click="load">{{ $t("common.retry") }}</button></p>
+    <LoadError v-if="failed && !(conn.offline && items.length)" compact :message="$t('activity.error')" @retry="load" />
     <p v-else-if="loaded && !items.length" class="small muted">{{ $t("activity.empty") }}</p>
     <ol v-else class="list">
       <li v-for="a in items" :key="a.id">

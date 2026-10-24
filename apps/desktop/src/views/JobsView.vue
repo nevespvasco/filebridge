@@ -7,6 +7,7 @@ import { useI18n } from "vue-i18n";
 import type { JobGroup, JobSort, JobState } from "@/bindings";
 import AppIcon from "@/components/AppIcon.vue";
 import EmptyState from "@/components/EmptyState.vue";
+import LoadError from "@/components/LoadError.vue";
 import FilterChips from "@/components/FilterChips.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import SkeletonRows from "@/components/SkeletonRows.vue";
@@ -67,8 +68,9 @@ onMounted(() => void profiles.load());
 const groupChips = computed(() =>
   GROUPS.map((g) => ({ value: g, label: t(`jobs.group.${g}`), count: jobs.groupCounts.find((c) => c.group === g)?.total })),
 );
-/** "All" counts every group with the current search and destination. */
-const allCount = computed(() => jobs.groupCounts.reduce((n, c) => n + c.total, 0));
+/** "All" counts every group with the current search and destination; no count before the
+ *  service has answered, rather than a false 0. */
+const allCount = computed(() => (jobs.groupCounts.length ? jobs.groupCounts.reduce((n, c) => n + c.total, 0) : undefined));
 const reportFor = ref<string | null>(null);
 const filtered = computed(() => groups.value.length > 0 || !!profileId.value || !!search.value.trim());
 function clearFilters() {
@@ -86,29 +88,31 @@ function clearFilters() {
       </div>
     </header>
 
-    <div class="toolbar">
-      <SearchField v-model="search" :placeholder="$t('jobs.search')" />
-      <label class="small inline">
-        <span class="muted">{{ $t("jobs.destination") }}</span>
-        <select v-model="profileId">
-          <option value="">{{ $t("jobs.allDestinations") }}</option>
-          <option v-for="p in profiles.list" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
-      </label>
-      <label class="small inline">
-        <span class="muted">{{ $t("files.sort") }}</span>
-        <select v-model="sort">
-          <option value="newest">{{ $t("jobs.sort.newest") }}</option>
-          <option value="oldest">{{ $t("jobs.sort.oldest") }}</option>
-          <option value="largest">{{ $t("jobs.sort.largest") }}</option>
-        </select>
-      </label>
-    </div>
-    <FilterChips v-model="groups" :options="groupChips" :label="$t('files.show')" :all-label="$t('files.chip.all')" :all-count="allCount" class="chips" />
+    <!-- Nothing to search or filter until the engine has answered. -->
+    <template v-if="!(conn.offline && !jobs.page.length && !filtered)">
+      <div class="toolbar">
+        <SearchField v-model="search" :placeholder="$t('jobs.search')" />
+        <label class="small inline">
+          <span class="muted">{{ $t("jobs.destination") }}</span>
+          <select v-model="profileId">
+            <option value="">{{ $t("jobs.allDestinations") }}</option>
+            <option v-for="p in profiles.list" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </label>
+        <label class="small inline">
+          <span class="muted">{{ $t("files.sort") }}</span>
+          <select v-model="sort">
+            <option value="newest">{{ $t("jobs.sort.newest") }}</option>
+            <option value="oldest">{{ $t("jobs.sort.oldest") }}</option>
+            <option value="largest">{{ $t("jobs.sort.largest") }}</option>
+          </select>
+        </label>
+      </div>
+      <FilterChips v-model="groups" :options="groupChips" :label="$t('files.show')" :all-label="$t('files.chip.all')" :all-count="allCount" class="chips" />
+    </template>
 
-    <p v-if="jobs.loadError" class="error" role="alert">
-      {{ jobs.loadError }} <button class="btn btn-small" @click="jobs.loadPage()">{{ $t("common.retry") }}</button>
-    </p>
+    <!-- With the engine down, a page already read stays on screen, greyed. -->
+    <LoadError v-if="jobs.loadError && !(conn.offline && jobs.page.length)" :message="$t('load.transfers')" :error="jobs.loadError" @retry="jobs.loadPage()" />
     <SkeletonRows v-else-if="jobs.loading && !jobs.page.length" :rows="4" class="card" />
     <EmptyState v-else-if="!jobs.page.length && !filtered" icon="tray" :title="$t('jobs.empty')" :hint="$t('jobs.emptyHint')">
       <button class="btn btn-primary" @click="router.push({ name: 'new' })"><AppIcon name="plus" /> {{ $t("jobs.emptyCta") }}</button>

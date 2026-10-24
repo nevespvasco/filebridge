@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
+import LoadError from "@/components/LoadError.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AppSettings_Deserialize } from "@/bindings";
@@ -157,12 +158,12 @@ async function save() {
 
       <section class="group-card card sending" aria-labelledby="s-sending">
         <h2 id="s-sending">{{ $t("settings.sending") }}</h2>
-        <p v-if="settings.appError" class="error small">{{ settings.appError }}</p>
+        <LoadError v-if="settings.appError" compact :message="$t('load.sending')" :error="settings.appError" @retry="settings.loadApp()" />
 
         <div class="group">
           <span class="label-line"><strong>{{ $t("settings.bandwidth") }}</strong><HelpTip :text="$t('settings.bandwidthHelp')" :label="$t('settings.bandwidth')" /></span>
           <label class="check">
-            <input v-model="limitOn" type="checkbox" :disabled="!settings.appLoaded" />
+            <input v-model="limitOn" type="checkbox" :disabled="!settings.appLoaded || !!settings.appError || conn.offline" />
             <span>{{ $t("settings.bandwidthLimit") }}</span>
           </label>
           <div v-if="limitOn" class="row">
@@ -176,7 +177,7 @@ async function save() {
         <div class="group">
           <span class="label-line"><strong>{{ $t("settings.schedule") }}</strong><HelpTip :text="$t('settings.scheduleHelp')" :label="$t('settings.schedule')" /></span>
           <label class="check">
-            <input v-model="windowOn" type="checkbox" :disabled="!settings.appLoaded" />
+            <input v-model="windowOn" type="checkbox" :disabled="!settings.appLoaded || !!settings.appError || conn.offline" />
             <span>{{ $t("settings.scheduleOnly") }}</span>
           </label>
           <div v-if="windowOn" class="row">
@@ -239,7 +240,8 @@ async function save() {
 /* A list of two languages doesn't need the card's whole width. */
 .group-card > .field > select { max-width: 20rem; }
 .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: var(--sp-3); align-items: start; }
-.group-card { display: grid; gap: var(--sp-4); }
+/* min-width 0: a long word (a path) wraps instead of widening the column past the window. */
+.group-card { display: grid; gap: var(--sp-4); min-width: 0; }
 .group-card h2 { font-size: var(--fs-base); margin: 0; }
 .check { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
 .check input { margin-top: 0.3rem; }

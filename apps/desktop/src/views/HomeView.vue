@@ -10,6 +10,7 @@ import ActivityFeed from "@/components/ActivityFeed.vue";
 import AppIcon from "@/components/AppIcon.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
 import FileDropZone from "@/components/FileDropZone.vue";
+import LoadError from "@/components/LoadError.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
@@ -142,7 +143,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
       </div>
     </section>
 
-    <div v-if="!firstRun && (!offline || home.loaded)" class="grid" :class="{ stale: offline }">
+    <div v-if="!firstRun && (!offline || home.answered)" class="grid" :class="{ stale: offline }">
       <div class="main-col">
         <SkeletonRows v-if="!home.loaded" :rows="3" class="card" />
         <section v-if="home.needs.length" class="block" aria-labelledby="h-needs">
@@ -208,7 +209,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
             </li>
           </ul>
         </section>
-        <p v-if="home.failed" class="error small">{{ $t("home.error") }} <button class="btn btn-small" @click="home.load()">{{ $t("common.retry") }}</button></p>
+        <LoadError v-if="home.failed && !offline" compact :message="$t('home.error')" @retry="home.load()" />
       </div>
 
       <aside class="side-col">
@@ -286,7 +287,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .promises li { display: grid; justify-items: center; gap: var(--sp-1); align-content: start; }
 .promise-icon { color: var(--ok); margin-bottom: var(--sp-1); }
 .welcome-cta { display: grid; gap: var(--sp-2); justify-items: center; }
-.offline { display: flex; gap: 1rem; align-items: center; padding: 1.5rem; }
+.offline { display: flex; gap: 1rem; align-items: center; padding: 1.5rem; margin-bottom: 1.5rem; }
 .offline h2 { margin: 0 0 0.25rem; font-size: var(--fs-base); }
 .offline p { margin: 0; }
 @media (max-width: 1099px) { .grid { grid-template-columns: minmax(0, 1fr); } }

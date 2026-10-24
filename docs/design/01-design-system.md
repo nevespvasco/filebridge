@@ -324,8 +324,8 @@ Every screen and component that loads data handles all four states the same way:
 | Loading (first time) | `SkeletonRows` in `--surface-2`, still when `prefers-reduced-motion` is set; never a page-wide spinner, and never the empty state before the first answer |
 | Loading (refresh) | The old content stays; a thin indeterminate `ProgressBar` at the top of the card |
 | Empty | `EmptyState` |
-| Error | `Notice tone="danger"` with the message in plain words and a **Try again** action; technical detail goes in `DetailsPanel` |
-| Service disconnected | The app-wide red banner; lists keep their last content, greyed (`.stale`, `opacity: .6`), and actions that need the engine are disabled with the reason "Copy engine not responding" (`useConnection().offline`) |
+| Error | `LoadError`: the problem in plain words and a **Try again** action; the service's own message is folded under "Technical details". Never the raw message as the text, and never the empty state |
+| Service disconnected | The app-wide red banner is the only place that says why. Lists keep their last content, greyed (`.stale`, `opacity: .6`); a list never read shows "Waiting for the copy engine" (`LoadError` does this by itself), with no search, filters or counts above it. Actions that need the engine are disabled with the reason "Copy engine not responding" (`useConnection().offline`) |
 
 ### Empty states
 

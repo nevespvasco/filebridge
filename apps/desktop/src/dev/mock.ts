@@ -1245,7 +1245,14 @@ const handlers: Handlers = {
 /** `list_profiles` (what Tauri invokes) → `listProfiles` (the bindings' name). */
 const camel = (cmd: string) => cmd.replace(/_(.)/g, (_, c: string) => c.toUpperCase());
 
+/** Commands the window answers itself (src-tauri/src/commands.rs), without the service. */
+const WINDOW_ONLY = new Set(["serviceEndpoint", "serviceReplacing", "setTrayLabels", "setSendNoticeLabels", "platform", "pickFolder", "storageAccess", "requestStorageAccess", "requestBatteryExemption"]);
+
 async function handle(cmd: string, a: Args): Promise<unknown> {
+  // `VITE_MOCK_OFFLINE=1`: the copy engine never starts, as when its binary fails.
+  if (import.meta.env.VITE_MOCK_OFFLINE === "1" && !WINDOW_ONLY.has(camel(cmd)) && !cmd.startsWith("plugin:")) {
+    throw fail("service_unavailable", "/Users/demo/filebridge/target/debug/filebridge-service did not answer on /Users/demo/Library/Caches/filebridge/service.sock within 5 s: No such file or directory (os error 2)");
+  }
   const handler = (handlers as Record<string, ((a: Args) => unknown) | undefined>)[camel(cmd)];
   if (handler) return handler(a);
   if (cmd.startsWith("plugin:")) return null;

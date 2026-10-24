@@ -112,6 +112,7 @@ VITE_MOCK=1 pnpm dev    # UI only, in a plain browser, against src/dev/mock.ts (
 VITE_MOCK=1 VITE_MOCK_EMPTY=1 pnpm dev   # the same, starting like a new user (no destinations, no jobs)
 pnpm build              # vue-tsc + vite build
 pnpm bindings           # regenerate src/bindings/index.ts
+VITE_MOCK=1 VITE_MOCK_OFFLINE=1 pnpm dev # the same, with a copy engine that never starts
 ```
 Linux packages for `tauri dev` / `tauri build`:
 `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev`.

@@ -84,6 +84,14 @@
     "more": "Mais",
     "less": "Menos"
   },
+  "load": {
+    "waitingTitle": "À espera do motor de cópia",
+    "waitingHint": "Aparece aqui assim que o motor de cópia responder. Nada se perde entretanto: fica guardado no motor, não nesta janela.",
+    "waitingShort": "Aparece assim que o motor de cópia responder.",
+    "transfers": "Não foi possível ler os envios.",
+    "destinations": "Não foi possível ler os destinos.",
+    "sending": "Não foi possível ler as definições de envio."
+  },
   "status": {
     "ok": "OK",
     "warn": "Aviso",

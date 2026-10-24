@@ -84,6 +84,14 @@
     "more": "More",
     "less": "Less"
   },
+  "load": {
+    "waitingTitle": "Waiting for the copy engine",
+    "waitingHint": "This shows up once the copy engine answers. Nothing is lost meanwhile: it is kept by the engine, not by this window.",
+    "waitingShort": "Shows up once the copy engine answers.",
+    "transfers": "Couldn't read the transfers.",
+    "destinations": "Couldn't read the destinations.",
+    "sending": "Couldn't read the sending settings."
+  },
   "status": {
     "ok": "OK",
     "warn": "Warning",
