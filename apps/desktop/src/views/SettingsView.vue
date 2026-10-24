@@ -213,24 +213,9 @@ async function save() {
           <dd>{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</dd>
           <dt>{{ $t("settings.version") }}</dt>
           <dd>{{ conn.version ?? "—" }}</dd>
-          <template v-if="settings.technical">
-            <dt>{{ $t("settings.endpoint") }}</dt>
-            <dd class="mono">{{ conn.endpoint || "—" }}</dd>
-          </template>
         </dl>
         <p class="small muted">{{ $t("settings.serviceHint") }}</p>
         <div><button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button></div>
-      </section>
-
-      <section class="group-card card" aria-labelledby="s-advanced">
-        <h2 id="s-advanced">{{ $t("settings.advanced") }}</h2>
-        <label class="check">
-          <input v-model="settings.technical" type="checkbox" />
-          <span>
-            <strong>{{ $t("settings.technical") }}</strong>
-            <span class="small muted block">{{ $t("settings.technicalHint") }}</span>
-          </span>
-        </label>
       </section>
     </div>
   </div>
@@ -239,9 +224,9 @@ async function save() {
 <style scoped>
 /* A list of two languages doesn't need the card's whole width. */
 .group-card > .field > select { max-width: 20rem; }
-.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: var(--sp-3); align-items: start; }
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: var(--sp-3); }
 /* min-width 0: a long word (a path) wraps instead of widening the column past the window. */
-.group-card { display: grid; gap: var(--sp-4); min-width: 0; }
+.group-card { display: grid; gap: var(--sp-4); align-content: start; min-width: 0; }
 .group-card h2 { font-size: var(--fs-base); margin: 0; }
 .check { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
 .check input { margin-top: 0.3rem; }

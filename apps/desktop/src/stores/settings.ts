@@ -34,7 +34,7 @@ function applyTheme(theme: Theme) {
  *  version of each one was finished or skipped. */
 export type Guides = { auto: boolean; seen: Record<string, number> };
 
-type Stored = { locale: Locale; notifications: boolean; guides: Guides; technical: boolean };
+type Stored = { locale: Locale; notifications: boolean; guides: Guides };
 
 function load(): Partial<Stored> {
   try {
@@ -50,9 +50,6 @@ export const useSettings = defineStore("settings", () => {
   const notifications = ref(stored.notifications ?? true);
   const theme = ref<Theme>(loadTheme());
   const guides = ref<Guides>({ auto: stored.guides?.auto ?? true, seen: { ...(stored.guides?.seen ?? {}) } });
-  /** "Show technical information": the requests each screen makes, ids and check codes. Off by
-   *  default; nothing is removed, only kept out of sight. */
-  const technical = ref(stored.technical ?? false);
 
   function markTourSeen(id: string, version: number) {
     guides.value = { ...guides.value, seen: { ...guides.value.seen, [id]: version } };
@@ -77,11 +74,11 @@ export const useSettings = defineStore("settings", () => {
   );
 
   watch(
-    [locale, notifications, guides, technical],
+    [locale, notifications, guides],
     () => {
       setLocale(locale.value);
       try {
-        const s: Stored = { locale: locale.value, notifications: notifications.value, guides: guides.value, technical: technical.value };
+        const s: Stored = { locale: locale.value, notifications: notifications.value, guides: guides.value };
         localStorage.setItem(KEY, JSON.stringify(s));
       } catch {
         // Private mode or blocked storage: the choice lasts for this session only.
@@ -112,5 +109,5 @@ export const useSettings = defineStore("settings", () => {
     await loadApp();
   }
 
-  return { locale, notifications, theme, guides, technical, markTourSeen, resetGuides, app, appLoaded, appError, loadApp, saveApp };
+  return { locale, notifications, theme, guides, markTourSeen, resetGuides, app, appLoaded, appError, loadApp, saveApp };
 });

@@ -2,30 +2,26 @@
 // Transport and integration preflight checks (free space, write access, tool checks), in plain
 // words. Each thing is said once: a block whose checks all pass is one line ("✓ Integration ·
 // can write", its checks one tap away); a check that isn't OK shows with its own message, cut
-// after a few lines with "More". Its code only with "Show technical information" on, which also
-// shows every check.
+// after a few lines with "More".
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import type { PreflightView_Serialize } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
-import { useSettings } from "@/stores/settings";
 import AppIcon from "./AppIcon.vue";
 import ClampText from "./ClampText.vue";
 import StatusIcon from "./StatusIcon.vue";
 
 defineProps<{ views: PreflightView_Serialize[] }>();
 const fmt = useFmt();
-const settings = useSettings();
 const { t, te } = useI18n();
 const label = (id: string) => (te(`preflight.check.${id}`) ? t(`preflight.check.${id}`) : null);
 
 type Check = PreflightView_Serialize["checks"][number];
 const problems = (v: PreflightView_Serialize) => v.checks.filter((c) => c.status !== "ok");
 const passed = (v: PreflightView_Serialize) => v.checks.filter((c) => c.status === "ok");
-/** The OK checks a block shows: all with technical information on, else those opened. */
+/** The OK checks a block shows: those opened. */
 const open = ref<Record<string, boolean>>({});
-const shown = (v: PreflightView_Serialize): Check[] =>
-  settings.technical ? v.checks : [...problems(v), ...(open.value[v.source] ? passed(v) : [])];
+const shown = (v: PreflightView_Serialize): Check[] => [...problems(v), ...(open.value[v.source] ? passed(v) : [])];
 </script>
 
 <template>
@@ -38,7 +34,7 @@ const shown = (v: PreflightView_Serialize): Check[] =>
           <template v-if="v.free_bytes != null">{{ $t("preflight.free", { size: fmt.bytes(v.free_bytes) }) }} · </template>{{ v.writable ? $t("preflight.writable") : $t("preflight.notWritable") }}
         </span>
         <button
-          v-if="!settings.technical && passed(v).length"
+          v-if="passed(v).length"
           class="link-btn toggle"
           type="button"
           :aria-expanded="!!open[v.source]"
@@ -53,15 +49,14 @@ const shown = (v: PreflightView_Serialize): Check[] =>
           <StatusIcon :status="c.status" />
           <span class="what">
             <template v-if="label(c.id)">
-              <span>{{ label(c.id) }}<template v-if="c.status === 'ok' && !settings.technical">: {{ $t("status.ok") }}</template></span>
+              <span>{{ label(c.id) }}<template v-if="c.status === 'ok'">: {{ $t("status.ok") }}</template></span>
             </template>
             <ClampText
-              v-if="c.status !== 'ok' || settings.technical || !label(c.id)"
+              v-if="c.status !== 'ok' || !label(c.id)"
               :class="{ muted: !!label(c.id) }"
               :text="c.message"
               :lines="3"
             />
-            <code v-if="settings.technical" class="small muted">({{ c.id }})</code>
           </span>
         </li>
       </ul>

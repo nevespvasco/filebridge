@@ -97,11 +97,6 @@
     "warn": "Warning",
     "fail": "Failed"
   },
-  "details": {
-    "title": "Technical details",
-    "none": "Nothing sent to the service yet.",
-    "hint": "(for advanced users: what this screen asks the service)"
-  },
   "wizard": {
     "title": "New transfer",
     "steps": {
@@ -516,7 +511,6 @@
       "again": "Send again",
       "againTo": "Send again to another destination…",
       "export": "Export report…",
-      "copyId": "Copy transfer id",
       "whenFinished": "Available when the transfer has finished"
     },
     "rename": {
@@ -733,7 +727,6 @@
     "service": "About filebridge",
     "state": "State",
     "version": "Version",
-    "endpoint": "Socket",
     "serviceHint": "filebridge-service does the transfers; the window only shows them. It starts by itself when needed.",
     "bandwidthHelp": "The most filebridge may use of your connection, so the internet stays fast for everything else.",
     "scheduleHelp": "The hours when transfers may run, for example only at night.",
@@ -751,10 +744,7 @@
     "intro": "Changes are saved as you make them.",
     "general": "General",
     "saving": "Saving…",
-    "keyboard": "Keyboard",
-    "advanced": "Advanced",
-    "technical": "Show technical information",
-    "technicalHint": "Adds, to each screen, what it asks the copy engine, the check codes and “Copy transfer id”. Useful to report a problem; off, nothing is lost."
+    "keyboard": "Keyboard"
   },
   "help": {
     "about": "Help: {what}",

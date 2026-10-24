@@ -9,12 +9,9 @@ import { JOB_OPERATIONS, type JobState, type JobSummary_Serialize } from "@/bind
 import { useFmt } from "@/composables/useFmt";
 import { errorMessage } from "@/lib/api";
 import { continueJob, jobLabel } from "@/lib/jobs";
-import { copyText } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
-import { useSettings } from "@/stores/settings";
 import { useConnection } from "@/stores/connection";
-import { useToast } from "@/stores/toast";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import RowMenu, { type MenuItem } from "./RowMenu.vue";
 
@@ -22,9 +19,7 @@ const props = defineProps<{ job: JobSummary_Serialize; showOpen?: boolean }>();
 const emit = defineEmits<{ exportReport: [] }>();
 const jobs = useJobs();
 const profiles = useProfiles();
-const settings = useSettings();
 const conn = useConnection();
-const toast = useToast();
 const router = useRouter();
 const { t } = useI18n();
 const fmt = useFmt();
@@ -44,10 +39,9 @@ const items = computed<MenuItem[]>(() => {
   // A repair works on a folder of its own destination: it only runs again there.
   if (props.job.kind !== "repair") out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
   out.push({ id: "export", label: t("jobs.menu.export"), icon: "export", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
-  if (settings.technical) out.push({ id: "copyId", label: t("jobs.menu.copyId"), icon: "copy" });
   if (can("cancel")) out.push({ id: "cancel", label: t("jobDetail.cancel"), icon: "close", danger: true });
-  // Without the engine only what stays in this window works: opening, copying the id.
-  if (conn.offline) return out.map((i) => (["open", "copyId"].includes(i.id) ? i : { ...i, disabled: true, reason: t("conn.disconnected") }));
+  // Without the engine only what stays in this window works: opening.
+  if (conn.offline) return out.map((i) => (i.id === "open" ? i : { ...i, disabled: true, reason: t("conn.disconnected") }));
   return out;
 });
 
@@ -96,11 +90,6 @@ async function onSelect(id: string) {
       return;
     case "export":
       return emit("exportReport");
-    case "copyId":
-      return act(async () => {
-        await copyText(j.id);
-        toast.show(t("entry.copied"));
-      });
     case "cancel":
       cancelling.value = true;
       return;

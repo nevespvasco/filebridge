@@ -97,11 +97,6 @@
     "warn": "Aviso",
     "fail": "Falhou"
   },
-  "details": {
-    "title": "Detalhes técnicos",
-    "none": "Ainda nada foi pedido ao serviço.",
-    "hint": "(para utilizadores avançados: o que este ecrã pede ao serviço)"
-  },
   "wizard": {
     "title": "Novo envio",
     "steps": {
@@ -516,7 +511,6 @@
       "again": "Enviar de novo",
       "againTo": "Enviar de novo para outro destino…",
       "export": "Exportar relatório…",
-      "copyId": "Copiar id do envio",
       "whenFinished": "Disponível quando o envio terminar"
     },
     "rename": {
@@ -733,7 +727,6 @@
     "service": "Sobre o filebridge",
     "state": "Estado",
     "version": "Versão",
-    "endpoint": "Socket",
     "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso.",
     "bandwidthHelp": "O máximo da sua ligação que o filebridge pode usar, para a internet continuar rápida para o resto.",
     "scheduleHelp": "As horas em que os envios podem correr, por exemplo só à noite.",
@@ -751,10 +744,7 @@
     "intro": "As alterações ficam guardadas à medida que as faz.",
     "general": "Geral",
     "saving": "A guardar…",
-    "keyboard": "Teclado",
-    "advanced": "Avançado",
-    "technical": "Mostrar informação técnica",
-    "technicalHint": "Junta a cada ecrã o que pede ao motor de cópia, os códigos das verificações e “Copiar id do envio”. Útil para relatar um problema; desligado, nada se perde."
+    "keyboard": "Teclado"
   },
   "help": {
     "about": "Ajuda: {what}",

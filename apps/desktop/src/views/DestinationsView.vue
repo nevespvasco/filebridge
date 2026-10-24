@@ -14,7 +14,6 @@ import DestinationSpace from "@/components/DestinationSpace.vue";
 import EmptyState from "@/components/EmptyState.vue";
 import LoadError from "@/components/LoadError.vue";
 import FolderBrowser from "@/components/FolderBrowser.vue";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import HostKeyPrompt from "@/components/HostKeyPrompt.vue";
 import PreflightList from "@/components/PreflightList.vue";
@@ -22,7 +21,6 @@ import ProfileForm from "@/components/ProfileForm.vue";
 import RowMenu, { type MenuItem } from "@/components/RowMenu.vue";
 import SkeletonRows from "@/components/SkeletonRows.vue";
 import { api, errorMessage } from "@/lib/api";
-import { request } from "@/lib/requests";
 import { useConnection } from "@/stores/connection";
 import { profileKind, profileWhere, sshHosts, sshKeyAction, useProfiles, type TestState } from "@/stores/profiles";
 
@@ -189,8 +187,6 @@ function nextcloudMode(p: Profile_Serialize): string | null {
   if (s && typeof s === "object" && !Array.isArray(s) && typeof s.mode === "string") return s.mode;
   return null;
 }
-
-const details = computed(() => [request("list_profiles"), ...profiles.list.map((p) => request("test_profile", { id: p.id }))]);
 </script>
 
 <template>
@@ -260,8 +256,6 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       </section>
       </template>
     </div>
-
-    <DetailsPanel :lines="details" />
     <FolderBrowser
       :target="browsing ? { kind: 'profile', id: browsing.id } : null"
       :title="$t('browse.title', { destination: browsing?.name ?? '' })"

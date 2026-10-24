@@ -214,7 +214,7 @@ New icons used by the specs:
 
 ## Components
 
-Existing components keep their roles: `BytesDiff`, `ConfirmDialog`, `DetailsPanel`,
+Existing components keep their roles: `BytesDiff`, `ConfirmDialog`,
 `FileDropZone`, `HelpTip`, `IssueGroup`, `JobProgress`, `JobStateBadge`, `NextcloudDetect`,
 `PreflightList`, `ProfileForm`, `ProgressBar`, `StatusIcon`. `HelpTip` also takes a default slot,
 which then is the trigger instead of the "?" (the service status in the sidebar uses it: hover,
@@ -387,8 +387,8 @@ not be technical).
 - Added after the UX audit of 2026-10-23: `ModalDialog` (all seven dialogs), `FormField`,
   `EmptyState`, `NoticeBox`, `Toast` (`ToastHost`), `SkeletonRows`, `ResultCard`, `BulkDecision`;
   `JobStateBadge` gained an icon per state. Font sizes and radii are tokens everywhere
-  (`--radius-xs` and `--radius-pill` added). "Show technical information" (Settings › Advanced,
-  off by default) shows `DetailsPanel`, check codes and "Copy transfer id"; nothing is removed.
+  (`--radius-xs` and `--radius-pill` added). The "Show technical information" setting
+  (`DetailsPanel`, check codes, "Copy transfer id") was removed on 2026-10-24.
 - Done differently: there is no generic `DataTable`. The one list that needs virtualisation (the
   Files tab) has its own `role="grid"` built on `@tanstack/vue-virtual`, and the other tables are
   short, offset-paged `<table>`s. `CategoryBar` and `StatTile` are inline styles, not components:

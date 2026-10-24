@@ -6,13 +6,11 @@ import type { Profile_Serialize } from "@/bindings";
 import FolderBrowser from "@/components/FolderBrowser.vue";
 import ProfileForm from "@/components/ProfileForm.vue";
 import PreflightList from "@/components/PreflightList.vue";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import ClampText from "@/components/ClampText.vue";
 import StatusIcon from "@/components/StatusIcon.vue";
 import NoticeBox from "@/components/NoticeBox.vue";
 import { useFmt } from "@/composables/useFmt";
-import { request } from "@/lib/requests";
 import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
 import { useWizard } from "@/stores/wizard";
 import { useConnection } from "@/stores/connection";
@@ -69,11 +67,6 @@ function next() {
   void wizard.analyse();
   wizard.step = 3;
 }
-
-const details = computed(() => [
-  request("list_profiles"),
-  ...(wizard.profileId ? [request("test_profile", { id: wizard.profileId })] : []),
-]);
 </script>
 
 <template>
@@ -148,8 +141,6 @@ const details = computed(() => [
       <NoticeBox v-if="failing && !selectedTest.running" class="failing" tone="warn" icon="warning" role="status"><p>{{ $t("dest.failingHint") }}</p></NoticeBox>
       <p class="eta small muted">{{ $t("dest.etaLater") }}</p>
     </div>
-
-    <DetailsPanel :lines="details" />
 
     <div class="footer sticky">
       <button class="btn" @click="wizard.step = 1"><AppIcon name="back" /> {{ $t("common.back") }}</button>

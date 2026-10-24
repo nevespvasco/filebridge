@@ -3,10 +3,8 @@ import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { defaultLabel } from "@/lib/jobs";
 import { errorMessage } from "@/lib/api";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
-import { request } from "@/lib/requests";
 import { minutesToTime } from "@/lib/format";
 import { useJobs } from "@/stores/jobs";
 import { sendMode, profileWhere, useProfiles } from "@/stores/profiles";
@@ -46,12 +44,6 @@ async function saveLabel() {
     labelError.value = errorMessage(e);
   }
 }
-
-const details = computed(() =>
-  wizard.jobId
-    ? [request("set_options", { job_id: wizard.jobId, options: wizard.options }), request("start", { job_id: wizard.jobId }), request("subscribe")]
-    : [],
-);
 </script>
 
 <template>
@@ -99,8 +91,6 @@ const details = computed(() =>
     </p>
     <p class="guide ok small"><AppIcon class="guide-icon" name="lock" :size="20" /><span>{{ $t("review.safety") }}</span></p>
     <p v-if="wizard.sendError" class="error">{{ wizard.sendError }}</p>
-
-    <DetailsPanel :lines="details" />
 
     <div class="footer sticky">
       <button class="btn" @click="wizard.step = 3"><AppIcon name="back" /> {{ $t("common.back") }}</button>

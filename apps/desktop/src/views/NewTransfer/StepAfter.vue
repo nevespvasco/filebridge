@@ -6,8 +6,6 @@ import JobProgress from "@/components/JobProgress.vue";
 import ReportDialog from "@/components/ReportDialog.vue";
 import ResultCard from "@/components/ResultCard.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
-import DetailsPanel from "@/components/DetailsPanel.vue";
-import { request } from "@/lib/requests";
 import { TERMINAL, useJobs } from "@/stores/jobs";
 import { useWizard } from "@/stores/wizard";
 
@@ -53,8 +51,6 @@ function newTransfer() {
         </ul>
       </details>
     </div>
-
-    <DetailsPanel :lines="[request('job', { job_id: id })]" />
     <ReportDialog :job-id="reportOpen ? id : null" @close="reportOpen = false" />
 
     <div class="footer">

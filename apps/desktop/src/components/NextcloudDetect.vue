@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Nextcloud direct mode (docs/05): SSH to the Proxmox host (and find the Nextcloud container) or
 // to the machine Nextcloud runs on, then find its data directory, `occ` and the file owner. Each
-// step shows ✓ / ! / ✗, and the Details panel the commands it ran.
+// step shows ✓ / ! / ✗.
 import { trimBoth } from "@/lib/format";
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref, shallowRef, useId } from "vue";
@@ -11,7 +11,6 @@ import { errorMessage } from "@/lib/api";
 import { pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import StatusIcon from "./StatusIcon.vue";
-import DetailsPanel from "./DetailsPanel.vue";
 import HelpTip from "./HelpTip.vue";
 import HostKeyPrompt from "./HostKeyPrompt.vue";
 
@@ -46,7 +45,6 @@ const missing = computed(() => {
   return m;
 });
 const valid = computed(() => !missing.value.length);
-const commands = computed(() => result.value?.steps.flatMap((s) => [`# ${s.id}`, ...s.commands]) ?? []);
 // The folder is relative to the Nextcloud user's files; an absolute path under a usual server
 // mount point (e.g. /mnt/pve/data/…) is almost certainly the data folder on the host instead.
 const folderLooksLikeHostPath = computed(() =>
@@ -217,7 +215,6 @@ const uid = useId();
         <p class="ok-text small">{{ $t("nextcloud.saved", { name: result.profile.name }) }}</p>
         <button type="button" class="btn btn-primary" @click="emit('saved', result.profile!)">{{ $t("nextcloud.done") }}</button>
       </div>
-      <DetailsPanel :lines="commands" />
     </div>
     <HostKeyPrompt ref="hostKey" />
   </form>

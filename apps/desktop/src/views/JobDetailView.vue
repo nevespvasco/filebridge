@@ -5,7 +5,6 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AccessDialog from "@/components/AccessDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import FilesTab from "@/components/FilesTab.vue";
 import JobActions from "@/components/JobActions.vue";
 import NoticeBox from "@/components/NoticeBox.vue";
@@ -19,7 +18,6 @@ import JobProgress from "@/components/JobProgress.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
 import { useFmt } from "@/composables/useFmt";
 import { errorMessage } from "@/lib/api";
-import { request } from "@/lib/requests";
 import { RUNNING, TERMINAL, useJobs } from "@/stores/jobs";
 import { profileWhere, useProfiles } from "@/stores/profiles";
 import { useHome } from "@/stores/home";
@@ -124,13 +122,6 @@ const cancelConsequences = computed(() => {
     t("jobDetail.cancelFinal"),
   ];
 });
-
-const details = computed(() => [
-  request("job", { job_id: props.id }),
-  ...(canPause.value ? [request("pause", { job_id: props.id })] : []),
-  ...(canResume.value ? [request("resume", { job_id: props.id })] : []),
-  ...(canCancel.value ? [request("cancel", { job_id: props.id })] : []),
-]);
 </script>
 
 <template>
@@ -226,8 +217,6 @@ const details = computed(() => [
       <div v-else id="panel-log" role="tabpanel" aria-labelledby="tab-log">
         <JobLog :job-id="id" />
       </div>
-
-      <DetailsPanel :lines="details" />
     </div>
     <SkeletonRows v-else :rows="4" class="card" />
 

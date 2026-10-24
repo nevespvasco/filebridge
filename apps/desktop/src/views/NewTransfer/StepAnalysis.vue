@@ -10,11 +10,9 @@ import PreflightList from "@/components/PreflightList.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import TransferComposition from "@/components/TransferComposition.vue";
 import { useProfiles } from "@/stores/profiles";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
 import { bulkAcceptable } from "@/lib/decisions";
-import { request } from "@/lib/requests";
 import { api } from "@/lib/api";
 import { useRouter } from "vue-router";
 import { useJobs } from "@/stores/jobs";
@@ -82,16 +80,6 @@ const a = computed(() => wizard.analysis);
 const totals = computed(() => a.value ?? (job.value ? { files: job.value.counts.files, dirs: job.value.counts.dirs, bytes: job.value.counts.bytes } : null));
 const free = computed(() => a.value?.preflight.find((p) => p.source === "transport")?.free_bytes ?? null);
 const tooBig = computed(() => free.value != null && a.value != null && a.value.bytes > free.value);
-
-const details = computed(() => {
-  if (!wizard.jobId) return [];
-  const id = wizard.jobId;
-  return [
-    request("create_job", { sources: wizard.sources, profile_id: wizard.profileId, options: wizard.jobOptions }),
-    request("analyse", { job_id: id }),
-    ...wizard.ruleCounts.map((r) => request("issues", { job_id: id, rule: r.rule, after_id: null, limit: 101 })),
-  ];
-});
 </script>
 
 <template>
@@ -183,8 +171,6 @@ const details = computed(() => {
         />
       </div>
     </template>
-
-    <DetailsPanel :lines="details" />
 
     <div class="footer sticky" data-tour="analysis-next">
       <button class="btn" :disabled="wizard.analysing" @click="wizard.step = 2"><AppIcon name="back" /> {{ $t("common.back") }}</button>
