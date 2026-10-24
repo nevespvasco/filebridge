@@ -12,8 +12,10 @@ import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
 import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
 import { useWizard } from "@/stores/wizard";
+import { useConnection } from "@/stores/connection";
 
 const wizard = useWizard();
+const conn = useConnection();
 const profiles = useProfiles();
 const fmt = useFmt();
 const creating = ref(false);
@@ -21,6 +23,8 @@ const creating = ref(false);
 onMounted(async () => {
   await profiles.load();
   if (!profiles.list.length) creating.value = true;
+  // The only destination there is: chosen already, one click less.
+  if (!wizard.profileId && profiles.list.length === 1) choose(profiles.list[0]);
   if (wizard.profileId && !profiles.tests[wizard.profileId]) void profiles.test(wizard.profileId);
 });
 
@@ -29,6 +33,16 @@ function choose(p: Profile_Serialize) {
   if (wizard.profileId !== p.id) wizard.options = { ...wizard.options, target_dir: null };
   wizard.profileId = p.id;
   if (!profiles.tests[p.id]) void profiles.test(p.id);
+}
+
+/** Arrow keys move the choice between destinations, as in any radio group. */
+function onRadioKey(e: KeyboardEvent, i: number) {
+  const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+  if (!step || !profiles.list.length) return;
+  e.preventDefault();
+  const next = (i + step + profiles.list.length) % profiles.list.length;
+  choose(profiles.list[next]);
+  document.getElementById(`dest-${profiles.list[next].id}`)?.focus();
 }
 
 function onSaved(p: Profile_Serialize) {
@@ -70,20 +84,25 @@ const details = computed(() => [
 
     <div class="profiles" role="radiogroup" :aria-label="$t('dest.title')">
       <button
-        v-for="p in profiles.list"
+        v-for="(p, i) in profiles.list"
+        :id="`dest-${p.id}`"
         :key="p.id"
         type="button"
         role="radio"
         class="profile card"
         :aria-checked="wizard.profileId === p.id"
+        :aria-label="`${p.name}, ${$t(`profile.kinds.${profileKind(p)}`)}`"
+        :aria-describedby="`dest-${p.id}-where`"
+        :tabindex="wizard.profileId === p.id || (!wizard.profileId && i === 0) ? 0 : -1"
         @click="choose(p)"
+        @keydown="onRadioKey($event, i)"
       >
         <span class="top">
           <span class="kind badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
           <span v-if="wizard.profileId === p.id" class="badge badge-accent"><AppIcon name="check" /> {{ $t("dest.selected") }}</span>
         </span>
         <strong>{{ p.name }}</strong>
-        <span class="small muted ellipsis mono" :title="profileWhere(p)">{{ profileWhere(p) }}</span>
+        <span :id="`dest-${p.id}-where`" class="small muted ellipsis mono" :title="profileWhere(p)">{{ profileWhere(p) }}</span>
         <span class="small">
           <template v-if="profiles.tests[p.id]?.running">{{ $t("dest.testing") }}</template>
           <template v-else-if="profiles.tests[p.id]?.error"><span class="error">{{ $t("dest.unreachable") }}</span></template>
@@ -92,11 +111,11 @@ const details = computed(() => [
           </template>
         </span>
       </button>
-      <button v-if="!creating" type="button" class="profile card add" @click="creating = true">
-        <strong><AppIcon name="plus" /> {{ $t("dest.new") }}</strong>
-        <span class="small muted">{{ $t("dest.newHint") }}</span>
-      </button>
     </div>
+    <button v-if="!creating" type="button" class="profile card add" @click="creating = true">
+      <strong><AppIcon name="plus" /> {{ $t("dest.new") }}</strong>
+      <span class="small muted">{{ $t("dest.newHint") }}</span>
+    </button>
 
     <ProfileForm v-if="creating" class="form" @saved="onSaved" @cancel="creating = false" />
 
@@ -131,10 +150,11 @@ const details = computed(() => [
     <div class="footer">
       <button class="btn" @click="wizard.step = 1"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
-      <span v-if="creating" class="why-disabled">{{ $t("dest.finishForm") }}</span>
+      <span v-if="conn.offline" class="why-disabled">{{ $t("conn.disconnected") }}</span>
+      <span v-else-if="creating" class="why-disabled">{{ $t("dest.finishForm") }}</span>
       <span v-else-if="!wizard.profileId" class="why-disabled">{{ $t("dest.needOne") }}</span>
       <span v-else-if="failing" class="small warn-text">{{ $t("dest.failingHint") }}</span>
-      <button class="btn btn-primary" :title="$t('dest.analyseTip')" :disabled="!wizard.canAnalyse || creating" @click="next">{{ $t("dest.analyse") }} <AppIcon name="next" /></button>
+      <button class="btn btn-primary" :title="$t('dest.analyseTip')" :disabled="!wizard.canAnalyse || creating || conn.offline" @click="next">{{ $t("dest.analyse") }} <AppIcon name="next" /></button>
     </div>
   </div>
 </template>
@@ -142,7 +162,8 @@ const details = computed(() => [
 <style scoped>
 .into { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
 .into .path { flex: 1; min-width: min(12rem, 100%); }
-.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; margin: 1rem 0 0.75rem; }
+.profile.add { width: 100%; max-width: 360px; }
 .profile {
   all: unset;
   box-sizing: border-box;
@@ -152,7 +173,7 @@ const details = computed(() => [
   align-content: start;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 0.85rem 1rem;
   background: var(--surface);
 }

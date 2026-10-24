@@ -12,8 +12,10 @@ import { useJobs } from "@/stores/jobs";
 import { sendMode, profileWhere, useProfiles } from "@/stores/profiles";
 import { useSettings } from "@/stores/settings";
 import { useWizard } from "@/stores/wizard";
+import { useConnection } from "@/stores/connection";
 
 const wizard = useWizard();
+const conn = useConnection();
 const jobs = useJobs();
 const profiles = useProfiles();
 const settings = useSettings();
@@ -103,8 +105,9 @@ const details = computed(() =>
     <div class="footer">
       <button class="btn" @click="wizard.step = 3"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
-      <button class="btn btn-primary btn-big" :title="$t('review.sendTip')" :disabled="wizard.sending || !wizard.canReview" @click="wizard.send()">
-        {{ wizard.sending ? $t("review.starting") : $t("review.send") }}
+      <span v-if="conn.offline" class="why-disabled">{{ $t("conn.disconnected") }}</span>
+      <button class="btn btn-primary btn-big" :title="$t('review.sendTip')" :disabled="wizard.sending || !wizard.canReview || conn.offline" @click="wizard.send()">
+        {{ wizard.sending ? $t("review.starting") : job?.counts.bytes ? $t("review.sendSize", { size: fmt.bytes(job.counts.bytes) }) : $t("review.send") }}
       </button>
     </div>
   </div>

@@ -82,7 +82,7 @@ function checkNow() {
 .when { color: var(--text-2); display: inline-flex; gap: 0.3rem; align-items: center; }
 .when.stale { color: var(--warn-strong); }
 .link { all: unset; cursor: pointer; color: var(--accent); margin-left: 0.3rem; }
-.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
 .link:disabled { color: var(--muted); cursor: default; }
 .notice { display: inline-flex; gap: 0.35rem; align-items: center; margin: 0; padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--warn-strong); width: fit-content; }
 p { margin: 0; }

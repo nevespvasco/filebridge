@@ -45,9 +45,11 @@
   --sp-4: 1rem;
   --sp-5: 1.5rem;
   --sp-6: 2rem;
+  --radius-xs: 3px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+  --radius-pill: 999px;
   --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.18);
 
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
@@ -128,8 +130,8 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
-h1 { font-size: 1.5rem; margin: 0; }
-h2 { font-size: 1.2rem; }
+h1 { font-size: var(--fs-xl); margin: 0; }
+h2 { font-size: var(--fs-lg); }
 code, .mono { font-family: var(--font-mono); }
 /* Numbers line up: every size, count, percentage, speed and date. */
 .num, .table td { font-variant-numeric: tabular-nums; }
@@ -138,11 +140,11 @@ code, .mono { font-family: var(--font-mono); }
 .path { font-family: var(--font-mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 
 .page-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
 .step > h2 { margin-top: 0; }
 .footer { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .grow { flex: 1; }
-.small { font-size: 0.85rem; }
+.small { font-size: var(--fs-sm); }
 .muted { color: var(--text-2); }
 .error { color: var(--danger); }
 .ok-text { color: var(--ok); }
@@ -159,7 +161,7 @@ code, .mono { font-family: var(--font-mono); }
   background: var(--surface);
   color: var(--text);
   padding: 0.45rem 0.9rem;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -170,10 +172,10 @@ code, .mono { font-family: var(--font-mono); }
 .btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
-.btn-small { padding: 0.2rem 0.55rem; font-size: 0.85rem; }
-.btn-big { padding: 0.65rem 1.6rem; font-size: 1.05rem; }
+.btn-small { padding: 0.2rem 0.55rem; font-size: var(--fs-sm); }
+.btn-big { padding: 0.65rem 1.6rem; font-size: var(--fs-lg); }
 
-.badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.12rem 0.55rem; border-radius: 999px; white-space: nowrap; }
+.badge { display: inline-block; font-size: var(--fs-xs); font-weight: 600; padding: 0.12rem 0.55rem; border-radius: var(--radius-pill); white-space: nowrap; }
 .badge-muted { background: var(--surface-2); color: var(--text-2); }
 .badge-accent { background: var(--accent-soft); color: var(--accent); }
 .badge-ok { background: var(--ok-soft); color: var(--ok); }
@@ -181,13 +183,13 @@ code, .mono { font-family: var(--font-mono); }
 .badge-danger { background: var(--danger-soft); color: var(--danger); }
 
 .field { display: grid; gap: 0.3rem; min-width: 0; align-content: start; }
-.field > span:first-child { font-size: 0.85rem; color: var(--text-2); }
+.field > span:first-child { font-size: var(--fs-sm); color: var(--text-2); }
 .field.narrow { max-width: 120px; }
 input:not([type="checkbox"]):not([type="radio"]), select {
   font: inherit;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border-strong);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   min-width: 0;
@@ -199,10 +201,13 @@ input:disabled { background: var(--surface-2); }
 .table-wrap { padding: 0; overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .table th, .table td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.table th { font-size: 0.8rem; color: var(--text-2); font-weight: 600; }
+.table th { font-size: var(--fs-xs); color: var(--text-2); font-weight: 600; }
 .table tr:last-child td { border-bottom: 0; }
 .clickable { cursor: pointer; }
 .clickable:hover, .clickable:focus-visible { background: var(--surface-2); outline: none; }
+
+/* Data last read while the copy engine isn't answering: still readable, clearly not live. */
+.stale { opacity: 0.6; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .lead-text { color: var(--text-2); margin: 0.25rem 0 1rem; max-width: 70ch; }
@@ -213,7 +218,7 @@ input:disabled { background: var(--surface-2); }
   gap: 0.7rem;
   align-items: flex-start;
   padding: 0.75rem 1rem;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   margin: 0 0 1rem;
@@ -228,10 +233,10 @@ input:disabled { background: var(--surface-2); }
 .guide.ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 
 /* A field's label line, its help "?" and a hint with an example under the input. */
-.field > .label-line { display: inline-flex; align-items: center; font-size: 0.85rem; color: var(--text-2); }
-.field > .hint { font-size: 0.78rem; color: var(--text-2); }
+.field > .label-line { display: inline-flex; align-items: center; font-size: var(--fs-sm); color: var(--text-2); }
+.field > .hint { font-size: var(--fs-xs); color: var(--text-2); }
 .req { color: var(--danger); margin-left: 0.15rem; }
-.why-disabled { font-size: 0.85rem; color: var(--text-2); }
+.why-disabled { font-size: var(--fs-sm); color: var(--text-2); }
 
 /* The height of the bottom tab bar on a narrow window (App.vue), 0 elsewhere. Anything sticky at
    the bottom of a page stands on it; scrolling into view (focus, the guide) keeps clear of it and
@@ -245,11 +250,13 @@ input:disabled { background: var(--surface-2); }
 /* Narrow windows (docs/design/02, "Window sizes"). A footer's hint goes on its own line above the
    buttons, so Back stays left and the next step right; a page head's actions go under the title. */
 @media (max-width: 559px) {
+  /* Touch: every button at least 32 px tall. */
+  .btn-small { min-height: 32px; }
   .footer { gap: 0.6rem; }
   .footer > :not(.btn):not(.grow) { order: -1; flex-basis: 100%; }
   .page-head { gap: 0.75rem; margin-bottom: 1rem; }
   .page-head > :first-child { flex: 1 1 12rem; min-width: 0; }
-  h1 { font-size: 1.35rem; overflow-wrap: anywhere; }
+  h1 { font-size: var(--fs-xl); overflow-wrap: anywhere; }
   .card { padding: 0.85rem; }
   .guide { padding: 0.65rem 0.8rem; }
   .btn-big { padding: 0.6rem 1.2rem; }

@@ -133,6 +133,11 @@ CREATE INDEX jobs_profile ON jobs(profile_id, created_at);
     r#"
 ALTER TABLE profiles ADD COLUMN deleted_at INTEGER;
 "#,
+    // 8: a draft the user replaced in the New-transfer wizard (ADR 0017): Cancelled like any
+    // other, but kept out of the Transfers list and Activity. The row stays.
+    r#"
+ALTER TABLE jobs ADD COLUMN discarded_at INTEGER;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

@@ -13,8 +13,15 @@ import { DECISIONS, type Decisions } from "@/lib/decisions";
 import { useWizard } from "@/stores/wizard";
 import BytesDiff from "./BytesDiff.vue";
 import HelpTip from "./HelpTip.vue";
+import ModalDialog from "./ModalDialog.vue";
 
-const props = defineProps<{ jobId: string; rule: RuleCount; readonly?: boolean }>();
+const props = defineProps<{
+  jobId: string;
+  rule: RuleCount;
+  readonly?: boolean;
+  /** Whether the list starts open; default: while it has pending names. */
+  startOpen?: boolean;
+}>();
 const { t, te } = useI18n();
 const fmt = useFmt();
 /** The wizard's job, unless the page provides its own (a Repair job). */
@@ -22,7 +29,7 @@ const wizard: Decisions = inject(DECISIONS, null) ?? useWizard();
 
 const PAGE = 100;
 
-const open = ref(props.rule.pending > 0);
+const open = ref(props.startOpen ?? props.rule.pending > 0);
 const rows = ref<IssueView_Serialize[]>([]);
 /** `after_id` of each visited page; the last one is the current page. */
 const cursors = ref<(number | null)[]>([null]);
@@ -321,14 +328,17 @@ function decisionLabel(row: IssueView_Serialize) {
             </div>
           </div>
           <div class="state">
-            <span class="chip" :class="`chip-${row.decision}`">{{ decisionLabel(row) }}</span>
+            <!-- The chosen button says the rest; a word only while nothing is chosen. -->
+            <span v-if="row.decision === 'pending' || readonly" class="chip" :class="`chip-${row.decision}`">{{ decisionLabel(row) }}</span>
             <span v-if="row.carried_over" class="badge badge-muted" :title="$t('issues.carriedTip')"><AppIcon name="again" :size="12" /> {{ $t("issues.carried") }}</span>
           </div>
           <div v-if="!readonly" class="actions">
+            <div class="seg" role="group" :aria-label="$t('issues.colChoose')">
             <button v-if="rowHasProposal(row)" class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'accepted'" :title="$t('issues.acceptTip')" @click="decide(row, { kind: 'accept' })">{{ $t("issues.accept") }}</button>
             <button v-if="canKeep" class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'rejected'" :title="$t('issues.keepTip')" @click="decide(row, { kind: 'keep_original' })">{{ $t("issues.keep") }}</button>
             <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'skipped'" :title="$t('issues.skipTip')" @click="decide(row, { kind: 'skip' })">{{ $t("issues.skip") }}</button>
-            <button class="btn btn-small" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'edited'" :title="$t('issues.editTip')" @click="startEdit(row)">{{ $t("issues.edit") }}</button>
+            </div>
+            <button class="btn btn-small edit-btn" :disabled="busyRow === row.id || !!bulk" :aria-pressed="row.decision === 'edited'" :title="$t('issues.editTip')" @click="startEdit(row)">{{ $t("issues.edit") }}</button>
           </div>
         </li>
       </ol>
@@ -342,24 +352,21 @@ function decisionLabel(row: IssueView_Serialize) {
       </div>
     </div>
 
-    <Teleport to="body">
-      <div v-if="editing" class="overlay" @click.self="editing = null" @keydown.esc="editing = null">
-        <form class="card edit" role="dialog" aria-modal="true" :aria-label="$t('issues.editTitle')" @submit.prevent="saveEdit">
-          <h2>{{ $t("issues.editTitle") }}</h2>
-          <p class="small muted">{{ editing.path }}</p>
-          <label class="field">
-            <span>{{ $t("issues.editLabel") }}</span>
-            <input v-model="editName" autofocus spellcheck="false" />
-          </label>
-          <p v-if="editInvalid" class="error small">{{ editInvalid }}</p>
-          <p v-else class="small muted">{{ $t("issues.editHint") }}</p>
-          <div class="dialog-actions">
-            <button type="button" class="btn" @click="editing = null">{{ $t("common.cancel") }}</button>
-            <button type="submit" class="btn btn-primary" :disabled="!!editInvalid">{{ $t("common.save") }}</button>
-          </div>
-        </form>
-      </div>
-    </Teleport>
+    <ModalDialog :open="!!editing" :title="$t('issues.editTitle')" @close="editing = null">
+      <form v-if="editing" class="edit" @submit.prevent="saveEdit">
+        <p class="small muted">{{ editing.path }}</p>
+        <label class="field">
+          <span>{{ $t("issues.editLabel") }}</span>
+          <input v-model="editName" data-autofocus spellcheck="false" />
+        </label>
+        <p v-if="editInvalid" class="error small">{{ editInvalid }}</p>
+        <p v-else class="small muted">{{ $t("issues.editHint") }}</p>
+        <div class="dialog-actions">
+          <button type="button" class="btn" @click="editing = null">{{ $t("common.cancel") }}</button>
+          <button type="submit" class="btn btn-primary" :disabled="!!editInvalid">{{ $t("common.save") }}</button>
+        </div>
+      </form>
+    </ModalDialog>
   </section>
 </template>
 
@@ -410,15 +417,22 @@ function decisionLabel(row: IssueView_Serialize) {
 .after { font-weight: 600; max-width: 50%; }
 .arrow { color: var(--text-2); }
 .actions { display: flex; gap: 0.25rem; flex-wrap: wrap; justify-content: flex-end; }
-.actions [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.chip { font-size: 0.75rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+.actions { align-items: center; }
+/* Accept · Keep · Skip as one control: the chosen one filled (docs/04, "Decisions model"). */
+.seg { display: inline-flex; }
+.seg .btn { border-radius: 0; margin-left: -1px; }
+.seg .btn:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); margin-left: 0; }
+.seg .btn:last-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.seg .btn:only-child { border-radius: var(--radius-sm); }
+.seg .btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; position: relative; z-index: 1; }
+.edit-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip { font-size: var(--fs-xs); padding: 0.1rem 0.5rem; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
 .chip-pending { background: var(--warn-soft); color: var(--text); }
 .chip-accepted, .chip-edited { background: var(--ok-soft); color: var(--text); }
 .chip-skipped { background: var(--danger-soft); color: var(--text); }
 .pager { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 0.75rem; }
-.overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); display: grid; place-items: center; z-index: 50; padding: 1rem; }
-.edit { width: min(480px, 100%); }
-.edit h2 { margin-top: 0; font-size: 1.1rem; }
+.edit { display: grid; gap: var(--sp-2); }
+.edit p { margin: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 /* The buttons go under the names when the row can't hold them beside. */
 @container (max-width: 680px) {

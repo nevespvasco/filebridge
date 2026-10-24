@@ -257,13 +257,13 @@ function clearFilters() {
 <style scoped>
 .files { display: grid; gap: 0.7rem; container-type: inline-size; }
 .head { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
-.head h2 { font-size: 1rem; margin: 0; display: inline-flex; gap: 0.4rem; align-items: center; }
+.head h2 { font-size: var(--fs-base); margin: 0; display: inline-flex; gap: 0.4rem; align-items: center; }
 .sort { display: inline-flex; gap: 0.4rem; align-items: center; margin-left: auto; }
 .sort select { width: auto; }
 .table-head, .row { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(0, 2fr) 6.5rem 9.5rem; gap: 0.75rem; align-items: center; padding: 0 0.75rem; }
 .table-head { padding-top: 0.25rem; padding-bottom: 0.25rem; border-bottom: 1px solid var(--border); font-weight: 600; }
 .scroller { height: min(60vh, 34rem); overflow: auto; position: relative; outline: none; }
-.scroller:focus-visible { box-shadow: 0 0 0 2px var(--focus); border-radius: 4px; }
+.scroller:focus-visible { box-shadow: 0 0 0 2px var(--focus); border-radius: var(--radius-xs); }
 .row { position: absolute; left: 0; right: 0; top: 0; border-bottom: 1px solid var(--rule); cursor: pointer; }
 .row:hover, .row.focused { background: var(--surface-2); }
 .cell { min-width: 0; }

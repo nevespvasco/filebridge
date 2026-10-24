@@ -1313,6 +1313,101 @@ async fn cancel_is_final() {
 }
 
 #[tokio::test]
+async fn a_discarded_draft_is_cancelled_and_hidden_but_kept() {
+    let s = setup().await;
+    let replaced = ready_job(&s, SendOptions::default()).await;
+    let kept = s
+        .engine
+        .create_job(
+            vec![s.src.join("Fotos")],
+            &s.profile_id,
+            SendOptions::default(),
+        )
+        .await
+        .unwrap();
+    let cancelled = s
+        .engine
+        .create_job(
+            vec![s.src.join("Fotos")],
+            &s.profile_id,
+            SendOptions::default(),
+        )
+        .await
+        .unwrap();
+    s.engine.cancel(&cancelled).await.unwrap();
+
+    s.engine.discard_draft(&replaced).await.unwrap();
+    let job = s.engine.job(&replaced).await.unwrap();
+    assert_eq!(job.state, JobState::Cancelled, "the record stays");
+    assert!(job.discarded);
+    assert!(!s.engine.job(&cancelled).await.unwrap().discarded);
+    assert!(
+        s.engine.discard_draft(&cancelled).await.is_err(),
+        "only a job not sent yet"
+    );
+
+    let page = |filter: JobFilter| s.engine.list_jobs_page(filter, 50, 0);
+    let all = page(JobFilter::default()).await.unwrap();
+    assert_eq!(all.total, 2);
+    assert!(all.items.iter().all(|j| j.id != replaced));
+    let only_cancelled = page(JobFilter {
+        groups: vec![JobGroup::Cancelled],
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(only_cancelled.items.len(), 1);
+    assert_eq!(only_cancelled.items[0].id, cancelled);
+    // Every chip's count, whichever chip is selected; the discarded draft in none.
+    let counts: Vec<_> = only_cancelled
+        .groups
+        .iter()
+        .map(|g| (g.group, g.total))
+        .collect();
+    assert_eq!(
+        counts,
+        [
+            (JobGroup::Active, 0),
+            (JobGroup::NeedsYou, 0),
+            (JobGroup::NotSent, 1),
+            (JobGroup::Finished, 0),
+            (JobGroup::Cancelled, 1),
+        ]
+    );
+    assert_eq!(all.groups, only_cancelled.groups);
+
+    let activity = s.engine.activity(None, 50).await.unwrap();
+    assert!(
+        activity
+            .iter()
+            .all(|a| a.job_id.as_deref() != Some(replaced.as_str())),
+        "nothing of it in Activity"
+    );
+    assert!(
+        activity
+            .iter()
+            .any(|a| a.job_id.as_deref() == Some(kept.as_str()))
+    );
+}
+
+#[tokio::test]
+async fn a_local_target_is_probed_at_its_nearest_existing_folder() {
+    let s = setup().await;
+    let missing = s.dest.join("not/made/yet");
+    let probe = s
+        .engine
+        .probe_local_target(missing.to_string_lossy().into_owned())
+        .await
+        .unwrap();
+    let here = s
+        .engine
+        .probe_local_target(s.dest.to_string_lossy().into_owned())
+        .await
+        .unwrap();
+    assert_eq!(probe, here);
+}
+
+#[tokio::test]
 async fn files_finished_mid_batch_are_kept_when_paused() {
     let s = setup().await;
     for i in 0..20 {

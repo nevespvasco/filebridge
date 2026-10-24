@@ -243,6 +243,52 @@ nothing about the engine, so specs reuse them.
 | `GuidedTour` | — (reads the tour store) | Mounted once in `App.vue`. Spotlight on a `data-tour` element (`box-shadow` with `--overlay`), a card with count, dots, Skip / Back / Next. `role="dialog"`, `#app` inert, focus trapped and restored, Esc skips, ← / → move. Steps are data in `src/lib/tour.ts` | D02 |
 | `TourButton` | `tour` | The `?` next to a page title: plays its guide again | D02 |
 
+### Dialogs
+
+Every dialog is a `ModalDialog` (`open, title, role?, width?, busy?`, slots for the body, the
+title and the actions): a card over `--overlay`, named by its title (`aria-labelledby`), focus
+moved in (to `[data-autofocus]`, else the first control) and kept in, Esc and the backdrop close
+it unless `busy`, and focus goes back to the control that opened it. The focus handling is
+`composables/useFocusTrap.ts`, shared with `Drawer`. `ConfirmDialog` is a `ModalDialog` whose
+focus starts on the safe button; a flow that isn't a page's own action asks through the confirm
+store (`useConfirm().ask(...)`), rendered once in `App.vue`.
+
+### Forms
+
+A field is a `FormField` (`label, help?, example?, hint?, required?`): the visible label is a
+`<label for>` tied to the control, so a screen reader announces "Name", never the placeholder or
+the help text; the `?` sits beside the label, and the hint under the control describes it
+(`aria-describedby`). A saved secret is never shown again: "Saved in the system keyring" with
+"Replace…".
+
+### Status
+
+A state is icon + word + colour, never colour alone (`JobStateBadge`, `StatusIcon`). Given the
+whole job, a finished one says what matters most: **Verified** (shield, green) when every file was
+compared with no difference, or "N problems" (amber). Green is kept for "verified" and "no
+differences"; the accent is for the one main action of a screen.
+
+### Result card
+
+`ResultCard` ends a transfer, in the wizard's last step and on top of its page: one big number in
+`--fs-stat`, one sentence ("1,234 files copied and verified, one by one"), one line under it ("No
+differences…"), the facts (size, names fixed, skipped, retries, when) and what to do next
+(Export the report, See the problems, See the space to free). Its numbers are the Files tab's own
+facets, so the card and the list never disagree. Tones: green verified, accent copied without
+verification, amber problems, red stopped, grey cancelled.
+
+### Notices
+
+`NoticeBox` (`tone, icon`) is the "what to do now" box (the `.guide` look): one or two sentences
+and at most one action. `BulkDecision` is the one for names waiting for a decision: "Accept the N
+suggestions" (every rule whose suggestions may be accepted without a look) and "Review one by
+one"; garbled names are left out of the button, with the reason.
+
+### Toast
+
+`useToast().show(text)` for the confirmation of a small action ("Copied"): bottom centre, above the
+phone tab bar, `aria-live="polite"`, 2.5 s, one at a time (`ToastHost` in `App.vue`).
+
 ### Long lists
 
 [06](../06-interface.md#principles) already says long lists are virtualised and paged from SQLite.
@@ -262,11 +308,11 @@ Every screen and component that loads data handles all four states the same way:
 
 | State | Look |
 |---|---|
-| Loading (first time) | Skeleton rows or tiles in `--surface-2` with no animation if `prefers-reduced-motion` is set; never a page-wide spinner |
+| Loading (first time) | `SkeletonRows` in `--surface-2`, still when `prefers-reduced-motion` is set; never a page-wide spinner, and never the empty state before the first answer |
 | Loading (refresh) | The old content stays; a thin indeterminate `ProgressBar` at the top of the card |
 | Empty | `EmptyState` |
 | Error | `Notice tone="danger"` with the message in plain words and a **Try again** action; technical detail goes in `DetailsPanel` |
-| Service disconnected | The app-wide red banner that exists today; lists keep their last content, greyed (`opacity: .6`), with actions disabled and the reason "Not connected to the service" |
+| Service disconnected | The app-wide red banner; lists keep their last content, greyed (`.stale`, `opacity: .6`), and actions that need the engine are disabled with the reason "Copy engine not responding" (`useConnection().offline`) |
 
 ### Empty states
 
@@ -307,8 +353,9 @@ not be technical).
 
 ## i18n rules
 
-- Every string exists in `src/i18n/en.json` and `src/i18n/pt.json` with the same keys (enforced
-  today by convention; add a unit test that the key sets match).
+- Every string exists in `src/i18n/en.json` and `src/i18n/pt.json` with the same keys and the same
+  number of plural forms (`apps/desktop/src-tauri/tests/i18n.rs`). The same test fails if a string
+  quotes a number of wizard steps other than `SEND_STEPS`.
 - Numbers, sizes and dates go through `Intl` with the locale (`pt-PT`, `en-GB` as today).
 - Byte sizes use 1000-based units (kB, MB, GB, TB), as rclone and most file managers show them,
   with the exact byte count in `title` (and visible in Entry detail).
@@ -324,10 +371,15 @@ not be technical).
   `Breadcrumbs`, `RelativeTime` and `SegmentedControl`; later `DropOverlay`, `GuidedTour` and
   `TourButton` (D02's Source step redesign). `FileDropZone` gained a `compact` one-line form, and
   its listen-while-on-screen logic moved to `composables/useFileDrop.ts`.
+- Added after the UX audit of 2026-10-23: `ModalDialog` (all seven dialogs), `FormField`,
+  `EmptyState`, `NoticeBox`, `Toast` (`ToastHost`), `SkeletonRows`, `ResultCard`, `BulkDecision`;
+  `JobStateBadge` gained an icon per state. Font sizes and radii are tokens everywhere
+  (`--radius-xs` and `--radius-pill` added). "Show technical information" (Settings › Advanced,
+  off by default) shows `DetailsPanel`, check codes and "Copy transfer id"; nothing is removed.
 - Done differently: there is no generic `DataTable`. The one list that needs virtualisation (the
   Files tab) has its own `role="grid"` built on `@tanstack/vue-virtual`, and the other tables are
-  short, offset-paged `<table>`s. `CategoryBar`, `Notice`, `StatTile` and `Toast` are inline
-  styles or messages, not components, because each has only one or two uses so far.
+  short, offset-paged `<table>`s. `CategoryBar` and `StatTile` are inline styles, not components:
+  the big numbers use `--fs-stat` where they appear.
 - The sidebar notice slot holds low destination space (D03) and reclaimable space (D10); the
   "service not installed as a user unit" notice isn't built.
 

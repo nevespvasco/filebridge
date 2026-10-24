@@ -49,5 +49,5 @@ function clear() {
 input { padding-left: 2rem !important; padding-right: 2rem !important; }
 input::-webkit-search-cancel-button { display: none; }
 .clear { position: absolute; right: 0.3rem; background: none; border: 0; color: var(--text-2); cursor: pointer; padding: 0.25rem; display: inline-flex; }
-.clear:focus-visible { outline: 2px solid var(--focus); border-radius: 4px; }
+.clear:focus-visible { outline: 2px solid var(--focus); border-radius: var(--radius-xs); }
 </style>

@@ -1,7 +1,7 @@
 {
   "nav": {
     "label": "Principal",
-    "new": "Nova transferência",
+    "new": "Novo envio",
     "jobs": "Envios",
     "destinations": "Destinos",
     "settings": "Definições",
@@ -9,10 +9,10 @@
       "new": "Copiar ficheiros e pastas para outro sítio, passo a passo",
       "jobs": "Ver os envios em curso e os que já terminaram",
       "destinations": "Os sítios para onde envia ficheiros: um disco, um servidor ou o Nextcloud",
-      "settings": "Língua e notificações",
+      "settings": "Língua, aspeto, notificações e limites de envio",
       "home": "O que precisa de si, o que está a enviar e o que aconteceu"
     },
-    "attention": "{n} transferência precisa de si | {n} transferências precisam de si",
+    "attention": "{n} envio precisa de si | {n} envios precisam de si",
     "active": "{n} em curso | {n} em curso",
     "home": "Início"
   },
@@ -26,8 +26,8 @@
     "pickHint": "A câmara, as Transferências, um cartão SD… Junte uma pasta de cada vez.",
     "addMore": "Juntar outra pasta",
     "storageDenied": "O filebridge precisa de “Acesso a todos os ficheiros” para ler os ficheiros do telemóvel. Permita-o nas definições do Android e tente outra vez.",
-    "sendingOne": "A enviar 1 transferência",
-    "sendingMany": "A enviar {n} transferências"
+    "sendingOne": "1 envio em curso",
+    "sendingMany": "{n} envios em curso"
   },
   "conn": {
     "connected": "Motor de cópia a funcionar",
@@ -93,15 +93,15 @@
     "hint": "(para utilizadores avançados: o que este ecrã pede ao serviço)"
   },
   "wizard": {
-    "title": "Nova transferência",
+    "title": "Novo envio",
     "steps": {
       "1": "Origem",
       "2": "Destino",
       "3": "Análise",
       "4": "Rever e enviar",
-      "5": "Envio"
+      "5": "Resultado"
     },
-    "subtitle": "Copie ficheiros para um disco, um servidor ou o Nextcloud em 4 passos. Os ficheiros originais nunca são alterados.",
+    "subtitle": "Copie ficheiros para um disco, um servidor ou o Nextcloud. Os ficheiros originais nunca são alterados.",
     "stepOf": "Passo {n} de {total}",
     "stepTips": {
       "1": "Escolha os ficheiros e pastas a copiar",
@@ -109,6 +109,13 @@
       "3": "Verifique os nomes antes de copiar",
       "4": "Confirme e comece a cópia",
       "5": "Acompanhe a cópia até ao fim"
+    },
+    "discard": {
+      "title": "Descartar o envio que estava a preparar?",
+      "forgets": "Os ficheiros e o destino escolhidos em Novo envio são esquecidos.",
+      "noDelete": "Nada é apagado: nem os seus ficheiros, nem nada no destino.",
+      "confirm": "Descartar e continuar",
+      "keep": "Manter"
     }
   },
   "source": {
@@ -188,8 +195,18 @@
     "integration": "Integração",
     "free": "{size} livres",
     "freeUnknown": "espaço livre desconhecido",
-    "writable": "com escrita",
-    "notWritable": "sem escrita"
+    "writable": "pode escrever",
+    "notWritable": "não pode escrever",
+    "check": {
+      "connect": "Ligação",
+      "ssh": "Entrada no servidor",
+      "writable": "Escrita",
+      "free-space": "Espaço livre",
+      "quota": "Quota da conta",
+      "destination-root": "Pasta de destino",
+      "data-path": "Pasta de dados do Nextcloud",
+      "occ": "Indexação no Nextcloud"
+    }
   },
   "analysis": {
     "title": "Análise",
@@ -210,7 +227,7 @@
     "countingHint": "Pastas grandes podem demorar alguns minutos. Pode esperar aqui ou voltar mais tarde.",
     "errorHint": "Confirme que os ficheiros e o destino continuam acessíveis e tente de novo.",
     "guidePendingTitle": "{n} nome precisa da sua decisão | {n} nomes precisam da sua decisão",
-    "guidePending": "Abra cada grupo marcado a amarelo e escolha o que fazer. Se tiver dúvidas, carregue em “Aceitar todos”: usa a correção sugerida, que é a opção segura.",
+    "guidePending": "Aceite as correções sugeridas num só clique: são a opção segura e só mudam a cópia. Ou reveja-as uma a uma.",
     "guideOk": "Tudo bem: nenhum nome precisa de mudar. Carregue em “Seguinte” para rever e enviar.",
     "guideFixed": "Tudo bem: os nomes abaixo são ajustados automaticamente na cópia para o destino os aceitar. Os originais mantêm os nomes. Carregue em “Seguinte”.",
     "tooBigHint": "Não há espaço livre suficiente no destino. Liberte espaço lá, ou volte atrás e escolha menos ficheiros.",
@@ -220,7 +237,12 @@
     "namesHelp": "Alguns sistemas recusam certos nomes (o Windows, por exemplo, recusa “:” e “?”). O filebridge corrige o nome só na cópia; o ficheiro original fica como está.",
     "namesExample": "“Fatura: março?.pdf” → “Fatura_ março_.pdf”",
     "legendTitle": "O que faz cada opção",
-    "waitHint": "Espere que a análise termine."
+    "waitHint": "Espere que a análise termine.",
+    "guideLook": "Estes nomes precisam que os leia antes de decidir. Abra cada grupo e escolha.",
+    "notBulk": "Fica {n} nome para ler primeiro: nomes estragados e nomes sem sugestão nunca são aceites num só clique. | Ficam {n} nomes para ler primeiro: nomes estragados e nomes sem sugestão nunca são aceites num só clique.",
+    "acceptSuggestions": "Aceitar a sugestão | Aceitar as {n} sugestões",
+    "reviewEach": "Rever um a um",
+    "repairHint": "Envios anteriores para {destination} podem ter deixado lá nomes estragados como estes. “Reparar nomes”, no menu ⋮ do destino em Destinos, corrige-os onde estão."
   },
   "rules": {
     "unknown": "{n} nomes assinalados por “{rule}”",
@@ -266,7 +288,7 @@
     },
     "mojibake": {
       "title": "{n} nome com caracteres trocados | {n} nomes com caracteres trocados",
-      "explain": "Estes nomes parecem ter sido lidos um dia com a codificação errada e gravados assim, o que transforma acentos em pares como “Ã³”. “Aceitar” envia o nome original. Confirme primeiro: um nome real pode ter este aspeto, por isso nunca é corrigido sozinho.",
+      "explain": "Estes nomes parecem ter sido lidos um dia com a codificação errada e gravados assim, o que transforma acentos em pares como “Ã³”. “Aceitar” usa o nome reparado, à direita. Confirme primeiro: um nome real pode ter este aspeto, por isso nunca é corrigido sozinho.",
       "example": "“PatolÃ³gica.pdf” → “Patológica.pdf”"
     },
     "length": {
@@ -310,7 +332,7 @@
     "bytesTip": "Vista técnica: os bytes do nome antes (vermelho) e depois (verde). Mostram a mudança quando o texto parece idêntico.",
     "editHint": "Só muda o nome, não a pasta onde está.",
     "carried": "Decidido da última vez",
-    "carriedTip": "Copiado da transferência que esta repete. Pode mudar.",
+    "carriedTip": "Copiado do envio que este repete. Pode mudar.",
     "filter": "Filtrar por caminho…",
     "selectPage": "Selecionar esta página",
     "selectRow": "Selecionar {path}",
@@ -356,8 +378,9 @@
     "sendTip": "Começa a cópia. Os ficheiros originais não são alterados.",
     "window": "Os ficheiros só são enviados entre as {start} e as {end}. Fora dessas horas este envio espera e continua sozinho.",
     "limit": "Velocidade limitada a {rate} (Definições).",
-    "label": "Dar um nome a esta transferência (opcional)",
-    "labelHint": "Aparece nas Transferências e nas notificações, ex.: “Fotos 2019 → Nextcloud”."
+    "label": "Dar um nome a este envio (opcional)",
+    "labelHint": "Aparece em Envios e nas notificações, ex.: “Fotos 2019 → Nextcloud”.",
+    "sendSize": "Enviar {size}"
   },
   "after": {
     "title": "A enviar",
@@ -373,8 +396,8 @@
     "failures": "{n} ficheiro com erros | {n} ficheiros com erros",
     "problems": "{n} problema na integração | {n} problemas na integração",
     "openJob": "Abrir envio",
-    "newTransfer": "Nova transferência",
-    "failuresHint": "Estes ficheiros não foram copiados. Carregue em “Abrir envio” para ver porquê; depois de resolver a causa, comece uma nova transferência só com eles.",
+    "newTransfer": "Novo envio",
+    "failuresHint": "Estes ficheiros não foram copiados. Carregue em “Abrir envio” para ver porquê; depois de resolver a causa, comece um novo envio só com eles.",
     "openJobTip": "Ver todos os detalhes deste envio: totais, erros e registo"
   },
   "progress": {
@@ -386,8 +409,8 @@
     "verifying": "A verificar {done} de {total}",
     "mismatches": "{n} diferenças",
     "items": "{n} itens",
-    "window": "O envio continua às {time}, quando começa o horário de envio.",
-    "windowSoon": "O envio continua quando começa o horário de envio ({start}–{end})."
+    "window": "O envio continua às {time}, quando começam as horas de envio.",
+    "windowSoon": "O envio continua quando começam as horas de envio ({start}–{end})."
   },
   "integration": {
     "nextcloud": {
@@ -402,7 +425,10 @@
     "failed": "Falharam",
     "skipped": "Saltados",
     "verified": "Verificados",
-    "mismatch": "Diferenças"
+    "mismatch": "Diferenças",
+    "files": "Ficheiros",
+    "dirs": "Pastas",
+    "size": "Tamanho"
   },
   "state": {
     "draft": "Rascunho",
@@ -412,20 +438,25 @@
     "transferring": "A enviar",
     "paused": "Em pausa",
     "retrying": "A tentar de novo",
-    "waiting": "À espera do horário",
+    "waiting": "À espera das horas de envio",
     "verifying": "A verificar",
     "integrating": "A integrar",
     "completed": "Concluído",
     "completed_with_warnings": "Concluído com avisos",
     "cancelled": "Cancelado",
-    "failed": "Falhou"
+    "failed": "Falhou",
+    "verified": "Verificado",
+    "problems": "{n} problema | {n} problemas"
   },
   "notify": {
     "doneTitle": "Envio concluído",
     "doneBody": "Tudo foi enviado para {where}.",
     "warningsBody": "Enviado para {where}, com avisos.",
     "failedTitle": "O envio falhou",
-    "failedBody": "{where}: {error}"
+    "failedBody": "{where}: {error}",
+    "verifiedBody": "{where}: {n} ficheiro verificado, nenhuma diferença. | {where}: {n} ficheiros verificados, nenhuma diferença.",
+    "copiedBody": "{where}: {n} ficheiro copiado. | {where}: {n} ficheiros copiados.",
+    "problemsBody": "{where}: {n} ficheiros copiados; {problems} precisa de atenção. | {where}: {n} ficheiros copiados; {problems} precisam de atenção."
   },
   "jobs": {
     "title": "Envios",
@@ -438,15 +469,15 @@
       "speed": "Velocidade",
       "eta": "Falta",
       "retries": "Tentativas",
-      "transfer": "Transferência",
+      "transfer": "Envio",
       "size": "Tamanho",
       "when": "Quando",
       "actions": "Ações"
     },
     "intro": "Todos os seus envios, em curso e terminados. Clique num para ver os detalhes, pausá-lo ou cancelá-lo.",
     "refreshTip": "Recarregar a lista",
-    "emptyHint": "Quando copiar ficheiros em “Nova transferência”, aparecem aqui para os acompanhar.",
-    "emptyCta": "Começar uma nova transferência",
+    "emptyHint": "Quando copiar ficheiros em “Novo envio”, aparecem aqui para os acompanhar.",
+    "emptyCta": "Começar um novo envio",
     "rowTip": "Abrir este envio",
     "retriesHelp": "Quantas vezes o filebridge tentou de novo sozinho, por exemplo depois de a rede falhar.",
     "search": "Procurar por nome, pasta ou destino…",
@@ -458,13 +489,13 @@
       "largest": "Maiores"
     },
     "group": {
-      "active": "Ativas",
+      "active": "Ativos",
       "needs_you": "Precisa de si",
       "not_sent": "Por enviar",
-      "finished": "Concluídas",
-      "cancelled": "Canceladas"
+      "finished": "Concluídos",
+      "cancelled": "Cancelados"
     },
-    "noMatch": "Nenhuma transferência corresponde",
+    "noMatch": "Nenhum envio corresponde",
     "files": "{n} ficheiro | {n} ficheiros",
     "again": "Enviada de novo",
     "range": "{from}–{to} de {total}",
@@ -475,13 +506,14 @@
       "again": "Enviar de novo",
       "againTo": "Enviar de novo para outro destino…",
       "export": "Exportar relatório…",
-      "copyId": "Copiar id da transferência",
-      "whenFinished": "Disponível quando a transferência terminar"
+      "copyId": "Copiar id do envio",
+      "whenFinished": "Disponível quando o envio terminar"
     },
     "rename": {
-      "title": "Dar um nome a esta transferência",
+      "title": "Dar um nome a este envio",
       "hint": "Deixe vazio para usar o nome da pasta."
-    }
+    },
+    "progressHelp": "Até onde chegou cada envio: a parte já enviada enquanto corre, ou quantos ficheiros tem quando termina. As novas tentativas automáticas (por exemplo depois de a rede falhar) também aparecem aqui."
   },
   "jobDetail": {
     "title": "Envio",
@@ -501,7 +533,7 @@
     "cancelStops": "O envio para de vez e não pode ser retomado.",
     "cancelKeeps": "Os {n} ficheiros já enviados ficam no destino.",
     "cancelNoDelete": "Nada é apagado, nem na origem nem no destino.",
-    "cancelFinal": "Para enviar o resto mais tarde, comece uma nova transferência.",
+    "cancelFinal": "Para enviar o resto mais tarde, comece um novo envio.",
     "cancelConfirm": "Cancelar envio",
     "keepSending": "Continuar a enviar",
     "continueTip": "Este envio ainda não começou: volte ao assistente para o terminar",
@@ -509,7 +541,7 @@
     "resumeTip": "Continua de onde parou",
     "cancelTip": "Para de vez. Os ficheiros já copiados ficam no destino.",
     "unsentHint": "Este envio ainda não começou. Carregue em “Continuar no assistente” para acabar de escolher e enviá-lo.",
-    "tabs": "Secções da transferência",
+    "tabs": "Secções do envio",
     "tab": {
       "overview": "Resumo",
       "log": "Registo",
@@ -526,11 +558,15 @@
     "deleteJobs": "Os envios que o usaram mantêm o histórico. Os que não terminaram (rascunhos incluídos) têm de ser cancelados antes, ou de terminar.",
     "deleteKey": "Este destino entra com a chave própria do filebridge. Apagá-lo esquece a chave aqui, mas a linha dela fica no authorized_keys do servidor.",
     "deleteRemoveFirst": "Remover acesso primeiro…",
-    "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada nova transferência.",
+    "intro": "Os sítios para onde envia ficheiros. Guarde cada um uma vez e escolha-o em cada novo envio.",
     "emptyHint": "Crie o seu primeiro destino: um disco externo, um servidor (SFTP) ou o Nextcloud.",
     "deleteTip": "Esquecer este destino. Nenhum ficheiro é apagado.",
     "browse": "Explorar",
-    "browseTip": "Ver as pastas deste destino (nada é alterado)"
+    "browseTip": "Ver as pastas deste destino (nada é alterado)",
+    "edit": "Editar",
+    "editTip": "Mudar o nome, a pasta ou a forma de entrar. O histórico mantém-se.",
+    "menu": "Ações para {name}",
+    "test": "Testar"
   },
   "profile": {
     "kind": "Tipo de destino",
@@ -600,7 +636,16 @@
     "password": "Palavra-passe",
     "passwordHint": "opcional: vazio = chave ou agente SSH",
     "passwordNotSaved": "O destino foi guardado, mas a palavra-passe não chegou ao cofre do sistema: {error}. Tente de novo: o mesmo destino é atualizado, não é criado outro.",
-    "firstConnect": "Na primeira vez que o filebridge se liga a um servidor, mostra a impressão digital da chave do servidor e pede-lhe que a confirme."
+    "firstConnect": "Na primeira vez que o filebridge se liga a um servidor, mostra a impressão digital da chave do servidor e pede-lhe que a confirme.",
+    "editTitle": "Editar “{name}”",
+    "editNameOnly": "Num destino Nextcloud só o nome pode mudar aqui: a ligação foi verificada passo a passo quando foi criado. Para o apontar para outro sítio, crie um novo.",
+    "editMoves": "Os envios já feitos ficam onde foram; os próximos vão para o novo sítio. O histórico continua ligado a este destino.",
+    "editBlocked": "{n} envio para este destino não terminou. Deixe-o terminar, ou cancele-o, antes de mudar para onde o destino aponta. | {n} envios para este destino não terminaram. Deixe-os terminar, ou cancele-os, antes de mudar para onde o destino aponta.",
+    "passwordStored": "Guardada no cofre do sistema",
+    "passwordReplace": "Substituir…",
+    "detected": "Detetado: disco {fs}, nomes verificados como em {family}.",
+    "detectedCase": "Não distingue maiúsculas de minúsculas.",
+    "changeTarget": "Alterar"
   },
   "nextcloud": {
     "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox (e encontra o contentor do Nextcloud) ou diretamente à máquina onde o Nextcloud corre, e verifica cada passo. Nada é alterado durante a deteção.",
@@ -669,14 +714,13 @@
     "from": "Das",
     "to": "às",
     "overnight": "Passa da meia-noite: das {start} de hoje até às {end} do dia seguinte.",
-    "sendingHint": "Aplica-se a todos os envios, incluindo os que já estão a correr. As horas são as deste computador; o computador tem de estar ligado e acordado quando o horário começa.",
-    "save": "Guardar",
+    "sendingHint": "Aplica-se a todos os envios, incluindo os que já estão a correr. As horas são as deste computador; o computador tem de estar ligado e acordado quando as horas começam.",
     "saved": "Guardado",
     "badLimit": "Indique uma velocidade maior que zero.",
     "badWindow": "O início e o fim têm de ser horas diferentes.",
     "bandwidth": "Limite de largura de banda",
-    "schedule": "Horário de envio",
-    "service": "Serviço (informação técnica)",
+    "schedule": "Horas em que pode enviar",
+    "service": "Motor de cópia",
     "state": "Estado",
     "version": "Versão",
     "endpoint": "Socket",
@@ -693,7 +737,14 @@
     "guides": "Mostrar guias na primeira utilização",
     "guidesHint": "Uma visita curta da primeira vez que abre um ecrã. O ? junto ao título volta a mostrá-la.",
     "guidesReset": "Mostrar os guias outra vez",
-    "guidesResetDone": "Todos os guias voltam a aparecer da próxima vez."
+    "guidesResetDone": "Todos os guias voltam a aparecer da próxima vez.",
+    "intro": "As alterações ficam guardadas à medida que as faz.",
+    "general": "Geral",
+    "saving": "A guardar…",
+    "keyboard": "Teclado",
+    "advanced": "Avançado",
+    "technical": "Mostrar informação técnica",
+    "technicalHint": "Junta a cada ecrã o que pede ao motor de cópia, os códigos das verificações e “Copiar id do envio”. Útil para relatar um problema; desligado, nada se perde."
   },
   "help": {
     "about": "Ajuda: {what}",
@@ -726,14 +777,14 @@
     "older": "Mostrar mais antigos",
     "today": "Hoje",
     "yesterday": "Ontem",
-    "created": "Transferência criada: {sources} → {destination}",
+    "created": "Envio criado: {sources} → {destination}",
     "options": "Opções: {concurrency} ficheiros de cada vez, verificar {verify}",
     "analysis": "Análise: {files} ficheiros, {size}",
     "scanErrors": "{n} item não pôde ser lido | {n} itens não puderam ser lidos",
     "decisions": "{count} nome decidido: {decision} | {count} nomes decididos: {decision}",
     "state": "Agora: {to}",
     "retry": "Erro de rede. Nova tentativa dentro de {in} (tentativa {attempt})",
-    "window": "À espera da janela de envio: abre às {time}",
+    "window": "À espera das horas de envio: começam às {time}",
     "round": "Enviado {sent} ficheiro ({size}) | Enviados {sent} ficheiros ({size})",
     "roundFailed": "{n} falhou | {n} falharam",
     "verify": "Verificados {checked} ficheiros: {mismatch} diferentes, {missing} em falta, {unverifiable} por verificar",
@@ -741,11 +792,11 @@
     "integration": "Ferramenta do destino atualizada ({items} itens)",
     "problems": "{n} problema | {n} problemas",
     "finished": {
-      "completed": "Concluída sem diferenças",
-      "completed_with_warnings": "Concluída com {n} aviso | Concluída com {n} avisos",
-      "failed": "Parada por um erro",
-      "cancelled": "Cancelada",
-      "other": "Terminada"
+      "completed": "Concluído sem diferenças",
+      "completed_with_warnings": "Concluído com {n} aviso | Concluído com {n} avisos",
+      "failed": "Parado por um erro",
+      "cancelled": "Cancelado",
+      "other": "Terminado"
     },
     "unknown": "Evento: {kind}",
     "createdRepair": "Reparação de {folder} em {destination} criada"
@@ -753,14 +804,14 @@
   "composition": {
     "title": "O que vai enviar",
     "totals": "{files} ficheiros · {size}",
-    "unknown": "Indisponível para transferências analisadas antes desta versão.",
+    "unknown": "Indisponível para envios analisados antes desta versão.",
     "fit": "Cabe?",
     "used": "Já usado",
-    "this": "Esta transferência",
+    "this": "Este envio",
     "freeAfter": "Livre depois",
     "noTotal": "Este destino não indica o tamanho total.",
     "noFree": "Este destino não indica o espaço livre.",
-    "tight": "Depois desta transferência, {destination} fica com {free} livres."
+    "tight": "Depois deste envio, {destination} fica com {free} livres."
   },
   "category": {
     "image": "Fotos e imagens",
@@ -797,8 +848,8 @@
       "size": "Tamanho",
       "status": "Estado"
     },
-    "noMatch": "Nenhum ficheiro desta transferência corresponde a estes filtros.",
-    "empty": "Esta transferência não tem ficheiros.",
+    "noMatch": "Nenhum ficheiro deste envio corresponde a estes filtros.",
+    "empty": "Este envio não tem ficheiros.",
     "clear": "Limpar filtros",
     "notAnalysed": "Os ficheiros aparecem depois da análise.",
     "problemsBadge": "{n} problema | {n} problemas"
@@ -837,7 +888,7 @@
       "unverifiable": "O destino não conseguiu calcular o checksum",
       "notYet": "Não verificado"
     },
-    "hashNoVerify": "Não calculado: esta transferência correu sem verificação",
+    "hashNoVerify": "Não calculado: este envio correu sem verificação",
     "hashNotYet": "Ainda não calculado",
     "lossy": "O nome não é texto válido: mostrado aproximadamente",
     "copySource": "Copiar caminho da origem",
@@ -885,18 +936,19 @@
     "otherRules": "Outro destino pode verificar os nomes de outra forma."
   },
   "activity": {
-    "created": "Criada \"{name}\"",
+    "created": "Criado \"{name}\"",
     "started": "Começou a enviar \"{name}\" para {destination}",
     "retrying": "{destination} inacessível, a tentar de novo",
-    "waiting": "\"{name}\" espera pela janela de envio",
-    "sent": "Enviada para {destination}",
-    "sentWarnings": "Enviada para {destination}, com {n} aviso | Enviada para {destination}, com {n} avisos",
-    "cancelled": "Cancelada \"{name}\"",
+    "waiting": "\"{name}\" espera pelas horas de envio",
+    "sent": "Enviado para {destination}",
+    "sentWarnings": "Enviado para {destination}, com {n} aviso | Enviado para {destination}, com {n} avisos",
+    "cancelled": "Cancelado \"{name}\"",
     "failed": "\"{name}\" parou por um erro",
     "profileAdded": "Destino \"{name}\" adicionado",
     "profileRemoved": "Destino \"{name}\" removido",
-    "empty": "Ainda nada aconteceu. O que as transferências fazem, mesmo com a janela fechada, aparece aqui.",
-    "error": "Não foi possível ler a atividade."
+    "empty": "Ainda nada aconteceu. O que os envios fazem, mesmo com a janela fechada, aparece aqui.",
+    "error": "Não foi possível ler a atividade.",
+    "createdRepair": "Criada a reparação de {folder} em {destination}"
   },
   "selection": {
     "label": "Seleção",
@@ -924,11 +976,11 @@
   "reclaim": {
     "title": "Espaço que pode libertar na origem",
     "notYet": "Ainda não é seguro libertar a origem",
-    "body": "Os {files} ficheiros desta transferência chegaram e foram verificados idênticos em {destination} a {date}. Nada mudou na origem desde então",
+    "body": "Os {files} ficheiros deste envio chegaram e foram verificados idênticos em {destination} a {date}. Nada mudou na origem desde então",
     "checked": "verificado",
     "size": "{files} ficheiros · {size}",
     "never": "O filebridge nunca apaga nada. Se quiser recuperar o espaço, apague estas pastas você mesmo, no gestor de ficheiros.",
-    "sizeOnly": "Comparado só pelo tamanho (transferência de uma versão anterior).",
+    "sizeOnly": "Comparado só pelo tamanho (envio de uma versão anterior).",
     "checkAgain": "Verificar de novo",
     "seeThem": "Ver",
     "changedList": "Ficheiros novos ou alterados na origem",
@@ -936,16 +988,16 @@
     "hide": "Esconder do Início",
     "show": "Mostrar de novo",
     "hidden": "Escondido do Início",
-    "notice": "{size} verificados e recuperáveis",
+    "notice": "Pode libertar {size} na origem.",
     "blocker": {
-      "not_completed": "A transferência não foi concluída.",
-      "not_verified": "A verificação estava desligada nesta transferência.",
+      "not_completed": "O envio não foi concluído.",
+      "not_verified": "A verificação estava desligada neste envio.",
       "different": "{n} ficheiro está diferente no destino. | {n} ficheiros estão diferentes ou em falta no destino.",
       "unverifiable": "{n} ficheiro não pôde ser verificado. | {n} ficheiros não puderam ser verificados.",
       "failed": "{n} ficheiro não chegou. | {n} ficheiros não chegaram.",
       "skipped": "{n} ficheiro foi ignorado e só existe na origem. | {n} ficheiros foram ignorados e só existem na origem.",
-      "not_checked": "A origem ainda não foi verificada desde a transferência.",
-      "changed": "{n} ficheiro mudou na origem depois da transferência. | {n} ficheiros são novos ou mudaram na origem depois da transferência.",
+      "not_checked": "A origem ainda não foi verificada desde o envio.",
+      "changed": "{n} ficheiro mudou na origem depois do envio. | {n} ficheiros são novos ou mudaram na origem depois do envio.",
       "stale_check": "A última verificação da origem tem mais de um dia.",
       "source_unavailable": "A origem não está disponível. Ligue o disco para a verificar."
     }
@@ -979,42 +1031,57 @@
     "title": "Início",
     "headline": {
       "offline": "À espera do motor de cópia",
-      "needsYou": "{n} transferência precisa de si | {n} transferências precisam de si",
-      "sending": "{n} transferência em curso | {n} transferências em curso",
+      "needsYou": "{n} envio precisa de si | {n} envios precisam de si",
+      "sending": "{n} envio em curso | {n} envios em curso",
       "allGood": "Está tudo em dia",
-      "none": "Ainda não há transferências"
+      "none": "Ainda não há envios"
     },
     "needsYou": "Precisa de si",
     "nowSending": "A enviar agora",
-    "drop": "Largue pastas aqui para começar uma transferência",
-    "recent": "Transferências recentes",
-    "allTransfers": "Todas as transferências",
+    "drop": "Largue pastas aqui para começar um envio",
+    "recent": "Envios recentes",
+    "allTransfers": "Todos os envios",
     "activity": "Atividade",
     "reclaimable": "Espaço que pode libertar",
-    "reclaimTotal": "{size} verificados no destino",
+    "reclaimTotal": "Pode libertar {size} na origem.",
     "more": "+{n} mais",
-    "error": "Não foi possível ler as transferências.",
+    "error": "Não foi possível ler os envios.",
     "reason": {
       "decide": "Alguns nomes precisam de uma decisão",
-      "failed": "Parada por um erro",
+      "failed": "Parado por um erro",
       "retrying": "Ainda a tentar (tentativa {n})",
-      "warnings": "Concluída com avisos"
+      "warnings": "Concluído com avisos",
+      "paused": "Em pausa: {reason}"
     },
     "action": {
       "decide": "Decidir",
       "open": "Abrir",
       "review": "Rever"
     },
-    "start": {
-      "title": "Comece em três passos",
-      "destination": "Adicione um destino: um disco, um servidor ou o Nextcloud.",
-      "folders": "Escolha as pastas a enviar.",
-      "send": "Envie. Pode fechar a janela: continua."
-    },
     "offline": {
-      "title": "As suas transferências aparecem aqui quando o motor de cópia responder.",
-      "body": "Entretanto nada se perde: as transferências e os destinos são guardados pelo motor, não por esta janela."
-    }
+      "title": "Os seus envios aparecem aqui quando o motor de cópia responder.",
+      "body": "Entretanto nada se perde: os envios e os destinos são guardados pelo motor, não por esta janela."
+    },
+    "welcome": {
+      "title": "Copie sem perder nada. E prove que chegou tudo.",
+      "cta": "Fazer o primeiro envio",
+      "noDestination": "Pelo caminho, vai escolher para onde vai a cópia: um disco, um servidor ou o Nextcloud."
+    },
+    "promise": {
+      "source": {
+        "title": "Os originais nunca são tocados",
+        "body": "Nada na origem é apagado, movido ou renomeado."
+      },
+      "names": {
+        "title": "Os nomes chegam certos",
+        "body": "Acentos, caracteres proibidos e nomes estragados corrigidos só na cópia."
+      },
+      "proof": {
+        "title": "Prova de que chegou tudo",
+        "body": "Cada ficheiro verificado por SHA-256, com um relatório para guardar."
+      }
+    },
+    "pausedByYou": "Em pausa. Continua do mesmo ponto quando o retomar."
   },
   "tour": {
     "replay": "Mostrar o guia deste passo",
@@ -1025,7 +1092,7 @@
     "announce": "Guia, passo {step}: {title}",
     "source": {
       "steps": {
-        "title": "Quatro passos para enviar",
+        "title": "Enviar em {n} passos",
         "body": "Escolha o que enviar e para onde. O filebridge verifica todos os nomes, revê, e a cópia começa. Pode voltar a um passo anterior até enviar."
       },
       "add": {
@@ -1043,6 +1110,38 @@
       "next": {
         "title": "Depois escolha para onde vai",
         "body": "O Seguinte fica disponível quando não houver nada a resolver. Os ficheiros são contados depois de escolher o destino."
+      }
+    },
+    "analysis": {
+      "summary": {
+        "title": "O que vai enviar",
+        "body": "Todos os ficheiros foram contados e o destino verificado: está acessível, aceita escrita e tem espaço. Ainda nada foi copiado."
+      },
+      "decide": {
+        "title": "Decida num só clique",
+        "body": "As correções sugeridas são a opção segura: só mudam o nome na cópia. Aceite-as todas aqui, ou reveja-as uma a uma."
+      },
+      "names": {
+        "title": "Nomes que o destino não aceitaria",
+        "body": "Cada grupo é uma razão, com um exemplo. Abra um grupo para ver todos os nomes e escolher para cada um: aceitar, manter, saltar ou editar."
+      },
+      "next": {
+        "title": "Depois, rever e enviar",
+        "body": "O botão Seguinte fica disponível quando todos os nomes estiverem decididos. Pode voltar aqui antes de enviar."
+      }
+    },
+    "destinations": {
+      "card": {
+        "title": "Um cartão por destino",
+        "body": "Onde fica, quanto espaço resta e que nomes o seu sistema de ficheiros recusa. Guardado uma vez, escolhido em cada envio."
+      },
+      "actions": {
+        "title": "Testar, procurar e o resto",
+        "body": "Testar confirma que o filebridge lá chega e consegue escrever; Procurar mostra as pastas. O menu ⋮ edita, repara nomes que já lá estão, ou apaga o destino (nunca os ficheiros)."
+      },
+      "new": {
+        "title": "Outro sítio para onde copiar",
+        "body": "Um disco externo, um servidor por SSH ou o Nextcloud. Cada um é verificado antes de ser guardado."
       }
     }
   },
@@ -1067,10 +1166,11 @@
     "confirm": {
       "title": "Renomear {n} nome? | Renomear {n} nomes?",
       "where": "Os nomes mudam diretamente em {destination}, em {folder}.",
-      "onlyNames": "Os ficheiros não são copiados, alterados nem apagados: só renomeados. Os nomes antigos ficam no relatório desta tarefa.",
+      "onlyNames": "Os ficheiros não são copiados, alterados nem apagados: só renomeados. Os nomes antigos ficam no relatório desta reparação.",
       "taken": "Um nome novo que já esteja ocupado fica como estava e é reportado.",
       "nextcloud": "O Nextcloud volta depois a analisar as pastas que mudaram, para mostrar os nomes novos."
-    }
+    },
+    "checkIn": "Nomes verificados em:"
   },
   "webdav": {
     "mode": "Como o filebridge chega ao Nextcloud",
@@ -1164,5 +1264,23 @@
     "close": "Fechar",
     "unreachable": "Não foi possível verificar a chave do servidor: {error}",
     "checking": "A verificar a chave do servidor…"
+  },
+  "result": {
+    "verified": "ficheiro copiado e verificado, um a um | ficheiros copiados e verificados, um a um",
+    "noDifferences": "Nenhuma diferença: cada ficheiro no destino é idêntico ao original (SHA-256).",
+    "copied": "ficheiro copiado | ficheiros copiados",
+    "notVerified": "A verificação estava desligada neste envio: as cópias não foram relidas e comparadas.",
+    "problems": "de {n} ficheiro copiado | de {n} ficheiros copiados",
+    "problemsSub": "{problems} ficheiro precisa de atenção: falhou, ou é diferente no destino. | {problems} ficheiros precisam de atenção: falharam, ou são diferentes no destino.",
+    "failed": "de {n} ficheiro copiado antes de o envio parar | de {n} ficheiros copiados antes de o envio parar",
+    "cancelled": "de {n} ficheiro copiado antes de ser cancelado | de {n} ficheiros copiados antes de ser cancelado",
+    "cancelledSub": "O que chegou fica no destino; nada foi apagado em lado nenhum.",
+    "renamed": "{n} nome corrigido para o destino | {n} nomes corrigidos para o destino",
+    "skipped": "{n} saltado | {n} saltados",
+    "retries": "tentou de novo sozinho uma vez | tentou de novo sozinho {n} vezes",
+    "reclaim": "Pode libertar {size} na origem.",
+    "seeProblems": "Ver os problemas",
+    "export": "Exportar o relatório (prova)",
+    "seeReclaim": "Ver o espaço a libertar"
   }
 }

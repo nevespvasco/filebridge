@@ -36,7 +36,7 @@ const shown = computed(() => {
 .crumbs li { display: inline-flex; gap: 0.3rem; align-items: center; min-width: 0; }
 .crumb { all: unset; cursor: pointer; color: var(--accent); max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .crumb[aria-current="page"] { color: var(--text); font-weight: 600; cursor: default; }
-.crumb:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+.crumb:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
 .sep { color: var(--muted); }
 .pending { color: var(--text-2); }
 </style>

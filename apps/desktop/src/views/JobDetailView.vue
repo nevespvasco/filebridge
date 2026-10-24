@@ -8,8 +8,11 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import FilesTab from "@/components/FilesTab.vue";
 import JobActions from "@/components/JobActions.vue";
+import NoticeBox from "@/components/NoticeBox.vue";
 import ReclaimPanel from "@/components/ReclaimPanel.vue";
 import ReportDialog from "@/components/ReportDialog.vue";
+import ResultCard from "@/components/ResultCard.vue";
+import SkeletonRows from "@/components/SkeletonRows.vue";
 import JobLog from "@/components/JobLog.vue";
 import { continueJob, defaultLabel, jobLabel } from "@/lib/jobs";
 import JobProgress from "@/components/JobProgress.vue";
@@ -20,8 +23,10 @@ import { request } from "@/lib/requests";
 import { RUNNING, TERMINAL, useJobs } from "@/stores/jobs";
 import { profileWhere, useProfiles } from "@/stores/profiles";
 import { useHome } from "@/stores/home";
+import { useConnection } from "@/stores/connection";
 
 const props = defineProps<{ id: string }>();
+const conn = useConnection();
 const jobs = useJobs();
 const profiles = useProfiles();
 const router = useRouter();
@@ -61,6 +66,13 @@ function onTabKey(e: KeyboardEvent) {
   const next = TABS[(i + step + TABS.length) % TABS.length];
   selectTab(next);
   document.getElementById(`tab-${next}`)?.focus();
+}
+
+/** Back to Transfers as it was left (its filters live in the query), or to the plain list. */
+function back() {
+  const from = (window.history.state as { back?: string } | null)?.back;
+  if (from && /^\/jobs(\?|$)/.test(from)) void router.push(from);
+  else void router.push({ name: "jobs" });
 }
 
 async function load() {
@@ -125,23 +137,23 @@ const details = computed(() => [
   <div>
     <header class="page-head">
       <div>
-        <button class="link small" @click="router.push({ name: 'jobs' })"><AppIcon name="back" /> {{ $t("jobs.title") }}</button>
+        <button class="link small" @click="back"><AppIcon name="back" /> {{ $t("jobs.title") }}</button>
         <h1>{{ job ? jobLabel(job) : $t("jobDetail.title") }}</h1>
         <p v-if="job?.label" class="small muted sub">{{ defaultLabel(job.sources) }}</p>
       </div>
       <div class="actions">
-        <button v-if="unsent" class="btn btn-primary" :title="$t('jobDetail.continueTip')" @click="continueInWizard">{{ $t(job.kind === "repair" ? "repair.continue" : "jobDetail.continue") }}</button>
-        <button v-if="canPause" class="btn" :title="$t('jobDetail.pauseTip')" :disabled="busy" @click="act(() => jobs.pause(id))"><AppIcon name="pause" /> {{ $t("jobDetail.pause") }}</button>
-        <button v-if="canResume" class="btn btn-primary" :title="$t('jobDetail.resumeTip')" :disabled="busy" @click="act(() => jobs.resume(id))"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
-        <button v-if="canCancel" class="btn btn-danger" :title="$t('jobDetail.cancelTip')" :disabled="busy" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
+        <button v-if="unsent" class="btn btn-primary" :title="conn.offline ? $t('conn.disconnected') : $t('jobDetail.continueTip')" :disabled="conn.offline" @click="continueInWizard">{{ $t(job.kind === "repair" ? "repair.continue" : "jobDetail.continue") }}</button>
+        <button v-if="canPause" class="btn" :title="conn.offline ? $t('conn.disconnected') : $t('jobDetail.pauseTip')" :disabled="busy || conn.offline" @click="act(() => jobs.pause(id))"><AppIcon name="pause" /> {{ $t("jobDetail.pause") }}</button>
+        <button v-if="canResume" class="btn btn-primary" :title="conn.offline ? $t('conn.disconnected') : $t('jobDetail.resumeTip')" :disabled="busy || conn.offline" @click="act(() => jobs.resume(id))"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
+        <button v-if="canCancel" class="btn btn-danger" :title="conn.offline ? $t('conn.disconnected') : $t('jobDetail.cancelTip')" :disabled="busy || conn.offline" @click="confirmCancel = true">{{ $t("jobDetail.cancel") }}</button>
         <JobActions v-if="job" :job="job" @export-report="reportOpen = true" />
       </div>
     </header>
 
     <p v-if="notFound" class="card error">{{ $t("jobDetail.notFound") }}</p>
-    <template v-else-if="job">
+    <div v-else-if="job" :class="{ stale: conn.offline }">
       <p v-if="error" class="error">{{ error }}</p>
-      <p v-if="unsent" class="guide"><AppIcon class="guide-icon" name="pointing" :size="20" /><span>{{ $t("jobDetail.unsentHint") }}</span></p>
+      <NoticeBox v-if="unsent"><p>{{ $t("jobDetail.unsentHint") }}</p></NoticeBox>
       <div class="tabs" role="tablist" :aria-label="$t('jobDetail.tabs')" @keydown="onTabKey">
         <button
           v-for="t in TABS"
@@ -160,7 +172,8 @@ const details = computed(() => [
       </div>
 
       <div v-if="tab === 'overview'" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
-        <div class="card"><JobProgress :job-id="id" /></div>
+        <ResultCard v-if="TERMINAL.includes(job.state)" :job-id="id" @export-report="reportOpen = true" />
+        <div v-else class="card"><JobProgress :job-id="id" /></div>
         <div v-if="['transferring', 'retrying', 'paused'].includes(job.state)" class="card queue-card"><TransferQueue :job-id="id" /></div>
 
         <div class="grid">
@@ -184,9 +197,9 @@ const details = computed(() => [
           <section class="card">
             <h2>{{ $t("jobDetail.counts") }}</h2>
             <dl class="kv num">
-              <dt>{{ $t("analysis.files") }}</dt><dd>{{ fmt.count(job.counts.files) }}</dd>
-              <dt>{{ $t("analysis.dirs") }}</dt><dd>{{ fmt.count(job.counts.dirs) }}</dd>
-              <dt>{{ $t("analysis.size") }}</dt><dd>{{ fmt.bytes(job.counts.bytes) }}</dd>
+              <dt>{{ $t("counts.files") }}</dt><dd>{{ fmt.count(job.counts.files) }}</dd>
+              <dt>{{ $t("counts.dirs") }}</dt><dd>{{ fmt.count(job.counts.dirs) }}</dd>
+              <dt>{{ $t("counts.size") }}</dt><dd>{{ fmt.bytes(job.counts.bytes) }}</dd>
               <dt>{{ $t("counts.pending") }}</dt><dd>{{ fmt.count(job.counts.pending) }}</dd>
               <dt>{{ $t("counts.done") }}</dt><dd>{{ fmt.count(job.counts.done) }}</dd>
               <dt>{{ $t("counts.failed") }}</dt><dd>{{ fmt.count(job.counts.failed) }}</dd>
@@ -215,8 +228,8 @@ const details = computed(() => [
       </div>
 
       <DetailsPanel :lines="details" />
-    </template>
-    <p v-else class="muted">{{ $t("common.loading") }}</p>
+    </div>
+    <SkeletonRows v-else :rows="4" class="card" />
 
     <ReportDialog :job-id="reportOpen ? id : null" @close="reportOpen = false" />
     <ConfirmDialog
@@ -240,7 +253,7 @@ const details = computed(() => [
 .sub { margin: 0.1rem 0 0; }
 .actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 1rem; margin: 1rem 0; }
-h2 { font-size: 1rem; margin-top: 0; }
+h2 { font-size: var(--fs-base); margin-top: 0; }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; }
 dt { color: var(--text-2); }
 dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

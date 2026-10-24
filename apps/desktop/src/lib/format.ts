@@ -19,8 +19,9 @@ export function formatRate(bytesPerSec: number | null | undefined, locale: strin
   return `${formatBytes(bytesPerSec, locale)}/s`;
 }
 
+/** Always grouped: pt-PT would otherwise write 1234 but 12 345. */
 export function formatCount(n: number | null | undefined, locale: string): string {
-  return n == null ? "—" : n.toLocaleString(locale);
+  return n == null ? "—" : n.toLocaleString(locale, { useGrouping: "always" } as unknown as Intl.NumberFormatOptions);
 }
 
 export function formatDuration(secs: number | null | undefined): string {
@@ -94,4 +95,33 @@ export function timeToMinutes(t: string): number | null {
 /** A Unix-ms instant as a local time of day, e.g. `22:00`. */
 export function formatTime(ms: number, locale: string): string {
   return new Date(ms).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+
+/** Midnight that starts the day of `ms`, local time. */
+function startOfDay(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * `at` relative to `now`, one rule for the whole app: under a minute "now", then minutes, then
+ * hours the same day, then "yesterday" / "tomorrow" for the day next to it, then the date (with
+ * the year only when it isn't this one).
+ */
+export function relativeTime(at: number, now: number, locale: string): string {
+  const diff = at - now;
+  const abs = Math.abs(diff);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
+  const sign = diff < 0 ? -1 : 1;
+  if (abs < MINUTE) return rtf.format(0, "minute");
+  if (abs < HOUR) return rtf.format(sign * Math.floor(abs / MINUTE), "minute");
+  if (abs < 24 * HOUR && startOfDay(at) === startOfDay(now)) return rtf.format(sign * Math.floor(abs / HOUR), "hour");
+  const days = Math.round((startOfDay(at) - startOfDay(now)) / (24 * HOUR));
+  if (Math.abs(days) === 1) return rtf.format(days, "day");
+  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
+  return new Date(at).toLocaleDateString(locale, { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
 }

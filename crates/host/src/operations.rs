@@ -13,9 +13,9 @@ use filebridge_ipc::{
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     ErrorBody, ExportResult, FolderNameCheck, Handler, HostKeyView, IssueView, JobFilter, JobPage,
-    JobSummary, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, Pong, Profile,
-    ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions, SourceInfo,
-    StorageView,
+    JobSummary, LocalTargetProbe, LogEntry, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION,
+    Pong, Profile, ProfileTest, RecentSource, ReclaimStatus, ReportRequest, RuleCount, SendOptions,
+    SourceInfo, StorageView,
 };
 use tokio::sync::broadcast;
 
@@ -221,6 +221,10 @@ impl Operations for EngineOperations {
         self.engine.cancel(&job_id).await.map_err(to_error)
     }
 
+    async fn discard_draft(&self, job_id: String) -> Res<()> {
+        self.engine.discard_draft(&job_id).await.map_err(to_error)
+    }
+
     async fn list_jobs(&self, filter: JobFilter, limit: u32, offset: u32) -> Res<JobPage> {
         self.engine
             .list_jobs_page(filter, limit.min(1000), offset)
@@ -398,6 +402,10 @@ impl Operations for EngineOperations {
             });
         }
         self.engine.inspect_sources(paths).await.map_err(to_error)
+    }
+
+    async fn probe_local_target(&self, path: String) -> Res<LocalTargetProbe> {
+        self.engine.probe_local_target(path).await.map_err(to_error)
     }
 
     async fn job_log(

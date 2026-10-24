@@ -1,7 +1,7 @@
 // The window ↔ filebridge-service link (ADR 0008). The Rust side connects, starts the service
 // when needed and reconnects; this store only mirrors the state for the UI.
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { api, commands, errorMessage, events, ServiceError } from "@/lib/api";
 
 export const useConnection = defineStore("connection", () => {
@@ -71,5 +71,9 @@ export const useConnection = defineStore("connection", () => {
     reconnectHooks.push(fn);
   }
 
-  return { connected, endpoint, version, lastError, lastCode, checking, replacing, init, check, onReconnect };
+  /** Known to be down: data stays on screen, dimmed, and actions that need the engine are off
+   *  with that reason (docs/design/01-design-system.md, "States"). */
+  const offline = computed(() => connected.value === false);
+
+  return { connected, offline, endpoint, version, lastError, lastCode, checking, replacing, init, check, onReconnect };
 });

@@ -13,6 +13,9 @@ pub enum Op {
     Start,
     Pause,
     Cancel,
+    /// Cancel an unsent job the New-transfer wizard replaced (ADR 0017): Cancelled, and hidden
+    /// from the Transfers list.
+    DiscardDraft,
     /// The runner moving a job through stages 4–6.
     Run,
     /// Startup: picking up a job the app left unfinished.
@@ -30,7 +33,9 @@ impl Op {
     pub fn allowed_in(self, state: JobState) -> bool {
         use JobState::*;
         match self {
-            Op::SetOptions | Op::Analyse => matches!(state, Draft | AwaitingApproval | Ready),
+            Op::SetOptions | Op::Analyse | Op::DiscardDraft => {
+                matches!(state, Draft | AwaitingApproval | Ready)
+            }
             Op::Decide => matches!(state, AwaitingApproval | Ready),
             Op::Start => matches!(state, Ready | Paused),
             Op::Pause | Op::Run => state.is_running(),
@@ -53,6 +58,7 @@ pub fn job_operations() -> std::collections::BTreeMap<&'static str, Vec<JobState
         ("resume", Op::Start),
         ("pause", Op::Pause),
         ("cancel", Op::Cancel),
+        ("discard_draft", Op::DiscardDraft),
         ("set_label", Op::SetLabel),
         ("send_again", Op::SendAgain),
         ("export_report", Op::Export),
@@ -177,6 +183,7 @@ mod tests {
         };
         assert_eq!(allowed(Op::SetOptions), [Draft, AwaitingApproval, Ready]);
         assert_eq!(allowed(Op::Analyse), [Draft, AwaitingApproval, Ready]);
+        assert_eq!(allowed(Op::DiscardDraft), [Draft, AwaitingApproval, Ready]);
         assert_eq!(allowed(Op::Decide), [AwaitingApproval, Ready]);
         assert_eq!(allowed(Op::Start), [Ready, Paused]);
         assert_eq!(
@@ -200,6 +207,9 @@ mod tests {
             assert!(can_go(s, Paused));
         }
         for s in allowed(Op::Cancel) {
+            assert!(can_go(s, Cancelled));
+        }
+        for s in allowed(Op::DiscardDraft) {
             assert!(can_go(s, Cancelled));
         }
     }

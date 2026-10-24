@@ -9,7 +9,7 @@
       "new": "Copy files and folders to another place, step by step",
       "jobs": "See the transfers in progress and the ones already finished",
       "destinations": "The places you send files to: a disk, a server or Nextcloud",
-      "settings": "Language and notifications",
+      "settings": "Language, appearance, notifications and sending limits",
       "home": "What needs you, what is sending, and what happened"
     },
     "attention": "{n} transfer needs you | {n} transfers need you",
@@ -18,7 +18,7 @@
   },
   "tray": {
     "show": "Open filebridge",
-    "quit": "Close window (sends keep running)"
+    "quit": "Close window (transfers keep running)"
   },
   "mobile": {
     "pickLead": "Choose a folder on this phone",
@@ -44,11 +44,11 @@
     "problem": {
       "replacing": {
         "title": "Updating the copy engine…",
-        "body": "A copy engine from an earlier version of filebridge was running and is being replaced by this version's. This takes a few seconds; the window waits for it. Sends already running continue in the new one."
+        "body": "A copy engine from an earlier version of filebridge was running and is being replaced by this version's. This takes a few seconds; the window waits for it. Transfers already running continue in the new one."
       },
       "version": {
         "title": "The copy engine is from another version of filebridge.",
-        "body": "Close every filebridge window and open it again. Sends already running are not lost: they continue when the engine starts again."
+        "body": "Close every filebridge window and open it again. Transfers already running are not lost: they continue when the engine starts again."
       },
       "start": {
         "title": "filebridge couldn't start its copy engine.",
@@ -56,7 +56,7 @@
       },
       "lost": {
         "title": "The copy engine isn't answering.",
-        "body": "Sends already running are not lost. This window reconnects by itself; you can also click “Try again”."
+        "body": "Transfers already running are not lost. This window reconnects by itself; you can also click “Try again”."
       }
     },
     "details": "Technical details"
@@ -99,9 +99,9 @@
       "2": "Destination",
       "3": "Analysis",
       "4": "Review & send",
-      "5": "Transfer"
+      "5": "Result"
     },
-    "subtitle": "Copy files to a disk, a server or Nextcloud in 4 steps. Your original files are never changed.",
+    "subtitle": "Copy files to a disk, a server or Nextcloud. Your original files are never changed.",
     "stepOf": "Step {n} of {total}",
     "stepTips": {
       "1": "Choose the files and folders to copy",
@@ -109,6 +109,13 @@
       "3": "Check the names before copying",
       "4": "Confirm and start the copy",
       "5": "Follow the copy until it ends"
+    },
+    "discard": {
+      "title": "Discard the transfer you were preparing?",
+      "forgets": "The files and the destination chosen in New transfer are forgotten.",
+      "noDelete": "Nothing is deleted: not your files, and nothing at the destination.",
+      "confirm": "Discard and continue",
+      "keep": "Keep it"
     }
   },
   "source": {
@@ -188,8 +195,18 @@
     "integration": "Integration",
     "free": "{size} free",
     "freeUnknown": "free space unknown",
-    "writable": "writable",
-    "notWritable": "not writable"
+    "writable": "can write",
+    "notWritable": "can't write",
+    "check": {
+      "connect": "Connection",
+      "ssh": "Sign-in to the server",
+      "writable": "Writing",
+      "free-space": "Free space",
+      "quota": "Account quota",
+      "destination-root": "Destination folder",
+      "data-path": "Nextcloud data folder",
+      "occ": "Nextcloud indexing"
+    }
   },
   "analysis": {
     "title": "Analysis",
@@ -201,7 +218,7 @@
     "tooBig": "Not enough free space: {size} to send, {free} free at the destination.",
     "scanErrors": "{n} item could not be read | {n} items could not be read",
     "preflight": "Destination checks",
-    "reopened": "Job reopened from the list: the counts are the saved ones.",
+    "reopened": "Transfer reopened from the list: the counts are the saved ones.",
     "rerun": "Analyse again",
     "names": "Names",
     "noIssues": "No name problems: everything is sent as it is.",
@@ -210,7 +227,7 @@
     "countingHint": "Large folders can take a few minutes. You can wait here or come back later.",
     "errorHint": "Check that the files and the destination are still reachable, then try again.",
     "guidePendingTitle": "{n} name needs your decision | {n} names need your decision",
-    "guidePending": "Open each group marked in yellow and choose what to do. If unsure, click “Accept all”: it uses the suggested fix, which is the safe choice.",
+    "guidePending": "Accept the suggested fixes in one click: they are the safe choice and only change the copy. Or review them one by one.",
     "guideOk": "All good: no name needs changing. Click “Next” to review and send.",
     "guideFixed": "All good: the names below are adjusted automatically in the copy so the destination accepts them. Your originals keep their names. Click “Next”.",
     "tooBigHint": "There isn't enough free space at the destination. Free some space there, or go back and choose fewer files.",
@@ -220,7 +237,12 @@
     "namesHelp": "Some systems refuse certain names (Windows, for example, refuses “:” and “?”). filebridge fixes the name only in the copy; the original file stays as it is.",
     "namesExample": "“Invoice: March?.pdf” → “Invoice_ March_.pdf”",
     "legendTitle": "What each option does",
-    "waitHint": "Wait for the analysis to finish."
+    "waitHint": "Wait for the analysis to finish.",
+    "guideLook": "These names need you to read them before deciding. Open each group and choose.",
+    "notBulk": "{n} name is left for you to read first: garbled names and names without a suggestion are never accepted in one click. | {n} names are left for you to read first: garbled names and names without a suggestion are never accepted in one click.",
+    "acceptSuggestions": "Accept the suggestion | Accept the {n} suggestions",
+    "reviewEach": "Review one by one",
+    "repairHint": "Earlier transfers to {destination} may have left garbled names like these there. Repair names, in its ⋮ menu in Destinations, fixes them where they are."
   },
   "rules": {
     "unknown": "{n} names flagged by “{rule}”",
@@ -266,7 +288,7 @@
     },
     "mojibake": {
       "title": "{n} garbled name | {n} garbled names",
-      "explain": "These names look like they were once read with the wrong encoding and saved that way, which turns accents into pairs like “Ã³”. “Accept” sends the original name. Check first: a real name can look like this, so it is never fixed by itself.",
+      "explain": "These names look like they were once read with the wrong encoding and saved that way, which turns accents into pairs like “Ã³”. “Accept” uses the repaired name, on the right. Check first: a real name can look like this, so it is never fixed by itself.",
       "example": "“PatolÃ³gica.pdf” → “Patológica.pdf”"
     },
     "length": {
@@ -347,27 +369,28 @@
     },
     "verify": "Verify every file at the end",
     "verifyHint": "After copying, filebridge reads every file again at the source and at the destination and confirms they're identical (SHA-256). It takes longer, but you know for sure nothing was lost.",
-    "safety": "Copy only: the source is never changed or deleted. Closing the window doesn't stop the send.",
+    "safety": "Copy only: the source is never changed or deleted. Closing the window doesn't stop the transfer.",
     "send": "Send",
     "starting": "Starting…",
     "guide": "Check that everything is right. When you click “Send”, the copy starts and you can follow it on the next screen.",
     "renamesHelp": "Names adjusted in the copy so the destination accepts them. The original files keep their names.",
     "modeHelp": "How the files reach the destination.",
     "sendTip": "Starts the copy. Your original files are not changed.",
-    "window": "Files are sent only between {start} and {end}. Outside those hours this send waits and continues on its own.",
+    "window": "Files are sent only between {start} and {end}. Outside those hours this transfer waits and continues on its own.",
     "limit": "Speed limited to {rate} (Settings).",
     "label": "Name this transfer (optional)",
-    "labelHint": "Shown in Transfers and notifications, e.g. “Photos 2019 → Nextcloud”."
+    "labelHint": "Shown in Transfers and notifications, e.g. “Photos 2019 → Nextcloud”.",
+    "sendSize": "Send {size}"
   },
   "after": {
     "title": "Sending",
     "reportTitle": "Final report",
-    "closeOk": "You can close the window: the send continues in the background and you'll get a notification when it ends.",
+    "closeOk": "You can close the window: the transfer continues in the background and you'll get a notification when it ends.",
     "result": {
       "completed": "Done — everything was sent.",
       "completed_with_warnings": "Done, with warnings.",
       "cancelled": "Cancelled.",
-      "failed": "The send failed."
+      "failed": "The transfer failed."
     },
     "verifiedAll": "Every file was verified: source and destination are identical.",
     "failures": "{n} file with errors | {n} files with errors",
@@ -386,8 +409,8 @@
     "verifying": "Verifying {done} of {total}",
     "mismatches": "{n} differences",
     "items": "{n} items",
-    "window": "Sending resumes at {time}, when the send window opens.",
-    "windowSoon": "Sending resumes when the send window opens ({start}–{end})."
+    "window": "Sending resumes at {time}, when the sending hours start.",
+    "windowSoon": "Sending resumes when the sending hours start ({start}–{end})."
   },
   "integration": {
     "nextcloud": {
@@ -402,7 +425,10 @@
     "failed": "Failed",
     "skipped": "Skipped",
     "verified": "Verified",
-    "mismatch": "Differences"
+    "mismatch": "Differences",
+    "files": "Files",
+    "dirs": "Folders",
+    "size": "Size"
   },
   "state": {
     "draft": "Draft",
@@ -412,20 +438,25 @@
     "transferring": "Sending",
     "paused": "Paused",
     "retrying": "Retrying",
-    "waiting": "Waiting for window",
+    "waiting": "Waiting for sending hours",
     "verifying": "Verifying",
     "integrating": "Integrating",
     "completed": "Completed",
     "completed_with_warnings": "Completed with warnings",
     "cancelled": "Cancelled",
-    "failed": "Failed"
+    "failed": "Failed",
+    "verified": "Verified",
+    "problems": "{n} problem | {n} problems"
   },
   "notify": {
-    "doneTitle": "Send finished",
+    "doneTitle": "Transfer finished",
     "doneBody": "Everything was sent to {where}.",
     "warningsBody": "Sent to {where}, with warnings.",
-    "failedTitle": "Send failed",
-    "failedBody": "{where}: {error}"
+    "failedTitle": "Transfer failed",
+    "failedBody": "{where}: {error}",
+    "verifiedBody": "{where}: {n} file verified, no differences. | {where}: {n} files verified, no differences.",
+    "copiedBody": "{where}: {n} file copied. | {where}: {n} files copied.",
+    "problemsBody": "{where}: {n} files copied; {problems} needs a look. | {where}: {n} files copied; {problems} need a look."
   },
   "jobs": {
     "title": "Transfers",
@@ -481,7 +512,8 @@
     "rename": {
       "title": "Name this transfer",
       "hint": "Leave it empty to use the folder's name."
-    }
+    },
+    "progressHelp": "How far each transfer got: the share already sent while it runs, or how many files it has once it ends. Automatic retries (for example after the network dropped) show here too."
   },
   "jobDetail": {
     "title": "Transfer",
@@ -489,26 +521,26 @@
     "continue": "Continue in the wizard",
     "pause": "Pause",
     "resume": "Resume",
-    "cancel": "Cancel send",
-    "what": "Send",
+    "cancel": "Cancel transfer",
+    "what": "Transfer",
     "counts": "Counts",
     "created": "Created",
     "finished": "Finished",
     "nextRetry": "next attempt {at}",
     "log": "Log",
     "logEmpty": "No events yet.",
-    "cancelTitle": "Cancel this send?",
-    "cancelStops": "The send stops for good and can't be resumed.",
+    "cancelTitle": "Cancel this transfer?",
+    "cancelStops": "The transfer stops for good and can't be resumed.",
     "cancelKeeps": "The {n} files already sent stay at the destination.",
     "cancelNoDelete": "Nothing at the source or the destination is deleted.",
     "cancelFinal": "To send the rest later, start a new transfer.",
-    "cancelConfirm": "Cancel send",
+    "cancelConfirm": "Cancel transfer",
     "keepSending": "Keep sending",
-    "continueTip": "This send hasn't started yet: go back to the wizard to finish it",
+    "continueTip": "This transfer hasn't started yet: go back to the wizard to finish it",
     "pauseTip": "Stops for now; “Resume” continues from the same point",
     "resumeTip": "Continues from where it stopped",
     "cancelTip": "Stops for good. Files already copied stay at the destination.",
-    "unsentHint": "This send hasn't started. Click “Continue in the wizard” to finish choosing and send it.",
+    "unsentHint": "This transfer hasn't started. Click “Continue in the wizard” to finish choosing and send it.",
     "tabs": "Transfer sections",
     "tab": {
       "overview": "Overview",
@@ -530,7 +562,11 @@
     "emptyHint": "Create your first destination: an external disk, a server (SFTP) or Nextcloud.",
     "deleteTip": "Forget this destination. No files are deleted.",
     "browse": "Browse",
-    "browseTip": "See the folders at this destination (nothing is changed)"
+    "browseTip": "See the folders at this destination (nothing is changed)",
+    "edit": "Edit",
+    "editTip": "Change the name, the folder or how filebridge signs in. The history stays.",
+    "menu": "Actions for {name}",
+    "test": "Test"
   },
   "profile": {
     "kind": "Kind of destination",
@@ -600,7 +636,16 @@
     "password": "Password",
     "passwordHint": "optional: empty = key or SSH agent",
     "passwordNotSaved": "The destination was saved, but its password didn't reach the system keyring: {error}. Try again: the same destination is updated, not a second one made.",
-    "firstConnect": "The first time filebridge connects to a server, it shows the server's key fingerprint and asks you to confirm it."
+    "firstConnect": "The first time filebridge connects to a server, it shows the server's key fingerprint and asks you to confirm it.",
+    "editTitle": "Edit “{name}”",
+    "editNameOnly": "Only the name of a Nextcloud destination can change here: its connection was checked step by step when it was created. To point it elsewhere, create a new one.",
+    "editMoves": "Transfers already made stay where they went; the next ones go to the new place. Their history stays with this destination.",
+    "editBlocked": "{n} transfer to this destination isn't finished. Let it finish, or cancel it, before changing where the destination points. | {n} transfers to this destination aren't finished. Let them finish, or cancel them, before changing where the destination points.",
+    "passwordStored": "Saved in the system keyring",
+    "passwordReplace": "Replace…",
+    "detected": "Detected: {fs} disk, names checked as for {family}.",
+    "detectedCase": "It doesn't tell capitals apart.",
+    "changeTarget": "Change"
   },
   "nextcloud": {
     "intro": "filebridge connects over SSH either to the Proxmox host (and finds the Nextcloud container) or straight to the machine Nextcloud runs on, and checks each step. Nothing is changed during detection.",
@@ -656,8 +701,8 @@
       "pt": "Português",
       "en": "English"
     },
-    "notifications": "Notify when a send ends",
-    "notificationsHint": "System notification when a send finishes or fails.",
+    "notifications": "Notify when a transfer ends",
+    "notificationsHint": "System notification when a transfer finishes or fails.",
     "sending": "Sending",
     "bandwidthLimit": "Limit the speed",
     "bandwidthUnit": "Unit",
@@ -669,20 +714,19 @@
     "from": "From",
     "to": "to",
     "overnight": "Crosses midnight: from {start} today until {end} the next day.",
-    "sendingHint": "Applies to every send, including the ones already running. Times are this computer's local time; the computer has to be on and awake when the window opens.",
-    "save": "Save",
+    "sendingHint": "Applies to every transfer, including the ones already running. Times are this computer's local time; the computer has to be on and awake when the hours start.",
     "saved": "Saved",
     "badLimit": "Enter a speed greater than zero.",
     "badWindow": "Start and end must be different times.",
     "bandwidth": "Bandwidth limit",
-    "schedule": "Send schedule",
-    "service": "Service (technical information)",
+    "schedule": "Hours when it may send",
+    "service": "Copy engine",
     "state": "State",
     "version": "Version",
     "endpoint": "Socket",
-    "serviceHint": "filebridge-service does the sends; the window only shows them. It starts by itself when needed.",
+    "serviceHint": "filebridge-service does the transfers; the window only shows them. It starts by itself when needed.",
     "bandwidthHelp": "The most filebridge may use of your connection, so the internet stays fast for everything else.",
-    "scheduleHelp": "The hours when sends may run, for example only at night.",
+    "scheduleHelp": "The hours when transfers may run, for example only at night.",
     "appearance": "Appearance",
     "themes": {
       "system": "System",
@@ -693,7 +737,14 @@
     "guides": "Show guides on first use",
     "guidesHint": "A short tour the first time you open a screen. The ? next to a title plays it again.",
     "guidesReset": "Show guides again",
-    "guidesResetDone": "Every guide will show again the next time."
+    "guidesResetDone": "Every guide will show again the next time.",
+    "intro": "Changes are saved as you make them.",
+    "general": "General",
+    "saving": "Saving…",
+    "keyboard": "Keyboard",
+    "advanced": "Advanced",
+    "technical": "Show technical information",
+    "technicalHint": "Adds, to each screen, what it asks the copy engine, the check codes and “Copy transfer id”. Useful to report a problem; off, nothing is lost."
   },
   "help": {
     "about": "Help: {what}",
@@ -733,7 +784,7 @@
     "decisions": "{count} name decided: {decision} | {count} names decided: {decision}",
     "state": "Now: {to}",
     "retry": "Network error. Trying again in {in} (attempt {attempt})",
-    "window": "Waiting for the send window: opens at {time}",
+    "window": "Waiting for the sending hours: they start at {time}",
     "round": "Sent {sent} file ({size}) | Sent {sent} files ({size})",
     "roundFailed": "{n} failed | {n} failed",
     "verify": "Verified {checked} files: {mismatch} different, {missing} missing, {unverifiable} couldn't be checked",
@@ -888,7 +939,7 @@
     "created": "Created \"{name}\"",
     "started": "Started sending \"{name}\" to {destination}",
     "retrying": "{destination} unreachable, retrying",
-    "waiting": "\"{name}\" waits for the send window",
+    "waiting": "\"{name}\" waits for the sending hours",
     "sent": "Sent to {destination}",
     "sentWarnings": "Sent to {destination}, with {n} warning | Sent to {destination}, with {n} warnings",
     "cancelled": "Cancelled \"{name}\"",
@@ -896,7 +947,8 @@
     "profileAdded": "Added destination \"{name}\"",
     "profileRemoved": "Removed destination \"{name}\"",
     "empty": "Nothing happened yet. What your transfers do, even with the window closed, appears here.",
-    "error": "Couldn't read the activity."
+    "error": "Couldn't read the activity.",
+    "createdRepair": "Created the repair of {folder} on {destination}"
   },
   "selection": {
     "label": "Selection",
@@ -936,7 +988,7 @@
     "hide": "Hide from Home",
     "show": "Show again",
     "hidden": "Hidden from Home",
-    "notice": "{size} verified and reclaimable",
+    "notice": "You can free {size} at the source.",
     "blocker": {
       "not_completed": "The transfer didn't complete.",
       "not_verified": "Verification was off for this transfer.",
@@ -991,30 +1043,45 @@
     "allTransfers": "All transfers",
     "activity": "Activity",
     "reclaimable": "Space you can free",
-    "reclaimTotal": "{size} verified at the destination",
+    "reclaimTotal": "You can free {size} at the source.",
     "more": "+{n} more",
     "error": "Couldn't read the transfers.",
     "reason": {
       "decide": "Some names need a decision",
       "failed": "Stopped by an error",
       "retrying": "Still retrying (attempt {n})",
-      "warnings": "Finished with warnings"
+      "warnings": "Finished with warnings",
+      "paused": "Paused: {reason}"
     },
     "action": {
       "decide": "Decide",
       "open": "Open",
       "review": "Review"
     },
-    "start": {
-      "title": "Start in three steps",
-      "destination": "Add a destination: a disk, a server or Nextcloud.",
-      "folders": "Choose the folders to send.",
-      "send": "Send. You can close the window: it keeps going."
-    },
     "offline": {
       "title": "Your transfers show here once the copy engine answers.",
       "body": "Nothing is lost meanwhile: the transfers and destinations are kept by the engine, not by this window."
-    }
+    },
+    "welcome": {
+      "title": "Copy without losing anything. And prove that everything arrived.",
+      "cta": "Make the first transfer",
+      "noDestination": "You'll choose where the copy goes on the way: a disk, a server or Nextcloud."
+    },
+    "promise": {
+      "source": {
+        "title": "Your originals are never touched",
+        "body": "Nothing at the source is deleted, moved or renamed."
+      },
+      "names": {
+        "title": "Names arrive right",
+        "body": "Accents, forbidden characters and garbled names are fixed in the copy only."
+      },
+      "proof": {
+        "title": "Proof that it all arrived",
+        "body": "Every file checked by SHA-256, with a report you can keep."
+      }
+    },
+    "pausedByYou": "Paused. It continues from the same point when you resume it."
   },
   "tour": {
     "replay": "Show the guide for this step",
@@ -1025,7 +1092,7 @@
     "announce": "Guide, step {step}: {title}",
     "source": {
       "steps": {
-        "title": "Four steps to send",
+        "title": "Send in {n} steps",
         "body": "Choose what to send, then where. filebridge checks every name, you review, and the copy starts. You can go back to an earlier step until you send."
       },
       "add": {
@@ -1044,12 +1111,44 @@
         "title": "Then choose where it goes",
         "body": "Next is ready once there is nothing to fix. The files are counted after you choose the destination."
       }
+    },
+    "analysis": {
+      "summary": {
+        "title": "What you're sending",
+        "body": "Every file was counted, and the destination checked: it can be reached, accepts writing and has room. Nothing has been copied yet."
+      },
+      "decide": {
+        "title": "Decide in one click",
+        "body": "The suggested fixes are the safe choice: they change the name only in the copy. Accept them all here, or review them one by one."
+      },
+      "names": {
+        "title": "Names the destination wouldn't take",
+        "body": "Each group is one reason, with an example. Open a group to see every name and choose for each one: accept, keep, skip or edit."
+      },
+      "next": {
+        "title": "Then review and send",
+        "body": "Next is ready once every name is decided. You can still come back here before sending."
+      }
+    },
+    "destinations": {
+      "card": {
+        "title": "One card per destination",
+        "body": "Where it is, how much space is left, and which names its file system refuses. Saved once, picked in every transfer."
+      },
+      "actions": {
+        "title": "Test, browse, and the rest",
+        "body": "Test checks that filebridge can reach it and write; Browse shows its folders. The ⋮ menu edits it, repairs names already there, or deletes it (never its files)."
+      },
+      "new": {
+        "title": "Another place to copy to",
+        "body": "An external disk, a server over SSH, or Nextcloud. Each one is checked before it is saved."
+      }
     }
   },
   "repair": {
     "title": "Repair names at the destination",
     "continue": "Continue the repair",
-    "lead": "Names already in {folder} on {destination}, checked with the same rules as a send. Nothing is renamed until you confirm.",
+    "lead": "Names already in {folder} on {destination}, checked with the same rules as a transfer. Nothing is renamed until you confirm.",
     "label": "Repair · {folder}",
     "root": "the whole destination",
     "button": "Repair names…",
@@ -1067,10 +1166,11 @@
     "confirm": {
       "title": "Rename {n} name? | Rename {n} names?",
       "where": "Names change directly on {destination}, in {folder}.",
-      "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this job's report.",
+      "onlyNames": "Files are not copied, changed or deleted: only renamed. The old names stay in this repair's report.",
       "taken": "A new name that is already taken is left as it was and reported.",
       "nextcloud": "Nextcloud then rescans the folders that changed, so it shows the new names."
-    }
+    },
+    "checkIn": "Names checked in:"
   },
   "webdav": {
     "mode": "How filebridge reaches Nextcloud",
@@ -1096,7 +1196,7 @@
     "help": {
       "server": "The address you open Nextcloud at in the browser, e.g. cloud.example.com. A WebDAV address copied from Nextcloud's Files settings works too, and is needed when you sign in with an email address or a company account.",
       "appPassword": "Create one in Nextcloud: Settings → Security → Devices & sessions → “Create new app password”. It can be revoked there at any time, and it is not your account password. filebridge keeps it in the system keyring.",
-      "folder": "Where sends go, inside the user's files, e.g. Backup/Fotos. It is created by the first send if it doesn't exist."
+      "folder": "Where transfers go, inside the user's files, e.g. Backup/Fotos. It is created by the first transfer if it doesn't exist."
     },
     "modeShort": {
       "webdav": "WebDAV",
@@ -1164,5 +1264,23 @@
     "close": "Close",
     "unreachable": "Could not check the server's key: {error}",
     "checking": "Checking the server's key…"
+  },
+  "result": {
+    "verified": "file copied and verified, one by one | files copied and verified, one by one",
+    "noDifferences": "No differences: every file at the destination is identical to its original (SHA-256).",
+    "copied": "file copied | files copied",
+    "notVerified": "Verification was off for this transfer: the copies weren't read back and compared.",
+    "problems": "of {n} file copied | of {n} files copied",
+    "problemsSub": "{problems} file needs a look: it failed, or differs at the destination. | {problems} files need a look: they failed, or differ at the destination.",
+    "failed": "of {n} file copied before the transfer stopped | of {n} files copied before the transfer stopped",
+    "cancelled": "of {n} file copied before it was cancelled | of {n} files copied before it was cancelled",
+    "cancelledSub": "What arrived stays at the destination; nothing was deleted anywhere.",
+    "renamed": "{n} name fixed for the destination | {n} names fixed for the destination",
+    "skipped": "{n} skipped | {n} skipped",
+    "retries": "retried by itself once | retried by itself {n} times",
+    "reclaim": "You can free {size} at the source.",
+    "seeProblems": "See the problems",
+    "export": "Export the report (proof)",
+    "seeReclaim": "See the space to free"
   }
 }

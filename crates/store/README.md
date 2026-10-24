@@ -18,7 +18,7 @@ SQLite persistence: **jobs, manifests, profiles, issues, events, settings.** **L
 | Area | Methods |
 |---|---|
 | Profiles | `upsert_profile`, `get_profile`, `list_profiles`, `delete_profile` (fails while a job uses it) |
-| Jobs | `insert_job` (with source roots), `get_job`, `list_jobs`, `list_unfinished_jobs` (resume on startup), `set_job_state`, `set_job_retry`, `set_job_options`, `finish_job` |
+| Jobs | `insert_job` (with source roots), `get_job`, `list_jobs`, `list_jobs_filtered` and `job_state_counts` (the Transfers list; never discarded drafts, ADR 0017), `list_unfinished_jobs` (resume on startup), `change_job_state` (`StateChange.discarded` sets `discarded_at`), `set_job_retry`, `set_job_options` |
 | Manifest | `insert_entries` (batched, one transaction), `set_dest_paths`, `set_transfer_states`, `reset_transfer_states` (e.g. partial/failed → pending on resume, mismatch → pending to resend), `set_verify_states`, `entries_page`, `files_with_transfer_state`, `manifest_counts` |
 | Issues | `insert_issues`, `clear_issues`, `issues_page` (by rule), `issue_summary`, `pending_issue_count`, `decide_issue` |
 | Events | `append_event`, `events_page` |

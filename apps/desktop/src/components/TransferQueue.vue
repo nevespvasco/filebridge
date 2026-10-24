@@ -98,7 +98,7 @@ const eta = (f: InFlightView_Serialize) => (f.eta_secs != null && f.eta_secs > 6
 <style scoped>
 .queue { display: grid; gap: 0.6rem; container-type: inline-size; }
 .head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; flex-wrap: wrap; }
-h2 { font-size: 1rem; margin: 0; }
+h2 { font-size: var(--fs-base); margin: 0; }
 .rows td { padding: 0.45rem 0.6rem; border-bottom-color: var(--rule); }
 .rows { table-layout: fixed; }
 .name { padding-left: 0.75rem !important; box-shadow: inset 3px 0 0 var(--cat); }

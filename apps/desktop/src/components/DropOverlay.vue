@@ -22,7 +22,7 @@ defineProps<{ show: boolean }>();
 .drop-overlay { position: fixed; inset: 0; z-index: 70; pointer-events: none; background: var(--overlay); display: grid; padding: 1rem; }
 .frame {
   border: 3px dashed var(--accent);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
   display: grid;
   place-content: center;
@@ -30,7 +30,7 @@ defineProps<{ show: boolean }>();
   gap: 0.5rem;
   color: var(--accent);
 }
-.frame p { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--text); }
+.frame p { margin: 0; font-size: var(--fs-lg); font-weight: 600; color: var(--text); }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.12s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .fade-enter-active, .fade-leave-active { transition: none; } }

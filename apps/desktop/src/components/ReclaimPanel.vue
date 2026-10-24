@@ -64,7 +64,7 @@ const allBlockers = computed(() => [...(s.value?.blockers ?? []), ...(s.value?.s
 </script>
 
 <template>
-  <section v-if="shown && s" class="card reclaim" :class="{ ok: s.eligible }" :aria-labelledby="`reclaim-${jobId}`">
+  <section v-if="shown && s" id="reclaim" class="card reclaim" :class="{ ok: s.eligible }" :aria-labelledby="`reclaim-${jobId}`">
     <header class="head">
       <AppIcon :name="s.eligible ? 'broom' : 'info'" :size="20" />
       <h2 :id="`reclaim-${jobId}`">{{ s.eligible ? $t("reclaim.title") : $t("reclaim.notYet") }}</h2>
@@ -118,7 +118,7 @@ const allBlockers = computed(() => [...(s.value?.blockers ?? []), ...(s.value?.s
 .reclaim { display: grid; gap: 0.6rem; margin-top: 1rem; }
 .reclaim.ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
 .head { display: flex; gap: 0.5rem; align-items: center; }
-.head h2 { font-size: 1rem; margin: 0; }
+.head h2 { font-size: var(--fs-base); margin: 0; }
 .ok .head { color: var(--ok); }
 p { margin: 0; }
 .sources, .blockers { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }

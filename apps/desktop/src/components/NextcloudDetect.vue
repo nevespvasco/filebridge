@@ -4,7 +4,7 @@
 // step shows ✓ / ! / ✗, and the Details panel the commands it ran.
 import { trimBoth } from "@/lib/format";
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, reactive, ref, shallowRef } from "vue";
+import { computed, reactive, ref, shallowRef, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
@@ -105,63 +105,64 @@ function chooseContainer(c: string) {
   form.ctid = c.split(/\s+/)[0] ?? c;
   void detect();
 }
+const uid = useId();
 </script>
 
 <template>
   <form class="nc" @submit.prevent="detect">
     <p class="small muted">{{ $t("nextcloud.intro") }}</p>
     <div class="grid">
-      <label class="field">
-        <span class="label-line">{{ $t("profile.name") }}<span class="req" aria-hidden="true">*</span>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-1`">{{ $t("profile.name") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('profile.help.name')" :label="$t('profile.name')" />
         </span>
-        <input v-model="form.name" required />
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("nextcloud.ncUser") }}<span class="req" aria-hidden="true">*</span>
+        <input :id="`${uid}-1`" v-model="form.name" required />
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-2`">{{ $t("nextcloud.ncUser") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('nextcloud.help.ncUser')" example="maria" :label="$t('nextcloud.ncUser')" />
         </span>
-        <input v-model="form.nextcloud_user" required spellcheck="false" />
+        <input :id="`${uid}-2`" v-model="form.nextcloud_user" required spellcheck="false" />
         <span class="hint">{{ $t("nextcloud.ncUserHint") }}</span>
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("nextcloud.host") }}<span class="req" aria-hidden="true">*</span>
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-3`">{{ $t("nextcloud.host") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('nextcloud.help.host')" example="proxmox.local · nextcloud.tailnet" :label="$t('nextcloud.host')" />
         </span>
-        <input v-model="form.host" required spellcheck="false" placeholder="proxmox.local" />
+        <input :id="`${uid}-3`" v-model="form.host" required spellcheck="false" placeholder="proxmox.local" />
         <span class="hint">{{ $t("nextcloud.hint.host") }}</span>
-      </label>
-      <label class="field narrow">
-        <span class="label-line">{{ $t("profile.port") }}
+      </div>
+      <div class="field narrow">
+        <span class="label-line"><label :for="`${uid}-4`">{{ $t("profile.port") }}</label>
           <HelpTip :text="$t('profile.help.port')" example="22" :label="$t('profile.port')" />
         </span>
-        <input v-model.number="form.port" type="number" min="1" max="65535" />
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("nextcloud.sshUser") }}<span class="req" aria-hidden="true">*</span>
+        <input :id="`${uid}-4`" v-model.number="form.port" type="number" min="1" max="65535" />
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-5`">{{ $t("nextcloud.sshUser") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('nextcloud.help.sshUser')" example="root" :label="$t('nextcloud.sshUser')" />
         </span>
-        <input v-model="form.user" required spellcheck="false" />
+        <input :id="`${uid}-5`" v-model="form.user" required spellcheck="false" />
         <span class="hint">{{ $t("nextcloud.hint.sshUser") }}</span>
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("nextcloud.folder") }}
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-6`">{{ $t("nextcloud.folder") }}</label>
           <HelpTip :text="$t('nextcloud.help.folder')" example="Backup/2026" :label="$t('nextcloud.folder')" />
         </span>
-        <input v-model="form.folder" spellcheck="false" :placeholder="$t('common.optional')" />
+        <input :id="`${uid}-6`" v-model="form.folder" spellcheck="false" :placeholder="$t('common.optional')" />
         <span v-if="folderLooksLikeHostPath" class="small warn-text">{{ $t("nextcloud.folderHostPath") }}</span>
         <span v-else class="hint">{{ $t("nextcloud.folderHint") }}</span>
-      </label>
-      <label class="field wide">
-        <span class="label-line">{{ $t("profile.keyFile") }}
+      </div>
+      <div class="field wide">
+        <span class="label-line"><label :for="`${uid}-7`">{{ $t("profile.keyFile") }}</label>
           <HelpTip :text="$t('profile.help.keyFile')" example="~/.ssh/id_ed25519" :label="$t('profile.keyFile')" />
         </span>
         <span class="with-button">
-          <input v-model="form.key_file" spellcheck="false" :placeholder="$t('profile.keyFileHint')" />
+          <input :id="`${uid}-7`" v-model="form.key_file" spellcheck="false" :placeholder="$t('profile.keyFileHint')" />
           <button type="button" class="btn btn-small" @click="pickKey">{{ $t("common.browse") }}</button>
         </span>
         <span class="hint">{{ $t("profile.hint.keyFile") }}</span>
-      </label>
+      </div>
     </div>
 
     <button type="button" class="link small" :aria-expanded="advanced" @click="advanced = !advanced">
@@ -169,24 +170,24 @@ function chooseContainer(c: string) {
     </button>
     <span v-if="!advanced" class="small muted adv-hint">{{ $t("nextcloud.advancedHint") }}</span>
     <div v-if="advanced" class="grid">
-      <label class="field">
-        <span class="label-line">{{ $t("profile.knownHosts") }}
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-8`">{{ $t("profile.knownHosts") }}</label>
           <HelpTip :text="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :label="$t('profile.knownHosts')" />
         </span>
-        <input v-model="form.known_hosts_file" spellcheck="false" placeholder="~/.ssh/known_hosts" />
-      </label>
-      <label class="field narrow">
-        <span class="label-line">{{ $t("nextcloud.ctid") }}
+        <input :id="`${uid}-8`" v-model="form.known_hosts_file" spellcheck="false" placeholder="~/.ssh/known_hosts" />
+      </div>
+      <div class="field narrow">
+        <span class="label-line"><label :for="`${uid}-9`">{{ $t("nextcloud.ctid") }}</label>
           <HelpTip :text="$t('nextcloud.help.ctid')" example="105" :label="$t('nextcloud.ctid')" />
         </span>
-        <input v-model="form.ctid" inputmode="numeric" :placeholder="$t('nextcloud.auto')" />
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("nextcloud.installDir") }}
+        <input :id="`${uid}-9`" v-model="form.ctid" inputmode="numeric" :placeholder="$t('nextcloud.auto')" />
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-10`">{{ $t("nextcloud.installDir") }}</label>
           <HelpTip :text="$t('nextcloud.help.installDir')" example="/var/www/nextcloud" :label="$t('nextcloud.installDir')" />
         </span>
-        <input v-model="form.install_dir" spellcheck="false" :placeholder="$t('nextcloud.auto')" />
-      </label>
+        <input :id="`${uid}-10`" v-model="form.install_dir" spellcheck="false" :placeholder="$t('nextcloud.auto')" />
+      </div>
     </div>
 
     <div class="actions">

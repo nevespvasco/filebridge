@@ -11,6 +11,7 @@ import { jobLabel } from "@/lib/jobs";
 import { canReveal, pickSavePath, revealInFileManager } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
+import ModalDialog from "./ModalDialog.vue";
 import ProgressBar from "./ProgressBar.vue";
 
 const props = defineProps<{ jobId: string | null }>();
@@ -94,10 +95,8 @@ void t;
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="jobId" class="overlay" @click.self="emit('close')" @keydown.esc="emit('close')">
-      <div class="dialog card" role="dialog" aria-modal="true" :aria-label="$t('report.title')">
-        <h2>{{ $t("report.title") }}<span v-if="job" class="muted">: {{ jobLabel(job) }}</span></h2>
+  <ModalDialog :open="!!jobId" :title="$t('report.title')" :width="520" :busy="busy" @close="emit('close')">
+        <template #title>{{ $t("report.title") }}<span v-if="job" class="muted">: {{ jobLabel(job) }}</span></template>
         <template v-if="!done">
           <fieldset>
             <legend class="small muted">{{ $t("report.format") }}</legend>
@@ -136,15 +135,10 @@ void t;
             <button class="btn btn-primary" @click="emit('close')">{{ $t("common.close") }}</button>
           </div>
         </template>
-      </div>
-    </div>
-  </Teleport>
+  </ModalDialog>
 </template>
 
 <style scoped>
-.overlay { position: fixed; inset: 0; background: var(--overlay); display: grid; place-items: center; z-index: 50; padding: 1rem; }
-.dialog { width: min(520px, 100%); display: grid; gap: 0.8rem; }
-h2 { margin: 0; font-size: 1.1rem; overflow-wrap: anywhere; }
 fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
 legend { margin-bottom: 0.3rem; }
 .opt { display: flex; gap: 0.5rem; align-items: center; cursor: pointer; }
