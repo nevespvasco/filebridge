@@ -104,7 +104,8 @@ the engine in the app process and rclone linked in as librclone.
 - [x] UI without the desktop-only parts (checked on an emulator at 1080×2400).
 - [ ] Run the gate on a real phone (passed on an Android 15 emulator, see
       [11](11-mobile.md#as-built-2026-10-22)).
-- [ ] "Trust this host key" for SSH profiles on a phone.
+- [x] "Trust this host key" for SSH profiles on a phone (ADR 0015; checked on an Android 15
+      emulator, see [11](11-mobile.md#ssh-host-keys-on-a-phone-2026-10-24)).
 
 **Gate:** from an Android phone, send a real folder with at least 1,000 photos and videos to
 Nextcloud over WebDAV; turn the screen off and switch apps mid-send; force-stop the app once and

@@ -14,7 +14,8 @@ real-server benchmark is still pending and can reopen it.
 ## Build
 
 - Rust toolchain: `~/.cargo/bin/cargo` (not on PATH by default). rclone: `~/.local/bin/rclone`.
-- Android (docs/11): Go `~/.local/go/bin/go`, SDK `~/Android/Sdk` (NDK under `ndk/`).
+- Android (docs/11): Go `~/.local/go/bin/go`, SDK `~/Android/Sdk` (NDK under `ndk/`). On macOS:
+  Go and JDK 17 from Homebrew, SDK `~/Library/Android/sdk`.
   `sidecars/librclone/build.sh android`, then `pnpm tauri android build` in `apps/desktop` with
   `ANDROID_HOME`, `NDK_HOME` and `JAVA_HOME` (JDK 17 or 21) set.
 - `cargo test --workspace` and `cargo clippy --workspace -- -D warnings` must pass.

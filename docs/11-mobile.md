@@ -112,11 +112,32 @@ the screen off, force-stopped at 288 files, reopened, resumed and finished; veri
 identical, 0 differences; the foreground service stopped by itself at the end. The app password
 was stored only as ciphertext.
 
+### SSH host keys on a phone (2026-10-24)
+
+ADR 0015's "Trust this server?" works on the phone with no change: the commands are the same, and
+`known_hosts` defaults to `<app data>/.ssh/known_hosts` because the app sets `HOME` there.
+**Tested** on an Android 15 emulator (arm64, release APK) against an OpenSSH server on the host
+(`10.0.2.2:2222`, password sign-in):
+
+- New SFTP destination, Save: the dialog showed the server, `ssh-ed25519`, the same `SHA256:`
+  fingerprint `ssh-keygen -lf` gives on the server, and the file
+  `/data/user/0/app.filebridge.desktop/.ssh/known_hosts`. After "Trust and continue" the key was
+  appended (`host key trusted` in the log), the destination saved, and the connection check
+  passed without asking again.
+- Server reinstalled with new host keys, Destinations → Test: "This server's key has changed",
+  with the key presented now, the file and line on record, and no way to accept it.
+
+Not checked: the file's 0600 mode (a release build allows no `run-as`; the folder is private to
+the app anyway) and Nextcloud direct mode (same operations, not run on the phone).
+
 **Known gaps:**
 
-- **SSH profiles on a phone** (SFTP, Nextcloud direct mode) need the server in `known_hosts`
-  (now in the app's data folder), and a phone has no `ssh` to add it. A "trust this host key"
-  step that shows the fingerprint is needed before SSH profiles work there.
+- **A changed host key is a dead end on a phone.** The dialog says to remove the old line from
+  `known_hosts`, but that file is inside the app's private folder: the only way out is clearing
+  the app's data (which also removes its destinations). A guided "replace the key" flow needs its
+  own decision (ADR 0015, Consequences).
+- At 1080×2400 the changed-key dialog's long path and fingerprint run past its right edge, and
+  the SFTP form still says "SSH agent" and "your user on this computer", which a phone has not.
 - **Verifying over Nextcloud WebDAV is slow** (about one file a second): Nextcloud gives no
   SHA-256, so each file is downloaded, and rclone lists the whole folder for each one. Not
   phone-specific.
@@ -125,8 +146,9 @@ was stored only as ciphertext.
   everything after).
 - Some texts still say "window" ("You can close the window: it keeps going").
 - The Android package id is `app.filebridge.desktop` (from `tauri.conf.json`).
-- The release APK is signed with the Android debug key; a key of your own goes in
-  `gen/android/key.properties` (git-ignored).
+- Without `gen/android/key.properties` (git-ignored, your own key) the release APK comes out
+  unsigned; for an emulator, sign it with the debug key (`zipalign`, then `apksigner sign --ks
+  ~/.android/debug.keystore`).
 - iOS (Phase 4b) is not started: it needs a Mac.
 
 ## Risks
