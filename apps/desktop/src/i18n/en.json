@@ -724,7 +724,7 @@
     "badWindow": "Start and end must be different times.",
     "bandwidth": "Bandwidth limit",
     "schedule": "Hours when it may send",
-    "service": "About filebridge",
+    "service": "About",
     "state": "State",
     "version": "Version",
     "serviceHint": "filebridge-service does the transfers; the window only shows them. It starts by itself when needed.",

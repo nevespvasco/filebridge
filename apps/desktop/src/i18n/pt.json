@@ -724,7 +724,7 @@
     "badWindow": "O início e o fim têm de ser horas diferentes.",
     "bandwidth": "Limite de largura de banda",
     "schedule": "Horas em que pode enviar",
-    "service": "Sobre o filebridge",
+    "service": "Sobre",
     "state": "Estado",
     "version": "Versão",
     "serviceHint": "O filebridge-service faz os envios; a janela só os mostra. Arranca sozinho quando é preciso.",

@@ -92,20 +92,22 @@ function clearFilters() {
     <template v-if="!(conn.offline && !jobs.page.length && !filtered)">
       <div class="toolbar">
         <SearchField v-model="search" :placeholder="$t('jobs.search')" />
-        <label class="small inline">
+        <label class="picker" :class="{ set: profileId }">
           <span class="muted">{{ $t("jobs.destination") }}</span>
           <select v-model="profileId">
             <option value="">{{ $t("jobs.allDestinations") }}</option>
             <option v-for="p in profiles.list" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
+          <AppIcon name="caretDown" class="chevron" />
         </label>
-        <label class="small inline">
+        <label class="picker">
           <span class="muted">{{ $t("files.sort") }}</span>
           <select v-model="sort">
             <option value="newest">{{ $t("jobs.sort.newest") }}</option>
             <option value="oldest">{{ $t("jobs.sort.oldest") }}</option>
             <option value="largest">{{ $t("jobs.sort.largest") }}</option>
           </select>
+          <AppIcon name="caretDown" class="chevron" />
         </label>
       </div>
       <FilterChips v-model="groups" :options="groupChips" :label="$t('files.show')" :all-label="$t('files.chip.all')" :all-count="allCount" class="chips" />
@@ -198,9 +200,19 @@ function clearFilters() {
 </template>
 
 <style scoped>
-.toolbar { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
-.inline { display: inline-flex; gap: 0.4rem; align-items: center; min-width: 0; }
-.inline select { width: auto; max-width: 14rem; }
+.toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.toolbar :deep(.search) { max-width: none; }
+.toolbar :deep(.search input) { height: 2.25rem; }
+/* A label and its list as one control, the same height as the search: WebKit ignores a native
+   list's padding, so the list is unstyled and the box around it carries the border. */
+.picker { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; height: 2.25rem; padding: 0 0.6rem 0 0.75rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); font-size: var(--fs-sm); cursor: pointer; min-width: 0; }
+.picker:hover { background: var(--surface-2); }
+.picker:focus-within { outline: 2px solid var(--focus); outline-offset: 0; }
+.picker.set { border-color: var(--accent); }
+.picker > span { white-space: nowrap; }
+.picker select { appearance: none; -webkit-appearance: none; field-sizing: content; border: 0; background: transparent; padding: 0 1.1rem 0 0; margin-right: -1.1rem; width: auto; max-width: 12rem; font-weight: 600; color: var(--text); cursor: pointer; text-overflow: ellipsis; }
+.picker select:focus-visible { outline: none; }
+.picker .chevron { color: var(--text-2); pointer-events: none; flex: none; }
 .chips { margin-bottom: 1rem; }
 .table-wrap { container-type: inline-size; }
 .c-what { width: 26%; }
@@ -217,17 +229,15 @@ function clearFilters() {
 .page-head .lead-text { margin-bottom: 0; }
 .th-help { display: inline-flex; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: center; align-items: center; gap: 0.5rem 1rem; margin-top: 1rem; flex-wrap: wrap; }
-/* Beside the sidebar there is no room for the search and both lists on one line: the search gets
-   its own line, the lists go under it, instead of the search shrinking to a few letters. */
-@media (max-width: 1099px) {
-  .toolbar :deep(.search) { flex-basis: 100%; max-width: none; }
+/* When the search and both lists don't fit on one line, the search gets its own line rather
+   than shrinking to a few letters. */
+@media (max-width: 759px) {
+  .toolbar :deep(.search) { flex-basis: 100%; min-width: 0; }
 }
 @media (max-width: 559px) {
-  .toolbar { gap: 0.5rem; }
-  .toolbar :deep(.search) { flex-basis: 100%; max-width: none; min-width: 0; }
-  /* The two filters side by side, each label over its list, so the lists line up. */
-  .inline { flex: 1 1 9rem; flex-direction: column; align-items: stretch; gap: 0.2rem; }
-  .inline select { width: 100%; max-width: none; }
+  /* The two lists share the line under the search, each taking half. */
+  .picker { flex: 1 1 0; }
+  .picker select { flex: 1; max-width: none; }
 }
 /* Columns that can't fit go first: Size, then the table becomes a list of cards (D06). */
 @container (max-width: 860px) {
