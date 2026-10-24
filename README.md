@@ -2,8 +2,8 @@
 
 > Working name — the final name is still an [open decision](docs/10-risks-and-open-decisions.md#open-decisions).
 
-A cross-platform desktop app (Linux, Windows, macOS) that turns a manual, terminal-driven file
-migration into a 5-step wizard:
+A cross-platform app (Linux, Windows, macOS; Android in progress) that turns a manual,
+terminal-driven file migration into a 5-step wizard:
 
 1. **Source** — pick files or folders.
 2. **Destination** — pick a saved destination profile.
@@ -32,13 +32,18 @@ Every problem hit during a 31-hour manual migration to Nextcloud became a featur
 ## Stack
 
 Tauri 2 + Vue 3 + TypeScript (UI), Rust + tokio (core), rclone as an embedded sidecar driven through
-its `rc` API (transfer engine), SQLite (state), OS keyring via the `keyring` crate (secrets).
+its `rc` API (transfer engine; linked in as librclone on phones), SQLite (state), OS keyring via
+the `keyring` crate (secrets).
 The core never calls rclone directly — it talks to a `Transport` contract. See [docs/01-stack.md](docs/01-stack.md).
 
 ## Status
 
-**Phase 0 — Prototype.** Docs only; no code yet. Next: validate that per-file renaming during an
-rclone transfer is fast enough (see [roadmap](docs/09-roadmap.md)).
+**Phase 1 — Personal MVP.** The desktop app, the background service and the CLI run the whole
+wizard end to end over local folders, SFTP and Nextcloud. Phase 0 passed provisionally on
+simulated results (plan A, [ADR 0007](docs/adr/0007-rename-in-transit-strategy.md)); the
+real-server benchmark is still pending. Most of Phase 2 (verification, repair, WebDAV, keyring)
+and the Android build (Phase 4a) are also in; the Nextcloud and SSH paths still have to run
+against the real servers. Details and gates in the [roadmap](docs/09-roadmap.md).
 
 ## Documentation
 
@@ -55,8 +60,10 @@ Start at [docs/README.md](docs/README.md).
 | [06 Interface](docs/06-interface.md) | Wizard, screens, UX principles |
 | [07 Security & reliability](docs/07-security-reliability.md) | Resume, sleep inhibit, keys, keyring |
 | [08 Repository structure](docs/08-repository-structure.md) | Monorepo layout and dependency rules |
-| [09 Roadmap](docs/09-roadmap.md) | Phases 0–3 with gates |
+| [09 Roadmap](docs/09-roadmap.md) | Phases 0–4 with gates |
 | [10 Risks & open decisions](docs/10-risks-and-open-decisions.md) | Risks, mitigations, open questions |
+| [11 Mobile](docs/11-mobile.md) | Phones as a Source: Android first, then iOS |
+| [Design](docs/design/) | Design system, navigation and screen specs |
 | [ADRs](docs/adr/) | Architecture decision records |
 
 ## Repository layout
@@ -64,18 +71,24 @@ Start at [docs/README.md](docs/README.md).
 ```
 filebridge/
 ├── apps/
-│   ├── desktop/              # Tauri 2 + Vue 3 + TS
+│   ├── desktop/              # Tauri 2 + Vue 3 + TS; on Android also hosts the engine
+│   ├── service/              # filebridge-service: runs the engine, serves ipc
 │   └── cli/                  # same core, no UI (servers, scripts)
 ├── crates/
 │   ├── core/                 # Job, pipeline, states, Registry, progress events
+│   ├── host/                 # wires rclone and the built-in plugins into an engine
+│   ├── ipc/                  # window/CLI ↔ service messages over a local socket
+│   ├── model/                # types the UI and the service share
 │   ├── scanner/              # walk source, names as bytes, manifest
 │   ├── names/                # NameRule trait + general rules
 │   ├── store/                # SQLite: jobs, manifests, profiles
 │   ├── secrets/              # OS keyring
 │   ├── transport-api/        # Transport trait + types
 │   ├── transport-rclone/     # implementation over rclone rc API
+│   ├── transport-nextcloud/  # small files to Nextcloud by bulk upload
+│   ├── transport-fake/       # local Transport with fault injection (tests, dev)
 │   ├── integration-api/      # Integration trait + types
 │   └── integration-nextcloud/# WebDAV, direct mode, occ, own rules
-├── sidecars/                 # rclone binaries per platform (not committed)
+├── sidecars/                 # rclone binaries per platform; librclone/ for phones
 └── docs/
 ```
