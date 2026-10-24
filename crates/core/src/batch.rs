@@ -4,8 +4,10 @@
 //!
 //! Entries go `Partial` before the call. A file the transport reports arrived (`ItemDone`) is
 //! saved `Done` on the next 500 ms tick, so a crash or a pause loses at most that tick's files,
-//! which are sent again. When the call answers, every Entry gets its outcome: `Done`, `Failed`,
-//! or back to `Partial` for a retryable error.
+//! which are sent again. When the call answers, every Entry gets its outcome: `Done`, or a failed
+//! send. A failed file goes back to `Partial` to be sent again after the others, and is given up
+//! on (`Failed`) after `max_retries` retries (ADR 0020). Failures while the destination doesn't
+//! answer at all count against no file: the whole stage backs off and tries again.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -20,6 +22,7 @@ use filebridge_transport_api::{
 use tokio::sync::broadcast;
 
 use crate::analyse::{bytes_path, source_parent};
+use crate::engine::PREFLIGHT_TIMEOUT;
 use crate::{CoreError, Event, Result};
 use filebridge_model::{DoneView, FileCategory, InFlightView};
 
@@ -35,10 +38,11 @@ pub(crate) enum Stop {
 
 /// How a batch ended.
 pub(crate) enum Sent {
-    /// The transport answered for every item; each Entry has its state. `retry` is the first
-    /// retryable error of an item, whose Entry went back to `Partial`.
-    Answered { retry: Option<String> },
-    /// The whole call failed with a retryable error; its Entries stay `Partial`.
+    /// The transport answered for every item; each Entry has its state. `retry_later` is the
+    /// first error of a file that went back to `Partial`, to be sent again once the rest is.
+    Answered { retry_later: Option<String> },
+    /// The whole call failed with a retryable error, or every file failed and the destination
+    /// doesn't answer; its Entries stay `Partial` and no file's retries are used up.
     Retry(String),
     /// Stopped by `stop`; files still in flight stay `Partial`.
     Stopped(Stop),
@@ -66,6 +70,8 @@ pub(crate) struct Batch<'a> {
     /// The Job's Sources, by `ManifestEntry::entry.source`.
     pub sources: &'a [PathBuf],
     pub concurrency: usize,
+    /// Failed sends of one file before it is given up on, while the destination answers.
+    pub max_retries: u32,
     /// The whole Stage's files and bytes, for progress.
     pub files_total: u64,
     pub bytes_total: u64,
@@ -119,7 +125,7 @@ impl Batch<'_> {
             .set_transfer_states(self.job_id, std::mem::take(&mut updates))
             .await?;
         if items.is_empty() {
-            return Ok(Sent::Answered { retry: None });
+            return Ok(Sent::Answered { retry_later: None });
         }
         let job = TransferJob {
             id: format!("{}-{}", self.job_id, kept[0].entry.idx),
@@ -173,7 +179,7 @@ impl Batch<'_> {
             Err(e) => return Err(e.into()),
         };
 
-        let mut retry = None;
+        let mut failures = Vec::new();
         let mut any_done = false;
         for (i, (e, outcome)) in kept.iter().zip(result.items).enumerate() {
             match outcome {
@@ -197,13 +203,7 @@ impl Batch<'_> {
                     });
                     tally.failed += 1;
                     tally.first_error.get_or_insert_with(|| err.message.clone());
-                    let state = if err.is_retryable() {
-                        retry.get_or_insert_with(|| err.message.clone());
-                        EntryState::Partial
-                    } else {
-                        EntryState::Failed
-                    };
-                    updates.push((e.entry.idx, state, Some(err.message)));
+                    failures.push((e.entry.idx, err.message));
                 }
             }
         }
@@ -211,7 +211,39 @@ impl Batch<'_> {
         if any_done {
             self.store.set_job_retry(self.job_id, 0, None).await?;
         }
-        Ok(Sent::Answered { retry })
+        if failures.is_empty() {
+            return Ok(Sent::Answered { retry_later: None });
+        }
+        if !any_done && !self.answers().await {
+            let first = failures[0].1.clone();
+            self.store
+                .set_transfer_states(
+                    self.job_id,
+                    failures
+                        .into_iter()
+                        .map(|(idx, msg)| (idx, EntryState::Partial, Some(msg)))
+                        .collect(),
+                )
+                .await?;
+            return Ok(Sent::Retry(first));
+        }
+        let given_up = self
+            .store
+            .record_send_failures(self.job_id, failures.clone(), self.max_retries)
+            .await?;
+        let retry_later = failures
+            .into_iter()
+            .find(|(idx, _)| !given_up.contains(idx))
+            .map(|(_, msg)| msg);
+        Ok(Sent::Answered { retry_later })
+    }
+
+    /// Whether the destination answers at all, so a file that failed has itself to blame.
+    async fn answers(&self) -> bool {
+        matches!(
+            tokio::time::timeout(PREFLIGHT_TIMEOUT, self.transport.preflight(self.dest)).await,
+            Ok(Ok(_))
+        )
     }
 }
 

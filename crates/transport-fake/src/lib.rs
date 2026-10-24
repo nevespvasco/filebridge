@@ -43,6 +43,11 @@ pub struct FakeTransport {
     pub fail_move_once: Mutex<HashMap<String, TransportError>>,
     /// `preflight` never returns, as if the server or the SSH agent stopped answering.
     pub hang_preflight: AtomicBool,
+    /// Destination file names that fail with a retryable error this many more times.
+    pub flaky_names: Mutex<HashMap<String, u32>>,
+    /// While above zero the destination is down: every file of a transfer call fails with a
+    /// retryable error, and each `preflight` fails and counts one down.
+    pub down: AtomicU32,
 }
 
 impl FakeTransport {
@@ -74,6 +79,13 @@ impl Transport for FakeTransport {
     async fn preflight(&self, _dest: &Destination) -> Result<PreflightReport> {
         if self.hang_preflight.load(Ordering::SeqCst) {
             std::future::pending::<()>().await;
+        }
+        if self
+            .down
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Err(TransportError::retryable("no route to host"));
         }
         Ok(PreflightReport {
             free_bytes: Some(1 << 40),
@@ -118,6 +130,19 @@ impl Transport for FakeTransport {
                 tokio::time::sleep(delay).await;
             }
             let name = item.dest.file_name().to_owned();
+            if self.down.load(Ordering::SeqCst) > 0 {
+                items.push(ItemOutcome::Failed(TransportError::retryable(
+                    "connection lost",
+                )));
+                continue;
+            }
+            if let Some(n) = self.flaky_names.lock().unwrap().get_mut(&name)
+                && *n > 0
+            {
+                *n -= 1;
+                items.push(ItemOutcome::Failed(TransportError::retryable("timed out")));
+                continue;
+            }
             if self.fatal_names.lock().unwrap().contains(&name) {
                 items.push(ItemOutcome::Failed(TransportError::fatal(
                     "permission denied",

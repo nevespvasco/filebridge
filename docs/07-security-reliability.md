@@ -24,6 +24,11 @@ wait:    30s  1m    2m    4m    8m     15m (cap, repeated forever)
 Jitter ±10 %. Non-retryable errors (auth revoked, destination path gone, disk full) move the job
 to `Failed` with an actionable message instead of retrying.
 
+This schedule is for the job. **One file** that fails while the destination answers is retried
+three times (after the rest is sent, on the same schedule), then given up on: `Failed`, its error
+kept, listed on the result card. Failures while the destination doesn't answer count against no
+file ([ADR 0020](adr/0020-give-up-on-a-file-after-three-retries.md)).
+
 ## Security
 
 | Measure | Implementation |

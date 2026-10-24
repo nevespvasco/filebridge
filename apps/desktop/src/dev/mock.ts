@@ -346,7 +346,8 @@ function entryAt(job: JobSummary_Serialize, idx: number): EntryView & { renamed:
   else if (sent && job.counts.verified_ok && idx % 1499 === 5 && Math.floor(idx / 1499) < job.counts.mismatch) status = "different";
   else if (idx % 1777 === 11 && Math.floor(idx / 1777) < job.counts.skipped) status = "skipped";
   const size = Math.max(1_000, Math.round(f.size * (0.4 + ((idx * 7919) % 100) / 80)));
-  return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, renamed };
+  const error = status === "failed" ? "permission denied" : null;
+  return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, error, renamed };
 }
 
 const PROBLEMS: EntryStatus[] = ["different", "missing", "unverifiable", "failed"];

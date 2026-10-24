@@ -208,4 +208,7 @@ No store, IPC operation or migration changes.
 
 - Is **skip this file** worth building? It helps when one huge file blocks a slot on a slow link.
   But the file then stays Skipped, and only a new transfer or Send again
-  ([D06](D06-transfers-list.md#send-again)) brings it back.
+  ([D06](D06-transfers-list.md#send-again)) brings it back. *Partly answered:* a file that keeps
+  failing is skipped by the engine after three retries and listed at the end
+  ([ADR 0020](../../adr/0020-give-up-on-a-file-after-three-retries.md)); skipping by hand is
+  still open.

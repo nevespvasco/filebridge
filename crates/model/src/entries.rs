@@ -133,6 +133,8 @@ pub struct EntryView {
     pub size: u64,
     pub category: FileCategory,
     pub status: EntryStatus,
+    /// Why the last send or check failed.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

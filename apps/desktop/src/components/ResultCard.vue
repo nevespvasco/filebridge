@@ -5,7 +5,7 @@
 // differences".
 import { computed, shallowRef, watch } from "vue";
 import { useRouter } from "vue-router";
-import { JOB_OPERATIONS, type EntryFacets, type JobState } from "@/bindings";
+import { JOB_OPERATIONS, type EntryFacets, type EntryView, type JobState } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { api } from "@/lib/api";
 import { TERMINAL, useJobs } from "@/stores/jobs";
@@ -24,21 +24,39 @@ const fmt = useFmt();
 const job = computed(() => jobs.byId[props.jobId]);
 const done = computed(() => !!job.value && TERMINAL.includes(job.value.state));
 const facets = shallowRef<EntryFacets | null>(null);
+/** The first files that couldn't be sent, with why (the engine gave up on them after its
+ *  retries, ADR 0020); the rest are counted. */
+const notSent = shallowRef<EntryView[]>([]);
+const NOT_SENT_LISTED = 10;
 watch(
   () => [props.jobId, done.value, job.value?.finished_at] as const,
   async ([id, finished]) => {
     facets.value = null;
+    notSent.value = [];
     if (!finished) return;
     try {
       facets.value = await api.entryFacets(id);
     } catch {
       // The job's own counts stand in.
     }
+    if (!failedCount()) return;
+    try {
+      const page = await api.entries(id, { statuses: ["failed"], categories: [], renamed: null, include_dirs: false, query: null, sort: "folder_order" }, null, NOT_SENT_LISTED);
+      notSent.value = page.items;
+    } catch {
+      // "See the problems" still lists them.
+    }
   },
   { immediate: true },
 );
+const notSentMore = computed(() => Math.max(0, failedCount() - notSent.value.length));
 
-const byStatus = (s: string) => facets.value?.by_status.find((x) => x.status === s)?.files ?? 0;
+function byStatus(s: string) {
+  return facets.value?.by_status.find((x) => x.status === s)?.files ?? 0;
+}
+function failedCount() {
+  return facets.value ? byStatus("failed") : (job.value?.counts.failed ?? 0);
+}
 const n = computed(() => {
   const j = job.value;
   if (!j) return { files: 0, copied: 0, verified: 0, problems: 0, skipped: 0, renamed: 0 };
@@ -99,6 +117,16 @@ function seeReclaim() {
         <li v-if="job.attempt" class="num">{{ $t("result.retries", { n: job.attempt }, job.attempt) }}</li>
         <li v-if="job.finished_at"><span>{{ fmt.date(job.finished_at) }}</span></li>
       </ul>
+      <div v-if="notSent.length" class="not-sent">
+        <p class="small">{{ $t("result.notSent") }}</p>
+        <ul class="small">
+          <li v-for="e in notSent" :key="e.idx">
+            <span class="name">{{ e.dir ? `${e.dir}/${e.name}` : e.name }}</span>
+            <span v-if="e.error" class="muted"> — {{ e.error }}</span>
+          </li>
+          <li v-if="notSentMore" class="muted">{{ $t("result.notSentMore", { n: fmt.count(notSentMore) }) }}</li>
+        </ul>
+      </div>
       <p v-if="reclaimable" class="small reclaim-line"><AppIcon name="broom" /> {{ $t("result.reclaim", { size: fmt.bytes(reclaimable.bytes) }) }}</p>
       <div class="actions">
         <button v-if="n.problems > 0" class="btn btn-primary" @click="seeProblems"><AppIcon name="warnCircle" /> {{ $t("result.seeProblems") }}</button>
@@ -121,6 +149,9 @@ function seeReclaim() {
 .facts { list-style: none; margin: 0 0 0 calc(-1 * var(--sp-5)); padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) 0; clip-path: inset(0 0 0 var(--sp-5)); }
 .facts li { padding-left: var(--sp-5); }
 .facts li::before { content: "·"; display: inline-block; width: var(--sp-5); margin-left: calc(-1 * var(--sp-5)); text-align: center; color: var(--muted); }
+.not-sent p { margin: 0; }
+.not-sent ul { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); display: grid; gap: var(--sp-1); }
+.not-sent .name { overflow-wrap: anywhere; }
 .reclaim-line { margin: 0; display: flex; gap: var(--sp-2); align-items: center; color: var(--ok); }
 .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-1); }
 .tone-ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }

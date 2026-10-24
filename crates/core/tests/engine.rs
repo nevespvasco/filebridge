@@ -143,6 +143,7 @@ fn engine_with_batch(
             batch_size,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::fixed(|| NOON),
         },
     )
@@ -1199,6 +1200,51 @@ async fn fatal_file_errors_finish_with_warnings() {
     let summary = s.engine.job(&job).await.unwrap();
     assert_eq!((summary.counts.done, summary.counts.failed), (2, 1));
     assert!(summary.error.unwrap().contains("could not be sent"));
+    // Sent once with the others, then retried three times on its own.
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst), 4);
+    let detail = s
+        .engine
+        .entry_detail(&job, inverno_idx(&s, &job).await)
+        .await;
+    assert_eq!(detail.unwrap().error.as_deref(), Some("permission denied"));
+}
+
+async fn inverno_idx(s: &Setup, job: &str) -> u64 {
+    let all = s
+        .engine
+        .files_page(job, EntryFilter::default(), None, 100)
+        .await
+        .unwrap();
+    all.items
+        .iter()
+        .find(|e| e.name == "Inverno.jpg")
+        .unwrap()
+        .idx
+}
+
+#[tokio::test]
+async fn a_file_that_fails_a_few_times_is_sent_on_a_retry() {
+    let s = setup().await;
+    s.transport
+        .flaky_names
+        .lock()
+        .unwrap()
+        .insert("Inverno.jpg".into(), 3);
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+    assert_eq!(s.engine.job(&job).await.unwrap().counts.failed, 0);
+}
+
+#[tokio::test]
+async fn a_destination_that_is_down_uses_up_no_file_retries() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    s.transport.down.store(8, Ordering::SeqCst);
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+    // More failed calls than a file's retries, and none given up on.
+    assert!(s.transport.calls.load(Ordering::SeqCst) > 4);
 }
 
 #[tokio::test]
@@ -2209,6 +2255,7 @@ async fn a_profile_password_lives_in_the_keyring_only() {
             batch_size: 3,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::fixed(|| NOON),
         },
     );
@@ -2290,6 +2337,7 @@ async fn a_password_a_profile_needs_cannot_be_removed() {
             batch_size: 3,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::fixed(|| NOON),
         },
     );

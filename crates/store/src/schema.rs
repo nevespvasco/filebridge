@@ -138,6 +138,11 @@ ALTER TABLE profiles ADD COLUMN deleted_at INTEGER;
     r#"
 ALTER TABLE jobs ADD COLUMN discarded_at INTEGER;
 "#,
+    // 9: how many times sending a file failed while the destination answered; past the limit the
+    // file is given up on (ADR 0020).
+    r#"
+ALTER TABLE manifest_entries ADD COLUMN send_failures INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

@@ -1280,6 +1280,8 @@
     "renamed": "{n} name fixed for the destination | {n} names fixed for the destination",
     "skipped": "{n} skipped | {n} skipped",
     "retries": "retried by itself once | retried by itself {n} times",
+    "notSent": "Couldn't be sent, even after retrying each one:",
+    "notSentMore": "and {n} more",
     "reclaim": "You can free {size} at the source.",
     "seeProblems": "See the problems",
     "export": "Export the report (proof)",

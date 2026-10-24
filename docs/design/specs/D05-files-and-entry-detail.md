@@ -316,8 +316,9 @@ positioned; `J`/`K`/arrows move and `Enter` opens.
 ## Out of scope
 
 - A thumbnail preview of the source image (F13). Later: cheap and read-only, but it proves nothing.
-- Bulk actions on files (retry these, skip these). The job already retries failures as a whole
-  (Resume); per-file actions wait for the skip question in [D04](D04-transfer-queue.md#open-questions).
+- Bulk actions on files (retry these, skip these). The engine retries each failed file three
+  times by itself and then gives up on it ([ADR 0020](../../adr/0020-give-up-on-a-file-after-three-retries.md));
+  per-file actions wait for the skip question in [D04](D04-transfer-queue.md#open-questions).
 - Browsing the destination's own files: that is Repair destination ([04](../../04-name-correction.md)).
 
 ## Open questions

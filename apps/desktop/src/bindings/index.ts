@@ -663,6 +663,8 @@ export type EntryView_Deserialize = {
 	size: number,
 	category: FileCategory,
 	status: EntryStatus,
+	/**  Why the last send or check failed. */
+	error?: string | null,
 };
 
 /**  One row of the Files tab. */
@@ -678,6 +680,8 @@ export type EntryView_Serialize = {
 	size: number,
 	category: FileCategory,
 	status: EntryStatus,
+	/**  Why the last send or check failed. */
+	error: string | null,
 };
 
 /**

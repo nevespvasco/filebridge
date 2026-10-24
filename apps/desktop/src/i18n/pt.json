@@ -1280,6 +1280,8 @@
     "renamed": "{n} nome corrigido para o destino | {n} nomes corrigidos para o destino",
     "skipped": "{n} saltado | {n} saltados",
     "retries": "tentou de novo sozinho uma vez | tentou de novo sozinho {n} vezes",
+    "notSent": "Não foi possível enviar, mesmo depois de tentar cada um de novo:",
+    "notSentMore": "e mais {n}",
     "reclaim": "Pode libertar {size} na origem.",
     "seeProblems": "Ver os problemas",
     "export": "Exportar o relatório (prova)",

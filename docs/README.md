@@ -41,6 +41,7 @@ detail to build each crate on its own.
 | [0015](adr/0015-trust-unknown-host-key-in-the-app.md) | An unknown SSH host key is trusted in the wizard after the user checks its fingerprint; a changed key never is |
 | [0016](adr/0016-nextcloud-bulk-upload.md) | Small files to Nextcloud go by its bulk upload (`transport-nextcloud`, in front of rclone); the rest through rclone |
 | [0017](adr/0017-discarded-drafts.md) | A draft the New-transfer wizard replaces is discarded (Cancelled, kept, hidden from the Transfers list and Activity), not shown as cancelled |
+| [0020](adr/0020-give-up-on-a-file-after-three-retries.md) | A file that keeps failing is retried three times, then given up on and listed at the end; a destination that doesn't answer uses up no file's retries |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

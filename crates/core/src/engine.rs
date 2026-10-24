@@ -40,6 +40,9 @@ pub struct EngineOptions {
     pub inhibit_sleep: bool,
     /// Verify → resend rounds before giving up on mismatches.
     pub max_verify_rounds: u32,
+    /// Retries of a file that fails while the destination answers, before it is given up on
+    /// (ADR 0020).
+    pub max_file_retries: u32,
     /// The local time the send window is checked against.
     pub local_clock: LocalClock,
 }
@@ -51,6 +54,7 @@ impl Default for EngineOptions {
             batch_size: 500,
             inhibit_sleep: true,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::default(),
         }
     }
@@ -93,7 +97,7 @@ pub struct Engine {
 /// How long one plugin's preflight may take. It is a few round trips to the destination; a
 /// server, SSH agent or keyring that never answers must not leave a connection test (or an
 /// analysis) waiting forever, so past this it counts as a failed check.
-const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn no_answer() -> String {
     format!(

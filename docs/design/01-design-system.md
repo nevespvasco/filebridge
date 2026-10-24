@@ -279,7 +279,8 @@ differences"; the accent is for the one main action of a screen.
 `ResultCard` ends a transfer, in the wizard's last step and on top of its page: one big number in
 `--fs-stat`, one sentence ("1,234 files copied and verified, one by one"), one line under it ("No
 differences…"), the facts (size, names fixed, skipped, retries, when) and what to do next
-(Export the report, See the problems, See the space to free). Its numbers are the Files tab's own
+(Export the report, See the problems, See the space to free). When files couldn't be sent, it
+lists the first ten with their error and how many more ([ADR 0020](../adr/0020-give-up-on-a-file-after-three-retries.md)). Its numbers are the Files tab's own
 facets, so the card and the list never disagree. Tones: green verified, accent copied without
 verification, amber problems, red stopped, grey cancelled.
 
