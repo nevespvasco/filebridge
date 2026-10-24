@@ -239,14 +239,21 @@ struct Starter<'a> {
 impl Starter<'_> {
     async fn connect_or_start(&self) -> Result<Client, ErrorBody> {
         let endpoint = self.endpoint;
-        let Ok(client) = Client::connect(endpoint).await else {
-            let bin = (self.find_binary)().ok_or_else(|| {
-                unavailable(format!(
-                    "{SERVICE_BIN} is not running and was not found next to the app or on PATH"
-                ))
-            })?;
-            let (client, pong) = self.start(&bin, &Launch::default()).await?;
-            return check_protocol(client, &pong, self.protocol);
+        let client = match Client::connect(endpoint).await {
+            Ok(client) => client,
+            // Another user's process holds the name: starting ours wouldn't take it back.
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Err(unavailable(format!("{}: {e}", endpoint.display())));
+            }
+            Err(_) => {
+                let bin = (self.find_binary)().ok_or_else(|| {
+                    unavailable(format!(
+                        "{SERVICE_BIN} is not running and was not found next to the app or on PATH"
+                    ))
+                })?;
+                let (client, pong) = self.start(&bin, &Launch::default()).await?;
+                return check_protocol(client, &pong, self.protocol);
+            }
         };
         let pong = client.ping().await?;
         if pong.protocol >= self.protocol {
@@ -313,7 +320,10 @@ impl Starter<'_> {
                     let pong = client.ping().await?;
                     return Ok((client, pong));
                 }
-                Err(e) if Instant::now() >= deadline => {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::PermissionDenied
+                        || Instant::now() >= deadline =>
+                {
                     return Err(unavailable(format!(
                         "{} did not answer on {} within {} s: {e}",
                         bin.display(),

@@ -5,8 +5,12 @@ Messages between clients (the Tauri window) and `filebridge-service`.
 
 ## Protocol
 - Newline-delimited JSON over a local socket (`interprocess`): a Unix socket at
-  `$XDG_RUNTIME_DIR/filebridge/service.sock`, inside a directory forced to 0700, or a per-user
-  named pipe on Windows (`Endpoint::default_for_user`).
+  `$XDG_RUNTIME_DIR/filebridge/service.sock` (else `filebridge/service.sock` in this user's cache
+  directory, never a shared temporary one), inside a directory of this user forced to 0700, or a
+  per-user named pipe on Windows whose DACL admits only this user (`Endpoint::default_for_user`).
+- `Client::connect` checks who serves the endpoint before sending anything: the peer's uid on
+  Unix, the token user SID of the pipe's server process on Windows. Another user's process is
+  refused with `PermissionDenied` (ADR 0008).
 - Client → service: `{"id": n, "request": {"type": "<request>", …arguments}}`. The request is
   kept apart from the call's `id`, so an argument may itself be called `id`. Service → client:
   `{"kind": "response", "id": n, "ok": …}` or `… "err": {"code", "message"}`, plus

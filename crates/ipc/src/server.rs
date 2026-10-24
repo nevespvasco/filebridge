@@ -1,6 +1,5 @@
 //! The service side: accept connections and run each request against a [`Handler`].
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use interprocess::local_socket::ListenerOptions;
@@ -19,21 +18,28 @@ pub trait Handler: Operations {
     fn subscribe(&self) -> broadcast::Receiver<Event>;
 }
 
-/// Creates the listener. On Unix the socket's directory is created (or tightened) to 0700, so
-/// only this user can connect. A stale socket file from a crashed service is replaced.
+/// Creates the listener, reachable only by this user: on Unix the socket's directory must be
+/// this user's and is tightened to 0700; on Windows the pipe's DACL admits only this user's SID.
+/// A stale socket file from a crashed service is replaced.
 pub fn bind(endpoint: &Endpoint) -> std::io::Result<Listener> {
     if let Endpoint::Path(path) = endpoint {
         prepare_dir(path)?;
     }
-    ListenerOptions::new()
+    let options = ListenerOptions::new()
         .name(endpoint.name()?)
-        .try_overwrite(true)
-        .create_tokio()
+        .try_overwrite(true);
+    #[cfg(windows)]
+    let options = {
+        use interprocess::os::windows::local_socket::ListenerOptionsExt;
+        options.security_descriptor(crate::peer::user_only()?)
+    };
+    options.create_tokio()
 }
 
 #[cfg(unix)]
 fn prepare_dir(path: &std::path::Path) -> std::io::Result<()> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    use std::path::PathBuf;
     let dir: PathBuf = path
         .parent()
         .map(PathBuf::from)
@@ -42,6 +48,20 @@ fn prepare_dir(path: &std::path::Path) -> std::io::Result<()> {
         .recursive(true)
         .mode(0o700)
         .create(&dir)?;
+    // Not followed: a directory someone else made (or a link to one) is refused, so another
+    // user can't hold the socket's place.
+    let meta = std::fs::symlink_metadata(&dir)?;
+    // SAFETY: geteuid has no preconditions and can't fail.
+    let me = unsafe { libc::geteuid() };
+    if !meta.is_dir() || meta.uid() != me {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "{} is not a directory owned by this user; remove it and start again",
+                dir.display()
+            ),
+        ));
+    }
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
 }
 
@@ -160,5 +180,33 @@ fn error_response(id: u64, code: &str, message: String) -> Outgoing {
             code: code.into(),
             message,
         }),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_socket_directory_is_tightened_to_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("run");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        prepare_dir(&dir.join("service.sock")).unwrap();
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+    }
+
+    #[test]
+    fn a_link_in_place_of_the_socket_directory_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap();
+        let dir = tmp.path().join("run");
+        std::os::unix::fs::symlink(&elsewhere, &dir).unwrap();
+        let err = prepare_dir(&dir.join("service.sock")).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     }
 }

@@ -15,6 +15,16 @@ events, with TypeScript types generated from Rust.
 - Clients connect over a **local socket** (`interprocess` crate): a Unix socket at
   `$XDG_RUNTIME_DIR/filebridge/service.sock` with mode 0600 on Linux/macOS, and a per-user named
   pipe on Windows. Only the current user can connect.
+  *Amended (Phase 1):* the endpoint is checked both ways, because another local user could
+  otherwise create the name first and receive the passwords that requests carry (Windows pipe
+  names are shared by every session; a shared temporary directory lets anyone create the path).
+  Without `$XDG_RUNTIME_DIR` the socket goes in this user's cache directory (`~/Library/Caches`
+  on macOS, `$XDG_CACHE_HOME` or `~/.cache` elsewhere), never a shared temporary directory; the
+  service refuses a socket directory that is not this user's (or is a link) and forces it to
+  0700. On Windows the pipe is created with a protected DACL that admits only this user's SID.
+  The client checks the peer before sending anything: the socket's peer uid (Unix) or the token
+  user SID of the process serving the pipe (Windows) must be this user's, else the connection is
+  refused (`PermissionDenied`) and the window reports it instead of starting a service.
 - **Newline-delimited JSON**: `Request` / `Response` pairs with an id, plus a `Subscribe` request
   that turns the connection into an `Event` stream.
 - The message types live in **`crates/ipc`** and derive `serde` + `specta::Type`; the Tauri app's

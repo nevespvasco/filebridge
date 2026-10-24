@@ -1738,12 +1738,16 @@ dependencies = [
  "filebridge-model",
  "filebridge-transport-api",
  "interprocess",
+ "libc",
  "serde",
  "serde_json",
  "specta",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "widestring",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
