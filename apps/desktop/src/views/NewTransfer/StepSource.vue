@@ -149,17 +149,15 @@ const blocked = computed(() => wizard.sourceBlockers.length);
     <RecentSources v-if="recentShown.length" class="recent" data-tour="source-recent" :items="recentShown" @add="(p) => wizard.addSources([p])" />
 
     <div class="footer sticky" data-tour="source-next">
-      <span class="summary small" :class="{ 'has-hint': !has || blocked, 'has-undo': undo }" :title="has ? summary.long : undefined" aria-live="polite">
+      <span class="summary small" :class="{ 'has-hint': blocked, 'has-undo': undo }" :title="has ? summary.long : undefined" aria-live="polite">
         <template v-if="has"><span class="long">{{ summary.long }}</span><span class="short" aria-hidden="true">{{ summary.short }}</span></template>
-        <template v-else>{{ $t("source.nothingYet") }}</template>
       </span>
       <span v-if="undo" class="undo small" role="status">
         {{ $t("source.removed", { what: undo.label }) }}
         <button class="btn btn-small" type="button" @click="restore"><AppIcon name="undo" /> {{ $t("source.undo") }}</button>
       </span>
       <span class="grow" />
-      <span v-if="!has" class="why-disabled" :class="{ 'has-undo': undo }">{{ $t("source.needOne") }}</span>
-      <span v-else-if="blocked" class="why-disabled warn-text" :class="{ 'has-undo': undo }">{{ $t("source.blocked", { n: blocked }, blocked) }}</span>
+      <span v-if="blocked" class="why-disabled warn-text" :class="{ 'has-undo': undo }">{{ $t("source.blocked", { n: blocked }, blocked) }}</span>
       <button class="btn btn-primary" :disabled="!wizard.canLeaveSource" @click="wizard.step = 2">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
   </div>

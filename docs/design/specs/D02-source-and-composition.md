@@ -51,7 +51,7 @@ Recently sent from
 │    to Disco externo · 1d │ │    to Nextcloud · 2 w    │     Not found
 └──────────────────────────┘ └──────────────────────────┘ └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ┘
 ─────────────────────────────────────────────────────────────────────────────────────
-Nothing chosen yet.                     Add at least one file or folder…   [ Next → ]
+                                                                   [ Next → ]
 ```
 
 With items:
@@ -183,7 +183,7 @@ DOES IT FIT?                                         Nextcloud home
 | State | Step 1 recents | Step 1 chosen | Composition |
 |---|---|---|---|
 | Loading | Section hidden until it answers (it's optional) | Skeleton in each row's details, "Checking…" in the head | Skeleton bar while `Analysing` |
-| Empty | Hidden | Big drop zone; footer "Nothing chosen yet." | A job with only directories: "Only empty folders" (they are still created, ADR 0007) |
+| Empty | Hidden | Big drop zone; footer shows only a disabled Next | A job with only directories: "Only empty folders" (they are still created, ADR 0007) |
 | Error | Hidden; logged | "These couldn't be checked now; the analysis checks them again." Not blocking | Card replaced by an inline `Notice` with Try again (`analyse` result is still usable) |
 
 ## Data and contracts

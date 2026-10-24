@@ -1,14 +1,13 @@
 <script setup lang="ts">
-// Home: does anything need me, what is sending, where things went, what happened, and what space
-// can be freed (docs/design/specs/D01-home.md). Every section is a bounded query and degrades on
-// its own.
+// Home: a way in, does anything need me, what is sending, where things went, what happened, and
+// what space can be freed (docs/design/specs/D01-home.md). Every section is a bounded query and
+// degrades on its own.
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import type { JobSummary_Serialize } from "@/bindings";
 import ActivityFeed from "@/components/ActivityFeed.vue";
 import AppIcon from "@/components/AppIcon.vue";
-import DestinationSpace from "@/components/DestinationSpace.vue";
 import FileDropZone from "@/components/FileDropZone.vue";
 import LoadError from "@/components/LoadError.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
@@ -20,7 +19,7 @@ import { continueJob, discardWizardIfAsked, jobLabel } from "@/lib/jobs";
 import { useConnection } from "@/stores/connection";
 import { useHome } from "@/stores/home";
 import { useJobs } from "@/stores/jobs";
-import { profileKind, useProfiles } from "@/stores/profiles";
+import { useProfiles } from "@/stores/profiles";
 import { useReclaim } from "@/stores/reclaim";
 import { useWizard } from "@/stores/wizard";
 
@@ -43,7 +42,7 @@ const PROMISES = [
 
 onMounted(() => {
   void home.load();
-  void profiles.load().then(() => profiles.loadAllStorage());
+  void profiles.load();
   void reclaim.loadEligible();
 });
 // A job changing state can move it between sections.
@@ -143,6 +142,10 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
       </div>
     </section>
 
+    <section v-if="!firstRun && (!offline || home.answered)" class="block drop-block" :aria-label="$t('home.drop')">
+      <FileDropZone class="drop" :quiet="home.needs.length > 0" @add="onAdd" />
+    </section>
+
     <div v-if="!firstRun && (!offline || home.answered)" class="grid" :class="{ stale: offline }">
       <div class="main-col">
         <SkeletonRows v-if="!home.loaded" :rows="3" class="card" />
@@ -190,10 +193,6 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
           <p v-if="home.sending.length > 3" class="small muted">{{ $t("home.more", { n: home.sending.length - 3 }) }}</p>
         </section>
 
-        <section class="block" :aria-label="$t('home.drop')">
-          <FileDropZone class="drop" :quiet="home.needs.length > 0" @add="onAdd" />
-        </section>
-
         <section v-if="home.recent.length" class="block" aria-labelledby="h-recent">
           <div class="block-head">
             <h2 id="h-recent">{{ $t("home.recent") }}</h2>
@@ -213,20 +212,6 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
       </div>
 
       <aside class="side-col">
-        <section class="block" aria-labelledby="h-dest">
-          <h2 id="h-dest">{{ $t("nav.destinations") }}</h2>
-          <ul class="tiles">
-            <li v-for="p in profiles.list" :key="p.id" class="card tile">
-              <div class="tile-head">
-                <AppIcon :name="profileKind(p)" :size="20" class="muted" />
-                <strong class="ellipsis">{{ p.name }}</strong>
-              </div>
-              <DestinationSpace :profile-id="p.id" compact />
-            </li>
-          </ul>
-          <button class="btn btn-small" @click="router.push({ name: 'destinations' })"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
-        </section>
-
         <section v-if="reclaim.eligible.length" class="block" aria-labelledby="h-reclaim">
           <h2 id="h-reclaim">{{ $t("home.reclaimable") }}</h2>
           <div class="card reclaim">
@@ -254,6 +239,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 .main-col, .side-col { display: grid; gap: 1.25rem; min-width: 0; }
 .block { display: grid; gap: 0.6rem; }
+.drop-block { margin-bottom: 1.5rem; }
 .block h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); margin: 0; }
 .block-head { display: flex; justify-content: space-between; align-items: baseline; }
 .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
@@ -275,9 +261,6 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .recent li:last-child { border-bottom: 0; }
 .recent li:hover { background: var(--surface-2); }
 .n { text-align: right; }
-.tiles { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
-.tile { display: grid; gap: 0.45rem; }
-.tile-head { display: flex; gap: 0.5rem; align-items: center; min-width: 0; }
 .reclaim p { margin: 0 0 0.4rem; display: flex; gap: 0.4rem; align-items: center; }
 .reclaim ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
 .reclaim li { display: flex; justify-content: space-between; gap: 0.5rem; }
