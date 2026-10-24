@@ -65,7 +65,16 @@ export const commands = {
 	pause: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("pause", { jobId })),
 	resume: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("resume", { jobId })),
 	cancel: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("cancel", { jobId })),
-	/**  A page of the jobs matching `filter`, with how many match in all. */
+	/**
+	 *  Cancels an unsent job (Draft, AwaitingApproval, Ready) the New-transfer wizard
+	 *  replaced, and hides it from the Transfers list and Activity; `job` still finds it
+	 *  (ADR 0017).
+	 */
+	discardDraft: (jobId: string) => typedError<null, ErrorBody>(__TAURI_INVOKE("discard_draft", { jobId })),
+	/**
+	 *  A page of the jobs matching `filter`, with how many match in all and per group.
+	 *  Discarded drafts are left out.
+	 */
 	listJobs: (filter: JobFilter_Deserialize, limit: number, offset: number) => typedError<JobPage_Serialize, ErrorBody>(__TAURI_INVOKE("list_jobs", { filter, limit, offset })),
 	/**  Names a job (any state); a blank name clears it. */
 	setLabel: (jobId: string, label: string | null) => typedError<null, ErrorBody>(__TAURI_INVOKE("set_label", { jobId, label })),
@@ -129,6 +138,11 @@ export const commands = {
 	plannedRenames: (jobId: string) => typedError<number, ErrorBody>(__TAURI_INVOKE("planned_renames", { jobId })),
 	/**  What each chosen source is and what is wrong with it, without reading contents. */
 	inspectSources: (paths: string[]) => typedError<SourceInfo_Serialize[], ErrorBody>(__TAURI_INVOKE("inspect_sources", { paths })),
+	/**
+	 *  The file system of a local folder (or of its nearest existing parent) on the
+	 *  service's machine, and the name rules it needs. Writes nothing.
+	 */
+	probeLocalTarget: (path: string) => typedError<LocalTargetProbe_Serialize, ErrorBody>(__TAURI_INVOKE("probe_local_target", { path })),
 	/**  One page of a job's files, filtered and sorted (at most 500). */
 	entries: (jobId: string, filter: EntryFilter_Deserialize, after: EntryCursor | null, limit: number) => typedError<EntryPage_Serialize, ErrorBody>(__TAURI_INVOKE("entries", { jobId, filter, after, limit })),
 	/**  Counts for the Files tab's filter chips, over the whole job. */
@@ -173,9 +187,9 @@ export const events = {
 };
 
 /* Constants */
-export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
+export const JOB_OPERATIONS = {"analyse":["draft","awaiting_approval","ready"],"cancel":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating"],"decide":["awaiting_approval","ready"],"decide_all":["awaiting_approval","ready"],"discard_draft":["draft","awaiting_approval","ready"],"export_report":["completed","completed_with_warnings","cancelled","failed"],"pause":["transferring","retrying","waiting","verifying","integrating"],"resume":["ready","paused"],"send_again":["completed","completed_with_warnings","cancelled","failed"],"set_label":["draft","analysing","awaiting_approval","ready","transferring","paused","retrying","waiting","verifying","integrating","completed","completed_with_warnings","cancelled","failed"],"set_options":["draft","awaiting_approval","ready"],"start":["ready","paused"]} as const;
 
-export const PROTOCOL_VERSION = 22 as const;
+export const PROTOCOL_VERSION = 23 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -751,6 +765,12 @@ export type FolderNameCheck_Serialize = {
 	message_key: string | null,
 };
 
+/**  One filter chip's count (docs/design/specs/D06). */
+export type GroupCount = {
+	group: JobGroup,
+	total: number,
+};
+
 export type HashView = {
 	algo: string,
 	hex: string,
@@ -928,12 +948,24 @@ export type JobPage_Deserialize = {
 	items: JobSummary_Deserialize[],
 	/**  How many jobs match in all. */
 	total: number,
+	/**
+	 *  How many jobs each group would have with this filter's query, destination and
+	 *  `reclaimable`, whatever its `groups`: the filter chips' counts. One per
+	 *  [`JobGroup::ALL`](crate::JobGroup::ALL), in that order.
+	 */
+	groups: GroupCount[],
 };
 
 export type JobPage_Serialize = {
 	items: JobSummary_Serialize[],
 	/**  How many jobs match in all. */
 	total: number,
+	/**
+	 *  How many jobs each group would have with this filter's query, destination and
+	 *  `reclaimable`, whatever its `groups`: the filter chips' counts. One per
+	 *  [`JobGroup::ALL`](crate::JobGroup::ALL), in that order.
+	 */
+	groups: GroupCount[],
 };
 
 export type JobSort = "newest" | "oldest" | "largest";
@@ -963,6 +995,11 @@ export type JobSummary_Deserialize = {
 	label?: string | null,
 	/**  The job this one repeats (Send again). */
 	again_of?: string | null,
+	/**
+	 *  A draft the user replaced in the New-transfer wizard (ADR 0017): Cancelled, and never
+	 *  in the Transfers list or Activity.
+	 */
+	discarded: boolean,
 };
 
 export type JobSummary_Serialize = {
@@ -984,10 +1021,48 @@ export type JobSummary_Serialize = {
 	label: string | null,
 	/**  The job this one repeats (Send again). */
 	again_of: string | null,
+	/**
+	 *  A draft the user replaced in the New-transfer wizard (ADR 0017): Cancelled, and never
+	 *  in the Transfers list or Activity.
+	 */
+	discarded: boolean,
 };
 
 /**  Reference to a secret stored in the OS keyring. Never the secret itself. */
 export type KeyringRef = string;
+
+/**
+ *  What the file system of a local destination folder says about the names it takes
+ *  (`probe_local_target`), so the UI can fill the profile's `TargetSpec` instead of asking.
+ *  Every field is `None` when it couldn't be told.
+ */
+export type LocalTargetProbe = LocalTargetProbe_Serialize | LocalTargetProbe_Deserialize;
+
+/**
+ *  What the file system of a local destination folder says about the names it takes
+ *  (`probe_local_target`), so the UI can fill the profile's `TargetSpec` instead of asking.
+ *  Every field is `None` when it couldn't be told.
+ */
+export type LocalTargetProbe_Deserialize = {
+	/**  As the OS names it (`apfs`, `exfat`, `ext4`, `ntfs`, …). */
+	fs_type?: string | null,
+	/**  The name rules it needs; `None` for a file system filebridge doesn't know. */
+	family?: Family | null,
+	case_sensitive?: boolean | null,
+};
+
+/**
+ *  What the file system of a local destination folder says about the names it takes
+ *  (`probe_local_target`), so the UI can fill the profile's `TargetSpec` instead of asking.
+ *  Every field is `None` when it couldn't be told.
+ */
+export type LocalTargetProbe_Serialize = {
+	/**  As the OS names it (`apfs`, `exfat`, `ext4`, `ntfs`, …). */
+	fs_type: string | null,
+	/**  The name rules it needs; `None` for a file system filebridge doesn't know. */
+	family: Family | null,
+	case_sensitive: boolean | null,
+};
 
 /**  One line of a job's log. */
 export type LogEntry = {

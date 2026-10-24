@@ -1,7 +1,7 @@
 //! The Transfers list: names, search and groups, and Send again with the earlier job's name
 //! decisions (docs/design/specs/D06-transfers-list.md).
 
-use filebridge_model::{JobFilter, JobPage, JobSort, Op};
+use filebridge_model::{GroupCount, JobFilter, JobGroup, JobPage, JobSort, Op};
 use filebridge_store::{JobOrder, JobQuery, NewJob};
 
 use crate::{CoreError, Engine, JobKind, JobState, Result, decisions};
@@ -10,7 +10,9 @@ use crate::{CoreError, Engine, JobKind, JobState, Result, decisions};
 pub const MAX_LABEL: usize = 120;
 
 impl Engine {
-    /// A page of jobs matching `filter`, and how many match in all.
+    /// A page of jobs matching `filter`, how many match in all, and how many each group would
+    /// have whatever `filter.groups` is (the filter chips). Discarded drafts are left out
+    /// (ADR 0017).
     pub async fn list_jobs_page(
         &self,
         filter: JobFilter,
@@ -38,12 +40,17 @@ impl Engine {
                 JobSort::Largest => JobOrder::Largest,
             },
         };
+        let by_state = self.store.job_state_counts(query.clone()).await?;
         let (rows, total) = self.store.list_jobs_filtered(query, limit, offset).await?;
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
             items.push(self.summary(row).await?);
         }
-        Ok(JobPage { items, total })
+        Ok(JobPage {
+            items,
+            total,
+            groups: group_counts(&by_state),
+        })
     }
 
     /// Names a job, in any state; a blank name clears it.
@@ -155,5 +162,52 @@ impl Engine {
             serde_json::json!({ "carried": true, "count": kept, "again_of": from }),
         )
         .await
+    }
+}
+
+/// Per-state counts summed into one count per group, in [`JobGroup::ALL`]'s order. A state this
+/// build doesn't know counts nowhere.
+fn group_counts(by_state: &[(String, u64)]) -> Vec<GroupCount> {
+    JobGroup::ALL
+        .into_iter()
+        .map(|group| GroupCount {
+            group,
+            total: by_state
+                .iter()
+                .filter(|(s, _)| JobState::parse(s).is_ok_and(|s| JobGroup::of(s) == group))
+                .map(|(_, n)| n)
+                .sum(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn states_add_up_per_group() {
+        let by_state = [
+            ("draft".to_owned(), 2),
+            ("ready".to_owned(), 1),
+            ("failed".to_owned(), 4),
+            ("completed".to_owned(), 3),
+            ("completed_with_warnings".to_owned(), 1),
+            ("from_the_future".to_owned(), 9),
+        ];
+        let counts: Vec<_> = group_counts(&by_state)
+            .into_iter()
+            .map(|c| (c.group, c.total))
+            .collect();
+        assert_eq!(
+            counts,
+            [
+                (JobGroup::Active, 0),
+                (JobGroup::NeedsYou, 4),
+                (JobGroup::NotSent, 3),
+                (JobGroup::Finished, 4),
+                (JobGroup::Cancelled, 0),
+            ]
+        );
     }
 }

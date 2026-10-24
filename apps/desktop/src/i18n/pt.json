@@ -642,7 +642,10 @@
     "editMoves": "Os envios já feitos ficam onde foram; os próximos vão para o novo sítio. O histórico continua ligado a este destino.",
     "editBlocked": "{n} envio para este destino não terminou. Deixe-o terminar, ou cancele-o, antes de mudar para onde o destino aponta. | {n} envios para este destino não terminaram. Deixe-os terminar, ou cancele-os, antes de mudar para onde o destino aponta.",
     "passwordStored": "Guardada no cofre do sistema",
-    "passwordReplace": "Substituir…"
+    "passwordReplace": "Substituir…",
+    "detected": "Detetado: disco {fs}, nomes verificados como em {family}.",
+    "detectedCase": "Não distingue maiúsculas de minúsculas.",
+    "changeTarget": "Alterar"
   },
   "nextcloud": {
     "intro": "O filebridge liga-se por SSH ao anfitrião Proxmox (e encontra o contentor do Nextcloud) ou diretamente à máquina onde o Nextcloud corre, e verifica cada passo. Nada é alterado durante a deteção.",

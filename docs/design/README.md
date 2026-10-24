@@ -123,6 +123,9 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `set_profile_password(profile_id, password) -> Profile` | new (protocol 17), Phase 2 | [ADR 0004](../adr/0004-os-keyring-secrets.md) |
 | `add_nextcloud_webdav(req) -> DetectNextcloudResponse` | new (protocol 18), Phase 2 | [05](../05-integration-nextcloud.md) |
 | `install_app_key(profile_id)`, `remove_access(profile_id) -> AccessReport` | new (protocol 19), Phase 2 | [ADR 0012](../adr/0012-own-ssh-key-with-restrict.md) |
+| `discard_draft(job_id)` | new (protocol 23); `JobSummary.discarded` | [ADR 0017](../adr/0017-discarded-drafts.md) |
+| `list_jobs(filter, limit, offset) -> JobPage` | **changed** (protocol 23): `JobPage.groups`, a `GroupCount { group, total }` per `JobGroup`, ignoring `filter.groups`; discarded drafts left out | D06 |
+| `probe_local_target(path) -> LocalTargetProbe` | new (protocol 23): `fs_type`, `family`, `case_sensitive` of a local destination folder | D03 |
 
 ### Lifecycle rules (`crates/model/src/rules.rs`)
 
@@ -130,6 +133,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 |---|---|
 | `JobGroup` (active, needs_you, not_sent, finished, cancelled) as pure data | D06 |
 | `Op::SetLabel` (every state), `Op::SendAgain` (terminal states), `Op::Export` (terminal states) | D06, D09 |
+| `Op::DiscardDraft` (Draft, AwaitingApproval, Ready); `JOB_OPERATIONS.discard_draft` | [ADR 0017](../adr/0017-discarded-drafts.md) |
 | `EntryStatus::from_states`, `log_level(kind, data)`, `LOW_SPACE_*` constants | D05, D07, D03 |
 
 ### Contract changes (`crates/transport-api`)

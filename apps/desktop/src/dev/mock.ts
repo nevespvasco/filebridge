@@ -94,6 +94,7 @@ const jobs: JobSummary_Serialize[] = [
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
     label: "Documentos do escritório",
     again_of: null,
+    discarded: false,
   },
   {
     id: "j-warn",
@@ -111,6 +112,7 @@ const jobs: JobSummary_Serialize[] = [
     counts: { ...counts(2500, 9_800_000_000, 1), done: 2498, failed: 2, verified_ok: 2497, mismatch: 1 },
     label: null,
     again_of: null,
+    discarded: false,
   },
 ];
 
@@ -733,7 +735,8 @@ const handlers: Handlers = {
       counts: counts(0, 0, 0),
       label: null,
       again_of: null,
-      });
+      discarded: false,
+    });
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
   },
@@ -855,7 +858,8 @@ const handlers: Handlers = {
       counts: counts(0, 0, 0),
       label: null,
       again_of: null,
-      });
+      discarded: false,
+    });
     // What an old rsync leaves behind: garbled and NFD names, nothing that blocks.
     const base = (rulesByJob.size + 1) * 10_000_000;
     rulesByJob.set(id, [
@@ -988,21 +992,31 @@ const handlers: Handlers = {
     setState(job, "cancelled");
     return null;
   },
+  discardDraft: (a) => {
+    const job = find(a.jobId);
+    allow("discard_draft", job);
+    setState(job, "cancelled");
+    job.discarded = true;
+    return null;
+  },
   listJobs: (a) => {
     const f = a.filter as JobFilter;
     const groups = new Set(f.groups.flatMap((g) => GROUPS[g]));
     const q = f.query?.trim().toLowerCase();
+    // Everything but the groups: the chips' counts come from this (ADR 0017: never discarded drafts).
     let matching = jobs.filter(
       (j) =>
+        !j.discarded &&
         (!f.profile_id || j.profile_id === f.profile_id) &&
         (!q || [j.label ?? "", ...j.sources, profiles.find((p) => p.id === j.profile_id)?.name ?? ""].some((t) => t.toLowerCase().includes(q))),
     );
     if (f.reclaimable) matching = matching.filter((j) => reclaimable(j));
+    const groupCounts = (Object.keys(GROUPS) as JobGroup[]).map((group) => ({ group, total: matching.filter((j) => GROUPS[group].includes(j.state)).length }));
     let list = matching.filter((j) => !groups.size || groups.has(j.state));
     if (f.sort === "oldest") list = [...list].reverse();
     if (f.sort === "largest") list = [...list].sort((x, y) => y.counts.bytes - x.counts.bytes);
     const off = a.offset as number;
-    return { items: list.slice(off, off + (a.limit as number)), total: list.length };
+    return { items: list.slice(off, off + (a.limit as number)), total: list.length, groups: groupCounts };
   },
   setLabel: (a) => {
     const job = find(a.jobId);
@@ -1015,7 +1029,7 @@ const handlers: Handlers = {
     const old = find(a.jobId);
     if (!["completed", "completed_with_warnings", "cancelled", "failed"].includes(old.state)) throw fail("invalid", "only a finished transfer can do that");
     const id = newId("j");
-    jobs.unshift({ ...structuredClone(old), id, state: "draft", error: null, attempt: 0, next_retry_at: null, created_at: Date.now(), updated_at: Date.now(), finished_at: null, counts: counts(0, 0, 0), profile_id: (a.profileId as string | null) ?? old.profile_id, again_of: old.id });
+    jobs.unshift({ ...structuredClone(old), id, state: "draft", error: null, attempt: 0, next_retry_at: null, created_at: Date.now(), updated_at: Date.now(), finished_at: null, counts: counts(0, 0, 0), profile_id: (a.profileId as string | null) ?? old.profile_id, again_of: old.id, discarded: false });
     log(id, "created", { sources: old.sources, profile_id: old.profile_id, options: old.options, again_of: old.id });
     return id;
   },
@@ -1175,6 +1189,12 @@ const handlers: Handlers = {
     return split
       .map(([category, b, f]) => ({ category, bytes: Math.round(bytes * b), files: Math.round(files * f) }))
       .filter((c) => c.files > 0);
+  },
+  /** A pretend file system by where the folder is: "/media/…" an exFAT stick, else the home disk. */
+  probeLocalTarget: (a) => {
+    const path = String(a.path);
+    if (path.startsWith("/media/") || path.startsWith("/Volumes/")) return { fs_type: "exfat", family: "windows", case_sensitive: false };
+    return { fs_type: "ext4", family: "unix", case_sensitive: true };
   },
   inspectSources: async (a) => {
     await sleep(250);

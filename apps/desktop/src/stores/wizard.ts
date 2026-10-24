@@ -165,9 +165,9 @@ export const useWizard = defineStore("wizard", () => {
     ruleCounts.value = [];
     try {
       if (jobKey.value !== key.value || !jobId.value) {
-        // The old job was never sent; cancelling it keeps it from looking queued in Jobs.
-        // Nothing is deleted anywhere.
-        if (jobId.value) await api.cancel(jobId.value).catch(() => undefined);
+        // The old job was never sent: it is discarded (ADR 0017), so it neither looks queued nor
+        // shows up as a cancellation the user never made. Nothing is deleted anywhere.
+        if (jobId.value) await api.discardDraft(jobId.value).catch(() => undefined);
         jobId.value = await api.createJob([...sources.value], profileId.value!, { ...options.value });
         jobKey.value = key.value;
         jobOptions.value = { ...options.value };

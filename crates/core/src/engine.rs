@@ -541,6 +541,7 @@ impl Engine {
             counts,
             label: row.label,
             again_of: row.again_of,
+            discarded: row.discarded_at.is_some(),
         })
     }
 
@@ -1050,6 +1051,18 @@ impl Engine {
         self.stop_runner(job_id).await;
         let mut job = self.begin(job_id, Op::Cancel).await?;
         job.go(JobState::Cancelled, None).await
+    }
+
+    /// Cancels a job never sent (Draft, AwaitingApproval, Ready) that the New-transfer wizard
+    /// replaced with another, and marks it discarded: the Transfers list and Activity leave it
+    /// out, `job` still finds it, nothing is deleted (ADR 0017).
+    pub async fn discard_draft(&self, job_id: &str) -> Result<()> {
+        let mut job = self.begin(job_id, Op::DiscardDraft).await?;
+        let discarded = crate::lifecycle::Outcome {
+            discarded: true,
+            ..Default::default()
+        };
+        job.go_with(JobState::Cancelled, None, discarded).await
     }
 
     /// On startup: restarts every job that was running when the app stopped. Returns their ids.

@@ -642,7 +642,10 @@
     "editMoves": "Transfers already made stay where they went; the next ones go to the new place. Their history stays with this destination.",
     "editBlocked": "{n} transfer to this destination isn't finished. Let it finish, or cancel it, before changing where the destination points. | {n} transfers to this destination aren't finished. Let them finish, or cancel them, before changing where the destination points.",
     "passwordStored": "Saved in the system keyring",
-    "passwordReplace": "Replace…"
+    "passwordReplace": "Replace…",
+    "detected": "Detected: {fs} disk, names checked as for {family}.",
+    "detectedCase": "It doesn't tell capitals apart.",
+    "changeTarget": "Change"
   },
   "nextcloud": {
     "intro": "filebridge connects over SSH either to the Proxmox host (and finds the Nextcloud container) or straight to the machine Nextcloud runs on, and checks each step. Nothing is changed during detection.",

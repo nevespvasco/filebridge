@@ -64,7 +64,11 @@ watch(
 );
 onMounted(() => void profiles.load());
 
-const groupChips = computed(() => GROUPS.map((g) => ({ value: g, label: t(`jobs.group.${g}`) })));
+const groupChips = computed(() =>
+  GROUPS.map((g) => ({ value: g, label: t(`jobs.group.${g}`), count: jobs.groupCounts.find((c) => c.group === g)?.total })),
+);
+/** "All" counts every group with the current search and destination. */
+const allCount = computed(() => jobs.groupCounts.reduce((n, c) => n + c.total, 0));
 const reportFor = ref<string | null>(null);
 const filtered = computed(() => groups.value.length > 0 || !!profileId.value || !!search.value.trim());
 function clearFilters() {
@@ -100,7 +104,7 @@ function clearFilters() {
         </select>
       </label>
     </div>
-    <FilterChips v-model="groups" :options="groupChips" :label="$t('files.show')" :all-label="$t('files.chip.all')" :all-count="filtered && !groups.length ? undefined : jobs.total" class="chips" />
+    <FilterChips v-model="groups" :options="groupChips" :label="$t('files.show')" :all-label="$t('files.chip.all')" :all-count="allCount" class="chips" />
 
     <p v-if="jobs.loadError" class="error" role="alert">
       {{ jobs.loadError }} <button class="btn btn-small" @click="jobs.loadPage()">{{ $t("common.retry") }}</button>

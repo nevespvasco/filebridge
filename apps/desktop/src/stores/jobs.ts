@@ -3,7 +3,7 @@
 // (speed, ETA, current file, retries, the send window, integration step).
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import type { DoneView, Event_Serialize, JobFilter, JobState, JobSummary_Serialize } from "@/bindings";
+import type { DoneView, Event_Serialize, GroupCount, JobFilter, JobState, JobSummary_Serialize } from "@/bindings";
 import { api, errorMessage, events } from "@/lib/api";
 import { jobLabel } from "@/lib/jobs";
 import { notify } from "@/lib/platform";
@@ -86,6 +86,8 @@ export const useJobs = defineStore("jobs", () => {
   /** The Transfers list's filter (docs/design/specs/D06). */
   const filter = ref<JobFilter>({ query: null, groups: [], profile_id: null, reclaimable: false, sort: "newest" });
   const total = ref(0);
+  /** Each group's count with the current query and destination, whatever groups are picked. */
+  const groupCounts = ref<GroupCount[]>([]);
 
   async function loadPage(newOffset = offset.value) {
     const seq = ++loadSeq;
@@ -95,6 +97,7 @@ export const useJobs = defineStore("jobs", () => {
       for (const j of res.items) byId.value[j.id] = j;
       page.value = res.items.map((j) => j.id);
       total.value = res.total;
+      groupCounts.value = res.groups;
       hasMore.value = newOffset + res.items.length < res.total;
       offset.value = newOffset;
       loadError.value = null;
@@ -246,5 +249,5 @@ export const useJobs = defineStore("jobs", () => {
     return (live.value[id]?.arrivals ?? []).filter((a) => now - a.at < MINUTE).reduce((sum, a) => sum + a.n, 0);
   }
 
-  return { byId, live, page, filter, total, loading, setLabel, sendAgain, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
+  return { byId, live, page, filter, total, groupCounts, loading, setLabel, sendAgain, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
 });

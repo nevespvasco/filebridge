@@ -3,8 +3,8 @@
 // (`profile`). Editing keeps the destination's id, so its history stays with it; a saved password
 // is never read back, only replaced.
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, onMounted, reactive, ref } from "vue";
-import type { Backend_Deserialize, Family, Profile_Deserialize, Profile_Serialize } from "@/bindings";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import type { Backend_Deserialize, Family, LocalTargetProbe, Profile_Deserialize, Profile_Serialize } from "@/bindings";
 import FolderBrowser from "./FolderBrowser.vue";
 import FormField from "./FormField.vue";
 import { api, errorMessage } from "@/lib/api";
@@ -110,6 +110,38 @@ function setFamily(f: Family) {
   form.case_sensitive = f === "unix";
 }
 
+// A local folder's file system decides its name rules: filebridge asks the disk instead of the
+// user ("Detected: exFAT disk, treated as Windows"), and the choice stays one click away.
+const probe = ref<LocalTargetProbe | null>(null);
+/** The user opened "Change": the radios show, and a detection no longer overrides them. */
+const manualTarget = ref(false);
+let probeTimer: ReturnType<typeof setTimeout> | undefined;
+let probeSeq = 0;
+watch(
+  () => [kind.value, form.root.trim()] as const,
+  ([k, root]) => {
+    clearTimeout(probeTimer);
+    probe.value = null;
+    // Editing: the saved choice stands until the folder changes.
+    if (k !== "local" || !root || root === props.profile?.destination.root) return;
+    const seq = ++probeSeq;
+    probeTimer = setTimeout(async () => {
+      try {
+        const found = await api.probeLocalTarget(root);
+        if (seq !== probeSeq) return;
+        probe.value = found;
+        if (found.family && !manualTarget.value) {
+          form.family = found.family;
+          form.case_sensitive = found.case_sensitive ?? found.family === "unix";
+        }
+      } catch {
+        // No detection: the radios stay as they are.
+      }
+    }, 400);
+  },
+  { immediate: true },
+);
+const detected = computed(() => kind.value === "local" && !!probe.value?.family && !manualTarget.value);
 
 async function pick(field: "root" | "key_file") {
   const [p] = await pickPaths({ directory: field === "root", multiple: false });
@@ -293,7 +325,13 @@ async function save() {
         </template>
       </div>
 
-      <fieldset v-if="!nameOnly" class="target">
+      <p v-if="!nameOnly && detected" class="detected small" role="status">
+        <AppIcon name="checkCircle" class="ok-text" />
+        <span>{{ $t("profile.detected", { fs: probe!.fs_type ?? "?", family: $t(`profile.family.${form.family}`) }) }}
+          <template v-if="!form.case_sensitive"> {{ $t("profile.detectedCase") }}</template></span>
+        <button type="button" class="link" @click="manualTarget = true">{{ $t("profile.changeTarget") }}</button>
+      </p>
+      <fieldset v-else-if="!nameOnly" class="target">
         <legend class="small">
           {{ $t("profile.target") }}
           <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
@@ -361,6 +399,9 @@ async function save() {
 .guide.warn { margin-top: var(--sp-3); }
 .stored { align-items: center; justify-content: space-between; padding: var(--sp-2) 0; }
 .radio { display: inline-flex; gap: 0.35rem; align-items: center; }
+.detected { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin: var(--sp-4) 0 0; }
+.link { all: unset; cursor: pointer; color: var(--accent); }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
 @media (max-width: 700px) { .kinds { grid-template-columns: 1fr; } }
 </style>

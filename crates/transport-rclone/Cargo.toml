@@ -24,7 +24,7 @@ tokio = { workspace = true, features = ["io-util", "process", "rt", "sync", "tim
 tracing.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
+libc.workspace = true
 
 [dev-dependencies]
 filebridge-secrets.workspace = true

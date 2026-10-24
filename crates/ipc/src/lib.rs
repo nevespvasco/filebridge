@@ -28,12 +28,12 @@ pub use filebridge_model::{
     ActivityItem, AnalysisSummary, AppSettings, BlockerView, BrowseResult, BrowseTarget,
     CategoryCount, CheckView, Counts, DecideManyResult, DecisionInput, EntryCursor, EntryDetail,
     EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event, ExportResult,
-    Family, FolderNameCheck, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
-    JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel, PreflightView,
-    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, RefusedIssue,
-    RemoteEntryView, ReportFormat, ReportRequest, ReportScope, RuleCount, SOURCE_CHILDREN_CAP,
-    SendOptions, SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount,
-    StorageView, TargetSpec, job_operations,
+    Family, FolderNameCheck, GroupCount, HashView, IssueDecision, IssueSeverity, IssueView,
+    JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LocalTargetProbe,
+    LogEntry, LogLevel, PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker,
+    ReclaimStatus, RefusedIssue, RemoteEntryView, ReportFormat, ReportRequest, ReportScope,
+    RuleCount, SOURCE_CHILDREN_CAP, SendOptions, SendWindow, SourceInfo, SourceProblem,
+    SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -62,7 +62,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 21: `scan_host_key`, `trust_host_key` (ADR 0015).
 /// 22: the request goes under `request` beside the call's `id`, so an argument named `id`
 ///     (`test_profile`, `profile_storage`, `delete_profile`) no longer collides with it.
-pub const PROTOCOL_VERSION: u32 = 22;
+/// 23: `discard_draft` and `JobSummary.discarded` (ADR 0017); `JobPage.groups` (per-group
+///     counts); `probe_local_target`.
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]

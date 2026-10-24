@@ -62,6 +62,9 @@ pub struct JobSummary {
     pub label: Option<String>,
     /// The job this one repeats (Send again).
     pub again_of: Option<String>,
+    /// A draft the user replaced in the New-transfer wizard (ADR 0017): Cancelled, and never
+    /// in the Transfers list or Activity.
+    pub discarded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -345,6 +348,17 @@ pub struct JobPage {
     pub items: Vec<JobSummary>,
     /// How many jobs match in all.
     pub total: u64,
+    /// How many jobs each group would have with this filter's query, destination and
+    /// `reclaimable`, whatever its `groups`: the filter chips' counts. One per
+    /// [`JobGroup::ALL`](crate::JobGroup::ALL), in that order.
+    pub groups: Vec<GroupCount>,
+}
+
+/// One filter chip's count (docs/design/specs/D06).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct GroupCount {
+    pub group: crate::JobGroup,
+    pub total: u64,
 }
 
 /// An issue `decide_many` left as it was, and why.
@@ -474,6 +488,18 @@ pub enum SourceProblem {
     Root,
     /// Not a file or a folder (a device, a socket, a pipe).
     Special,
+}
+
+/// What the file system of a local destination folder says about the names it takes
+/// (`probe_local_target`), so the UI can fill the profile's `TargetSpec` instead of asking.
+/// Every field is `None` when it couldn't be told.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct LocalTargetProbe {
+    /// As the OS names it (`apfs`, `exfat`, `ext4`, `ntfs`, …).
+    pub fs_type: Option<String>,
+    /// The name rules it needs; `None` for a file system filebridge doesn't know.
+    pub family: Option<crate::Family>,
+    pub case_sensitive: Option<bool>,
 }
 
 /// The most direct entries of a folder `inspect_sources` counts.

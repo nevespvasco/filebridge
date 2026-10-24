@@ -109,7 +109,8 @@ impl Store {
 impl Store {
     /// Milestones of every job and profile changes, newest first, before `before_id`
     /// (docs/design/specs/D07, "Activity"): created, the first start, the first retry or wait
-    /// of a run (repeats collapse), finished, and profile added/removed.
+    /// of a run (repeats collapse), finished, and profile added/removed. Nothing of a discarded
+    /// draft (ADR 0017).
     pub async fn activity_page(&self, before_id: Option<i64>, limit: u32) -> Result<Vec<EventRow>> {
         self.call(move |c| {
             let mut stmt = c.prepare_cached(
@@ -117,8 +118,10 @@ impl Store {
                      SELECT id, job_id, at, kind, data,
                             ROW_NUMBER() OVER (PARTITION BY job_id, kind ORDER BY id) AS nth
                      FROM events
-                     WHERE kind IN ('created', 'retry', 'send_window_wait', 'finished', 'profile')
-                        OR (kind = 'state' AND json_extract(data, '$.to') = 'transferring')
+                     WHERE (kind IN ('created', 'retry', 'send_window_wait', 'finished', 'profile')
+                            OR (kind = 'state' AND json_extract(data, '$.to') = 'transferring'))
+                       AND (job_id IS NULL
+                            OR job_id NOT IN (SELECT id FROM jobs WHERE discarded_at IS NOT NULL))
                  ),
                  firsts AS (SELECT * FROM m WHERE NOT (kind = 'state' AND nth > 1)),
                  r AS (
