@@ -261,13 +261,13 @@ function decisionLabel(row: IssueView_Serialize) {
   <section class="issue-group card" :class="{ pending: rule.pending > 0 }">
     <button class="group-head" :aria-expanded="open" @click="toggle">
       <AppIcon class="chev" :name="open ? 'caretDown' : 'caretRight'" />
-      <span class="grow">
-        <strong>{{ title }}</strong>
+      <strong class="g-title">{{ title }}</strong>
+      <span v-if="rule.pending > 0" class="badge badge-warn g-state">{{ $t("issues.pending", { n: fmt.count(rule.pending) }) }}</span>
+      <span v-else class="badge badge-ok g-state">{{ $t("issues.resolved") }}</span>
+      <span class="g-text">
         <span class="muted small block">{{ explain }}</span>
         <span v-if="example" class="small block example">{{ $t("help.example") }} {{ example }}</span>
       </span>
-      <span v-if="rule.pending > 0" class="badge badge-warn">{{ $t("issues.pending", { n: fmt.count(rule.pending) }) }}</span>
-      <span v-else class="badge badge-ok">{{ $t("issues.resolved") }}</span>
     </button>
 
     <div v-if="open" class="group-body">
@@ -376,13 +376,21 @@ function decisionLabel(row: IssueView_Serialize) {
 .group-head {
   all: unset;
   box-sizing: border-box;
-  display: flex;
-  gap: 0.75rem;
+  /* The title and its state on the first line, the explanation under both with the whole width
+     (beside the badge it was a narrow column of many lines on a phone). */
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  grid-template-areas: "chev title state" ". text text";
+  gap: 0.2rem 0.75rem;
   align-items: center;
   width: 100%;
   padding: 0.85rem 1rem;
   cursor: pointer;
 }
+.chev { grid-area: chev; }
+.g-title { grid-area: title; }
+.g-state { grid-area: state; }
+.g-text { grid-area: text; }
 .group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chev { width: 1rem; color: var(--text-2); }
 .block { display: block; }

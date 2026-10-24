@@ -184,7 +184,16 @@ code, .mono { font-family: var(--font-mono); }
 
 .field { display: grid; gap: 0.3rem; min-width: 0; align-content: start; }
 .field > span:first-child { font-size: var(--fs-sm); color: var(--text-2); }
-.field.narrow { max-width: 120px; }
+.field.narrow input { max-width: 8rem; }
+/* A form's fields: two columns while each gets at least 15rem, else one; never three, so a row
+   never ends half empty and a short field (a port) never squeezes its label into three lines. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(max(min(100%, 15rem), calc(50% - var(--sp-3))), 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+}
+.form-grid > .wide { grid-column: 1 / -1; }
 input:not([type="checkbox"]):not([type="radio"]), select {
   font: inherit;
   padding: 0.45rem 0.6rem;

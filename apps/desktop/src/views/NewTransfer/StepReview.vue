@@ -75,7 +75,7 @@ const details = computed(() =>
       <dt>{{ $t("review.destination") }}</dt>
       <dd>
         <strong>{{ profile?.name ?? wizard.profileId }}</strong>
-        <span v-if="profile" class="mono small block">{{ profileWhere(profile) }}</span>
+        <span v-if="profile" class="path block">{{ profileWhere(profile) }}</span>
       </dd>
       <dt>{{ $t("review.files") }}</dt>
       <dd>{{ fmt.count(totals?.files) }} · {{ fmt.bytes(totals?.bytes) }}</dd>
@@ -115,10 +115,16 @@ const details = computed(() =>
 
 <style scoped>
 .label-field { max-width: 32rem; margin-bottom: 1rem; }
-.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem 1.5rem; margin: 0 0 1rem; }
+.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem 1.5rem; align-items: start; margin: 0 0 1rem; }
 dt { color: var(--text-2); display: flex; align-items: center; }
 dd { margin: 0; min-width: 0; }
 .block { display: block; }
 .check { display: flex; gap: 0.75rem; align-items: flex-start; cursor: pointer; margin-bottom: 1rem; }
 .check input { margin-top: 0.3rem; }
+/* A phone: each value under its label, with the whole width (paths, the mode's sentence). */
+@media (max-width: 559px) {
+  .summary { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .summary dd + dt { margin-top: 0.5rem; }
+  dt { font-size: var(--fs-sm); }
+}
 </style>

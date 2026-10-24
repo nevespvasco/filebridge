@@ -236,6 +236,8 @@ async function save() {
 </template>
 
 <style scoped>
+/* A list of two languages doesn't need the card's whole width. */
+.group-card > .field > select { max-width: 20rem; }
 .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: var(--sp-3); align-items: start; }
 .group-card { display: grid; gap: var(--sp-4); }
 .group-card h2 { font-size: var(--fs-base); margin: 0; }

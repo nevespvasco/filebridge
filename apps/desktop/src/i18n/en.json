@@ -652,7 +652,7 @@
     "host": "Server (Proxmox or Nextcloud)",
     "sshUser": "SSH user",
     "ncUser": "Nextcloud user",
-    "ncUserHint": "the account that receives the files",
+    "ncUserHint": "The account that receives the files",
     "folder": "Folder in that user's files",
     "folderHint": "Empty = the top of that user's files",
     "folderHostPath": "This looks like a path on the server. Type a folder inside the Nextcloud user's files (e.g. Backup): filebridge finds the data folder by itself.",

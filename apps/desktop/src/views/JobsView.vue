@@ -213,11 +213,17 @@ function clearFilters() {
 .page-head .lead-text { margin-bottom: 0; }
 .th-help { display: inline-flex; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: center; align-items: center; gap: 0.5rem 1rem; margin-top: 1rem; flex-wrap: wrap; }
+/* Beside the sidebar there is no room for the search and both lists on one line: the search gets
+   its own line, the lists go under it, instead of the search shrinking to a few letters. */
+@media (max-width: 1099px) {
+  .toolbar :deep(.search) { flex-basis: 100%; max-width: none; }
+}
 @media (max-width: 559px) {
   .toolbar { gap: 0.5rem; }
   .toolbar :deep(.search) { flex-basis: 100%; max-width: none; min-width: 0; }
-  .inline { flex: 1 1 auto; }
-  .inline select { flex: 1; max-width: none; }
+  /* The two filters side by side, each label over its list, so the lists line up. */
+  .inline { flex: 1 1 9rem; flex-direction: column; align-items: stretch; gap: 0.2rem; }
+  .inline select { width: 100%; max-width: none; }
 }
 /* Columns that can't fit go first: Size, then the table becomes a list of cards (D06). */
 @container (max-width: 860px) {

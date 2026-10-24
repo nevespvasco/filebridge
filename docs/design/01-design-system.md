@@ -261,6 +261,11 @@ the help text; the `?` sits beside the label, and the hint under the control des
 (`aria-describedby`). A saved secret is never shown again: "Saved in the system keyring" with
 "Replace…".
 
+Fields sit in a `.form-grid`: two columns while each gets at least 15rem, one below that, never
+three, so rows stay even at every width. A field that needs the whole line (a folder with Browse…)
+is `.wide`; a short value (a port) is `.narrow`, which shortens its input, not its column. A
+`SegmentedControl` that doesn't fit puts each option on its own line instead of widening the page.
+
 ### Status
 
 A state is icon + word + colour, never colour alone (`JobStateBadge`, `StatusIcon`). Given the

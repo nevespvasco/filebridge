@@ -73,9 +73,10 @@ export function place(target: Rect | null, pop: Size, view: Size, preferred: Pla
   const clampY = (y: number) => Math.max(margin, Math.min(y, view.height - pop.height - margin));
   if (!target) return { top: clampY((view.height - pop.height) / 2), left: clampX((view.width - pop.width) / 2), placement: "center" };
   if (view.width < NARROW) {
-    // Bottom of the window, unless the target is down there: then the top.
+    // Bottom of the window, unless the target is down there: then the top. Full width (`.narrow
+    // .pop`), so the left edge is the margin, whatever width the popover had when measured.
     const low = target.top + target.height / 2 > view.height / 2;
-    return { top: low ? margin : view.height - pop.height - margin, left: clampX((view.width - pop.width) / 2), placement: low ? "top" : "bottom" };
+    return { top: low ? margin : view.height - pop.height - margin, left: margin, placement: low ? "top" : "bottom" };
   }
   const at = (p: Placement) => {
     switch (p) {

@@ -268,7 +268,7 @@ async function save() {
     </template>
 
     <form v-else @submit.prevent="save">
-      <div class="grid">
+      <div class="form-grid">
         <FormField v-slot="f" :label="$t('profile.name')" required :help="$t('profile.help.name')" :example="$t('profile.help.nameExample')" :hint="$t('profile.hint.name')">
           <input :id="f.id" v-model="form.name" required :aria-describedby="f.describedby" :placeholder="kind === 'local' ? $t('profile.nameHintLocal') : $t('profile.nameHintSftp')" />
         </FormField>
@@ -302,24 +302,24 @@ async function save() {
           </span>
         </FormField>
         <template v-if="kind === 'sftp' && !nameOnly">
-          <FormField v-slot="f" class="wide" :label="$t('profile.keyFile')" :help="$t('profile.help.keyFile')" example="~/.ssh/id_ed25519" :hint="$t('profile.hint.keyFile')">
+          <FormField v-slot="f" :label="$t('profile.keyFile')" :help="$t('profile.help.keyFile')" example="~/.ssh/id_ed25519" :hint="$t('profile.hint.keyFile')">
             <span class="with-button">
               <input :id="f.id" v-model="form.key_file" spellcheck="false" :aria-describedby="f.describedby" :placeholder="$t('profile.keyFileHint')" />
               <button type="button" class="btn btn-small" @click="pick('key_file')">{{ $t("common.browse") }}</button>
             </span>
           </FormField>
-          <FormField v-slot="f" class="wide" :label="$t('profile.knownHosts')" :help="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :hint="$t('profile.hint.knownHosts')">
-            <input :id="f.id" v-model="form.known_hosts_file" spellcheck="false" :aria-describedby="f.describedby" placeholder="~/.ssh/known_hosts" />
-          </FormField>
-          <div v-if="hasPassword && !replacingPassword" class="field wide">
+          <div v-if="hasPassword && !replacingPassword" class="field">
             <span class="label-line">{{ $t("profile.password") }}</span>
             <span class="with-button stored">
               <span class="small"><AppIcon name="lock" :size="16" /> {{ $t("profile.passwordStored") }}</span>
               <button type="button" class="btn btn-small" @click="replacingPassword = true">{{ $t("profile.passwordReplace") }}</button>
             </span>
           </div>
-          <FormField v-else v-slot="f" class="wide" :label="$t('profile.password')" :help="$t('profile.help.password')" :hint="$t('profile.hint.password')">
+          <FormField v-else v-slot="f" :label="$t('profile.password')" :help="$t('profile.help.password')" :hint="$t('profile.hint.password')">
             <input :id="f.id" v-model="password" type="password" autocomplete="new-password" spellcheck="false" :aria-describedby="f.describedby" :placeholder="$t('profile.passwordHint')" />
+          </FormField>
+          <FormField v-slot="f" :label="$t('profile.knownHosts')" :help="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :hint="$t('profile.hint.knownHosts')">
+            <input :id="f.id" v-model="form.known_hosts_file" spellcheck="false" :aria-describedby="f.describedby" placeholder="~/.ssh/known_hosts" />
           </FormField>
           <p v-if="!editing" class="guide small wide"><AppIcon class="guide-icon" name="key" :size="20" /><span>{{ $t("profile.firstConnect") }}</span></p>
         </template>
@@ -373,9 +373,10 @@ async function save() {
 </template>
 
 <style scoped>
-.nc-mode { display: grid; gap: 0.35rem; margin: 0.5rem 0 1rem; }
+.profile-form { container-type: inline-size; }
+.nc-mode { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; margin: 0.5rem 0 1rem; }
 .q-title { margin: 0 0 0.6rem; font-size: var(--fs-base); }
-.kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+.kinds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; margin-bottom: 1rem; }
 .kind {
   all: unset;
   box-sizing: border-box;
@@ -388,8 +389,6 @@ async function save() {
 }
 .kind[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .kind:focus-visible { outline: 2px solid var(--accent); }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
-.wide { grid-column: 1 / -1; }
 .with-button { display: flex; gap: 0.5rem; }
 .with-button input { flex: 1; }
 .target { border: 1px solid var(--border); border-radius: var(--radius-md); margin: 1rem 0 0; display: flex; gap: 0.5rem 1rem; flex-wrap: wrap; align-items: center; }
@@ -403,5 +402,6 @@ async function save() {
 .link { all: unset; cursor: pointer; color: var(--accent); }
 .link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
-@media (max-width: 700px) { .kinds { grid-template-columns: 1fr; } }
+/* The form's own width, not the window's: beside the sidebar a 900px window leaves it 600px. */
+@container (max-width: 40rem) { .kinds { grid-template-columns: minmax(0, 1fr); } }
 </style>

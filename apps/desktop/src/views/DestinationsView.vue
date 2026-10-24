@@ -216,9 +216,13 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
         <div class="head">
           <div class="who">
             <AppIcon :name="profileKind(p)" :size="20" class="kind" />
-            <span class="badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
-            <strong>{{ p.name }}</strong>
-            <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: $t(`webdav.modeShort.${nextcloudMode(p)}`) }) }}</span>
+            <div class="who-text">
+              <strong>{{ p.name }}</strong>
+              <span class="meta">
+                <span class="badge badge-muted">{{ $t(`profile.kinds.${profileKind(p)}`) }}</span>
+                <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: $t(`webdav.modeShort.${nextcloudMode(p)}`) }) }}</span>
+              </span>
+            </div>
           </div>
           <div class="actions" :data-tour="i === 0 ? 'dest-actions' : undefined">
             <button class="btn btn-small" :title="conn.offline ? $t('conn.disconnected') : $t('dest.testTip')" :disabled="profiles.tests[p.id]?.running || checkingKeys[p.id] || conn.offline" @click="test(p)">{{ $t("destinations.test") }}</button>
@@ -289,9 +293,12 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 .page-head .lead-text { margin-bottom: 0; }
 .list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .head { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
-.kind { align-self: center; color: var(--text-2); }
-.who { display: flex; gap: 0.3rem 0.6rem; align-items: baseline; flex-wrap: wrap; min-width: 0; }
+.kind { flex: none; margin-top: 0.1rem; color: var(--text-2); }
+/* The name on its own line, its kind and mode under it: the same at every width and name length. */
+.who { display: flex; gap: 0.6rem; align-items: flex-start; flex: 1 1 14rem; min-width: 0; }
+.who-text { display: grid; gap: 0.2rem; min-width: 0; }
 .who strong { overflow-wrap: anywhere; }
+.meta { display: flex; gap: 0.3rem 0.6rem; align-items: center; flex-wrap: wrap; }
 .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .space { margin: 0.5rem 0; }
 .key-warning { margin: 0.5rem 0; }

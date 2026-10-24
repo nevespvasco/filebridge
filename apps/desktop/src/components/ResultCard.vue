@@ -116,8 +116,11 @@ function seeReclaim() {
 .title { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; }
 .stat { display: block; font-size: var(--fs-stat); font-weight: 700; line-height: 1.1; }
 .sub { margin: 0; font-size: var(--fs-base); }
-.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
-.facts li + li::before { content: "·"; margin-right: var(--sp-3); color: var(--muted); }
+/* Every fact has its "·" in front; the list starts one dot-width to the left and is clipped there,
+   so a line never starts with a dot, however the facts wrap. */
+.facts { list-style: none; margin: 0 0 0 calc(-1 * var(--sp-5)); padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) 0; clip-path: inset(0 0 0 var(--sp-5)); }
+.facts li { padding-left: var(--sp-5); }
+.facts li::before { content: "·"; display: inline-block; width: var(--sp-5); margin-left: calc(-1 * var(--sp-5)); text-align: center; color: var(--muted); }
 .reclaim-line { margin: 0; display: flex; gap: var(--sp-2); align-items: center; color: var(--ok); }
 .actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-1); }
 .tone-ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }

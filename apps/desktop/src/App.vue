@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useFmt } from "@/composables/useFmt";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppIcon from "@/components/AppIcon.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
@@ -26,6 +26,9 @@ const reclaim = useReclaim();
 const confirm = useConfirm();
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
+/** A transfer's own page, or its repair, is still under Transfers: its tab stays lit. */
+const inTransfer = computed(() => route.name === "job" || route.name === "repair");
 const fmt = useFmt();
 
 onMounted(async () => {
@@ -135,7 +138,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
         <RouterLink to="/home" :aria-label="$t('nav.home')" :title="tip('nav.tips.home', '/')">
           <AppIcon name="home" :size="20" /><span class="label">{{ $t("nav.home") }}</span>
         </RouterLink>
-        <RouterLink to="/jobs" :aria-label="$t('nav.jobs')" :title="tip('nav.tips.jobs', '/jobs')">
+        <RouterLink to="/jobs" :class="{ 'router-link-active': inTransfer }" :aria-label="$t('nav.jobs')" :title="tip('nav.tips.jobs', '/jobs')">
           <AppIcon name="transfers" :size="20" /><span class="label">{{ $t("nav.jobs") }}</span>
           <span v-if="attention" class="attention" role="img" :aria-label="$t('nav.attention', { n: attention }, attention)" :title="$t('nav.attention', { n: attention }, attention)" />
           <span v-if="active" class="badge badge-accent num" :aria-label="$t('nav.active', { n: active }, active)">{{ active }}</span>

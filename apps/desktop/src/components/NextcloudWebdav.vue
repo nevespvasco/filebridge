@@ -64,7 +64,7 @@ const uid = useId();
 <template>
   <form class="nc" @submit.prevent="check">
     <p class="small muted">{{ $t("webdav.intro") }}</p>
-    <div class="grid">
+    <div class="form-grid">
       <div class="field">
         <span class="label-line"><label :for="`${uid}-1`">{{ $t("profile.name") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('profile.help.name')" :label="$t('profile.name')" />
@@ -126,8 +126,6 @@ const uid = useId();
 </template>
 
 <style scoped>
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; align-items: start; }
-.wide { grid-column: 1 / -1; }
 .actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
 .grow { flex: 1; }
 .steps { list-style: none; padding: 0; margin: 1rem 0 0; }

@@ -30,7 +30,10 @@ function measure() {
   const el = tourTarget(step);
   const r = el?.getBoundingClientRect();
   spot.value = r ? { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 } : null;
-  const view = { width: window.innerWidth, height: window.innerHeight };
+  // Below 760px the tab bar is fixed at the bottom (App.vue): the popover stays above it.
+  const places = document.querySelector<HTMLElement>(".places");
+  const bar = places && getComputedStyle(places).position === "fixed" ? places.getBoundingClientRect().top : 0;
+  const view = { width: window.innerWidth, height: bar > 0 ? bar : window.innerHeight };
   narrow.value = view.width < NARROW;
   const size = pop.value.getBoundingClientRect();
   const p = place(spot.value, { width: size.width, height: size.height }, view, step.placement);

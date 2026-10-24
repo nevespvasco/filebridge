@@ -111,7 +111,7 @@ const uid = useId();
 <template>
   <form class="nc" @submit.prevent="detect">
     <p class="small muted">{{ $t("nextcloud.intro") }}</p>
-    <div class="grid">
+    <div class="form-grid">
       <div class="field">
         <span class="label-line"><label :for="`${uid}-1`">{{ $t("profile.name") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('profile.help.name')" :label="$t('profile.name')" />
@@ -169,7 +169,7 @@ const uid = useId();
       <AppIcon :name="advanced ? 'caretDown' : 'caretRight'" /> {{ $t("common.advanced") }}
     </button>
     <span v-if="!advanced" class="small muted adv-hint">{{ $t("nextcloud.advancedHint") }}</span>
-    <div v-if="advanced" class="grid">
+    <div v-if="advanced" class="form-grid">
       <div class="field">
         <span class="label-line"><label :for="`${uid}-8`">{{ $t("profile.knownHosts") }}</label>
           <HelpTip :text="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :label="$t('profile.knownHosts')" />
@@ -224,8 +224,6 @@ const uid = useId();
 </template>
 
 <style scoped>
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; align-items: start; }
-.wide { grid-column: 1 / -1; }
 .with-button { display: flex; gap: 0.5rem; }
 .with-button input { flex: 1; }
 .actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }

@@ -652,7 +652,7 @@
     "host": "Servidor (Proxmox ou Nextcloud)",
     "sshUser": "Utilizador SSH",
     "ncUser": "Utilizador do Nextcloud",
-    "ncUserHint": "a conta que recebe os ficheiros",
+    "ncUserHint": "A conta que recebe os ficheiros",
     "folder": "Pasta nos ficheiros desse utilizador",
     "folderHint": "Vazio = o topo dos ficheiros desse utilizador",
     "folderHostPath": "Isto parece um caminho no servidor. Escreva uma pasta dentro dos ficheiros do utilizador do Nextcloud (p. ex. Backup): o filebridge encontra sozinho a pasta de dados.",

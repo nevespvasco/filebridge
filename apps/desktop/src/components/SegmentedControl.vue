@@ -18,8 +18,9 @@ const model = defineModel<T>({ required: true });
 </template>
 
 <style scoped>
-.segmented { display: inline-flex; justify-self: start; width: max-content; max-width: 100%; padding: 3px; gap: 3px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
-.seg { display: inline-flex; gap: 0.35rem; align-items: center; padding: 0.3rem 0.75rem; border-radius: var(--radius-xs); cursor: pointer; color: var(--text-2); }
+/* Side by side while they fit; otherwise each option takes a whole line, never wider than the page. */
+.segmented { display: inline-flex; flex-wrap: wrap; justify-self: start; max-width: 100%; padding: 3px; gap: 3px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
+.seg { flex: 1 1 auto; min-width: 0; display: inline-flex; gap: 0.35rem; align-items: center; padding: 0.3rem 0.75rem; border-radius: var(--radius-xs); cursor: pointer; color: var(--text-2); }
 .seg:hover { color: var(--text); }
 .seg.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
 .seg:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
