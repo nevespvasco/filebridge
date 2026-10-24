@@ -633,6 +633,8 @@ async fn transfers_are_named_found_and_sent_again_with_their_decisions() {
     );
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn issues_are_decided_by_selection_or_by_path() {
     let s = setup().await;
@@ -1060,6 +1062,8 @@ async fn nested_sources_are_refused() {
         .unwrap();
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn collisions_wait_for_a_decision() {
     let s = setup().await;
@@ -1567,6 +1571,8 @@ async fn options_change_until_the_job_is_sent() {
     ));
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn options_change_while_awaiting_approval() {
     let s = setup().await;
@@ -1588,6 +1594,8 @@ async fn options_change_while_awaiting_approval() {
     assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 1);
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn decide_all_applies_one_decision_to_every_pending_issue() {
     let s = setup().await;
@@ -1679,6 +1687,8 @@ async fn decide_all_applies_one_decision_to_every_pending_issue() {
     ));
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn an_issue_is_decided_only_through_its_own_job() {
     let s = setup().await;
@@ -1707,6 +1717,8 @@ async fn an_issue_is_decided_only_through_its_own_job() {
     assert_eq!(s.store.pending_issue_count(&jobs[0]).await.unwrap(), 1);
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn edited_names_are_checked_when_decided() {
     let s = setup().await;
@@ -2136,6 +2148,8 @@ async fn a_name_renamed_by_hand_meanwhile_counts_only_if_it_is_the_same_file() {
     assert_eq!((job_view.counts.done, job_view.counts.failed), (1, 1));
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn renames_in_one_folder_free_a_name_before_it_is_taken() {
     let s = setup().await;

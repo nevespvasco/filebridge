@@ -130,7 +130,11 @@ mod tests {
         let nfd_dir = root.join(OsStr::from_bytes(b"Vera\xcc\x83o"));
         std::fs::create_dir(&nfd_dir).unwrap();
         std::fs::write(nfd_dir.join("praia.jpg"), b"12345").unwrap();
-        std::fs::write(root.join(OsStr::from_bytes(b"\xe7a.txt")), b"x").unwrap();
+        // macOS file systems refuse a name that isn't UTF-8; NFD they keep as written.
+        let invalid_names = !cfg!(target_os = "macos");
+        if invalid_names {
+            std::fs::write(root.join(OsStr::from_bytes(b"\xe7a.txt")), b"x").unwrap();
+        }
 
         let scan = scan(root).unwrap();
         let by_path = |p: &[u8]| scan.entries.iter().position(|e| e.raw_path == p).unwrap();
@@ -148,9 +152,11 @@ mod tests {
         assert_eq!(scan.entries[child].parent, Some(dir));
         assert_eq!(scan.entries[child].size, 5);
 
-        let latin1 = by_path(b"\xe7a.txt");
-        assert_eq!(scan.entries[latin1].name, None);
-        assert_eq!(scan.total_bytes(), 6);
+        if invalid_names {
+            let latin1 = by_path(b"\xe7a.txt");
+            assert_eq!(scan.entries[latin1].name, None);
+        }
+        assert_eq!(scan.total_bytes(), if invalid_names { 6 } else { 5 });
     }
 
     #[test]

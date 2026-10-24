@@ -355,13 +355,15 @@ const SERVICE_VARS: [&str; 5] = [
 ];
 
 /// The systemd user unit `filebridge-service install-user-unit` writes.
+#[cfg(any(target_os = "linux", test))]
 const UNIT_NAME: &str = "filebridge-service.service";
 
 /// How the old service was started, from its `/proc/PID/cmdline`, `environ` and `cgroup`
 /// (Linux), so that its replacement uses the same data folder, rclone and socket. Refused
 /// when the systemd user unit runs it (stopping it there would leave the unit stopped and a
-/// copy outside it), or when it has arguments this app doesn't know how to pass on.
-#[cfg(unix)]
+/// copy outside it), or when it has arguments this app doesn't know how to pass on. Only Linux
+/// has `/proc`; the tests run it on every Unix.
+#[cfg(all(unix, any(target_os = "linux", test)))]
 fn launch_from(cmdline: &[u8], environ: &[u8], cgroup: &str) -> Result<Launch, String> {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
@@ -617,6 +619,7 @@ mod tests {
     }
 
     /// The pid of the process listening on `endpoint`.
+    #[cfg(target_os = "linux")]
     async fn peer(endpoint: &Endpoint) -> i32 {
         let Endpoint::Path(path) = endpoint else {
             unreachable!()
@@ -625,6 +628,9 @@ mod tests {
         stream.peer_cred().unwrap().pid().unwrap()
     }
 
+    // The test's service has arguments, which only Linux can pass on to a replacement
+    // (`launch_of`); elsewhere it is left running and this would wait for it forever.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn an_older_service_is_stopped_and_its_launch_kept() {
         let Some(bin) = service_binary() else {
@@ -712,6 +718,9 @@ mod tests {
         child.wait().unwrap();
     }
 
+    // The test's service has arguments, which only Linux can pass on to a replacement
+    // (`launch_of`); elsewhere it is left running and this would wait for it forever.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn a_replacement_just_as_old_is_not_replaced_again() {
         let Some(bin) = service_binary() else {
