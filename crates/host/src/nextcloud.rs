@@ -208,33 +208,33 @@ async fn add_webdav(
     match transport.list(&files, None, true).await {
         Ok(_) => steps.push(step("sign-in", "ok", format!("signed in as {user}"))),
         Err(e) => {
-            let message = if e.kind == ErrorKind::Auth && e.message.contains("PasswordLoginForbidden")
-            {
-                // Nextcloud answers this to anything that isn't one of the user's app
-                // passwords when it forbids account passwords (two-factor sign-in or an admin
-                // setting).
-                format!(
-                    "Nextcloud takes only an app password here, not the password {user} signs \
+            let message =
+                if e.kind == ErrorKind::Auth && e.message.contains("PasswordLoginForbidden") {
+                    // Nextcloud answers this to anything that isn't one of the user's app
+                    // passwords when it forbids account passwords (two-factor sign-in or an admin
+                    // setting).
+                    format!(
+                        "Nextcloud takes only an app password here, not the password {user} signs \
                      in with (always so with two-factor sign-in). Create one at \
                      {server}/index.php/settings/user/security → Devices & sessions, signed in \
                      as {user}, and paste it whole ({})",
-                    e.message
-                )
-            } else if e.kind == ErrorKind::Auth {
-                format!(
-                    "Nextcloud refused {user} with this app password ({})",
-                    e.message
-                )
-            } else if e.kind == ErrorKind::NotFound && user_id.is_none() {
-                format!(
-                    "Nextcloud has no files for {user} at {url}. If you sign in with an email \
+                        e.message
+                    )
+                } else if e.kind == ErrorKind::Auth {
+                    format!(
+                        "Nextcloud refused {user} with this app password ({})",
+                        e.message
+                    )
+                } else if e.kind == ErrorKind::NotFound && user_id.is_none() {
+                    format!(
+                        "Nextcloud has no files for {user} at {url}. If you sign in with an email \
                      address or a company account, paste the WebDAV address from Files → \
                      Settings instead of the server's ({})",
-                    e.message
-                )
-            } else {
-                format!("could not reach Nextcloud at {server}: {}", e.message)
-            };
+                        e.message
+                    )
+                } else {
+                    format!("could not reach Nextcloud at {server}: {}", e.message)
+                };
             steps.push(step("sign-in", "fail", message));
             forget().await;
             return Ok(DetectNextcloudResponse {
