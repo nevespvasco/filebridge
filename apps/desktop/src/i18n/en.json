@@ -80,7 +80,9 @@
     "clear": "Clear",
     "close": "Close",
     "dismiss": "Dismiss",
-    "add": "Add"
+    "add": "Add",
+    "more": "More",
+    "less": "Less"
   },
   "status": {
     "ok": "OK",
@@ -101,7 +103,6 @@
       "4": "Review & send",
       "5": "Result"
     },
-    "subtitle": "Copy files to a disk, a server or Nextcloud. Your original files are never changed.",
     "stepOf": "Step {n} of {total}",
     "stepTips": {
       "1": "Choose the files and folders to copy",
@@ -197,6 +198,7 @@
     "freeUnknown": "free space unknown",
     "writable": "can write",
     "notWritable": "can't write",
+    "passed": "{n} check passed | {n} checks passed",
     "check": {
       "connect": "Connection",
       "ssh": "Sign-in to the server",
@@ -720,7 +722,7 @@
     "badWindow": "Start and end must be different times.",
     "bandwidth": "Bandwidth limit",
     "schedule": "Hours when it may send",
-    "service": "Copy engine",
+    "service": "About filebridge",
     "state": "State",
     "version": "Version",
     "endpoint": "Socket",

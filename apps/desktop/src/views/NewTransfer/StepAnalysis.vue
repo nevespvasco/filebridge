@@ -186,7 +186,7 @@ const details = computed(() => {
 
     <DetailsPanel :lines="details" />
 
-    <div class="footer" data-tour="analysis-next">
+    <div class="footer sticky" data-tour="analysis-next">
       <button class="btn" :disabled="wizard.analysing" @click="wizard.step = 2"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <span v-if="wizard.analysing" class="why-disabled">{{ $t("analysis.waitHint") }}</span>

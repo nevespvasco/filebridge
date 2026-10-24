@@ -45,10 +45,7 @@ function go(n: Step) {
 <template>
   <div class="wizard">
     <header class="page-head">
-      <div>
-        <h1>{{ $t("wizard.title") }}</h1>
-        <p class="lead-text">{{ $t("wizard.subtitle") }}</p>
-      </div>
+      <h1>{{ $t("wizard.title") }}</h1>
       <span v-if="wizard.step < 5" class="badge badge-accent">{{ $t("wizard.stepOf", { n: wizard.step, total: SEND_STEPS }) }}</span>
     </header>
     <ol class="stepper" data-tour="wizard-stepper">
@@ -89,7 +86,6 @@ function go(n: Step) {
 .num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--surface-2); font-size: var(--fs-sm); flex: none; }
 .current .num { background: var(--accent); color: var(--on-accent); }
 .done .num { background: var(--ok); color: var(--on-accent); }
-.page-head .lead-text { margin-bottom: 0; }
 .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Not enough room for five labels: every step keeps its number, only the current one its label
    (the others keep theirs for screen readers). */

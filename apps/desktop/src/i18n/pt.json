@@ -80,7 +80,9 @@
     "clear": "Limpar",
     "close": "Fechar",
     "dismiss": "Dispensar",
-    "add": "Adicionar"
+    "add": "Adicionar",
+    "more": "Mais",
+    "less": "Menos"
   },
   "status": {
     "ok": "OK",
@@ -101,7 +103,6 @@
       "4": "Rever e enviar",
       "5": "Resultado"
     },
-    "subtitle": "Copie ficheiros para um disco, um servidor ou o Nextcloud. Os ficheiros originais nunca são alterados.",
     "stepOf": "Passo {n} de {total}",
     "stepTips": {
       "1": "Escolha os ficheiros e pastas a copiar",
@@ -197,6 +198,7 @@
     "freeUnknown": "espaço livre desconhecido",
     "writable": "pode escrever",
     "notWritable": "não pode escrever",
+    "passed": "{n} verificação passou | {n} verificações passaram",
     "check": {
       "connect": "Ligação",
       "ssh": "Entrada no servidor",
@@ -720,7 +722,7 @@
     "badWindow": "O início e o fim têm de ser horas diferentes.",
     "bandwidth": "Limite de largura de banda",
     "schedule": "Horas em que pode enviar",
-    "service": "Motor de cópia",
+    "service": "Sobre o filebridge",
     "state": "Estado",
     "version": "Versão",
     "endpoint": "Socket",

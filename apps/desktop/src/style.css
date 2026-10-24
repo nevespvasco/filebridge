@@ -143,6 +143,18 @@ code, .mono { font-family: var(--font-mono); }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
 .step > h2 { margin-top: 0; }
 .footer { display: flex; gap: 0.75rem; align-items: center; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); flex-wrap: wrap; }
+/* A wizard step's footer stays on screen (above the bottom tab bar on a narrow window), so Back
+   and the next step are always one tap away however long the step is. */
+.footer.sticky {
+  position: sticky;
+  bottom: var(--nav-bottom);
+  z-index: 5;
+  margin-top: 0.5rem;
+  padding: 0.75rem 0;
+  border-top: 0;
+  background: var(--bg);
+  box-shadow: 0 -10px 12px -10px rgb(0 0 0 / 0.12);
+}
 .grow { flex: 1; }
 .small { font-size: var(--fs-sm); }
 .muted { color: var(--text-2); }
@@ -246,6 +258,11 @@ input:disabled { background: var(--surface-2); }
 .field > .hint { font-size: var(--fs-xs); color: var(--text-2); }
 .req { color: var(--danger); margin-left: 0.15rem; }
 .why-disabled { font-size: var(--fs-sm); color: var(--text-2); }
+/* A button that reads as a link: "More", "Check now", a list's toggle. */
+.link-btn { all: unset; cursor: pointer; color: var(--accent); font-size: var(--fs-sm); display: inline-flex; gap: 0.25rem; align-items: center; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
+.link-btn:disabled { color: var(--muted); cursor: default; text-decoration: none; }
 
 /* The height of the bottom tab bar on a narrow window (App.vue), 0 elsewhere. Anything sticky at
    the bottom of a page stands on it; scrolling into view (focus, the guide) keeps clear of it and
@@ -256,13 +273,27 @@ input:disabled { background: var(--surface-2); }
   html { scroll-padding: 4.5rem 0 calc(var(--nav-bottom) + 0.5rem); }
 }
 
-/* Narrow windows (docs/design/02, "Window sizes"). A footer's hint goes on its own line above the
-   buttons, so Back stays left and the next step right; a page head's actions go under the title. */
+/* Narrow windows (docs/design/02, "Window sizes"). A footer stays one row: Back left, the next
+   step right, its hint between them in small type, cut after three lines (the button's own
+   tooltip and the step above say the rest); a page head's actions go under the title. */
 @media (max-width: 559px) {
   /* Touch: every button at least 32 px tall. */
   .btn-small { min-height: 32px; }
-  .footer { gap: 0.6rem; }
-  .footer > :not(.btn):not(.grow) { order: -1; flex-basis: 100%; }
+  .footer { gap: 0.5rem; flex-wrap: nowrap; }
+  .footer.sticky { padding: 0.5rem 0; }
+  .footer > .grow { display: none; }
+  .footer > .btn-primary { margin-left: auto; }
+  .footer > :not(.btn):not(.grow) {
+    flex: 1 1 0;
+    min-width: 0;
+    font-size: var(--fs-xs);
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+  }
   .page-head { gap: 0.75rem; margin-bottom: 1rem; }
   .page-head > :first-child { flex: 1 1 12rem; min-width: 0; }
   h1 { font-size: var(--fs-xl); overflow-wrap: anywhere; }

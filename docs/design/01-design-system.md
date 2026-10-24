@@ -241,7 +241,8 @@ nothing about the engine, so specs reuse them.
 | `Toast` | `text` | Short confirmation ("Path copied"), `aria-live="polite"`, 3 s | D05, D09 |
 | `DropOverlay` | `show` | Full-window layer while files are dragged over it: dashed accent frame, "Drop to add". `aria-hidden`, `pointer-events: none` | D02 (`FileDropZone`) |
 | `GuidedTour` | — (reads the tour store) | Mounted once in `App.vue`. Spotlight on a `data-tour` element (`box-shadow` with `--overlay`), a card with count, dots, Skip / Back / Next. `role="dialog"`, `#app` inert, focus trapped and restored, Esc skips, ← / → move. Steps are data in `src/lib/tour.ts` | D02 |
-| `TourButton` | `tour` | The `?` next to a page title: plays its guide again | D02 |
+| `TourButton` | `tour` | The `?` next to a page title: plays its guide again. Just the circled-`?` icon, no ring of its own (the icon already is one) | D02 |
+| `ClampText` | `text, lines = 2` | A long message cut after `lines` lines, with More / Less only when it is cut; re-measured when the width changes | Destinations, D03, `PreflightList` |
 
 ### Dialogs
 
@@ -288,6 +289,13 @@ verification, amber problems, red stopped, grey cancelled.
 and at most one action. `BulkDecision` is the one for names waiting for a decision: "Accept the N
 suggestions" (every rule whose suggestions may be accepted without a look) and "Review one by
 one"; garbled names are left out of the button, with the reason.
+
+A check's result (a destination's test, its last space check) is a **status line**, not a red
+paragraph: a `StatusIcon` and the message in body colour, cut with `ClampText`. Each thing is said
+once: a failed space check isn't repeated when the test under it already failed, "doesn't report
+its free space" isn't added under the error that explains it, and a `PreflightList` block whose
+checks all pass is one line ("✓ Integration · can write") with its checks behind "N checks
+passed". Technical information on shows every check.
 
 ### Toast
 

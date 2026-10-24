@@ -8,6 +8,8 @@ import ProfileForm from "@/components/ProfileForm.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
+import ClampText from "@/components/ClampText.vue";
+import StatusIcon from "@/components/StatusIcon.vue";
 import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
 import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
@@ -140,14 +142,14 @@ const details = computed(() => [
         <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="selectedTest.running" @click="profiles.test(wizard.profileId!)">{{ $t("dest.retest") }}</button>
       </div>
       <p v-if="selectedTest.running" class="muted small">{{ $t("dest.testing") }}</p>
-      <p v-else-if="selectedTest.error" class="error small">{{ selectedTest.error }}</p>
+      <p v-else-if="selectedTest.error" class="failed small"><StatusIcon status="fail" /><ClampText :text="selectedTest.error" :lines="3" /></p>
       <PreflightList v-else-if="selectedTest.result" :views="[selectedTest.result.transport, ...(selectedTest.result.integration ? [selectedTest.result.integration] : [])]" />
-      <p class="small muted">{{ $t("dest.etaLater") }}</p>
+      <p class="eta small muted">{{ $t("dest.etaLater") }}</p>
     </div>
 
     <DetailsPanel :lines="details" />
 
-    <div class="footer">
+    <div class="footer sticky">
       <button class="btn" @click="wizard.step = 1"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <span v-if="conn.offline" class="why-disabled">{{ $t("conn.disconnected") }}</span>
@@ -184,4 +186,7 @@ const details = computed(() => [
 .profile[aria-checked="true"] { background: var(--accent-soft); }
 .form, .test { margin-top: 1rem; }
 .test-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.failed { display: flex; gap: 0.5rem; align-items: flex-start; }
+/* A phone: the time estimate comes with the analysis anyway. */
+@media (max-width: 559px) { .eta { display: none; } }
 </style>

@@ -6,7 +6,9 @@ import { useI18n } from "vue-i18n";
 import { useFmt } from "@/composables/useFmt";
 import { useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
+import ClampText from "./ClampText.vue";
 import RelativeTime from "./RelativeTime.vue";
+import StatusIcon from "./StatusIcon.vue";
 import StorageMeter from "./StorageMeter.vue";
 
 const props = defineProps<{
@@ -15,6 +17,9 @@ const props = defineProps<{
   /** What "Check now" runs, when the screen does more than the check (e.g. Destinations offers
    *  to trust an unknown SSH server's key, then checks again). */
   refresh?: () => unknown;
+  /** The screen already says why the destination fails (a failed test): its last check's error
+   *  isn't repeated. */
+  hideError?: boolean;
 }>();
 const profiles = useProfiles();
 const { t } = useI18n();
@@ -70,8 +75,12 @@ function checkNow() {
       <p v-if="s.total_bytes == null && !compact" class="small muted">{{ $t("storage.noTotal") }}</p>
       <p v-if="s.low" class="notice small" role="status"><AppIcon name="warning" /> {{ $t("storage.low", { free: fmt.bytes(s.free_bytes) }) }}</p>
     </template>
-    <p v-else class="small muted">{{ $t("storage.unsupported") }}</p>
-    <p v-if="s?.last_error && !compact" class="small error">{{ $t("storage.lastError", { reason: s.last_error }) }}</p>
+    <!-- A failed check says why there is no number; "doesn't report its free space" would be noise. -->
+    <p v-else-if="!s.last_error" class="small muted">{{ $t("storage.unsupported") }}</p>
+    <p v-if="s?.last_error && !compact && !hideError" class="failed small">
+      <StatusIcon status="fail" />
+      <ClampText :text="$t('storage.lastError', { reason: s.last_error })" :lines="2" />
+    </p>
   </div>
 </template>
 
@@ -86,4 +95,5 @@ function checkNow() {
 .link:disabled { color: var(--muted); cursor: default; }
 .notice { display: inline-flex; gap: 0.35rem; align-items: center; margin: 0; padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); background: var(--warn-soft); color: var(--warn-strong); width: fit-content; }
 p { margin: 0; }
+.failed { display: flex; gap: 0.5rem; align-items: flex-start; color: var(--text-2); }
 </style>

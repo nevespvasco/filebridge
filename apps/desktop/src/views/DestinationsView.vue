@@ -6,6 +6,8 @@ import { useTour } from "@/stores/tour";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { Profile_Serialize } from "@/bindings";
+import ClampText from "@/components/ClampText.vue";
+import StatusIcon from "@/components/StatusIcon.vue";
 import AccessDialog from "@/components/AccessDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
@@ -230,21 +232,27 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
             <RowMenu :items="menuItems(p)" :label="$t('destinations.menu', { name: p.name })" @select="onMenu(p, $event)" />
           </div>
         </div>
-        <p class="mono small muted ellipsis" :title="profileWhere(p)">{{ profileWhere(p) }}</p>
+        <!-- What it is, then how it is doing: where and what system, one muted block; the space
+             and the last test under one divider, each failure said once. -->
+        <div class="where small muted">
+          <p class="mono ellipsis" :title="profileWhere(p)">{{ profileWhere(p) }}</p>
+          <p>
+            {{ $t(`profile.family.${p.target.family}`) }} · {{ p.target.case_sensitive ? $t("profile.caseSensitive") : $t("profile.caseInsensitive") }}
+            <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
+          </p>
+        </div>
         <p v-if="sshKey(p) === 'remove'" class="small ok-text"><AppIcon name="key" :size="16" /> {{ $t("access.uses") }}</p>
-        <DestinationSpace :profile-id="p.id" class="space" :refresh="() => checkSpace(p)" />
-        <p v-if="checkingKeys[p.id]" class="small muted">{{ $t("hostKey.checking") }}</p>
-        <p class="small muted">
-          {{ $t(`profile.family.${p.target.family}`) }} · {{ p.target.case_sensitive ? $t("profile.caseSensitive") : $t("profile.caseInsensitive") }}
-          <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
-        </p>
-        <div v-if="profiles.tests[p.id]" class="test">
-          <p v-if="profiles.tests[p.id].running" class="small muted">{{ $t("dest.testing") }}</p>
-          <p v-else-if="profiles.tests[p.id].error" class="small error">{{ profiles.tests[p.id].error }}</p>
-          <PreflightList
-            v-else-if="profiles.tests[p.id].result"
-            :views="[profiles.tests[p.id].result!.transport, ...(profiles.tests[p.id].result!.integration ? [profiles.tests[p.id].result!.integration!] : [])]"
-          />
+        <div class="status">
+          <DestinationSpace :profile-id="p.id" :hide-error="!!profiles.tests[p.id] && !profiles.tests[p.id].running && failed(profiles.tests[p.id])" :refresh="() => checkSpace(p)" />
+          <p v-if="checkingKeys[p.id]" class="small muted">{{ $t("hostKey.checking") }}</p>
+          <div v-if="profiles.tests[p.id]" class="test">
+            <p v-if="profiles.tests[p.id].running" class="small muted">{{ $t("dest.testing") }}</p>
+            <p v-else-if="profiles.tests[p.id].error" class="failed small"><StatusIcon status="fail" /><ClampText :text="profiles.tests[p.id].error!" :lines="3" /></p>
+            <PreflightList
+              v-else-if="profiles.tests[p.id].result"
+              :views="[profiles.tests[p.id].result!.transport, ...(profiles.tests[p.id].result!.integration ? [profiles.tests[p.id].result!.integration!] : [])]"
+            />
+          </div>
         </div>
       </section>
       </template>
@@ -300,8 +308,11 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 .who strong { overflow-wrap: anywhere; }
 .meta { display: flex; gap: 0.3rem 0.6rem; align-items: center; flex-wrap: wrap; }
 .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-.space { margin: 0.5rem 0; }
+.where { display: grid; gap: 0.15rem; margin: 0.5rem 0 0; }
+.where p { margin: 0; }
 .key-warning { margin: 0.5rem 0; }
 .key-warning p { margin: 0 0 0.4rem; }
-.test { margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.status { display: grid; gap: 0.6rem; margin-top: 0.75rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.status p { margin: 0; }
+.failed { display: flex; gap: 0.5rem; align-items: flex-start; }
 </style>

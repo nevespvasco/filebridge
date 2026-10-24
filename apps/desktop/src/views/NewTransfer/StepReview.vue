@@ -102,7 +102,7 @@ const details = computed(() =>
 
     <DetailsPanel :lines="details" />
 
-    <div class="footer">
+    <div class="footer sticky">
       <button class="btn" @click="wizard.step = 3"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <span v-if="conn.offline" class="why-disabled">{{ $t("conn.disconnected") }}</span>
