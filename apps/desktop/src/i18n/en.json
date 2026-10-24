@@ -181,7 +181,7 @@
     "test": "Connection test",
     "retest": "Test again",
     "etaLater": "The estimated time appears once the files are counted.",
-    "failingHint": "The connection test found problems (see above). You can continue, but the copy may fail.",
+    "failingHint": "Some checks failed. You can still continue, but the copy may fail.",
     "analyse": "Analyse",
     "guide": "Click a destination to select it. filebridge tests the connection straight away and shows the free space.",
     "guideFirst": "You don't have a destination yet. Create one below: for an external disk or a USB stick, choose “Local folder”.",

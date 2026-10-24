@@ -181,7 +181,7 @@
     "test": "Testar ligação",
     "retest": "Testar de novo",
     "etaLater": "O tempo estimado aparece quando os ficheiros estiverem contados.",
-    "failingHint": "O teste de ligação encontrou problemas (ver acima). Pode continuar, mas a cópia pode falhar.",
+    "failingHint": "Algumas verificações falharam. Pode continuar na mesma, mas a cópia pode falhar.",
     "analyse": "Analisar",
     "guide": "Clique num destino para o selecionar. O filebridge testa logo a ligação e mostra o espaço livre.",
     "guideFirst": "Ainda não tem nenhum destino. Crie um abaixo: para um disco externo ou uma pen USB, escolha “Pasta local”.",

@@ -10,6 +10,7 @@ import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import ClampText from "@/components/ClampText.vue";
 import StatusIcon from "@/components/StatusIcon.vue";
+import NoticeBox from "@/components/NoticeBox.vue";
 import { useFmt } from "@/composables/useFmt";
 import { request } from "@/lib/requests";
 import { freeBytes, profileKind, profileWhere, useProfiles } from "@/stores/profiles";
@@ -144,6 +145,7 @@ const details = computed(() => [
       <p v-if="selectedTest.running" class="muted small">{{ $t("dest.testing") }}</p>
       <p v-else-if="selectedTest.error" class="failed small"><StatusIcon status="fail" /><ClampText :text="selectedTest.error" :lines="3" /></p>
       <PreflightList v-else-if="selectedTest.result" :views="[selectedTest.result.transport, ...(selectedTest.result.integration ? [selectedTest.result.integration] : [])]" />
+      <NoticeBox v-if="failing && !selectedTest.running" class="failing" tone="warn" icon="warning" role="status"><p>{{ $t("dest.failingHint") }}</p></NoticeBox>
       <p class="eta small muted">{{ $t("dest.etaLater") }}</p>
     </div>
 
@@ -155,7 +157,6 @@ const details = computed(() => [
       <span v-if="conn.offline" class="why-disabled">{{ $t("conn.disconnected") }}</span>
       <span v-else-if="creating" class="why-disabled">{{ $t("dest.finishForm") }}</span>
       <span v-else-if="!wizard.profileId" class="why-disabled">{{ $t("dest.needOne") }}</span>
-      <span v-else-if="failing" class="small warn-text">{{ $t("dest.failingHint") }}</span>
       <button class="btn btn-primary" :title="$t('dest.analyseTip')" :disabled="!wizard.canAnalyse || creating || conn.offline" @click="next">{{ $t("dest.analyse") }} <AppIcon name="next" /></button>
     </div>
   </div>
@@ -186,6 +187,7 @@ const details = computed(() => [
 .profile[aria-checked="true"] { background: var(--accent-soft); }
 .form, .test { margin-top: 1rem; }
 .test-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.failing { margin: 0.75rem 0 0; }
 .failed { display: flex; gap: 0.5rem; align-items: flex-start; }
 /* A phone: the time estimate comes with the analysis anyway. */
 @media (max-width: 559px) { .eta { display: none; } }
