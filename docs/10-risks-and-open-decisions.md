@@ -23,7 +23,7 @@ interface.
 - [ ] **Do scheduled (recurring) sends and continuous sync enter the scope**, or only one-off
       sends? A daily window that holds back sends the user started is decided
       ([ADR 0010](adr/0010-bandwidth-limit-and-send-window.md)).
-- [ ] **Final app name** (`filebridge` is provisional).
+- [x] **Final app name**: `filebridge` ([ADR 0019](adr/0019-keep-the-name-filebridge.md)).
 - [ ] **xxHash (fast) or SHA-256 (standard) for the manifest?** Note: the manifest can store the
       algorithm per entry, so this can default to one and still allow the other. rclone's SFTP
       backend computes remote hashes via `sha256sum`/`md5sum` over SSH; WebDAV/Nextcloud exposes
