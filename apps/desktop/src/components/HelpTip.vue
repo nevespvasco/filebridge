@@ -102,12 +102,15 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   border: 1px solid var(--border-strong);
   color: var(--text-2);
-  font-size: 0.72rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   line-height: 1;
   cursor: help;
   background: var(--surface);
 }
+/* A 24 px target around the small circle (WCAG 2.2 target size). */
+.q { position: relative; }
+.q::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
 .q:hover, .q[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 .q:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 </style>
@@ -121,13 +124,13 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.35rem;
   padding: 0.55rem 0.7rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--text);
   color: var(--bg);
-  font-size: 0.82rem;
+  font-size: var(--fs-sm);
   font-weight: 400;
   line-height: 1.4;
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  box-shadow: var(--shadow-pop);
   pointer-events: none;
   text-align: left;
   white-space: normal;

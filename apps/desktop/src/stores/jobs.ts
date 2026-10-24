@@ -7,7 +7,8 @@ import type { DoneView, Event_Serialize, JobFilter, JobState, JobSummary_Seriali
 import { api, errorMessage, events } from "@/lib/api";
 import { jobLabel } from "@/lib/jobs";
 import { notify } from "@/lib/platform";
-import { i18n } from "@/i18n";
+import { bcp47, i18n } from "@/i18n";
+import { formatCount } from "@/lib/format";
 import { useConnection } from "./connection";
 import { useProfiles } from "./profiles";
 import { useSettings } from "./settings";
@@ -48,12 +49,14 @@ export const TERMINAL: JobState[] = ["completed", "completed_with_warnings", "ca
  *  about an hour by the 8th attempt. */
 const LONG_RETRY_ATTEMPTS = 8;
 
-/** Whether a job is waiting for the user: decisions to make, a failure, or retrying for long. */
-export function needsYou(job: Pick<JobSummary_Serialize, "state" | "attempt">): boolean {
+/** Whether a job is waiting for the user: decisions to make, a failure, retrying for long, or
+ *  paused by the engine with a reason (only the user's own pause has none). */
+export function needsYou(job: Pick<JobSummary_Serialize, "state" | "attempt" | "error">): boolean {
   return (
     job.state === "awaiting_approval" ||
     job.state === "failed" ||
-    (job.state === "retrying" && job.attempt >= LONG_RETRY_ATTEMPTS)
+    (job.state === "retrying" && job.attempt >= LONG_RETRY_ATTEMPTS) ||
+    (job.state === "paused" && !!job.error)
   );
 }
 
@@ -65,6 +68,9 @@ export const useJobs = defineStore("jobs", () => {
   const offset = ref(0);
   const hasMore = ref(false);
   const loadError = ref<string | null>(null);
+  /** The current filter's first answer hasn't come yet: show a skeleton, never "no transfers". */
+  const loading = ref(true);
+  let loadSeq = 0;
   let subscribed = false;
   const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -82,8 +88,10 @@ export const useJobs = defineStore("jobs", () => {
   const total = ref(0);
 
   async function loadPage(newOffset = offset.value) {
+    const seq = ++loadSeq;
     try {
       const res = await api.listJobs(filter.value, PAGE_SIZE, newOffset);
+      if (seq !== loadSeq) return; // a newer filter's answer wins
       for (const j of res.items) byId.value[j.id] = j;
       page.value = res.items.map((j) => j.id);
       total.value = res.total;
@@ -91,7 +99,9 @@ export const useJobs = defineStore("jobs", () => {
       offset.value = newOffset;
       loadError.value = null;
     } catch (e) {
-      loadError.value = errorMessage(e);
+      if (seq === loadSeq) loadError.value = errorMessage(e);
+    } finally {
+      if (seq === loadSeq) loading.value = false;
     }
   }
 
@@ -193,12 +203,18 @@ export const useJobs = defineStore("jobs", () => {
     const where = [job ? jobLabel(job) : "", profile?.name].filter(Boolean).join(" → ");
     const ok = ev.state === "completed" || ev.state === "completed_with_warnings";
     if (ev.state === "cancelled") return;
-    await notify(
-      ok ? t("notify.doneTitle") : t("notify.failedTitle"),
-      ok
-        ? t(ev.state === "completed" ? "notify.doneBody" : "notify.warningsBody", { where })
-        : t("notify.failedBody", { where, error: ev.error ?? "" }),
-    );
+    // The result in numbers, like the result card: "Photos → Black disk: 48,211 files verified,
+    // no differences."
+    const c = job?.counts;
+    const count = (n: number) => formatCount(n, bcp47(i18n.global.locale.value));
+    const problems = c ? c.failed + c.mismatch : 0;
+    let body: string;
+    if (!ok) body = t("notify.failedBody", { where, error: ev.error ?? "" });
+    else if (c && problems) body = t("notify.problemsBody", { where, n: count(c.done), problems: count(problems) }, problems);
+    else if (c && job?.options.verify && ev.state === "completed") body = t("notify.verifiedBody", { where, n: count(c.verified_ok) }, c.verified_ok);
+    else if (c) body = t("notify.copiedBody", { where, n: count(c.done) }, c.done);
+    else body = t(ev.state === "completed" ? "notify.doneBody" : "notify.warningsBody", { where });
+    await notify(ok ? t("notify.doneTitle") : t("notify.failedTitle"), body);
   }
 
   async function init() {
@@ -230,5 +246,5 @@ export const useJobs = defineStore("jobs", () => {
     return (live.value[id]?.arrivals ?? []).filter((a) => now - a.at < MINUTE).reduce((sum, a) => sum + a.n, 0);
   }
 
-  return { byId, live, page, filter, total, setLabel, sendAgain, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
+  return { byId, live, page, filter, total, loading, setLabel, sendAgain, arrivedLastMinute, offset, hasMore, loadError, liveOf, init, loadPage, refresh, pause, resume, cancel };
 });

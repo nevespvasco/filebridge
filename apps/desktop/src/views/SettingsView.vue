@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AppSettings_Deserialize } from "@/bindings";
 import HelpTip from "@/components/HelpTip.vue";
@@ -8,11 +8,14 @@ import SegmentedControl from "@/components/SegmentedControl.vue";
 import { LOCALES } from "@/i18n";
 import { errorMessage } from "@/lib/api";
 import { minutesToTime, timeToMinutes } from "@/lib/format";
+import { modKey, SHORTCUTS } from "@/lib/shortcuts";
 import { useConnection } from "@/stores/connection";
 import { THEMES, useSettings } from "@/stores/settings";
+import { useToast } from "@/stores/toast";
 
 const settings = useSettings();
 const conn = useConnection();
+const toast = useToast();
 const { t } = useI18n();
 // Guides (docs/design/specs/D02): on/off, and "show them again" for everyone who skipped them.
 const guidesAuto = computed({
@@ -23,6 +26,7 @@ const guidesReset = ref(false);
 function resetGuides() {
   settings.resetGuides();
   guidesReset.value = true;
+  toast.show(t("settings.guidesResetDone"));
 }
 const themeOptions = computed(() => THEMES.map((value) => ({ value, label: t(`settings.themes.${value}`), icon: value })));
 
@@ -77,13 +81,25 @@ const overnight = computed(() => {
   const w = draft.value.settings?.send_window;
   return !!w && w.start_minute > w.end_minute;
 });
+// Every setting is saved as it changes, like the language and the theme: the speed and the hours
+// a moment after the last keystroke, and only when valid (start and end can't be the same time).
+let timer: ReturnType<typeof setTimeout> | undefined;
 watch(draft, () => {
   saved.value = false;
   saveError.value = null;
+  clearTimeout(timer);
+  if (dirty.value && draft.value.settings) timer = setTimeout(() => void save(), 700);
+});
+onBeforeUnmount(() => {
+  // Leaving the page doesn't lose a change still waiting.
+  if (timer && dirty.value && draft.value.settings) void save();
+  clearTimeout(timer);
 });
 
 async function save() {
-  if (!draft.value.settings) return;
+  clearTimeout(timer);
+  timer = undefined;
+  if (!draft.value.settings || !dirty.value) return;
   saving.value = true;
   try {
     await settings.saveApp(draft.value.settings);
@@ -98,26 +114,26 @@ async function save() {
 
 <template>
   <div>
-    <header class="page-head"><h1>{{ $t("settings.title") }}</h1></header>
-    <div class="list">
-      <section class="card">
+    <header class="page-head">
+      <div>
+        <h1>{{ $t("settings.title") }}</h1>
+        <p class="lead-text">{{ $t("settings.intro") }}</p>
+      </div>
+    </header>
+    <div class="groups">
+      <section class="group-card card" aria-labelledby="s-general">
+        <h2 id="s-general">{{ $t("settings.general") }}</h2>
         <label class="field">
           <span>{{ $t("settings.language") }}</span>
           <select v-model="settings.locale">
             <option v-for="l in LOCALES" :key="l" :value="l">{{ $t(`settings.languages.${l}`) }}</option>
           </select>
         </label>
-      </section>
-
-      <section class="card">
         <div class="field">
           <span>{{ $t("settings.appearance") }}</span>
           <SegmentedControl v-model="settings.theme" :options="themeOptions" :label="$t('settings.appearance')" />
           <span class="hint">{{ $t("settings.themeHint") }}</span>
         </div>
-      </section>
-
-      <section class="card">
         <label class="check">
           <input v-model="settings.notifications" type="checkbox" />
           <span>
@@ -125,24 +141,22 @@ async function save() {
             <span class="small muted block">{{ $t("settings.notificationsHint") }}</span>
           </span>
         </label>
-      </section>
-
-      <section class="card guides">
-        <label class="check">
-          <input v-model="guidesAuto" type="checkbox" />
-          <span>
-            <strong>{{ $t("settings.guides") }}</strong>
-            <span class="small muted block">{{ $t("settings.guidesHint") }}</span>
-          </span>
-        </label>
-        <div class="row">
-          <button class="btn btn-small" type="button" @click="resetGuides"><AppIcon name="help" /> {{ $t("settings.guidesReset") }}</button>
-          <span v-if="guidesReset" class="small ok-text" role="status">{{ $t("settings.guidesResetDone") }}</span>
+        <div class="guides">
+          <label class="check">
+            <input v-model="guidesAuto" type="checkbox" />
+            <span>
+              <strong>{{ $t("settings.guides") }}</strong>
+              <span class="small muted block">{{ $t("settings.guidesHint") }}</span>
+            </span>
+          </label>
+          <div class="row">
+            <button class="btn btn-small" type="button" :disabled="guidesReset" @click="resetGuides"><AppIcon name="help" /> {{ $t("settings.guidesReset") }}</button>
+          </div>
         </div>
       </section>
 
-      <section class="card sending">
-        <h2>{{ $t("settings.sending") }}</h2>
+      <section class="group-card card sending" aria-labelledby="s-sending">
+        <h2 id="s-sending">{{ $t("settings.sending") }}</h2>
         <p v-if="settings.appError" class="error small">{{ settings.appError }}</p>
 
         <div class="group">
@@ -173,49 +187,72 @@ async function save() {
         </div>
 
         <p class="small muted">{{ $t("settings.sendingHint") }}</p>
-        <div class="row">
-          <button class="btn btn-primary btn-small" :disabled="!settings.appLoaded || !dirty || !!draft.error || saving" @click="save()">
-            {{ $t("settings.save") }}
-          </button>
-          <span v-if="draft.error && dirty" class="error small">{{ draft.error }}</span>
-          <span v-else-if="saveError" class="error small">{{ saveError }}</span>
-          <span v-else-if="saved && !dirty" class="ok-text small"><AppIcon name="check" /> {{ $t("settings.saved") }}</span>
-        </div>
+        <p class="save-state small" role="status">
+          <span v-if="draft.error && dirty" class="error">{{ draft.error }}</span>
+          <span v-else-if="saveError" class="error">{{ saveError }}</span>
+          <span v-else-if="saving" class="muted">{{ $t("settings.saving") }}</span>
+          <span v-else-if="saved && !dirty" class="ok-text"><AppIcon name="check" /> {{ $t("settings.saved") }}</span>
+        </p>
       </section>
 
-      <section class="card">
-        <h2>{{ $t("settings.service") }}</h2>
+      <section class="group-card card" aria-labelledby="s-keyboard">
+        <h2 id="s-keyboard">{{ $t("settings.keyboard") }}</h2>
+        <dl class="keys small">
+          <template v-for="s in SHORTCUTS" :key="s.key">
+            <dt><kbd>{{ modKey }}</kbd> + <kbd>{{ s.key }}</kbd></dt>
+            <dd>{{ $t(s.label) }}</dd>
+          </template>
+        </dl>
+      </section>
+
+      <section class="group-card card" aria-labelledby="s-engine">
+        <h2 id="s-engine">{{ $t("settings.service") }}</h2>
         <dl class="kv small">
           <dt>{{ $t("settings.state") }}</dt>
           <dd>{{ conn.connected ? $t("conn.connected") : conn.connected === false ? $t("conn.disconnected") : $t("conn.connecting") }}</dd>
           <dt>{{ $t("settings.version") }}</dt>
           <dd>{{ conn.version ?? "—" }}</dd>
-          <dt>{{ $t("settings.endpoint") }}</dt>
-          <dd class="mono">{{ conn.endpoint || "—" }}</dd>
+          <template v-if="settings.technical">
+            <dt>{{ $t("settings.endpoint") }}</dt>
+            <dd class="mono">{{ conn.endpoint || "—" }}</dd>
+          </template>
         </dl>
         <p class="small muted">{{ $t("settings.serviceHint") }}</p>
-        <button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button>
+        <div><button class="btn btn-small" @click="conn.check()">{{ $t("conn.retry") }}</button></div>
+      </section>
+
+      <section class="group-card card" aria-labelledby="s-advanced">
+        <h2 id="s-advanced">{{ $t("settings.advanced") }}</h2>
+        <label class="check">
+          <input v-model="settings.technical" type="checkbox" />
+          <span>
+            <strong>{{ $t("settings.technical") }}</strong>
+            <span class="small muted block">{{ $t("settings.technicalHint") }}</span>
+          </span>
+        </label>
       </section>
     </div>
   </div>
 </template>
 
 <style scoped>
-.list { display: grid; gap: 0.75rem; max-width: 640px; }
-.check { display: flex; gap: 0.75rem; align-items: flex-start; cursor: pointer; }
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: var(--sp-3); align-items: start; }
+.group-card { display: grid; gap: var(--sp-4); }
+.group-card h2 { font-size: var(--fs-base); margin: 0; }
+.check { display: flex; gap: var(--sp-3); align-items: flex-start; cursor: pointer; }
 .check input { margin-top: 0.3rem; }
 .block { display: block; }
-.guides { display: grid; gap: 0.75rem; }
-.sending { display: grid; gap: 0.9rem; }
-.sending h2 { margin-bottom: 0; }
-.group { display: grid; gap: 0.4rem; }
+.guides { display: grid; gap: var(--sp-3); }
+.group { display: grid; gap: var(--sp-2); }
 .group > .label-line { display: inline-flex; align-items: center; }
-.row { display: flex; gap: 0.5rem 0.75rem; align-items: center; flex-wrap: wrap; }
+.row { display: flex; gap: var(--sp-2) var(--sp-3); align-items: center; flex-wrap: wrap; }
 .sending .row input, .sending .row select { width: auto; }
 .sending .row .num { width: 8rem; }
-.inline { display: inline-flex; gap: 0.4rem; align-items: center; }
-h2 { font-size: 1rem; margin-top: 0; }
-.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; }
+.sending p { margin: 0; }
+.save-state { min-height: 1.3em; }
+.inline { display: inline-flex; gap: var(--sp-2); align-items: center; }
+.kv, .keys { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-2) var(--sp-4); margin: 0; }
 dt { color: var(--text-2); }
-dd { margin: 0; word-break: break-all; }
+dd { margin: 0; word-break: break-word; }
+kbd { font-family: var(--font-mono); font-size: var(--fs-xs); padding: 0.05rem 0.4rem; border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); }
 </style>

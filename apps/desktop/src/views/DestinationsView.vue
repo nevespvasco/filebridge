@@ -1,25 +1,34 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
+import TourButton from "@/components/TourButton.vue";
+import { useTour } from "@/stores/tour";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { Profile_Serialize } from "@/bindings";
 import AccessDialog from "@/components/AccessDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import DestinationSpace from "@/components/DestinationSpace.vue";
+import EmptyState from "@/components/EmptyState.vue";
 import FolderBrowser from "@/components/FolderBrowser.vue";
 import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import HostKeyPrompt from "@/components/HostKeyPrompt.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import ProfileForm from "@/components/ProfileForm.vue";
+import RowMenu, { type MenuItem } from "@/components/RowMenu.vue";
+import SkeletonRows from "@/components/SkeletonRows.vue";
 import { api, errorMessage } from "@/lib/api";
 import { request } from "@/lib/requests";
+import { useConnection } from "@/stores/connection";
 import { profileKind, profileWhere, sshHosts, sshKeyAction, useProfiles, type TestState } from "@/stores/profiles";
 
 const profiles = useProfiles();
+const conn = useConnection();
 const { t } = useI18n();
 const creating = ref(false);
+/** The destination being edited, in place of its card. */
+const editingId = ref<string | null>(null);
 /** The destination being browsed (look only). */
 const browsing = ref<Profile_Serialize | null>(null);
 const deleting = shallowRef<Profile_Serialize | null>(null);
@@ -47,14 +56,47 @@ async function startRepair(dir: string) {
 const busy = ref(false);
 const error = ref<string | null>(null);
 
+// The guide starts by itself once, when there is a destination to point at.
+const tour = useTour();
 onMounted(async () => {
   await profiles.load();
   void profiles.loadAllStorage();
+  await nextTick();
+  if (profiles.list.length) tour.maybeStart("destinations");
 });
+onBeforeUnmount(() => tour.stop("destinations"));
 
 function onSaved(p: Profile_Serialize) {
   creating.value = false;
+  editingId.value = null;
   void test(p);
+}
+
+/** Test and Browse stay on the card; the rest is in its ⋮ menu (docs/design/specs/D03). */
+function menuItems(p: Profile_Serialize): MenuItem[] {
+  const key = sshKey(p);
+  const items: MenuItem[] = [
+    { id: "edit", label: t("destinations.edit"), icon: "edit" },
+    { id: "repair", label: t("repair.button"), icon: "renamed", disabled: checkingKeys.value[p.id], reason: t("hostKey.checking") },
+    ...(key ? [{ id: "access", label: t(`access.${key}.button`), icon: key === "install" ? ("key" as const) : ("lock" as const) }] : []),
+    { id: "delete", label: t("common.delete"), icon: "close", danger: true },
+  ];
+  return conn.offline ? items.map((i) => ({ ...i, disabled: true, reason: t("conn.disconnected") })) : items;
+}
+function onMenu(p: Profile_Serialize, id: string) {
+  switch (id) {
+    case "edit":
+      editingId.value = p.id;
+      return;
+    case "repair":
+      return void browse(p, (x) => (repairing.value = x));
+    case "access":
+      access.value = { profile: p, action: sshKey(p)! };
+      return;
+    case "delete":
+      deleting.value = p;
+      return;
+  }
 }
 
 // SSH servers whose host key isn't in known_hosts (it was cleared, or this is a new device) make
@@ -152,25 +194,25 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
   <div>
     <header class="page-head">
       <div>
-        <h1>{{ $t("destinations.title") }}</h1>
+        <h1 class="title-row">{{ $t("destinations.title") }} <TourButton v-if="profiles.list.length" tour="destinations" /></h1>
         <p class="lead-text">{{ $t("destinations.intro") }}</p>
       </div>
-      <button v-if="!creating && profiles.list.length" class="btn btn-primary" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
+      <button v-if="!creating && profiles.list.length" data-tour="dest-new" class="btn btn-primary" :disabled="conn.offline" :title="conn.offline ? $t('conn.disconnected') : undefined" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
     </header>
     <p v-if="profiles.loadError" class="error">{{ profiles.loadError }}</p>
     <p v-if="error" class="error">{{ error }}</p>
 
     <ProfileForm v-if="creating" class="form" @saved="onSaved" @cancel="creating = false" />
+    <SkeletonRows v-if="!profiles.loaded" :rows="2" class="card" />
 
-    <div v-if="profiles.loaded && !profiles.list.length && !creating" class="card empty">
-      <AppIcon class="empty-icon" name="destinations" :size="40" />
-      <strong>{{ $t("destinations.empty") }}</strong>
-      <p class="small muted">{{ $t("destinations.emptyHint") }}</p>
-      <button class="btn btn-primary" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
-    </div>
+    <EmptyState v-if="profiles.loaded && !profiles.list.length && !creating" icon="destinations" :title="$t('destinations.empty')" :hint="$t('destinations.emptyHint')">
+      <button class="btn btn-primary" :disabled="conn.offline" @click="creating = true"><AppIcon name="plus" /> {{ $t("dest.new") }}</button>
+    </EmptyState>
 
     <div class="list">
-      <section v-for="p in profiles.list" :key="p.id" class="card">
+      <template v-for="(p, i) in profiles.list" :key="p.id">
+      <ProfileForm v-if="editingId === p.id" :profile="p" @saved="onSaved" @cancel="editingId = null" />
+      <section v-else class="card" :class="{ stale: conn.offline }" :data-tour="i === 0 ? 'dest-card' : undefined">
         <div class="head">
           <div class="who">
             <AppIcon :name="profileKind(p)" :size="20" class="kind" />
@@ -178,19 +220,10 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
             <strong>{{ p.name }}</strong>
             <span v-if="nextcloudMode(p)" class="small muted">{{ $t("destinations.ncMode", { mode: $t(`webdav.modeShort.${nextcloudMode(p)}`) }) }}</span>
           </div>
-          <div class="actions">
-            <button class="btn btn-small" :title="$t('dest.testTip')" :disabled="profiles.tests[p.id]?.running || checkingKeys[p.id]" @click="test(p)">{{ $t("dest.test") }}</button>
-            <button class="btn btn-small" :title="$t('destinations.browseTip')" :disabled="checkingKeys[p.id]" @click="browse(p, (x) => (browsing = x))"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
-            <button class="btn btn-small" :title="$t('repair.buttonTip')" :disabled="checkingKeys[p.id]" @click="browse(p, (x) => (repairing = x))"><AppIcon name="renamed" /> {{ $t("repair.button") }}</button>
-            <button
-              v-if="sshKey(p)"
-              class="btn btn-small"
-              :title="$t(`access.${sshKey(p)}.tip`)"
-              @click="access = { profile: p, action: sshKey(p)! }"
-            >
-              <AppIcon :name="sshKey(p) === 'install' ? 'key' : 'lock'" /> {{ $t(`access.${sshKey(p)}.button`) }}
-            </button>
-            <button class="btn btn-small btn-danger" :title="$t('destinations.deleteTip')" @click="deleting = p">{{ $t("common.delete") }}</button>
+          <div class="actions" :data-tour="i === 0 ? 'dest-actions' : undefined">
+            <button class="btn btn-small" :title="conn.offline ? $t('conn.disconnected') : $t('dest.testTip')" :disabled="profiles.tests[p.id]?.running || checkingKeys[p.id] || conn.offline" @click="test(p)">{{ $t("destinations.test") }}</button>
+            <button class="btn btn-small" :title="conn.offline ? $t('conn.disconnected') : $t('destinations.browseTip')" :disabled="checkingKeys[p.id] || conn.offline" @click="browse(p, (x) => (browsing = x))"><AppIcon name="reveal" /> {{ $t("destinations.browse") }}</button>
+            <RowMenu :items="menuItems(p)" :label="$t('destinations.menu', { name: p.name })" @select="onMenu(p, $event)" />
           </div>
         </div>
         <p class="mono small muted ellipsis" :title="profileWhere(p)">{{ profileWhere(p) }}</p>
@@ -210,6 +243,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
           />
         </div>
       </section>
+      </template>
     </div>
 
     <DetailsPanel :lines="details" />
@@ -222,6 +256,7 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
       :target="repairing ? { kind: 'profile', id: repairing.id } : null"
       :title="$t('repair.pickTitle', { destination: repairing?.name ?? '' })"
       :choose-label="$t('repair.pick')"
+      :into-label="$t('repair.checkIn')"
       :allow-new="false"
       @choose="startRepair"
       @close="repairing = null"
@@ -250,10 +285,8 @@ const details = computed(() => [request("list_profiles"), ...profiles.list.map((
 
 <style scoped>
 .form { margin-bottom: 1rem; }
+.title-row { display: flex; gap: var(--sp-2); align-items: center; }
 .page-head .lead-text { margin-bottom: 0; }
-.empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
-.empty p { margin: 0 0 0.5rem; }
-.empty-icon { color: var(--muted); }
 .list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
 .head { display: flex; justify-content: space-between; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .kind { align-self: center; color: var(--text-2); }

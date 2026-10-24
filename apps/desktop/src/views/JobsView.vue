@@ -6,8 +6,10 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import type { JobGroup, JobSort, JobState } from "@/bindings";
 import AppIcon from "@/components/AppIcon.vue";
+import EmptyState from "@/components/EmptyState.vue";
 import FilterChips from "@/components/FilterChips.vue";
 import HelpTip from "@/components/HelpTip.vue";
+import SkeletonRows from "@/components/SkeletonRows.vue";
 import JobActions from "@/components/JobActions.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
@@ -18,8 +20,10 @@ import { useFmt } from "@/composables/useFmt";
 import { defaultLabel, jobLabel } from "@/lib/jobs";
 import { PAGE_SIZE, RUNNING, useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
+import { useConnection } from "@/stores/connection";
 
 const jobs = useJobs();
+const conn = useConnection();
 const profiles = useProfiles();
 const route = useRoute();
 const router = useRouter();
@@ -76,7 +80,6 @@ function clearFilters() {
         <h1>{{ $t("jobs.title") }}</h1>
         <p class="lead-text">{{ $t("jobs.intro") }}</p>
       </div>
-      <button class="btn" :title="$t('jobs.refreshTip')" @click="jobs.loadPage()">{{ $t("common.refresh") }}</button>
     </header>
 
     <div class="toolbar">
@@ -99,20 +102,18 @@ function clearFilters() {
     </div>
     <FilterChips v-model="groups" :options="groupChips" :label="$t('files.show')" :all-label="$t('files.chip.all')" :all-count="filtered && !groups.length ? undefined : jobs.total" class="chips" />
 
-    <p v-if="jobs.loadError" class="error">{{ jobs.loadError }}</p>
-    <div v-else-if="!jobs.page.length && !filtered" class="card empty">
-      <AppIcon class="empty-icon" name="tray" :size="40" />
-      <strong>{{ $t("jobs.empty") }}</strong>
-      <p class="small muted">{{ $t("jobs.emptyHint") }}</p>
+    <p v-if="jobs.loadError" class="error" role="alert">
+      {{ jobs.loadError }} <button class="btn btn-small" @click="jobs.loadPage()">{{ $t("common.retry") }}</button>
+    </p>
+    <SkeletonRows v-else-if="jobs.loading && !jobs.page.length" :rows="4" class="card" />
+    <EmptyState v-else-if="!jobs.page.length && !filtered" icon="tray" :title="$t('jobs.empty')" :hint="$t('jobs.emptyHint')">
       <button class="btn btn-primary" @click="router.push({ name: 'new' })"><AppIcon name="plus" /> {{ $t("jobs.emptyCta") }}</button>
-    </div>
-    <div v-else-if="!jobs.page.length" class="card empty">
-      <AppIcon class="empty-icon" name="search" :size="40" />
-      <strong>{{ $t("jobs.noMatch") }}</strong>
+    </EmptyState>
+    <EmptyState v-else-if="!jobs.page.length" icon="search" :title="$t('jobs.noMatch')">
       <button class="btn btn-small" @click="clearFilters">{{ $t("files.clear") }}</button>
-    </div>
+    </EmptyState>
 
-    <div v-else class="table-wrap card">
+    <div v-else class="table-wrap card" :class="{ stale: conn.offline }">
       <!-- Explicit roles: a narrow window shows the rows as cards, and WebKit drops a table's
            semantics once it is no longer displayed as one. -->
       <table class="table" role="table">
@@ -122,7 +123,7 @@ function clearFilters() {
             <th class="c-where" scope="col" role="columnheader">{{ $t("jobs.col.where") }}</th>
             <th class="c-state" scope="col" role="columnheader">{{ $t("jobs.col.state") }}</th>
             <th class="c-progress" scope="col" role="columnheader">
-              <span class="th-help">{{ $t("jobs.col.progress") }}<HelpTip :text="$t('jobs.retriesHelp')" :label="$t('jobs.col.retries')" /></span>
+              <span class="th-help">{{ $t("jobs.col.progress") }}<HelpTip :text="$t('jobs.progressHelp')" :label="$t('jobs.col.progress')" /></span>
             </th>
             <th class="c-size n" scope="col" role="columnheader">{{ $t("jobs.col.size") }}</th>
             <th class="c-when" scope="col" role="columnheader">{{ $t("jobs.col.when") }}</th>
@@ -147,7 +148,7 @@ function clearFilters() {
                 <span v-if="jobs.byId[id].again_of" class="small muted block"><AppIcon name="again" /> {{ $t("jobs.again") }}</span>
               </td>
               <td class="c-where ellipsis" :title="profiles.byId[jobs.byId[id].profile_id]?.name">{{ profiles.byId[jobs.byId[id].profile_id]?.name ?? "—" }}</td>
-              <td class="c-state"><JobStateBadge :state="jobs.byId[id].state" /></td>
+              <td class="c-state"><JobStateBadge :state="jobs.byId[id].state" :job="jobs.byId[id]" /></td>
               <td class="c-progress" :class="{ 'has-bar': showsBar(jobs.byId[id].state) }">
                 <template v-if="showsBar(jobs.byId[id].state)">
                   <ProgressBar
@@ -206,9 +207,6 @@ function clearFilters() {
 .table td.c-where { overflow: hidden; }
 .block { display: block; }
 .page-head .lead-text { margin-bottom: 0; }
-.empty { display: grid; justify-items: center; text-align: center; gap: 0.4rem; padding: 2rem 1rem; }
-.empty p { margin: 0 0 0.5rem; }
-.empty-icon { color: var(--muted); }
 .th-help { display: inline-flex; align-items: center; flex-wrap: wrap; }
 .pager { display: flex; justify-content: center; align-items: center; gap: 0.5rem 1rem; margin-top: 1rem; flex-wrap: wrap; }
 @media (max-width: 559px) {

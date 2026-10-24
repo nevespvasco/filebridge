@@ -52,7 +52,7 @@ working position so the docs could be written; each one can be reopened.
 | Q3 | The baseline user is **personal use** (one person, their own servers, long migrations). Items that matter only when strangers use the app are tagged **[distribution]**. The open decision in [10](../10-risks-and-open-decisions.md#open-decisions) stays open. | Onboarding polish is tagged, not dropped. |
 | Q4 | Visual language: **Phosphor** icons in place of emoji, **tabular numerals** and monospace for hashes and paths, a **colour per file Category**, a **light / dark / system** toggle, still hand-written CSS tokens and **no component library**. | [01 — Design system](01-design-system.md). |
 | Q5 | "Free the source" means filebridge **shows** what is reclaimable and opens the folder in the OS file manager; it **never deletes** anything at the source. | [ADR 0011](../adr/0011-reclaimable-source-is-shown-never-freed.md), [D10](specs/D10-reclaimable-source.md). |
-| Q6 | Code and docs say **Job**; the UI says **Transfer** (pt: *Transferência*); nobody says "upload". | [GLOSSARY](../../GLOSSARY.md). |
+| Q6 | Code and docs say **Job**; the UI says **Transfer** (pt: *Envio*, changed from *Transferência*, [ADR 0018](../adr/0018-one-word-for-a-transfer.md)); nobody says "upload". | [GLOSSARY](../../GLOSSARY.md). |
 
 ## How a spec is written
 

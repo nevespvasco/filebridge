@@ -8,6 +8,7 @@ import type { BrowseResult, BrowseTarget_Deserialize } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
 import AppIcon from "./AppIcon.vue";
+import ModalDialog from "./ModalDialog.vue";
 import Breadcrumbs from "./Breadcrumbs.vue";
 import RelativeTime from "./RelativeTime.vue";
 
@@ -22,6 +23,8 @@ const props = defineProps<{
   /** Offer "New folder" (a pending part of the path). Off where only existing folders make
    *  sense, like the folder to repair. Default: on when choosing. */
   allowNew?: boolean;
+  /** The sentence before the chosen path; default "Files will go into:". */
+  intoLabel?: string;
 }>();
 const emit = defineEmits<{ choose: [path: string]; close: [] }>();
 const { t } = useI18n();
@@ -132,10 +135,7 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="target" class="overlay" @click.self="emit('close')" @keydown.esc="emit('close')">
-      <div class="dialog card" role="dialog" aria-modal="true" :aria-label="title">
-        <h2>{{ title }}</h2>
+  <ModalDialog :open="!!target" :title="title" :width="600" @close="emit('close')">
         <Breadcrumbs :root="$t('browse.root')" :segments="result?.segments ?? []" :pending="pending" :label="$t('browse.where')" @go="go" />
 
         <div class="tools">
@@ -188,20 +188,15 @@ function onKey(e: KeyboardEvent) {
           </p>
         </div>
 
-        <p v-if="chooseLabel" class="into small">{{ $t("browse.into") }} <span class="path">/{{ chosen }}</span></p>
+        <p v-if="chooseLabel" class="into small">{{ intoLabel ?? $t("browse.into") }} <span class="path">/{{ chosen }}</span></p>
         <div class="actions">
           <button class="btn" @click="emit('close')">{{ chooseLabel ? $t("common.cancel") : $t("common.close") }}</button>
           <button v-if="chooseLabel" class="btn btn-primary" @click="emit('choose', chosen)">{{ chooseLabel }}</button>
         </div>
-      </div>
-    </div>
-  </Teleport>
+  </ModalDialog>
 </template>
 
 <style scoped>
-.overlay { position: fixed; inset: 0; background: var(--overlay); display: grid; place-items: center; z-index: 50; padding: 1rem; }
-.dialog { width: min(600px, 100%); display: grid; gap: 0.7rem; max-height: calc(100vh - 2rem); }
-h2 { margin: 0; font-size: 1.1rem; }
 .tools { display: flex; gap: 0.6rem; align-items: center; }
 .filter { flex: 1; }
 .folders { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 18rem; overflow: auto; outline: none; }

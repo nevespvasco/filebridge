@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import type { ActivityItem } from "@/bindings";
 import { useFmt } from "@/composables/useFmt";
 import { api } from "@/lib/api";
+import { jobLabel, repairLabel } from "@/lib/jobs";
 import type { IconName } from "@/lib/icons";
 import { useJobs } from "@/stores/jobs";
 import AppIcon from "./AppIcon.vue";
@@ -44,10 +45,15 @@ watch(
 type Line = { icon: IconName; tone: string; text: string; detail?: string };
 function describe(a: ActivityItem): Line {
   const d = (a.data ?? {}) as Record<string, unknown>;
-  const name = a.job_label ?? "—";
+  // A Repair job has no sources to name it by: "Repair · <folder>", as everywhere else.
+  const known = a.job_id ? jobs.byId[a.job_id] : undefined;
+  const name = a.job_label ?? (known ? jobLabel(known) : typeof d.repair === "string" ? repairLabel(d.repair || null) : "—");
   const destination = a.profile_name ?? "—";
   switch (a.kind) {
     case "created":
+      if (typeof d.repair === "string") {
+        return { icon: "renamed", tone: "muted", text: t("activity.createdRepair", { folder: d.repair ? `/${d.repair}` : t("repair.root"), destination }) };
+      }
       return { icon: "plus", tone: "muted", text: t("activity.created", { name }) };
     case "state":
       return { icon: "send", tone: "accent", text: t("activity.started", { name, destination }) };

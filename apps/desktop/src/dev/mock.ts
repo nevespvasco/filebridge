@@ -84,7 +84,7 @@ const jobs: JobSummary_Serialize[] = [
     profile_id: "p-disk",
     state: "completed",
     error: null,
-    attempt: 0,
+    attempt: 1,
     next_retry_at: null,
     created_at: now - 86_400_000,
     updated_at: now - 80_000_000,
@@ -93,6 +93,23 @@ const jobs: JobSummary_Serialize[] = [
     options: { verify: true, concurrency: 8, target_dir: null },
     counts: { ...counts(1234, 4_500_000_000, 1), verified_ok: 1234 },
     label: "Documentos do escritório",
+    again_of: null,
+  },
+  {
+    id: "j-warn",
+    kind: "transfer",
+    profile_id: "p-nc",
+    state: "completed_with_warnings",
+    error: null,
+    attempt: 2,
+    next_retry_at: null,
+    created_at: now - 3 * 86_400_000,
+    updated_at: now - 2.9 * 86_400_000,
+    finished_at: now - 2.9 * 86_400_000,
+    sources: ["/home/demo/Imagens/Fotos 2019"],
+    options: { verify: true, concurrency: 8, target_dir: null },
+    counts: { ...counts(2500, 9_800_000_000, 1), done: 2498, failed: 2, verified_ok: 2497, mismatch: 1 },
+    label: null,
     again_of: null,
   },
 ];
@@ -131,6 +148,17 @@ if (jobs.some((j) => j.id === "j-old")) {
   log("j-old", "verify", { checked: 1234, mismatch: 0, missing: 0, unverifiable: 0 }, t + 5_900_000);
   log("j-old", "finished", { state: "completed", warnings: 0, error: null }, now - 80_000_000);
 }
+if (jobs.some((j) => j.id === "j-warn")) {
+  const t = now - 3 * 86_400_000;
+  log("j-warn", "created", { sources: ["/home/demo/Imagens/Fotos 2019"], profile_id: "p-nc", options: { verify: true, concurrency: 8 } }, t);
+  log("j-warn", "analysis", { files: 2500, bytes: 9_800_000_000, scan_errors: 0, skipped_symlinks: 0 }, t + 25_000);
+  log("j-warn", "state", { from: "ready", to: "transferring", error: null }, t + 40_000);
+  log("j-warn", "retry", { attempt: 1, in_secs: 30, error: "connection reset by peer" }, t + 2_000_000);
+  log("j-warn", "retry", { attempt: 2, in_secs: 60, error: "connection reset by peer" }, t + 2_100_000);
+  log("j-warn", "transfer_round", { sent: 2498, failed: 2, bytes: 9_790_000_000, first_error: "permission denied" }, t + 7_000_000);
+  log("j-warn", "verify", { checked: 2498, mismatch: 1, missing: 0, unverifiable: 0 }, t + 8_000_000);
+  log("j-warn", "finished", { state: "completed_with_warnings", warnings: 3, error: null }, now - 2.9 * 86_400_000);
+}
 
 // Issues are generated on demand, so a rule can have hundreds of thousands of them.
 type RuleDef = { rule: string; total: number; auto: boolean; base: number };
@@ -142,7 +170,7 @@ function rulesFor(jobId: string): RuleDef[] {
   if (!r) {
     const base = rulesByJob.size * 10_000_000;
     r = [
-      { rule: "nfc", total: 120_000, auto: true, base: base + 1 },
+      { rule: "nfc", total: 64, auto: true, base: base + 1 },
       { rule: "forbidden-chars", total: 5, auto: true, base: base + 2_000_001 },
       { rule: "collision", total: 3, auto: false, base: base + 3_000_001 },
       { rule: "mojibake", total: 2, auto: false, base: base + 4_000_001 },
@@ -311,9 +339,10 @@ function entryAt(job: JobSummary_Serialize, idx: number): EntryView & { renamed:
   const renamed = !!f.renamed && n % 3 === 0;
   const sent = idx < job.counts.done || ["completed", "completed_with_warnings"].includes(job.state);
   let status: EntryStatus = sent ? (job.counts.verified_ok ? "verified" : "sent") : "not_sent";
-  if (sent && idx % 997 === 3) status = "failed";
-  else if (sent && job.counts.verified_ok && idx % 1499 === 5) status = "different";
-  else if (idx % 1777 === 11) status = "skipped";
+  // Problems only where the job's counts have them, so the Files tab and the counts agree.
+  if (sent && idx % 997 === 3 && Math.floor(idx / 997) < job.counts.failed) status = "failed";
+  else if (sent && job.counts.verified_ok && idx % 1499 === 5 && Math.floor(idx / 1499) < job.counts.mismatch) status = "different";
+  else if (idx % 1777 === 11 && Math.floor(idx / 1777) < job.counts.skipped) status = "skipped";
   const size = Math.max(1_000, Math.round(f.size * (0.4 + ((idx * 7919) % 100) / 80)));
   return { idx, is_dir: false, name: f.name(n), dir: f.dir, source_name: renamed ? f.renamed!(n) : null, size, category: f.category, status, renamed };
 }
@@ -704,7 +733,7 @@ const handlers: Handlers = {
       counts: counts(0, 0, 0),
       label: null,
       again_of: null,
-    });
+      });
     log(id, "created", { sources: a.sources as string[], profile_id: a.profileId as string, options: a.options as Record<string, unknown> });
     return id;
   },
@@ -826,7 +855,7 @@ const handlers: Handlers = {
       counts: counts(0, 0, 0),
       label: null,
       again_of: null,
-    });
+      });
     // What an old rsync leaves behind: garbled and NFD names, nothing that blocks.
     const base = (rulesByJob.size + 1) * 10_000_000;
     rulesByJob.set(id, [
@@ -963,13 +992,13 @@ const handlers: Handlers = {
     const f = a.filter as JobFilter;
     const groups = new Set(f.groups.flatMap((g) => GROUPS[g]));
     const q = f.query?.trim().toLowerCase();
-    let list = jobs.filter(
+    let matching = jobs.filter(
       (j) =>
-        (!groups.size || groups.has(j.state)) &&
         (!f.profile_id || j.profile_id === f.profile_id) &&
         (!q || [j.label ?? "", ...j.sources, profiles.find((p) => p.id === j.profile_id)?.name ?? ""].some((t) => t.toLowerCase().includes(q))),
     );
-    if (f.reclaimable) list = list.filter((j) => reclaimable(j));
+    if (f.reclaimable) matching = matching.filter((j) => reclaimable(j));
+    let list = matching.filter((j) => !groups.size || groups.has(j.state));
     if (f.sort === "oldest") list = [...list].reverse();
     if (f.sort === "largest") list = [...list].sort((x, y) => y.counts.bytes - x.counts.bytes);
     const off = a.offset as number;

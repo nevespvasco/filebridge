@@ -84,7 +84,9 @@ export const useHome = defineStore("home", () => {
     const ids = new Set(attention.value.map((j) => j.id));
     return [...attention.value.map(live), ...extra.filter((j) => !ids.has(j.id))];
   });
-  const sending = computed(() => active.value.map((j) => jobs.byId[j.id] ?? j).filter((j) => j.state !== "paused"));
+  /** Running and paused ones: a paused transfer stays in sight (with "Resume") until it ends. One
+   *  the engine paused with a reason is under Needs you instead. */
+  const sending = computed(() => active.value.map((j) => jobs.byId[j.id] ?? j).filter((j) => !needsYou(j)));
 
   return { attention, active, recent, totalJobs, loaded, failed, needs, sending, load, reloadSoon, markSeen };
 });

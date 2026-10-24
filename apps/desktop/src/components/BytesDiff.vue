@@ -57,7 +57,7 @@ const rows = computed(() => {
 .row { display: inline-block; max-width: 100%; vertical-align: top; }
 .row > span + span { margin-left: 0.35em; }
 .ctx { color: var(--text-2); }
-.del, .ins { border-radius: 3px; padding: 0 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.del, .ins { border-radius: var(--radius-xs); padding: 0 2px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .del { background: var(--danger-soft); }
 .ins { background: var(--ok-soft); }
 .row > .arrow { color: var(--text-2); margin: 0 0.5rem; }

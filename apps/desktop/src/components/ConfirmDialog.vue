@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// Every destructive action asks first and says what will happen (CLAUDE.md, docs/06).
-import { nextTick, ref, watch } from "vue";
+// Every destructive action asks first and says what will happen (CLAUDE.md, docs/06). Focus
+// starts on the safe button.
+import ModalDialog from "./ModalDialog.vue";
 
-const props = defineProps<{
+defineProps<{
   open: boolean;
   title: string;
   consequences: string[];
@@ -13,60 +14,24 @@ const props = defineProps<{
   busy?: boolean;
 }>();
 const emit = defineEmits<{ confirm: []; cancel: [] }>();
-const cancelBtn = ref<HTMLButtonElement | null>(null);
-
-watch(
-  () => props.open,
-  async (open) => {
-    if (open) {
-      await nextTick();
-      cancelBtn.value?.focus();
-    }
-  },
-);
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="open" class="overlay" @keydown.esc="emit('cancel')" @click.self="emit('cancel')">
-      <div class="dialog card" role="alertdialog" aria-modal="true" :aria-label="title">
-        <h2>{{ title }}</h2>
-        <ul>
-          <li v-for="c in consequences" :key="c">{{ c }}</li>
-        </ul>
-        <slot />
-        <div class="actions">
-          <button ref="cancelBtn" class="btn" :disabled="busy" @click="emit('cancel')">{{ cancelLabel ?? $t("common.cancel") }}</button>
-          <button class="btn" :class="danger ? 'btn-danger' : 'btn-primary'" :disabled="busy" @click="emit('confirm')">
-            {{ confirmLabel }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <ModalDialog :open="open" :title="title" :role="danger ? 'alertdialog' : 'dialog'" :busy="busy" @close="emit('cancel')">
+    <ul v-if="consequences.length">
+      <li v-for="c in consequences" :key="c">{{ c }}</li>
+    </ul>
+    <slot />
+    <template #actions>
+      <button data-autofocus class="btn" :disabled="busy" @click="emit('cancel')">{{ cancelLabel ?? $t("common.cancel") }}</button>
+      <button class="btn" :class="danger ? 'btn-danger' : 'btn-primary'" :disabled="busy" @click="emit('confirm')">
+        {{ confirmLabel }}
+      </button>
+    </template>
+  </ModalDialog>
 </template>
 
 <style scoped>
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgb(0 0 0 / 0.45);
-  display: grid;
-  place-items: center;
-  z-index: 50;
-  padding: 1rem;
-}
-.dialog {
-  max-width: 480px;
-  width: 100%;
-}
-h2 { margin-top: 0; font-size: 1.15rem; }
-ul { padding-left: 1.2rem; color: var(--text-2); }
-li { margin: 0.35rem 0; }
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
+ul { padding-left: 1.2rem; margin: 0; color: var(--text-2); }
+li { margin: var(--sp-1) 0; }
 </style>

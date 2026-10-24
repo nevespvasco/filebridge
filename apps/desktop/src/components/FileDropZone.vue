@@ -9,7 +9,8 @@ import { errorMessage } from "@/lib/api";
 import { useFileDrop } from "@/composables/useFileDrop";
 import DropOverlay from "./DropOverlay.vue";
 
-defineProps<{ compact?: boolean }>();
+/** `quiet`: its button isn't the page's main action (something else needs the user first). */
+defineProps<{ compact?: boolean; quiet?: boolean }>();
 const emit = defineEmits<{ add: [paths: string[]] }>();
 const { t } = useI18n();
 const error = ref<string | null>(null);
@@ -42,7 +43,7 @@ async function pick(directory: boolean) {
       <p v-if="mobile" class="lead">{{ $t("mobile.pickLead") }}</p>
       <p v-else class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
       <div class="buttons">
-        <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ mobile ? $t("mobile.pickFolder") : $t("source.pickFolders") }}</button>
+        <button class="btn" :class="{ 'btn-primary': !quiet }" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ mobile ? $t("mobile.pickFolder") : $t("source.pickFolders") }}</button>
         <button v-if="!mobile" class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
       </div>
       <p class="hint small muted">{{ mobile ? $t("mobile.pickHint") : $t("source.hint") }}</p>
@@ -55,7 +56,7 @@ async function pick(directory: boolean) {
 <style scoped>
 .drop {
   border: 2px dashed var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 2.25rem 1rem;
   text-align: center;
   background: var(--surface-2);
@@ -64,7 +65,7 @@ async function pick(directory: boolean) {
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .icon { color: var(--accent); }
 .lead { margin: 0.5rem 0 1rem; color: var(--text-2); display: grid; gap: 0.35rem; }
-.or { font-size: 0.85rem; }
+.or { font-size: var(--fs-sm); }
 .buttons { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
 .hint { margin: 0.9rem 0 0; }
 .drop.compact {

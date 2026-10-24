@@ -17,6 +17,8 @@ import { useJobs } from "./jobs";
 import { useProfiles } from "./profiles";
 
 export type Step = 1 | 2 | 3 | 4 | 5;
+/** The steps before sending; step 5 is the result, shown once sent (wording quotes this number). */
+export const SEND_STEPS = 4;
 
 function defaultOptions(): SendOptions {
   // Verifying by checksum is the safe default for a one-off migration.
@@ -101,6 +103,8 @@ export const useWizard = defineStore("wizard", () => {
   const key = computed(() => JSON.stringify([sources.value, profileId.value]));
   const canAnalyse = computed(() => sources.value.length > 0 && profileId.value != null);
   const canReview = computed(() => !!jobId.value && !analysing.value && !analyseError.value && pending.value === 0);
+  /** Choices not sent yet, which starting something else would drop. */
+  const hasWork = computed(() => step.value < 5 && sources.value.length > 0);
 
   function addSources(paths: string[]) {
     const seen = new Set(sources.value);
@@ -297,6 +301,7 @@ export const useWizard = defineStore("wizard", () => {
     decisionsVersion,
     canAnalyse,
     canReview,
+    hasWork,
     sourceInfo,
     coveredBy,
     inspecting,

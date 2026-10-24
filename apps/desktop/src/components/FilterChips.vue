@@ -34,7 +34,7 @@ void props;
 
 <style scoped>
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.chip { font: inherit; font-size: var(--fs-sm); display: inline-flex; gap: 0.35rem; align-items: center; padding: 0.25rem 0.65rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); cursor: pointer; }
+.chip { font: inherit; font-size: var(--fs-sm); display: inline-flex; gap: 0.35rem; align-items: center; padding: 0.25rem 0.65rem; border-radius: var(--radius-pill); border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); cursor: pointer; }
 .chip:hover { color: var(--text); background: var(--surface-2); }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

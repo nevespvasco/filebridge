@@ -5,15 +5,15 @@
 // changed is an error with no way to accept it here.
 // Use: `await prompt.value.ensureKnown(host, port, knownHostsFile)` → true to go on, or
 // `check(…)` to also learn whether the key was trusted just now (to retry what failed).
-import { nextTick, onBeforeUnmount, ref, shallowRef } from "vue";
+import { onBeforeUnmount, ref, shallowRef } from "vue";
 import type { HostKeyView_Serialize } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 import AppIcon from "./AppIcon.vue";
+import ModalDialog from "./ModalDialog.vue";
 
 const check = shallowRef<HostKeyView_Serialize | null>(null);
 const busy = ref(false);
 const error = ref<string | null>(null);
-const cancelBtn = ref<HTMLButtonElement | null>(null);
 let settle: ((trusted: boolean) => void) | null = null;
 
 /** Where the server's key stands once the user has answered: `known` (it already was in
@@ -25,8 +25,6 @@ async function checkKey(host: string, port: number, knownHostsFile: string | nul
   if (found.status === "known") return "known";
   error.value = null;
   check.value = found;
-  await nextTick();
-  cancelBtn.value?.focus();
   const trusted = await new Promise<boolean>((resolve) => (settle = resolve));
   return trusted ? "trusted" : "refused";
 }
@@ -71,16 +69,20 @@ defineExpose({ ensureKnown, check: checkKey });
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="check" class="overlay" @keydown.esc="!busy && finish(false)" @click.self="!busy && finish(false)">
-      <div
-        class="dialog card"
-        role="alertdialog"
-        aria-modal="true"
-        :aria-label="check.status === 'changed' ? $t('hostKey.changedTitle') : $t('hostKey.title')"
-      >
+  <ModalDialog
+    :open="!!check"
+    :title="check?.status === 'changed' ? $t('hostKey.changedTitle') : $t('hostKey.title')"
+    role="alertdialog"
+    :width="520"
+    :busy="busy"
+    @close="finish(false)"
+  >
+    <template #title>
+      <span v-if="check?.status === 'changed'" class="title error"><AppIcon name="warning" :size="20" /> {{ $t("hostKey.changedTitle") }}</span>
+      <span v-else class="title"><AppIcon name="key" :size="20" /> {{ $t("hostKey.title") }}</span>
+    </template>
+    <template v-if="check">
         <template v-if="check.status === 'unknown'">
-          <h2><AppIcon name="key" :size="20" /> {{ $t("hostKey.title") }}</h2>
           <p>{{ $t("hostKey.intro", { host: check.host }) }}</p>
           <dl class="key">
             <dt>{{ $t("hostKey.server") }}</dt>
@@ -95,7 +97,6 @@ defineExpose({ ensureKnown, check: checkKey });
           <p class="small muted">{{ $t("hostKey.savedIn", { file: check.known_hosts_file }) }}</p>
         </template>
         <template v-else>
-          <h2 class="error"><AppIcon name="warning" :size="20" /> {{ $t("hostKey.changedTitle") }}</h2>
           <p>{{ $t("hostKey.changed", { host: check.host, file: check.known_hosts_file, line: check.line ?? "?" }) }}</p>
           <dl v-if="check.fingerprint" class="key">
             <dt>{{ $t("hostKey.presented") }}</dt>
@@ -104,35 +105,24 @@ defineExpose({ ensureKnown, check: checkKey });
           <p class="small">{{ $t("hostKey.changedWhat") }}</p>
         </template>
         <p v-if="error" class="error small">{{ error }}</p>
-        <div class="actions">
-          <button ref="cancelBtn" type="button" class="btn" :disabled="busy" @click="finish(false)">
+    </template>
+    <template v-if="check" #actions>
+          <button data-autofocus type="button" class="btn" :disabled="busy" @click="finish(false)">
             {{ check.status === "unknown" ? $t("common.cancel") : $t("hostKey.close") }}
           </button>
           <button v-if="check.status === 'unknown'" type="button" class="btn btn-primary" :disabled="busy" @click="trust">
             {{ busy ? $t("hostKey.trusting") : $t("hostKey.trust") }}
           </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+    </template>
+  </ModalDialog>
 </template>
 
 <style scoped>
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgb(0 0 0 / 0.45);
-  display: grid;
-  place-items: center;
-  z-index: 50;
-  padding: 1rem;
-}
-.dialog { max-width: 520px; width: 100%; }
-h2 { display: flex; gap: 0.4rem; align-items: center; font-size: 1.1rem; margin-top: 0; }
+.title { display: inline-flex; gap: var(--sp-2); align-items: center; }
+p { margin: 0; }
 .key { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.75rem; margin: 0.75rem 0; }
 .key dt { color: var(--muted); }
 .key dd { margin: 0; overflow-wrap: anywhere; user-select: all; }
 .fp { font-weight: 600; }
-.cmd { display: block; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; overflow-wrap: anywhere; user-select: all; }
-.actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
+.cmd { display: block; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow-wrap: anywhere; user-select: all; }
 </style>

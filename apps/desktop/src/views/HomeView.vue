@@ -2,7 +2,7 @@
 // Home: does anything need me, what is sending, where things went, what happened, and what space
 // can be freed (docs/design/specs/D01-home.md). Every section is a bounded query and degrades on
 // its own.
-import { computed, onMounted, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import type { JobSummary_Serialize } from "@/bindings";
@@ -13,8 +13,9 @@ import FileDropZone from "@/components/FileDropZone.vue";
 import JobStateBadge from "@/components/JobStateBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
+import SkeletonRows from "@/components/SkeletonRows.vue";
 import { useFmt } from "@/composables/useFmt";
-import { continueJob, jobLabel } from "@/lib/jobs";
+import { continueJob, discardWizardIfAsked, jobLabel } from "@/lib/jobs";
 import { useConnection } from "@/stores/connection";
 import { useHome } from "@/stores/home";
 import { useJobs } from "@/stores/jobs";
@@ -31,6 +32,13 @@ const conn = useConnection();
 const router = useRouter();
 const { t } = useI18n();
 const fmt = useFmt();
+
+/** filebridge's three promises, with the same icons wherever they appear. */
+const PROMISES = [
+  { key: "source", icon: "lock" },
+  { key: "names", icon: "renamed" },
+  { key: "proof", icon: "shield" },
+] as const;
 
 onMounted(() => {
   void home.load();
@@ -57,8 +65,10 @@ const firstRun = computed(() => conn.connected === true && home.loaded && !home.
 const offline = computed(() => conn.connected === false);
 
 /** Why a job needs the user, and the one action for it. */
-function reason(j: JobSummary_Serialize): { text: string; action: string; icon: "hand" | "failCircle" | "retry" | "warning" } {
+function reason(j: JobSummary_Serialize): { text: string; action: string; icon: "hand" | "failCircle" | "retry" | "warning" | "pause" } {
   switch (j.state) {
+    case "paused":
+      return { text: t("home.reason.paused", { reason: j.error?.split("\n")[0] ?? "" }), action: t("jobDetail.resume"), icon: "pause" };
     case "awaiting_approval":
       return { text: t("home.reason.decide"), action: t("home.action.decide"), icon: "hand" };
     case "failed":
@@ -71,16 +81,28 @@ function reason(j: JobSummary_Serialize): { text: string; action: string; icon: 
 }
 async function act(j: JobSummary_Serialize) {
   if (j.state === "awaiting_approval") return continueJob(j, router);
+  if (j.state === "paused") return resume(j.id);
   home.markSeen(j.id);
   void router.push({ name: "job", params: { id: j.id } });
 }
 
-/** Dropped or picked folders start a new transfer with them. */
-function onAdd(paths: string[]) {
-  if (wizard.jobId) wizard.reset();
+/** Dropped or picked folders start a new transfer with just them. */
+async function onAdd(paths: string[]) {
+  if (!(await discardWizardIfAsked())) return;
+  wizard.reset();
   wizard.addSources(paths);
   wizard.step = 1;
   void router.push({ name: "new" });
+}
+
+const resuming = ref<string | null>(null);
+async function resume(id: string) {
+  resuming.value = id;
+  try {
+    await jobs.resume(id);
+  } finally {
+    resuming.value = null;
+  }
 }
 
 const live = (id: string) => jobs.live[id]?.transfer;
@@ -94,7 +116,6 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
         <h1>{{ $t("home.title") }}</h1>
         <p class="lead-text headline" aria-live="polite">{{ headline }}</p>
       </div>
-      <button class="btn btn-primary" @click="router.push({ name: 'new' })"><AppIcon name="send" /> {{ $t("nav.new") }}</button>
     </header>
 
     <section v-if="offline" class="card offline" role="status">
@@ -105,31 +126,35 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
       </div>
     </section>
 
-    <section v-else-if="firstRun" class="card onboarding" :aria-label="$t('home.start.title')">
-      <h2>{{ $t("home.start.title") }}</h2>
-      <ol>
-        <li :class="{ done: profiles.list.length > 0 }">
-          <AppIcon :name="profiles.list.length ? 'checkCircle' : 'destinations'" />
-          <span>{{ $t("home.start.destination") }}</span>
-          <button v-if="!profiles.list.length" class="btn btn-small" @click="router.push({ name: 'destinations' })">{{ $t("dest.new") }}</button>
+    <!-- First use: what filebridge promises, and one way in (the grid comes after the first transfer). -->
+    <section v-else-if="firstRun" class="card welcome" aria-labelledby="h-welcome">
+      <h2 id="h-welcome" class="welcome-title">{{ $t("home.welcome.title") }}</h2>
+      <ul class="promises">
+        <li v-for="p in PROMISES" :key="p.key">
+          <AppIcon :name="p.icon" :size="28" class="promise-icon" />
+          <strong>{{ $t(`home.promise.${p.key}.title`) }}</strong>
+          <span class="small muted">{{ $t(`home.promise.${p.key}.body`) }}</span>
         </li>
-        <li><AppIcon name="addFolder" /> <span>{{ $t("home.start.folders") }}</span></li>
-        <li><AppIcon name="send" /> <span>{{ $t("home.start.send") }}</span></li>
-      </ol>
+      </ul>
+      <div class="welcome-cta">
+        <button class="btn btn-primary btn-big" @click="router.push({ name: 'new' })"><AppIcon name="send" /> {{ $t("home.welcome.cta") }}</button>
+        <span v-if="!profiles.list.length" class="small muted">{{ $t("home.welcome.noDestination") }}</span>
+      </div>
     </section>
 
-    <div v-if="!offline" class="grid">
+    <div v-if="!firstRun && (!offline || home.loaded)" class="grid" :class="{ stale: offline }">
       <div class="main-col">
+        <SkeletonRows v-if="!home.loaded" :rows="3" class="card" />
         <section v-if="home.needs.length" class="block" aria-labelledby="h-needs">
           <h2 id="h-needs">{{ $t("home.needsYou") }}</h2>
           <ul class="cards">
             <li v-for="j in home.needs" :key="j.id" class="card need">
               <AppIcon :name="reason(j).icon" :size="20" :class="j.state === 'failed' ? 'error' : 'warn-text'" />
               <div class="text">
-                <strong class="ellipsis">{{ jobLabel(j) }} <span class="muted">→ {{ profiles.byId[j.profile_id]?.name ?? "—" }}</span></strong>
+                <RouterLink :to="{ name: 'job', params: { id: j.id } }" class="ellipsis row-link"><strong>{{ jobLabel(j) }}</strong> <span class="muted">→ {{ profiles.byId[j.profile_id]?.name ?? "—" }}</span></RouterLink>
                 <span class="small muted">{{ reason(j).text }}</span>
               </div>
-              <button class="btn btn-small btn-primary" @click="act(j)">{{ reason(j).action }}</button>
+              <button class="btn btn-small" :disabled="resuming === j.id || offline" :title="offline ? $t('conn.disconnected') : undefined" @click="act(j)">{{ reason(j).action }}</button>
             </li>
           </ul>
         </section>
@@ -137,12 +162,16 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
         <section v-if="home.sending.length" class="block" aria-labelledby="h-sending">
           <h2 id="h-sending">{{ $t("home.nowSending") }}</h2>
           <ul class="cards">
-            <li v-for="j in home.sending.slice(0, 3)" :key="j.id" class="card sending" @click="router.push({ name: 'job', params: { id: j.id } })">
+            <li v-for="j in home.sending.slice(0, 3)" :key="j.id" class="card sending">
               <div class="line">
-                <strong class="ellipsis">{{ jobLabel(j) }} <span class="muted">→ {{ profiles.byId[j.profile_id]?.name ?? "—" }}</span></strong>
+                <RouterLink :to="{ name: 'job', params: { id: j.id } }" class="ellipsis row-link"><strong>{{ jobLabel(j) }}</strong> <span class="muted">→ {{ profiles.byId[j.profile_id]?.name ?? "—" }}</span></RouterLink>
                 <JobStateBadge :state="j.state" />
               </div>
-              <template v-if="j.state === 'waiting'">
+              <div v-if="j.state === 'paused'" class="paused-line">
+                <span class="small muted">{{ $t("home.pausedByYou") }}</span>
+                <button class="btn btn-small above" :disabled="resuming === j.id || offline" :title="offline ? $t('conn.disconnected') : undefined" @click="resume(j.id)"><AppIcon name="play" /> {{ $t("jobDetail.resume") }}</button>
+              </div>
+              <template v-else-if="j.state === 'waiting'">
                 <span class="small warn-text">{{ jobs.live[j.id]?.window ? $t("progress.window", { time: fmt.time(jobs.live[j.id]!.window!.opens_at) }) : $t("state.waiting") }}</span>
               </template>
               <template v-else>
@@ -161,7 +190,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
         </section>
 
         <section class="block" :aria-label="$t('home.drop')">
-          <FileDropZone class="drop" @add="onAdd" />
+          <FileDropZone class="drop" :quiet="home.needs.length > 0" @add="onAdd" />
         </section>
 
         <section v-if="home.recent.length" class="block" aria-labelledby="h-recent">
@@ -170,10 +199,10 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
             <RouterLink :to="{ name: 'jobs' }" class="small">{{ $t("home.allTransfers") }}</RouterLink>
           </div>
           <ul class="recent card">
-            <li v-for="j in home.recent.slice(0, 5)" :key="j.id" @click="router.push({ name: 'job', params: { id: j.id } })">
-              <strong class="ellipsis r-name">{{ jobLabel(j) }}</strong>
+            <li v-for="j in home.recent.slice(0, 5)" :key="j.id">
+              <RouterLink :to="{ name: 'job', params: { id: j.id } }" class="ellipsis r-name row-link"><strong>{{ jobLabel(j) }}</strong></RouterLink>
               <span class="muted ellipsis r-dest">{{ profiles.byId[j.profile_id]?.name ?? "—" }}</span>
-              <JobStateBadge :state="j.state" class="r-state" />
+              <JobStateBadge :state="j.state" :job="j" class="r-state" />
               <span class="small num n r-size">{{ j.counts.bytes ? fmt.bytes(j.counts.bytes) : "—" }}</span>
               <span class="small muted nowrap r-when"><RelativeTime :at="j.finished_at ?? j.created_at" /></span>
             </li>
@@ -220,20 +249,28 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 </template>
 
 <style scoped>
-.headline { font-size: 1.05rem; color: var(--text); }
+.headline { font-size: var(--fs-lg); color: var(--text); }
 .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 .main-col, .side-col { display: grid; gap: 1.25rem; min-width: 0; }
 .block { display: grid; gap: 0.6rem; }
-.block h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); margin: 0; }
+.block h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); margin: 0; }
 .block-head { display: flex; justify-content: space-between; align-items: baseline; }
 .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .need { display: flex; gap: 0.75rem; align-items: center; }
 .need .text { display: grid; flex: 1; min-width: 0; }
-.sending { display: grid; gap: 0.35rem; cursor: pointer; }
-.sending:hover { border-color: var(--border-strong); }
+.need { position: relative; }
+.sending { display: grid; gap: 0.35rem; position: relative; }
+.sending:hover, .need:hover { border-color: var(--border-strong); }
+/* The name is the row's link; its hit area covers the whole card or row (keyboard: one stop). */
+.row-link { color: var(--text); text-decoration: none; }
+.row-link::after { content: ""; position: absolute; inset: 0; }
+.row-link:focus-visible { outline: none; }
+.row-link:focus-visible::after { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: inherit; }
+.need .btn, .above { position: relative; z-index: 1; }
+.paused-line { display: flex; gap: var(--sp-2); align-items: center; justify-content: space-between; }
 .sending .line { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
 .recent { list-style: none; margin: 0; padding: 0; container-type: inline-size; }
-.recent li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto 5rem 5.5rem; gap: 0.6rem; align-items: center; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--rule); cursor: pointer; }
+.recent li { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto 5rem 5.5rem; gap: 0.6rem; align-items: center; padding: 0.55rem 0.9rem; border-bottom: 1px solid var(--rule); }
 .recent li:last-child { border-bottom: 0; }
 .recent li:hover { background: var(--surface-2); }
 .n { text-align: right; }
@@ -243,14 +280,15 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
 .reclaim p { margin: 0 0 0.4rem; display: flex; gap: 0.4rem; align-items: center; }
 .reclaim ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
 .reclaim li { display: flex; justify-content: space-between; gap: 0.5rem; }
-.onboarding { margin-bottom: 1.25rem; }
+.welcome { display: grid; gap: var(--sp-5); padding: var(--sp-6) var(--sp-5); justify-items: center; text-align: center; border-radius: var(--radius-lg); }
+.welcome-title { margin: 0; font-size: var(--fs-xl); max-width: 30ch; }
+.promises { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); width: 100%; max-width: 760px; }
+.promises li { display: grid; justify-items: center; gap: var(--sp-1); align-content: start; }
+.promise-icon { color: var(--ok); margin-bottom: var(--sp-1); }
+.welcome-cta { display: grid; gap: var(--sp-2); justify-items: center; }
 .offline { display: flex; gap: 1rem; align-items: center; padding: 1.5rem; }
-.offline h2 { margin: 0 0 0.25rem; font-size: 1rem; }
+.offline h2 { margin: 0 0 0.25rem; font-size: var(--fs-base); }
 .offline p { margin: 0; }
-.onboarding h2 { margin: 0 0 0.6rem; font-size: 1rem; }
-.onboarding ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
-.onboarding li { display: flex; gap: 0.6rem; align-items: center; }
-.onboarding li.done { color: var(--ok); }
 @media (max-width: 1099px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 /* A narrow list: the name and its state on top, where, size and when under them. */
 @container (max-width: 520px) {
@@ -266,5 +304,7 @@ const inFlightNames = (id: string) => (live(id)?.in_flight ?? []).map((f) => f.n
   .need .text { flex-basis: calc(100% - 2.5rem); }
   .need .btn { margin-left: auto; }
   .offline { flex-direction: column; align-items: flex-start; padding: 1rem; }
+  .promises { grid-template-columns: minmax(0, 1fr); }
+  .welcome { padding: var(--sp-5) var(--sp-4); }
 }
 </style>
