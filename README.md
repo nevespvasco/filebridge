@@ -36,15 +36,6 @@ its `rc` API (transfer engine; linked in as librclone on phones), SQLite (state)
 the `keyring` crate (secrets).
 The core never calls rclone directly — it talks to a `Transport` contract. See [docs/01-stack.md](docs/01-stack.md).
 
-## Status
-
-**Phase 1 — Personal MVP.** The desktop app, the background service and the CLI run the whole
-wizard end to end over local folders, SFTP and Nextcloud. Phase 0 passed provisionally on
-simulated results (plan A, [ADR 0007](docs/adr/0007-rename-in-transit-strategy.md)); the
-real-server benchmark is still pending. Most of Phase 2 (verification, repair, WebDAV, keyring)
-and the Android build (Phase 4a) are also in; the Nextcloud and SSH paths still have to run
-against the real servers. Details and gates in the [roadmap](docs/09-roadmap.md).
-
 ## Documentation
 
 Start at [docs/README.md](docs/README.md).
