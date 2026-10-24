@@ -1201,7 +1201,9 @@
     "modeShort": {
       "webdav": "WebDAV",
       "direct": "direct (SSH)"
-    }
+    },
+    "appPasswordHint": "Not the password you sign in to Nextcloud with: with two-factor sign-in that one can't work here. Create one in Nextcloud under Settings → Security → Devices & sessions.",
+    "appPasswordLink": "Open that page"
   },
   "access": {
     "uses": "Signs in with filebridge's own key",

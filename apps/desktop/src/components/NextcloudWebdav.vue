@@ -6,6 +6,7 @@ import { computed, reactive, ref, shallowRef, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
+import { openInBrowser } from "@/lib/platform";
 import { trimBoth } from "@/lib/format";
 import { useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
@@ -33,6 +34,20 @@ const missing = computed(() => {
 });
 /** http:// is refused by the service; say so before asking it. */
 const plainHttp = computed(() => /^http:\/\//i.test(form.server.trim()) && !/^http:\/\/(localhost|127\.|\[::1\])/i.test(form.server.trim()));
+
+/** The server's Security settings, where app passwords are made, once the address looks like one. */
+const securityPage = computed(() => {
+  let s = form.server.trim();
+  if (!s) return null;
+  if (!/^[a-z]+:\/\//i.test(s)) s = `https://${s}`;
+  try {
+    const url = new URL(s.replace(/\/remote\.php(\/.*)?$/i, ""));
+    if (url.protocol !== "https:" || !url.hostname.includes(".")) return null;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}/index.php/settings/user/security`;
+  } catch {
+    return null;
+  }
+});
 
 function stepLabel(id: string) {
   const key = `webdav.steps.${id}`;
@@ -89,6 +104,10 @@ const uid = useId();
           <HelpTip :text="$t('webdav.help.appPassword')" :label="$t('webdav.appPassword')" />
         </span>
         <input :id="`${uid}-4`" v-model="appPassword" type="password" autocomplete="new-password" spellcheck="false" />
+        <span class="hint">
+          {{ $t("webdav.appPasswordHint") }}
+          <a v-if="securityPage" :href="securityPage" @click.prevent="openInBrowser(securityPage)">{{ $t("webdav.appPasswordLink") }}</a>
+        </span>
         <span class="hint"><AppIcon name="lock" :size="16" /> {{ $t("profile.hint.password") }}</span>
       </div>
       <div class="field wide">

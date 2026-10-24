@@ -754,7 +754,7 @@ const handlers: Handlers = {
     const steps = [{ id: "address", status: "ok", message: `WebDAV address ${url}`, commands: [] as string[] }];
     // Demo: any app password shorter than 10 characters is refused, like a mistyped one.
     if (req.app_password.length < 10) {
-      steps.push({ id: "sign-in", status: "fail", message: `Nextcloud refused ${req.user} with this app password (401 Unauthorized)`, commands: [] });
+      steps.push({ id: "sign-in", status: "fail", message: `Nextcloud takes only an app password here, not the password ${req.user} signs in with (always so with two-factor sign-in). Create one at https://${host}/index.php/settings/user/security → Devices & sessions, signed in as ${req.user}, and paste it whole (PasswordLoginForbidden: 401 Unauthorized)`, commands: [] });
       return { detector: "webdav", steps, containers: [], profile: null };
     }
     steps.push({ id: "sign-in", status: "ok", message: `signed in as ${req.user}`, commands: [] });

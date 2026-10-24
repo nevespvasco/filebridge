@@ -1201,7 +1201,9 @@
     "modeShort": {
       "webdav": "WebDAV",
       "direct": "direto (SSH)"
-    }
+    },
+    "appPasswordHint": "Não é a palavra-passe com que entra no Nextcloud: com autenticação de dois fatores essa não funciona aqui. Crie uma no Nextcloud em Definições → Segurança → Dispositivos e sessões.",
+    "appPasswordLink": "Abrir essa página"
   },
   "access": {
     "uses": "Entra com a chave própria do filebridge",

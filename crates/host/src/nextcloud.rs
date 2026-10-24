@@ -214,9 +214,10 @@ async fn add_webdav(
                 // passwords when it forbids account passwords (two-factor sign-in or an admin
                 // setting).
                 format!(
-                    "Nextcloud doesn't know this app password for {user}: it takes only app \
-                     passwords, not the account password. Make a new one in Settings → Security \
-                     → Devices & sessions, signed in as {user}, and paste it whole ({})",
+                    "Nextcloud takes only an app password here, not the password {user} signs \
+                     in with (always so with two-factor sign-in). Create one at \
+                     {server}/index.php/settings/user/security → Devices & sessions, signed in \
+                     as {user}, and paste it whole ({})",
                     e.message
                 )
             } else if e.kind == ErrorKind::Auth {

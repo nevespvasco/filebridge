@@ -9,7 +9,7 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { commands, type Platform } from "@/bindings";
 import { i18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -142,6 +142,16 @@ export async function revealInFileManager(path: string): Promise<void> {
     return;
   }
   await revealItemInDir(path);
+}
+
+/** Opens an https page in the system browser (e.g. the server's own settings). */
+export async function openInBrowser(url: string): Promise<void> {
+  if (!/^https:\/\//i.test(url)) return;
+  if (isMock) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  await openUrl(url);
 }
 
 /** Phones: asks Android, once, not to stop filebridge to save battery while it sends. */
