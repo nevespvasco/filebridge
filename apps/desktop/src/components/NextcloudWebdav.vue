@@ -2,10 +2,11 @@
 // Nextcloud in WebDAV mode (docs/05): its address, the user and an app password. The password
 // goes to the system keyring when the profile is saved, and never into the profile, the logs or
 // the Details panel. Each check shows ✓ / ! / ✗.
-import { computed, reactive, ref, shallowRef } from "vue";
+import { computed, reactive, ref, shallowRef, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
+import { openInBrowser } from "@/lib/platform";
 import { trimBoth } from "@/lib/format";
 import { useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
@@ -35,6 +36,20 @@ const missing = computed(() => {
 /** http:// is refused by the service; say so before asking it. */
 const plainHttp = computed(() => /^http:\/\//i.test(form.server.trim()) && !/^http:\/\/(localhost|127\.|\[::1\])/i.test(form.server.trim()));
 
+/** The server's Security settings, where app passwords are made, once the address looks like one. */
+const securityPage = computed(() => {
+  let s = form.server.trim();
+  if (!s) return null;
+  if (!/^[a-z]+:\/\//i.test(s)) s = `https://${s}`;
+  try {
+    const url = new URL(s.replace(/\/remote\.php(\/.*)?$/i, ""));
+    if (url.protocol !== "https:" || !url.hostname.includes(".")) return null;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}/index.php/settings/user/security`;
+  } catch {
+    return null;
+  }
+});
+
 function stepLabel(id: string) {
   const key = `webdav.steps.${id}`;
   return te(key) ? t(key) : id;
@@ -59,44 +74,49 @@ async function check() {
     running.value = false;
   }
 }
+const uid = useId();
 </script>
 
 <template>
   <form class="nc" @submit.prevent="check">
     <p class="small muted">{{ $t("webdav.intro") }}</p>
-    <div class="grid">
-      <label class="field">
-        <span class="label-line">{{ $t("profile.name") }}<span class="req" aria-hidden="true">*</span>
+    <div class="form-grid">
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-1`">{{ $t("profile.name") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('profile.help.name')" :label="$t('profile.name')" />
         </span>
-        <input v-model="form.name" required />
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("webdav.server") }}<span class="req" aria-hidden="true">*</span>
+        <input :id="`${uid}-1`" v-model="form.name" required />
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-2`">{{ $t("webdav.server") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('webdav.help.server')" example="cloud.example.com" :label="$t('webdav.server')" />
         </span>
-        <input v-model="form.server" spellcheck="false" autocomplete="url" placeholder="cloud.example.com" />
+        <input :id="`${uid}-2`" v-model="form.server" spellcheck="false" autocomplete="url" placeholder="cloud.example.com" />
         <span v-if="plainHttp" class="hint warn-text">{{ $t("webdav.https") }}</span>
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("nextcloud.ncUser") }}<span class="req" aria-hidden="true">*</span>
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-3`">{{ $t("nextcloud.ncUser") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('nextcloud.help.ncUser')" example="maria" :label="$t('nextcloud.ncUser')" />
         </span>
-        <input v-model="form.user" spellcheck="false" autocomplete="username" />
-      </label>
-      <label class="field">
-        <span class="label-line">{{ $t("webdav.appPassword") }}<span class="req" aria-hidden="true">*</span>
+        <input :id="`${uid}-3`" v-model="form.user" spellcheck="false" autocomplete="username" />
+      </div>
+      <div class="field">
+        <span class="label-line"><label :for="`${uid}-4`">{{ $t("webdav.appPassword") }}</label><span class="req" aria-hidden="true">*</span>
           <HelpTip :text="$t('webdav.help.appPassword')" :label="$t('webdav.appPassword')" />
         </span>
-        <input v-model="appPassword" type="password" autocomplete="new-password" spellcheck="false" />
+        <input :id="`${uid}-4`" v-model="appPassword" type="password" autocomplete="new-password" spellcheck="false" />
+        <span class="hint">
+          {{ $t("webdav.appPasswordHint") }}
+          <a v-if="securityPage" :href="securityPage" @click.prevent="openInBrowser(securityPage)">{{ $t("webdav.appPasswordLink") }}</a>
+        </span>
         <span class="hint"><AppIcon name="lock" :size="16" /> {{ $t("profile.hint.password") }}</span>
-      </label>
-      <label class="field wide">
-        <span class="label-line">{{ $t("nextcloud.folder") }}
+      </div>
+      <div class="field wide">
+        <span class="label-line"><label :for="`${uid}-5`">{{ $t("nextcloud.folder") }}</label>
           <HelpTip :text="$t('webdav.help.folder')" example="Backup/Fotos" :label="$t('nextcloud.folder')" />
         </span>
-        <input v-model="form.folder" spellcheck="false" :placeholder="$t('webdav.folderHint')" />
-      </label>
+        <input :id="`${uid}-5`" v-model="form.folder" spellcheck="false" :placeholder="$t('webdav.folderHint')" />
+      </div>
     </div>
 
     <div class="actions">
@@ -126,8 +146,6 @@ async function check() {
 </template>
 
 <style scoped>
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; align-items: start; }
-.wide { grid-column: 1 / -1; }
 .actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap; }
 .grow { flex: 1; }
 .steps { list-style: none; padding: 0; margin: 1rem 0 0; }

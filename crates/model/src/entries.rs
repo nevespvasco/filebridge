@@ -141,6 +141,8 @@ pub struct EntryView {
     /// Where the destination's older version of this file was kept before it was sent
     /// (scheduled runs, docs/adr/0019), relative to the profile root.
     pub kept_as: Option<String>,
+    /// Why the last send or check failed.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

@@ -15,10 +15,11 @@ use filebridge_ipc::{
     CategoryCount, DecideManyResult, DecisionInput, DetectNextcloudRequest,
     DetectNextcloudResponse, EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage,
     EntryThumbnail, ErrorBody, ExportResult, FolderNameCheck, FolderSizes, Handler, HostKeyView,
-    ImmichRequest, IssueView, JobFilter, JobPage, JobSummary, LogEntry, NextcloudAdvice,
-    NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, PinnedSource, Pong, Profile, ProfileTest,
-    RecentSource, ReclaimStatus, ReportChangeKind, ReportCheck, ReportDiff, ReportRequest,
-    RuleCount, ScheduleInput, ScheduleView, SendOptions, SourceInfo, StorageView, VolumeView,
+    ImmichRequest, IssueView, JobFilter, JobPage, JobSummary, LocalTargetProbe, LogEntry,
+    NextcloudAdvice, NextcloudWebdavRequest, Operations, PROTOCOL_VERSION, PinnedSource, Pong,
+    Profile, ProfileTest, RecentSource, ReclaimStatus, ReportChangeKind, ReportCheck, ReportDiff,
+    ReportRequest, RuleCount, ScheduleInput, ScheduleView, SendOptions, SourceInfo, StorageView,
+    VolumeView,
 };
 use filebridge_thumbnail::{Lookup, Thumbnails};
 use tokio::sync::{Semaphore, broadcast};
@@ -287,6 +288,10 @@ impl Operations for EngineOperations {
         self.engine.cancel(&job_id).await.map_err(to_error)
     }
 
+    async fn discard_draft(&self, job_id: String) -> Res<()> {
+        self.engine.discard_draft(&job_id).await.map_err(to_error)
+    }
+
     async fn list_jobs(&self, filter: JobFilter, limit: u32, offset: u32) -> Res<JobPage> {
         self.engine
             .list_jobs_page(filter, limit.min(1000), offset)
@@ -541,6 +546,10 @@ impl Operations for EngineOperations {
     async fn cancel_folder_sizes(&self, scan_id: String) -> Res<()> {
         self.engine.cancel_folder_sizes(&scan_id);
         Ok(())
+    }
+
+    async fn probe_local_target(&self, path: String) -> Res<LocalTargetProbe> {
+        self.engine.probe_local_target(path).await.map_err(to_error)
     }
 
     async fn job_log(

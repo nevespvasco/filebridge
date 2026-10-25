@@ -8,7 +8,6 @@ import type { NextcloudAdvice } from "@/bindings";
 import { errorMessage } from "@/lib/api";
 import { useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
-import DetailsPanel from "./DetailsPanel.vue";
 import HelpTip from "./HelpTip.vue";
 import HostKeyPrompt from "./HostKeyPrompt.vue";
 
@@ -32,7 +31,6 @@ const error = ref<string | null>(null);
 /** The service's advice, or the window's own when the user didn't trust the server's key. */
 const advice = shallowRef<Pick<NextcloudAdvice, "mode" | "reason" | "message" | "steps"> | null>(null);
 const valid = computed(() => !!form.host.trim() && form.port > 0 && !!form.user.trim() && !!form.nextcloud_user.trim());
-const commands = computed(() => advice.value?.steps.flatMap((s) => [`# ${s.id}`, ...s.commands]) ?? []);
 const modeLabel = computed(() => (advice.value?.mode === "direct" ? t("webdav.modeDirect") : t("webdav.modeWebdav")));
 
 const hostKey = ref<InstanceType<typeof HostKeyPrompt> | null>(null);
@@ -117,7 +115,6 @@ async function check() {
         <p class="small">{{ $t(`nextcloud.advice.${advice.reason}`) }}</p>
         <p v-if="advice.message" class="small muted">{{ advice.message }}</p>
         <p class="small muted">{{ $t("nextcloud.advice.override") }}</p>
-        <DetailsPanel v-if="commands.length" :lines="commands" />
       </div>
       <HostKeyPrompt ref="hostKey" />
     </form>

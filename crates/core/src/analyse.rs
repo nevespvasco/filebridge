@@ -296,10 +296,12 @@ pub(crate) fn build(
     }
 }
 
-#[cfg(test)]
+// macOS file systems (APFS, HFS+) treat the NFC and NFD spellings as one name, so the collision
+// these tests need can't exist there; the other test needs Linux's undecodable names.
+#[cfg(all(test, not(target_os = "macos")))]
 mod tests {
     use super::*;
-    use filebridge_names::{Nfc, RULE_COLLISION, RULE_ENCODING, RuleSet, TargetProfile};
+    use filebridge_names::{Nfc, RULE_COLLISION, RuleSet, TargetProfile};
 
     fn nfc_plan() -> NamePlan {
         NamePlan::new(
@@ -416,6 +418,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn undecodable_names_need_a_decision() {
+        use filebridge_names::RULE_ENCODING;
         use std::os::unix::ffi::OsStrExt;
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("d");

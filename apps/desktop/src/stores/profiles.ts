@@ -198,3 +198,10 @@ export function profileWhere(p: Profile_Serialize): string {
   }
   return p.destination.root;
 }
+
+/** How many transfers to `profileId` aren't finished (running, paused, waiting for the user or
+ *  not sent yet): while there are any, where the destination points can't change. */
+export async function jobsUsingProfile(profileId: string): Promise<number> {
+  const page = await api.listJobs({ query: null, groups: ["active", "needs_you", "not_sent"], profile_id: profileId, reclaimable: false, sort: "newest" }, 1, 0);
+  return page.total;
+}

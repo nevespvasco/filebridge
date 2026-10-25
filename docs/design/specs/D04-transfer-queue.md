@@ -241,4 +241,6 @@ Built after the queue, from the Out of scope item and the open question below.
 - Is **skip this file** worth building? It helps when one huge file blocks a slot on a slow link.
   But the file then stays Skipped, and only a new transfer or Send again
   ([D06](D06-transfers-list.md#send-again)) brings it back. **Answered: yes**, with that
-  consequence said in its confirmation ([Skip one file](#skip-one-file-as-built)).
+  consequence said in its confirmation ([Skip one file](#skip-one-file-as-built)). The engine
+  also gives up by itself on a file that keeps failing, after three retries, and lists it at the
+  end ([ADR 0033](../../adr/0033-give-up-on-a-file-after-three-retries.md)).

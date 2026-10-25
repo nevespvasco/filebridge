@@ -17,3 +17,18 @@ specta = { workspace = true, features = ["derive", "serde_json"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "macros", "time", "fs"] }
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+widestring = "1"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+] }

@@ -121,17 +121,42 @@ the screen off, force-stopped at 288 files, reopened, resumed and finished; veri
 identical, 0 differences; the foreground service stopped by itself at the end. The app password
 was stored only as ciphertext.
 
+### SSH host keys on a phone (2026-10-24)
+
+ADR 0015's "Trust this server?" works on the phone with no change: the commands are the same, and
+`known_hosts` defaults to `<app data>/.ssh/known_hosts` because the app sets `HOME` there.
+**Tested** on an Android 15 emulator (arm64, release APK) against an OpenSSH server on the host
+(`10.0.2.2:2222`, password sign-in):
+
+- New SFTP destination, Save: the dialog showed the server, `ssh-ed25519`, the same `SHA256:`
+  fingerprint `ssh-keygen -lf` gives on the server, and the file
+  `/data/user/0/app.filebridge.desktop/.ssh/known_hosts`. After "Trust and continue" the key was
+  appended (`host key trusted` in the log), the destination saved, and the connection check
+  passed without asking again.
+- Server reinstalled with new host keys, Destinations → Test: "This server's key has changed",
+  with the key presented now, the file and line on record, and no way to accept it.
+
+Not checked: the file's 0600 mode (a release build allows no `run-as`; the folder is private to
+the app anyway) and Nextcloud direct mode (same operations, not run on the phone).
+
 **Known gaps:**
 
-- **SSH profiles on a phone** (SFTP, Nextcloud direct mode) are not yet tried on one. The
-  "trust this host key" step ([ADR 0015](adr/0015-trust-unknown-host-key-in-the-app.md)) is in
-  the shared `Operations`, so the phone build has it, and it writes to the `known_hosts` in the
-  app's data folder. A phone has no SSH agent: sign in with filebridge's own key
-  ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)) or a key file.
+- **A changed host key is a dead end on a phone.** The dialog says to remove the old line from
+  `known_hosts`, but that file is inside the app's private folder: the only way out is clearing
+  the app's data (which also removes its destinations). A guided "replace the key" flow needs its
+  own decision (ADR 0015, Consequences).
+- At 1080×2400 the changed-key dialog's long path and fingerprint run past its right edge, and
+  the SFTP form still says "SSH agent" and "your user on this computer", which a phone has not.
+  A phone has no SSH agent: sign in with filebridge's own key
+  ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)) or a key file. Nextcloud direct mode is not
+  tried on a phone yet.
 - rclone picks its cache folder before the app sets HOME. The local, SFTP and WebDAV backends
   don't use it.
 - An emulator or phone that had the earlier `app.filebridge.desktop` build keeps it as a
   separate app: uninstall it by hand.
+- Without `gen/android/key.properties` (git-ignored, your own key) the release APK comes out
+  unsigned; for an emulator, sign it with the debug key (`zipalign`, then `apksigner sign --ks
+  ~/.android/debug.keystore`).
 - iOS (Phase 4b) is not started: it needs a Mac.
 
 ## Risks

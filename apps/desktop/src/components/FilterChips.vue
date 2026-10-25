@@ -25,7 +25,7 @@ void props;
     <button v-if="allLabel" type="button" class="chip" :aria-pressed="model.length === 0" @click="model = []">
       {{ allLabel }}<span v-if="allCount != null" class="count num">{{ fmt.count(allCount) }}</span>
     </button>
-    <button v-for="o in options" :key="o.value" type="button" class="chip" :aria-pressed="model.includes(o.value)" @click="toggle(o.value)">
+    <button v-for="o in options" :key="o.value" type="button" class="chip" :class="{ empty: o.count === 0 }" :aria-pressed="model.includes(o.value)" @click="toggle(o.value)">
       <AppIcon v-if="o.icon" :name="o.icon" :style="o.color ? { color: o.color } : undefined" />
       {{ o.label }}<span v-if="o.count != null" class="count num">{{ fmt.count(o.count) }}</span>
     </button>
@@ -34,9 +34,13 @@ void props;
 
 <style scoped>
 .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.chip { font: inherit; font-size: var(--fs-sm); display: inline-flex; gap: 0.35rem; align-items: center; padding: 0.25rem 0.65rem; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); cursor: pointer; }
-.chip:hover { color: var(--text); background: var(--surface-2); }
+.chip { font: inherit; font-size: var(--fs-sm); display: inline-flex; gap: 0.4rem; align-items: center; height: 1.9rem; padding: 0 0.7rem; border-radius: var(--radius-pill); border: 1px solid var(--border); background: transparent; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.chip:hover { color: var(--text); background: var(--surface-2); border-color: var(--border-strong); }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.count { color: inherit; opacity: 0.75; }
+/* The count in its own small badge, so "Active 3" reads as a label and a number. */
+.count { font-size: var(--fs-xs); font-weight: 600; min-width: 1.3rem; padding: 0.05rem 0.4rem; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); text-align: center; }
+/* A group with nothing in it stays clickable but steps back. */
+.chip.empty:not([aria-pressed="true"]) { opacity: 0.6; }
+.chip[aria-pressed="true"] .count { background: var(--accent); color: var(--on-accent); }
 </style>

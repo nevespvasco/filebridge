@@ -9,7 +9,8 @@ import { errorMessage } from "@/lib/api";
 import { useFileDrop } from "@/composables/useFileDrop";
 import DropOverlay from "./DropOverlay.vue";
 
-defineProps<{ compact?: boolean }>();
+/** `quiet`: its button isn't the page's main action (something else needs the user first). */
+defineProps<{ compact?: boolean; quiet?: boolean }>();
 const emit = defineEmits<{ add: [paths: string[]] }>();
 const { t } = useI18n();
 const error = ref<string | null>(null);
@@ -29,20 +30,20 @@ async function pick(directory: boolean) {
 
 <template>
   <div class="drop" :class="{ over, compact }">
-    <template v-if="compact">
+    <div v-if="compact" class="bar" role="group" :aria-label="mobile ? $t('mobile.addMore') : $t('source.dropMore')">
       <AppIcon class="icon" name="drop" :size="22" />
-      <span class="lead">{{ mobile ? $t("mobile.addMore") : $t("source.dropMore") }}</span>
+      <span class="lead" aria-hidden="true">{{ mobile ? $t("mobile.addMore") : $t("source.dropMore") }}</span>
       <span class="buttons">
         <button class="btn btn-small" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.addFolders") }}</button>
         <button v-if="!mobile" class="btn btn-small" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.addFiles") }}</button>
       </span>
-    </template>
+    </div>
     <template v-else>
       <AppIcon class="icon" name="drop" :size="44" />
       <p v-if="mobile" class="lead">{{ $t("mobile.pickLead") }}</p>
       <p v-else class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
       <div class="buttons">
-        <button class="btn btn-primary" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ mobile ? $t("mobile.pickFolder") : $t("source.pickFolders") }}</button>
+        <button class="btn" :class="{ 'btn-primary': !quiet }" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ mobile ? $t("mobile.pickFolder") : $t("source.pickFolders") }}</button>
         <button v-if="!mobile" class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
       </div>
       <p class="hint small muted">{{ mobile ? $t("mobile.pickHint") : $t("source.hint") }}</p>
@@ -55,7 +56,7 @@ async function pick(directory: boolean) {
 <style scoped>
 .drop {
   border: 2px dashed var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 2.25rem 1rem;
   text-align: center;
   background: var(--surface-2);
@@ -64,20 +65,20 @@ async function pick(directory: boolean) {
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .icon { color: var(--accent); }
 .lead { margin: 0.5rem 0 1rem; color: var(--text-2); display: grid; gap: 0.35rem; }
-.or { font-size: 0.85rem; }
+.or { font-size: var(--fs-sm); }
 .buttons { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
 .hint { margin: 0.9rem 0 0; }
-.drop.compact {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.55rem 0.8rem;
-  text-align: left;
-  border-width: 1.5px;
-  flex-wrap: wrap;
+.drop.compact { padding: 0.55rem 0.8rem; text-align: left; border-width: 1.5px; container-type: inline-size; }
+.bar { display: flex; align-items: center; gap: 0.6rem; }
+.compact .lead { margin: 0; flex: 1; min-width: 0; display: block; }
+.compact .buttons { justify-content: flex-end; flex-wrap: nowrap; }
+.compact .error { margin: 0.4rem 0 0; }
+/* No room for the sentence: the icon and the buttons share the one row, the buttons evenly
+   (the group keeps the sentence as its name). */
+@container (max-width: 420px) {
+  .compact .lead { display: none; }
+  .compact .buttons { flex: 1; }
+  .compact .buttons .btn { flex: 1; justify-content: center; }
 }
-.compact .lead { margin: 0; flex: 1; min-width: 10rem; display: block; }
-.compact .buttons { justify-content: flex-end; }
-.compact .error { width: 100%; margin: 0; }
 @media (prefers-reduced-motion: reduce) { .drop { transition: none; } }
 </style>

@@ -24,8 +24,8 @@ interface.
       sends in Phase 3, continuous sync in Phase 5, copy-only (never deletes at the destination;
       a rename at the source is a new file). [ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md).
       The daily window is [ADR 0010](adr/0010-bandwidth-limit-and-send-window.md).
-- [x] **Final app name:** `filebridge`
-      ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md)).
+- [x] **Final app name**: `filebridge` ([ADR 0018](adr/0018-scope-personal-use-scheduled-and-copy-only-sync.md),
+      [ADR 0032](adr/0032-keep-the-name-filebridge.md)).
 - [x] **xxHash or SHA-256 for the manifest?** SHA-256
       ([ADR 0017](adr/0017-sha256-for-the-manifest.md)).
 

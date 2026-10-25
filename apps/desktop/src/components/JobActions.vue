@@ -9,9 +9,9 @@ import { JOB_OPERATIONS, type JobState, type JobSummary_Serialize } from "@/bind
 import { useFmt } from "@/composables/useFmt";
 import { errorMessage } from "@/lib/api";
 import { continueJob, jobLabel } from "@/lib/jobs";
-import { copyText } from "@/lib/platform";
 import { useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
+import { useConnection } from "@/stores/connection";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import RowMenu, { type MenuItem } from "./RowMenu.vue";
 
@@ -19,6 +19,7 @@ const props = defineProps<{ job: JobSummary_Serialize; showOpen?: boolean }>();
 const emit = defineEmits<{ exportReport: [] }>();
 const jobs = useJobs();
 const profiles = useProfiles();
+const conn = useConnection();
 const router = useRouter();
 const { t } = useI18n();
 const fmt = useFmt();
@@ -39,8 +40,9 @@ const items = computed<MenuItem[]>(() => {
   if (props.job.kind !== "repair") out.push({ id: "againTo", label: t("jobs.menu.againTo"), icon: "destinations", disabled: !again, reason: t("jobs.menu.whenFinished") });
   out.push({ id: "export", label: t("jobs.menu.export"), icon: "export", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
   out.push({ id: "compare", label: t("report.compare.menu"), icon: "different", disabled: !can("export_report"), reason: t("jobs.menu.whenFinished") });
-  out.push({ id: "copyId", label: t("jobs.menu.copyId"), icon: "copy" });
   if (can("cancel")) out.push({ id: "cancel", label: t("jobDetail.cancel"), icon: "close", danger: true });
+  // Without the engine only what stays in this window works: opening.
+  if (conn.offline) return out.map((i) => (i.id === "open" ? i : { ...i, disabled: true, reason: t("conn.disconnected") }));
   return out;
 });
 
@@ -91,8 +93,6 @@ async function onSelect(id: string) {
       return emit("exportReport");
     case "compare":
       return void router.push({ name: "compare", params: { a: j.id } });
-    case "copyId":
-      return act(() => copyText(j.id));
     case "cancel":
       cancelling.value = true;
       return;
@@ -138,7 +138,7 @@ const cancelLines = computed(() => [t("jobDetail.cancelStops"), t("jobDetail.can
     >
       <label class="field">
         <span>{{ $t("review.label") }}</span>
-        <input v-model="name" maxlength="120" :placeholder="jobLabel({ label: null, sources: job.sources })" @keydown.enter="saveName" />
+        <input v-model="name" data-autofocus maxlength="120" :placeholder="jobLabel({ label: null, sources: job.sources })" @keydown.enter="saveName" />
         <span class="hint">{{ $t("jobs.rename.hint") }}</span>
       </label>
     </ConfirmDialog>

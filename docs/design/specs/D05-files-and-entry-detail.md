@@ -345,8 +345,10 @@ Added after the first release of this spec (it was out of scope, F13).
 
 - ~~A thumbnail preview of the source image (F13).~~ Built later: see
   [Thumbnails](#thumbnails-as-built-adr-0027). Video frames stay out (no dependency-light decoder).
-- Bulk actions on files (retry these, skip these). The job already retries failures as a whole
-  (Resume); per-file actions wait for the skip question in [D04](D04-transfer-queue.md#open-questions).
+- Bulk actions on files (retry these, skip these). The engine retries each failed file three
+  times by itself and then gives up on it ([ADR 0033](../../adr/0033-give-up-on-a-file-after-three-retries.md));
+  one file is skipped by hand ([D04](D04-transfer-queue.md#skip-one-file-as-built)), several at
+  once not yet.
 - Browsing the destination's own files: that is Repair destination ([04](../../04-name-correction.md)).
 
 ## Open questions

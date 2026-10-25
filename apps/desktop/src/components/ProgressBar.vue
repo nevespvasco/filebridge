@@ -18,7 +18,7 @@ defineProps<{ value?: number; indeterminate?: boolean; tone?: "accent" | "ok" | 
 <style scoped>
 .progress {
   height: 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--track);
   overflow: hidden;
   position: relative;

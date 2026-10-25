@@ -1676,6 +1676,7 @@ dependencies = [
  "filebridge-transport-api",
  "filebridge-transport-fake",
  "getrandom 0.3.4",
+ "libc",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -1797,12 +1798,16 @@ dependencies = [
  "filebridge-model",
  "filebridge-transport-api",
  "interprocess",
+ "libc",
  "serde",
  "serde_json",
  "specta",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "widestring",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

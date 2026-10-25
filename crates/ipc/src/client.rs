@@ -37,8 +37,11 @@ pub struct Client {
 }
 
 impl Client {
+    /// Connects to the service at `endpoint`, refusing one run by another user
+    /// (`PermissionDenied`) before anything is sent.
     pub async fn connect(endpoint: &Endpoint) -> std::io::Result<Self> {
         let conn = Stream::connect(endpoint.name()?).await?;
+        crate::peer::check(&conn)?;
         let (recv, send) = conn.split();
         Ok(Self::over(recv, send))
     }

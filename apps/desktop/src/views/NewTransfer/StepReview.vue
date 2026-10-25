@@ -3,17 +3,17 @@ import AppIcon from "@/components/AppIcon.vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { defaultLabel } from "@/lib/jobs";
 import { errorMessage } from "@/lib/api";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
-import { request } from "@/lib/requests";
 import { minutesToTime } from "@/lib/format";
 import { useJobs } from "@/stores/jobs";
 import { sendMode, profileWhere, useProfiles } from "@/stores/profiles";
 import { useSettings } from "@/stores/settings";
 import { useWizard } from "@/stores/wizard";
+import { useConnection } from "@/stores/connection";
 
 const wizard = useWizard();
+const conn = useConnection();
 const jobs = useJobs();
 const profiles = useProfiles();
 const settings = useSettings();
@@ -44,12 +44,6 @@ async function saveLabel() {
     labelError.value = errorMessage(e);
   }
 }
-
-const details = computed(() =>
-  wizard.jobId
-    ? [request("set_options", { job_id: wizard.jobId, options: wizard.options }), request("start", { job_id: wizard.jobId }), request("subscribe")]
-    : [],
-);
 </script>
 
 <template>
@@ -73,7 +67,7 @@ const details = computed(() =>
       <dt>{{ $t("review.destination") }}</dt>
       <dd>
         <strong>{{ profile?.name ?? wizard.profileId }}</strong>
-        <span v-if="profile" class="mono small block">{{ profileWhere(profile) }}</span>
+        <span v-if="profile" class="path block">{{ profileWhere(profile) }}</span>
       </dd>
       <dt>{{ $t("review.files") }}</dt>
       <dd>{{ fmt.count(totals?.files) }} · {{ fmt.bytes(totals?.bytes) }}</dd>
@@ -98,13 +92,12 @@ const details = computed(() =>
     <p class="guide ok small"><AppIcon class="guide-icon" name="lock" :size="20" /><span>{{ $t("review.safety") }}</span></p>
     <p v-if="wizard.sendError" class="error">{{ wizard.sendError }}</p>
 
-    <DetailsPanel :lines="details" />
-
-    <div class="footer">
+    <div class="footer sticky">
       <button class="btn" @click="wizard.step = 3"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
-      <button class="btn btn-primary btn-big" :title="$t('review.sendTip')" :disabled="wizard.sending || !wizard.canReview" @click="wizard.send()">
-        {{ wizard.sending ? $t("review.starting") : $t("review.send") }}
+      <span v-if="conn.offline" class="why-disabled">{{ $t("conn.disconnected") }}</span>
+      <button class="btn btn-primary btn-big" :title="$t('review.sendTip')" :disabled="wizard.sending || !wizard.canReview || conn.offline" @click="wizard.send()">
+        {{ wizard.sending ? $t("review.starting") : job?.counts.bytes ? $t("review.sendSize", { size: fmt.bytes(job.counts.bytes) }) : $t("review.send") }}
       </button>
     </div>
   </div>
@@ -112,10 +105,16 @@ const details = computed(() =>
 
 <style scoped>
 .label-field { max-width: 32rem; margin-bottom: 1rem; }
-.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem 1.5rem; margin: 0 0 1rem; }
+.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.5rem 1.5rem; align-items: start; margin: 0 0 1rem; }
 dt { color: var(--text-2); display: flex; align-items: center; }
 dd { margin: 0; min-width: 0; }
 .block { display: block; }
 .check { display: flex; gap: 0.75rem; align-items: flex-start; cursor: pointer; margin-bottom: 1rem; }
 .check input { margin-top: 0.3rem; }
+/* A phone: each value under its label, with the whole width (paths, the mode's sentence). */
+@media (max-width: 559px) {
+  .summary { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .summary dd + dt { margin-top: 0.5rem; }
+  dt { font-size: var(--fs-sm); }
+}
 </style>

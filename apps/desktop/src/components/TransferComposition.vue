@@ -96,7 +96,7 @@ const fitWhole = computed(() => knownTotal.value ?? (props.free != null ? Math.m
 <style scoped>
 .composition { display: grid; gap: 0.6rem; margin: 1rem 0; }
 .head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
-.head h3 { font-size: 0.95rem; margin: 0; }
+.head h3 { font-size: var(--fs-base); margin: 0; }
 .head.fit { margin-top: 0.5rem; }
 .guide { margin: 0; }
 </style>

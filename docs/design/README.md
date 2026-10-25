@@ -52,7 +52,7 @@ working position so the docs could be written; each one can be reopened.
 | Q3 | The baseline user is **personal use** (one person, their own servers, long migrations). Items that matter only when strangers use the app are tagged **[distribution]**. The open decision in [10](../10-risks-and-open-decisions.md#open-decisions) stays open. | Onboarding polish is tagged, not dropped. |
 | Q4 | Visual language: **Phosphor** icons in place of emoji, **tabular numerals** and monospace for hashes and paths, a **colour per file Category**, a **light / dark / system** toggle, still hand-written CSS tokens and **no component library**. | [01 — Design system](01-design-system.md). |
 | Q5 | "Free the source" means filebridge **shows** what is reclaimable and opens the folder in the OS file manager; it **never deletes** anything at the source. | [ADR 0011](../adr/0011-reclaimable-source-is-shown-never-freed.md), [D10](specs/D10-reclaimable-source.md). |
-| Q6 | Code and docs say **Job**; the UI says **Transfer** (pt: *Transferência*); nobody says "upload". | [GLOSSARY](../../GLOSSARY.md). |
+| Q6 | Code and docs say **Job**; the UI says **Transfer** (pt: *Envio*, changed from *Transferência*, [ADR 0031](../adr/0031-one-word-for-a-transfer.md)); nobody says "upload". | [GLOSSARY](../../GLOSSARY.md). |
 
 ## How a spec is written
 
@@ -128,6 +128,9 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `set_profile_password(profile_id, password) -> Profile` | new (protocol 17), Phase 2 | [ADR 0004](../adr/0004-os-keyring-secrets.md) |
 | `add_nextcloud_webdav(req) -> DetectNextcloudResponse` | new (protocol 18), Phase 2 | [05](../05-integration-nextcloud.md) |
 | `install_app_key(profile_id)`, `remove_access(profile_id) -> AccessReport` | new (protocol 19), Phase 2 | [ADR 0012](../adr/0012-own-ssh-key-with-restrict.md) |
+| `discard_draft(job_id)` | new (protocol 35); `JobSummary.discarded` | [ADR 0030](../adr/0030-discarded-drafts.md) |
+| `list_jobs(filter, limit, offset) -> JobPage` | **changed** (protocol 35): `JobPage.groups`, a `GroupCount { group, total }` per `JobGroup`, ignoring `filter.groups`; discarded drafts left out | D06 |
+| `probe_local_target(path) -> LocalTargetProbe` | new (protocol 35): `fs_type`, `family`, `case_sensitive` of a local destination folder | D03 |
 
 ### Lifecycle rules (`crates/model/src/rules.rs`)
 
@@ -136,6 +139,7 @@ D10 starts writing mtime; neither needs a migration. No migration edits a shippe
 | `JobGroup` (active, needs_you, not_sent, finished, cancelled) as pure data | D06 |
 | `Op::SetLabel` (every state), `Op::SendAgain` (terminal states), `Op::Export` (terminal states) | D06, D09 |
 | `Op::SkipEntry` (Transferring, Retrying, Waiting, Paused) | D04 |
+| `Op::DiscardDraft` (Draft, AwaitingApproval, Ready); `JOB_OPERATIONS.discard_draft` | [ADR 0030](../adr/0030-discarded-drafts.md) |
 | `EntryStatus::from_states`, `log_level(kind, data)`, `LOW_SPACE_*` constants | D05, D07, D03 |
 
 ### Contract changes (`crates/transport-api`)

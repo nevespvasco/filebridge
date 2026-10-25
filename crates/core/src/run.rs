@@ -188,8 +188,11 @@ impl Engine {
                         } else {
                             let failed = self.store.manifest_counts(job_id).await?.failed;
                             if failed > 0 {
-                                ctx.warnings
-                                    .push(format!("{failed} files could not be sent"));
+                                ctx.warnings.push(format!(
+                                    "{failed} files could not be sent, even after {} retries; \
+                                         the Files tab lists them",
+                                    self.options.max_file_retries
+                                ));
                             }
                         }
                         outcome.warnings = std::mem::take(&mut ctx.warnings);
@@ -297,6 +300,7 @@ impl Engine {
             job_id: &ctx.job_id,
             sources: &ctx.sources,
             concurrency: ctx.options.concurrency.max(1) as usize,
+            max_retries: self.options.max_file_retries,
             files_total: counts.files - counts.skipped,
             bytes_total: counts.bytes - counts.bytes_skipped,
         };
@@ -306,6 +310,9 @@ impl Engine {
             ..Tally::default()
         };
 
+        // A file that failed waits until the rest is sent, then the stage backs off and sends
+        // it again.
+        let mut retry_later = None;
         let batches = async {
             loop {
                 // Listening before the page is read: a file skipped after this is caught below,
@@ -350,10 +357,11 @@ impl Engine {
                     }
                 };
                 match batch.send(entries, &mut tally, stop).await? {
-                    Sent::Answered { retry: None } => {}
-                    Sent::Answered { retry: Some(e) } => {
-                        self.log_round(&ctx.job_id, &tally).await?;
-                        return Ok(StageEnd::Retry(e));
+                    Sent::Answered { retry_later: None } => {}
+                    Sent::Answered {
+                        retry_later: Some(e),
+                    } => {
+                        retry_later.get_or_insert(e);
                     }
                     Sent::Full(e) => {
                         self.log_round(&ctx.job_id, &tally).await?;
@@ -363,7 +371,10 @@ impl Engine {
                         self.log_round(&ctx.job_id, &tally).await?;
                         return Ok(StageEnd::Pause(e, JobErrorCode::SourceUnavailable));
                     }
-                    Sent::Retry(e) => return Ok(StageEnd::Retry(e)),
+                    Sent::Retry(e) => {
+                        self.log_round(&ctx.job_id, &tally).await?;
+                        return Ok(StageEnd::Retry(e));
+                    }
                     Sent::Stopped(Stop::Cancelled) => return Ok(StageEnd::Cancelled),
                     Sent::Stopped(Stop::Held) => return Ok(StageEnd::Held),
                     Sent::Stopped(Stop::Skipped) => {
@@ -385,7 +396,10 @@ impl Engine {
                 }
             }
             self.log_round(&ctx.job_id, &tally).await?;
-            Ok(StageEnd::Done(()))
+            Ok(match retry_later {
+                Some(e) => StageEnd::Retry(e),
+                None => StageEnd::Done(()),
+            })
         };
         let watch = self.watch_space(&ctx.job_id, transport.as_ref(), &ctx.profile);
         tokio::select! {

@@ -15,6 +15,7 @@ mod files;
 pub mod inhibit;
 mod keep;
 mod lifecycle;
+mod local_target;
 mod profile;
 mod reclaim;
 mod registry;
@@ -37,12 +38,12 @@ pub use filebridge_model::{
     EntryFilter, EntryPage, EntrySort, EntryStatus, EntryView, Event, ExportResult, Family,
     FileCategory, FolderNameCheck, FolderSize, FolderSizes, InFlightView, IssueDecision,
     IssueSeverity, IssueView, JobErrorCode, JobFilter, JobGroup, JobKind, JobPage, JobSort,
-    JobState, JobSummary, LogEntry, LogLevel, PinnedSource, PreflightView, Profile, ProfileTest,
-    RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, ReportChange, ReportChangeCount,
-    ReportChangeKind, ReportCheck, ReportDiff, ReportFormat, ReportRequest, ReportScope,
-    ReportSide, RuleCount, ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem, SendOptions,
-    SendWindow, SourceInfo, SourceProblem, StorageView, TargetSpec, UnknownValue, VolumeView,
-    WatchMode, WatchView, Weekday, job_operations,
+    JobState, JobSummary, LocalTargetProbe, LogEntry, LogLevel, PinnedSource, PreflightView,
+    Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, ReportChange,
+    ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff, ReportFormat, ReportRequest,
+    ReportScope, ReportSide, RuleCount, ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem,
+    SendOptions, SendWindow, SourceInfo, SourceProblem, StorageView, TargetSpec, UnknownValue,
+    VolumeView, WatchMode, WatchView, Weekday, job_operations,
 };
 pub use registry::Registry;
 pub use repair::MAX_REPAIR_ENTRIES;

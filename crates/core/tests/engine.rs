@@ -197,6 +197,7 @@ fn engine_on(
             batch_size,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::fixed(|| NOON),
             space_check_every: Duration::from_millis(50),
             wall_clock,
@@ -856,6 +857,8 @@ async fn transfers_are_named_found_and_sent_again_with_their_decisions() {
     );
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn issues_are_decided_by_selection_or_by_path() {
     let s = setup().await;
@@ -1457,6 +1460,8 @@ async fn nested_sources_are_refused() {
         .unwrap();
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn collisions_wait_for_a_decision() {
     let s = setup().await;
@@ -1592,6 +1597,53 @@ async fn fatal_file_errors_finish_with_warnings() {
     let summary = s.engine.job(&job).await.unwrap();
     assert_eq!((summary.counts.done, summary.counts.failed), (2, 1));
     assert!(summary.error.unwrap().contains("could not be sent"));
+    // Sent once with the others, then retried three times on its own.
+    assert_eq!(s.transport.calls.load(Ordering::SeqCst), 4);
+    let detail = s
+        .engine
+        .entry_detail(&job, inverno_idx(&s, &job).await)
+        .await;
+    assert_eq!(detail.unwrap().error.as_deref(), Some("permission denied"));
+}
+
+async fn inverno_idx(s: &Setup, job: &str) -> u64 {
+    let all = s
+        .engine
+        .files_page(job, EntryFilter::default(), None, 100)
+        .await
+        .unwrap();
+    all.items
+        .iter()
+        .find(|e| e.name == "Inverno.jpg")
+        .unwrap()
+        .idx
+}
+
+#[tokio::test]
+async fn a_file_that_fails_a_few_times_is_sent_on_a_retry() {
+    let s = setup().await;
+    s.transport
+        .flaky_names
+        .lock()
+        .unwrap()
+        .insert("Inverno.jpg".into(), 3);
+    let job = ready_job(&s, SendOptions::default()).await;
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+    assert_eq!(s.engine.job(&job).await.unwrap().counts.failed, 0);
+}
+
+#[tokio::test]
+async fn a_destination_that_is_down_uses_up_no_file_retries() {
+    let s = setup().await;
+    let job = ready_job(&s, SendOptions::default()).await;
+    // Each round's preflights count it down: the stage's, the space watch's and the failed
+    // batch's own check.
+    s.transport.down.store(20, Ordering::SeqCst);
+    assert_eq!(run_to_end(&s, &job).await, JobState::Completed);
+    assert_eq!(dest_files(&s.dest).len(), 3);
+    // More failed calls than a file's retries, and none given up on.
+    assert!(s.transport.calls.load(Ordering::SeqCst) > 4);
 }
 
 #[tokio::test]
@@ -1752,6 +1804,101 @@ async fn cancel_is_final() {
     s.engine.cancel(&job).await.unwrap();
     assert_eq!(s.engine.job(&job).await.unwrap().state, JobState::Cancelled);
     assert!(s.engine.start(&job).await.is_err());
+}
+
+#[tokio::test]
+async fn a_discarded_draft_is_cancelled_and_hidden_but_kept() {
+    let s = setup().await;
+    let replaced = ready_job(&s, SendOptions::default()).await;
+    let kept = s
+        .engine
+        .create_job(
+            vec![s.src.join("Fotos")],
+            &s.profile_id,
+            SendOptions::default(),
+        )
+        .await
+        .unwrap();
+    let cancelled = s
+        .engine
+        .create_job(
+            vec![s.src.join("Fotos")],
+            &s.profile_id,
+            SendOptions::default(),
+        )
+        .await
+        .unwrap();
+    s.engine.cancel(&cancelled).await.unwrap();
+
+    s.engine.discard_draft(&replaced).await.unwrap();
+    let job = s.engine.job(&replaced).await.unwrap();
+    assert_eq!(job.state, JobState::Cancelled, "the record stays");
+    assert!(job.discarded);
+    assert!(!s.engine.job(&cancelled).await.unwrap().discarded);
+    assert!(
+        s.engine.discard_draft(&cancelled).await.is_err(),
+        "only a job not sent yet"
+    );
+
+    let page = |filter: JobFilter| s.engine.list_jobs_page(filter, 50, 0);
+    let all = page(JobFilter::default()).await.unwrap();
+    assert_eq!(all.total, 2);
+    assert!(all.items.iter().all(|j| j.id != replaced));
+    let only_cancelled = page(JobFilter {
+        groups: vec![JobGroup::Cancelled],
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(only_cancelled.items.len(), 1);
+    assert_eq!(only_cancelled.items[0].id, cancelled);
+    // Every chip's count, whichever chip is selected; the discarded draft in none.
+    let counts: Vec<_> = only_cancelled
+        .groups
+        .iter()
+        .map(|g| (g.group, g.total))
+        .collect();
+    assert_eq!(
+        counts,
+        [
+            (JobGroup::Active, 0),
+            (JobGroup::NeedsYou, 0),
+            (JobGroup::NotSent, 1),
+            (JobGroup::Finished, 0),
+            (JobGroup::Cancelled, 1),
+        ]
+    );
+    assert_eq!(all.groups, only_cancelled.groups);
+
+    let activity = s.engine.activity(None, 50).await.unwrap();
+    assert!(
+        activity
+            .iter()
+            .all(|a| a.job_id.as_deref() != Some(replaced.as_str())),
+        "nothing of it in Activity"
+    );
+    assert!(
+        activity
+            .iter()
+            .any(|a| a.job_id.as_deref() == Some(kept.as_str()))
+    );
+}
+
+#[tokio::test]
+async fn a_local_target_is_probed_at_its_nearest_existing_folder() {
+    let s = setup().await;
+    let missing = s.dest.join("not/made/yet");
+    let probe = s
+        .engine
+        .probe_local_target(missing.to_string_lossy().into_owned())
+        .await
+        .unwrap();
+    let here = s
+        .engine
+        .probe_local_target(s.dest.to_string_lossy().into_owned())
+        .await
+        .unwrap();
+    assert_eq!(probe, here);
 }
 
 #[tokio::test]
@@ -2050,6 +2197,8 @@ async fn options_change_until_the_job_is_sent() {
     ));
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn options_change_while_awaiting_approval() {
     let s = setup().await;
@@ -2071,6 +2220,8 @@ async fn options_change_while_awaiting_approval() {
     assert_eq!(s.store.pending_issue_count(&job).await.unwrap(), 1);
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn decide_all_applies_one_decision_to_every_pending_issue() {
     let s = setup().await;
@@ -2162,6 +2313,8 @@ async fn decide_all_applies_one_decision_to_every_pending_issue() {
     ));
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn an_issue_is_decided_only_through_its_own_job() {
     let s = setup().await;
@@ -2190,6 +2343,8 @@ async fn an_issue_is_decided_only_through_its_own_job() {
     assert_eq!(s.store.pending_issue_count(&jobs[0]).await.unwrap(), 1);
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn edited_names_are_checked_when_decided() {
     let s = setup().await;
@@ -2619,6 +2774,8 @@ async fn a_name_renamed_by_hand_meanwhile_counts_only_if_it_is_the_same_file() {
     assert_eq!((job_view.counts.done, job_view.counts.failed), (1, 1));
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn renames_in_one_folder_free_a_name_before_it_is_taken() {
     let s = setup().await;
@@ -2678,6 +2835,7 @@ async fn a_profile_password_lives_in_the_keyring_only() {
             batch_size: 3,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::fixed(|| NOON),
             ..EngineOptions::default()
         },
@@ -2760,6 +2918,7 @@ async fn a_password_a_profile_needs_cannot_be_removed() {
             batch_size: 3,
             inhibit_sleep: false,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::fixed(|| NOON),
             ..EngineOptions::default()
         },

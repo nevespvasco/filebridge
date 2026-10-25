@@ -55,6 +55,10 @@ detail to build each crate on its own.
 | [0027](adr/0027-source-thumbnails-in-the-cache.md) | Thumbnails of source images: made by the engine (`crates/thumbnail`), cached in the app's cache (128 MB, LRU), sent to the window as bytes; no video previews |
 | [0028](adr/0028-login-start-on-every-desktop-os.md) | The engine starts at login from a per-user entry on every desktop OS: systemd unit, LaunchAgent, Run key value (through the app, so no console window) |
 | [0029](adr/0029-integration-checkpoints-skips-and-probe-files.md) | Integration checkpoints, `will_skip` (files a tool won't take) and probe files the transport may remove; Immich waits for its scan, warns about skipped files and checks it sees the folder |
+| [0030](adr/0030-discarded-drafts.md) | A draft the New-transfer wizard replaces is discarded (Cancelled, kept, hidden from the Transfers list and Activity), not shown as cancelled |
+| [0031](adr/0031-one-word-for-a-transfer.md) | The UI calls a Job a Transfer, in Portuguese *Envio*, everywhere; "send" is only a verb |
+| [0032](adr/0032-keep-the-name-filebridge.md) | The app keeps the name `filebridge` (the open decision, closed; ADR 0018 had said so in passing) |
+| [0033](adr/0033-give-up-on-a-file-after-three-retries.md) | A file that keeps failing is retried three times, then given up on and listed at the end; a destination that doesn't answer uses up no file's retries |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

@@ -4,13 +4,15 @@
 //!
 //! Entries go `Partial` before the call. A file the transport reports arrived (`ItemDone`) is
 //! saved `Done` on the next 500 ms tick, so a crash or a pause loses at most that tick's files,
-//! which are sent again. When the call answers, every Entry gets its outcome: `Done`, `Failed`,
-//! or back to `Partial` for a retryable error or a full destination.
+//! which are sent again. When the call answers, every Entry gets its outcome: `Done`, or a failed
+//! send. A failed file goes back to `Partial` to be sent again after the others, and is given up
+//! on (`Failed`) after `max_retries` retries (ADR 0033). Failures while the destination doesn't
+//! answer at all count against no file: the whole stage backs off and tries again.
 //!
 //! A full destination is the transport's `Full` error, or (OpenSSH's sftp-server says only
 //! "Failure") a fatal error on a file bigger than the free space measured right after: either
-//! way the files go back to `Partial`, not `Failed`, and the batch ends [`Sent::Full`] so the
-//! Job pauses until someone frees space (docs/design/specs/D03).
+//! way the files go back to `Partial` with no retry used up, and the batch ends [`Sent::Full`]
+//! so the Job pauses until someone frees space (docs/design/specs/D03).
 //!
 //! A source that can't be read any more (a disk unplugged) pauses the Job the same way, with
 //! its files back to `Partial`: checked before a batch starts, and for the Sources of the files
@@ -49,10 +51,11 @@ pub(crate) enum Stop {
 
 /// How a batch ended.
 pub(crate) enum Sent {
-    /// The transport answered for every item; each Entry has its state. `retry` is the first
-    /// retryable error of an item, whose Entry went back to `Partial`.
-    Answered { retry: Option<String> },
-    /// The whole call failed with a retryable error; its Entries stay `Partial`.
+    /// The transport answered for every item; each Entry has its state. `retry_later` is the
+    /// first error of a file that went back to `Partial`, to be sent again once the rest is.
+    Answered { retry_later: Option<String> },
+    /// The whole call failed with a retryable error, or every file failed and the destination
+    /// doesn't answer; its Entries stay `Partial` and no file's retries are used up.
     Retry(String),
     /// The destination is full: the files it refused for that went back to `Partial`, the
     /// others have their outcome.
@@ -86,6 +89,8 @@ pub(crate) struct Batch<'a> {
     /// The Job's Sources, by `ManifestEntry::entry.source`.
     pub sources: &'a [PathBuf],
     pub concurrency: usize,
+    /// Failed sends of one file before it is given up on, while the destination answers.
+    pub max_retries: u32,
     /// The whole Stage's files and bytes, for progress.
     pub files_total: u64,
     pub bytes_total: u64,
@@ -139,7 +144,7 @@ impl Batch<'_> {
             .record_transfer_states(self.job_id, std::mem::take(&mut updates))
             .await?;
         if items.is_empty() {
-            return Ok(Sent::Answered { retry: None });
+            return Ok(Sent::Answered { retry_later: None });
         }
         let used: Vec<u32> = kept.iter().map(|e| e.entry.source).collect();
         if let Some(why) = self.gone_sources(&used).await.into_values().next() {
@@ -212,7 +217,7 @@ impl Batch<'_> {
         let gone = self.gone_sources(&failed_from).await;
         self.explain_failures(&kept, &mut items, &gone).await;
 
-        let mut retry = None;
+        let mut failures = Vec::new();
         let mut full = None;
         let mut source_gone = None;
         let mut any_done = false;
@@ -248,13 +253,7 @@ impl Batch<'_> {
                     });
                     tally.failed += 1;
                     tally.first_error.get_or_insert_with(|| err.message.clone());
-                    let state = if err.is_retryable() {
-                        retry.get_or_insert_with(|| err.message.clone());
-                        EntryState::Partial
-                    } else {
-                        EntryState::Failed
-                    };
-                    updates.push((e.entry.idx, state, Some(err.message)));
+                    failures.push((e.entry.idx, err.message));
                 }
             }
         }
@@ -264,11 +263,45 @@ impl Batch<'_> {
         if any_done {
             self.store.set_job_retry(self.job_id, 0, None).await?;
         }
+        let mut retry_later = None;
+        if !failures.is_empty() {
+            // A full destination answered; otherwise, with no file through, ask whether it
+            // answers at all before blaming the files.
+            if !any_done && full.is_none() && !self.answers().await {
+                let first = failures[0].1.clone();
+                self.store
+                    .record_transfer_states(
+                        self.job_id,
+                        failures
+                            .into_iter()
+                            .map(|(idx, msg)| (idx, EntryState::Partial, Some(msg)))
+                            .collect(),
+                    )
+                    .await?;
+                return Ok(Sent::Retry(first));
+            }
+            let given_up = self
+                .store
+                .record_send_failures(self.job_id, failures.clone(), self.max_retries)
+                .await?;
+            retry_later = failures
+                .into_iter()
+                .find(|(idx, _)| !given_up.contains(idx))
+                .map(|(_, msg)| msg);
+        }
         Ok(match (full, source_gone) {
             (Some(e), _) => Sent::Full(e),
             (None, Some(e)) => Sent::SourceGone(e),
-            (None, None) => Sent::Answered { retry },
+            (None, None) => Sent::Answered { retry_later },
         })
+    }
+
+    /// Whether the destination answers at all, so a file that failed has itself to blame.
+    async fn answers(&self) -> bool {
+        matches!(
+            tokio::time::timeout(PREFLIGHT_TIMEOUT, self.transport.preflight(self.dest)).await,
+            Ok(Ok(_))
+        )
     }
 
     /// The Sources among `used` (indexes, repeats allowed) that can't be read now, with why.

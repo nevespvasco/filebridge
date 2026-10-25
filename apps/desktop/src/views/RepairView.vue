@@ -2,16 +2,17 @@
 // Repair destination (docs/04, "Repair destination"): names already at a destination go through
 // the same rules and decisions as a send, then are renamed there. Reads the folder, shows the
 // names by rule, and renames only after a confirmation that says exactly what happens.
-import { computed, onMounted, provide, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, provide, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import type { DecisionInput, RuleCount } from "@/bindings";
 import AppIcon from "@/components/AppIcon.vue";
+import BulkDecision from "@/components/BulkDecision.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import IssueGroup from "@/components/IssueGroup.vue";
 import { useFmt } from "@/composables/useFmt";
 import { api, errorMessage } from "@/lib/api";
-import { DECISIONS, type Decisions } from "@/lib/decisions";
+import { DECISIONS, bulkAcceptable, type Decisions } from "@/lib/decisions";
 import { useJobs } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
 
@@ -35,6 +36,13 @@ const confirming = ref(false);
 const starting = ref(false);
 
 const pending = computed(() => rules.value.reduce((n, r) => n + r.pending, 0));
+/** "Review one by one": every group opens; until then only those the button leaves out do. */
+const reviewing = ref(false);
+async function review() {
+  reviewing.value = true;
+  await nextTick();
+  document.querySelector<HTMLElement>(".issue-group.pending .group-head")?.focus();
+}
 /** Entries that will really change with the decisions as they are (not issues: a name can have
  *  several, and a kept or skipped one changes nothing). */
 const changes = ref(0);
@@ -158,8 +166,15 @@ async function rename() {
       </section>
       <template v-else>
         <p class="small muted">{{ $t("repair.howTo") }}</p>
+        <BulkDecision v-if="pending > 0" :rules="rules" @review="review" />
         <div class="groups">
-          <IssueGroup v-for="r in rules" :key="`${id}-${r.rule}`" :job-id="id" :rule="r" />
+          <IssueGroup
+            v-for="r in rules"
+            :key="`${id}-${r.rule}-${reviewing}`"
+            :job-id="id"
+            :rule="r"
+            :start-open="r.pending > 0 && (reviewing || !bulkAcceptable(r))"
+          />
         </div>
       </template>
     </template>

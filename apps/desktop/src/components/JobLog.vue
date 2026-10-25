@@ -2,6 +2,7 @@
 // A job's log as the service recorded it, readable after the window was closed
 // (docs/design/specs/D07-job-log-and-activity.md). Newest first, grouped by day; live events only
 // trigger a re-read, so the persisted log stays the one source.
+import { useToast } from "@/stores/toast";
 import { baseName } from "@/lib/format";
 import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -53,7 +54,7 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const hasOlder = ref(false);
 const onlyProblems = ref(false);
-const copied = ref(false);
+const toast = useToast();
 
 async function load() {
   loading.value = true;
@@ -242,8 +243,7 @@ async function copy() {
     .join("\n");
   try {
     await navigator.clipboard.writeText(text);
-    copied.value = true;
-    setTimeout(() => (copied.value = false), 3000);
+    toast.show(t("joblog.copied"));
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -259,7 +259,7 @@ async function copy() {
         <span>{{ $t("joblog.onlyProblems") }}</span>
       </label>
       <button class="btn btn-small" :disabled="!shown.length" @click="copy">
-        <AppIcon name="copy" /> {{ copied ? $t("joblog.copied") : $t("joblog.copy") }}
+        <AppIcon name="copy" /> {{ $t("joblog.copy") }}
       </button>
     </header>
     <p class="small muted">{{ $t("joblog.note") }}</p>
@@ -292,7 +292,7 @@ async function copy() {
 <style scoped>
 .job-log { display: grid; gap: 0.5rem; }
 .head { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-.head h2 { font-size: 1rem; margin: 0; flex: 1; }
+.head h2 { font-size: var(--fs-base); margin: 0; flex: 1; }
 .check { display: inline-flex; gap: 0.4rem; align-items: center; cursor: pointer; }
 .day h3 { margin: 0.75rem 0 0.25rem; font-weight: 600; text-transform: capitalize; }
 .lines { list-style: none; margin: 0; padding: 0; }

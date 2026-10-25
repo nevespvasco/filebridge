@@ -30,7 +30,10 @@ function measure() {
   const el = tourTarget(step);
   const r = el?.getBoundingClientRect();
   spot.value = r ? { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 } : null;
-  const view = { width: window.innerWidth, height: window.innerHeight };
+  // Below 760px the tab bar is fixed at the bottom (App.vue): the popover stays above it.
+  const places = document.querySelector<HTMLElement>(".places");
+  const bar = places && getComputedStyle(places).position === "fixed" ? places.getBoundingClientRect().top : 0;
+  const view = { width: window.innerWidth, height: bar > 0 ? bar : window.innerHeight };
   narrow.value = view.width < NARROW;
   const size = pop.value.getBoundingClientRect();
   const p = place(spot.value, { width: size.width, height: size.height }, view, step.placement);
@@ -164,8 +167,8 @@ const announce = computed(() =>
           <span class="count small muted num">{{ $t("tour.count", { n: tour.index + 1, total: tour.steps.length }) }}</span>
           <span class="dots" aria-hidden="true"><span v-for="(_, i) in tour.steps" :key="i" :class="{ on: i === tour.index }" /></span>
         </div>
-        <h2 id="tour-title">{{ $t(tour.step.title) }}</h2>
-        <p id="tour-body">{{ $t(tour.step.body) }}</p>
+        <h2 id="tour-title">{{ $t(tour.step.title, tour.step.params ?? {}) }}</h2>
+        <p id="tour-body">{{ $t(tour.step.body, tour.step.params ?? {}) }}</p>
         <label class="auto small muted"><input v-model="autoOff" type="checkbox" /> {{ $t("tour.dontShow") }}</label>
         <div class="actions">
           <button class="btn btn-small skip" type="button" @click="tour.skip()">{{ $t("tour.skip") }}</button>
@@ -176,7 +179,7 @@ const announce = computed(() =>
           </button>
         </div>
       </div>
-      <p class="sr-only" aria-live="polite">{{ $t("tour.announce", { step: announce, title: $t(tour.step.title) }) }}</p>
+      <p class="sr-only" aria-live="polite">{{ $t("tour.announce", { step: announce, title: $t(tour.step.title, tour.step.params ?? {}) }) }}</p>
     </div>
   </Teleport>
 </template>
@@ -207,8 +210,8 @@ const announce = computed(() =>
 .head { display: flex; align-items: center; gap: 0.6rem; }
 .dots { display: inline-flex; gap: 0.3rem; }
 .dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); }
-.dots span.on { background: var(--accent); width: 16px; border-radius: 3px; }
-h2 { margin: 0; font-size: 1.05rem; }
+.dots span.on { background: var(--accent); width: 16px; border-radius: var(--radius-xs); }
+h2 { margin: 0; font-size: var(--fs-lg); }
 p { margin: 0; color: var(--text-2); line-height: 1.45; }
 .auto { display: flex; gap: 0.4rem; align-items: center; cursor: pointer; }
 .actions { display: flex; gap: 0.4rem; align-items: center; }

@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useFmt } from "@/composables/useFmt";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppIcon from "@/components/AppIcon.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import GuidedTour from "@/components/GuidedTour.vue";
+import ToastHost from "@/components/ToastHost.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { commands } from "@/lib/api";
 import { isMock } from "@/lib/platform";
+import { modKey, SHORTCUT_PLACES } from "@/lib/shortcuts";
+import { useConfirm } from "@/stores/confirm";
 import { useConnection } from "@/stores/connection";
 import { needsYou, useJobs, RUNNING } from "@/stores/jobs";
 import { useProfiles } from "@/stores/profiles";
@@ -19,8 +23,12 @@ const jobs = useJobs();
 const profiles = useProfiles();
 const settings = useSettings();
 const reclaim = useReclaim();
+const confirm = useConfirm();
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
+/** A transfer's own page, or its repair, is still under Transfers: its tab stays lit. */
+const inTransfer = computed(() => route.name === "job" || route.name === "repair");
 const fmt = useFmt();
 
 onMounted(async () => {
@@ -97,8 +105,14 @@ const notice = computed(() => {
 /** Jobs waiting for the user (decisions, a failure, a long retry): the dot on Transfers. */
 const attention = computed(() => Object.values(jobs.byId).filter((j) => needsYou(j)).length);
 
-// Ctrl/⌘+N: new transfer; Ctrl/⌘+1…5: the sidebar's places (docs/design/02, "Keyboard").
-const PLACES = ["/", "/new", "/jobs", "/destinations", "/settings"];
+// Ctrl/⌘+N: new transfer; Ctrl/⌘+1…5: the sidebar's places (docs/design/02, "Keyboard"). The
+// same list is shown in each place's tooltip and in Settings › Keyboard.
+const PLACES = SHORTCUT_PLACES;
+/** "Home · Ctrl+1": a place's tooltip, with its shortcut. */
+function tip(tipKey: string, path: string) {
+  const n = PLACES.indexOf(path) + 1;
+  return `${t(tipKey)} · ${modKey}+${path === "/new" ? "N" : n}`;
+}
 function onKey(e: KeyboardEvent) {
   if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
   const target = e.target as HTMLElement | null;
@@ -117,25 +131,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   <div class="shell">
     <nav class="side" :aria-label="$t('nav.label')">
       <div class="brand"><img src="/icon.png" alt="" width="24" height="24" /> <span>filebridge</span></div>
-      <RouterLink to="/new" class="new-transfer" :title="$t('nav.tips.new')">
+      <RouterLink to="/new" class="new-transfer" :aria-label="$t('nav.new')" :title="tip('nav.tips.new', '/new')">
         <AppIcon name="send" :size="20" /><span class="label">{{ $t("nav.new") }}</span>
       </RouterLink>
       <div class="places">
-        <RouterLink to="/home" :title="$t('nav.tips.home')">
+        <RouterLink to="/home" :aria-label="$t('nav.home')" :title="tip('nav.tips.home', '/')">
           <AppIcon name="home" :size="20" /><span class="label">{{ $t("nav.home") }}</span>
         </RouterLink>
-        <RouterLink to="/jobs" :title="$t('nav.tips.jobs')">
+        <RouterLink to="/jobs" :class="{ 'router-link-active': inTransfer }" :aria-label="$t('nav.jobs')" :title="tip('nav.tips.jobs', '/jobs')">
           <AppIcon name="transfers" :size="20" /><span class="label">{{ $t("nav.jobs") }}</span>
           <span v-if="attention" class="attention" role="img" :aria-label="$t('nav.attention', { n: attention }, attention)" :title="$t('nav.attention', { n: attention }, attention)" />
           <span v-if="active" class="badge badge-accent num" :aria-label="$t('nav.active', { n: active }, active)">{{ active }}</span>
         </RouterLink>
-        <RouterLink to="/schedules" :title="$t('nav.tips.schedules')">
+        <RouterLink to="/schedules" :aria-label="$t('nav.schedules')" :title="$t('nav.tips.schedules')">
           <AppIcon name="schedule" :size="20" /><span class="label">{{ $t("nav.schedules") }}</span>
         </RouterLink>
-        <RouterLink to="/destinations" :title="$t('nav.tips.destinations')">
+        <RouterLink to="/destinations" :aria-label="$t('nav.destinations')" :title="tip('nav.tips.destinations', '/destinations')">
           <AppIcon name="destinations" :size="20" /><span class="label">{{ $t("nav.destinations") }}</span>
         </RouterLink>
-        <RouterLink to="/settings" :title="$t('nav.tips.settings')">
+        <RouterLink to="/settings" :aria-label="$t('nav.settings')" :title="tip('nav.tips.settings', '/settings')">
           <AppIcon name="settings" :size="20" /><span class="label">{{ $t("nav.settings") }}</span>
         </RouterLink>
       </div>
@@ -178,6 +192,17 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
       </RouterView>
     </main>
     <GuidedTour />
+    <ToastHost />
+    <ConfirmDialog
+      :open="!!confirm.request"
+      :title="confirm.request?.title ?? ''"
+      :consequences="confirm.request?.consequences ?? []"
+      :confirm-label="confirm.request?.confirmLabel ?? ''"
+      :cancel-label="confirm.request?.cancelLabel"
+      :danger="confirm.request?.danger"
+      @confirm="confirm.answer(true)"
+      @cancel="confirm.answer(false)"
+    />
   </div>
 </template>
 
@@ -196,13 +221,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   /* A short window (the minimum is 480px tall) scrolls the sidebar, never cuts it off. */
   overflow-y: auto;
 }
-.brand { display: flex; gap: 0.5rem; align-items: center; font-weight: 700; font-size: 1.1rem; padding: 0 0.5rem 1rem; }
+.brand { display: flex; gap: 0.5rem; align-items: center; font-weight: 700; font-size: var(--fs-lg); padding: 0 0.5rem 1rem; }
 .side a {
   display: flex;
   gap: 0.6rem;
   align-items: center;
   padding: 0.5rem 0.6rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   text-decoration: none;
 }
@@ -233,7 +258,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
   gap: 0.75rem;
   align-items: flex-start;
   padding: 0.75rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--danger-soft);
   border: 1px solid var(--danger);
   margin-bottom: 1rem;
@@ -304,7 +329,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKey));
      alone says it (with its tooltip); connecting or offline is a short badge next to it. */
   .conn-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .conn:not(.on) .dot { display: none; }
-  .conn-short { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-2); color: var(--text-2); }
+  .conn-short { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; padding: 0.15rem 0.55rem; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); }
   .conn-short::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
   .off .conn-short { background: var(--danger-soft); color: var(--danger); }
   .off .conn-short::before { background: var(--danger); }

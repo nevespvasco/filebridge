@@ -113,4 +113,4 @@ Enforce in CI (Phase 1): a `cargo deny`/`cargo-depgraph` check or a small script
 - Package names prefixed `filebridge-` (`filebridge-core`, …) to avoid collisions; folder names
   stay short.
 
-The name `filebridge` is provisional.
+The name `filebridge` is final ([ADR 0032](adr/0032-keep-the-name-filebridge.md)).

@@ -21,6 +21,8 @@ export const useHome = defineStore("home", () => {
   const totalJobs = ref(0);
   const loaded = ref(false);
   const failed = ref(false);
+  /** The service answered at least once: what is on screen is real, if maybe old. */
+  const answered = ref(false);
   /** Finished-with-warnings transfers opened since they finished (per window, not engine state). */
   const seen = ref<Set<string>>(readSeen());
 
@@ -55,6 +57,7 @@ export const useHome = defineStore("home", () => {
       recent.value = finished.items;
       totalJobs.value = all.total;
       failed.value = false;
+      answered.value = true;
     } catch {
       failed.value = true;
     } finally {
@@ -84,7 +87,9 @@ export const useHome = defineStore("home", () => {
     const ids = new Set(attention.value.map((j) => j.id));
     return [...attention.value.map(live), ...extra.filter((j) => !ids.has(j.id))];
   });
-  const sending = computed(() => active.value.map((j) => jobs.byId[j.id] ?? j).filter((j) => j.state !== "paused"));
+  /** Running and paused ones: a paused transfer stays in sight (with "Resume") until it ends. One
+   *  the engine paused with a reason is under Needs you instead. */
+  const sending = computed(() => active.value.map((j) => jobs.byId[j.id] ?? j).filter((j) => !needsYou(j)));
 
-  return { attention, active, recent, totalJobs, loaded, failed, needs, sending, load, reloadSoon, markSeen };
+  return { attention, active, recent, totalJobs, loaded, failed, answered, needs, sending, load, reloadSoon, markSeen };
 });

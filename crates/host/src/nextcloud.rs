@@ -186,7 +186,10 @@ async fn add_webdav(
     // A WebDAV address copied from Nextcloud names the user's id, which an email or LDAP
     // login is not.
     let user_id = address.user_id.filter(|id| *id != user);
-    if user.is_empty() || req.app_password.expose().is_empty() || req.name.trim().is_empty() {
+    // App passwords have no spaces; one copied with a stray space or newline is no longer an
+    // app password to Nextcloud, which then refuses it as an account password.
+    let app_password = req.app_password.expose().trim().to_owned();
+    if user.is_empty() || app_password.is_empty() || req.name.trim().is_empty() {
         return Err(err(
             "invalid",
             "a name, the user and an app password are needed",
@@ -209,8 +212,8 @@ async fn add_webdav(
     let id = uuid::Uuid::new_v4().to_string();
     let pass_ref = reference(&id, SecretKind::AppPassword);
     {
-        let (key, value) = (pass_ref.clone(), req.app_password);
-        filebridge_secrets::blocking(&secrets, move |s| s.set(&key, value.expose()))
+        let (key, value) = (pass_ref.clone(), app_password);
+        filebridge_secrets::blocking(&secrets, move |s| s.set(&key, &value))
             .await
             .map_err(|e| err("keyring", e.to_string()))?;
     }
@@ -237,21 +240,33 @@ async fn add_webdav(
     match transport.list(&files, None, true).await {
         Ok(_) => steps.push(step("sign-in", "ok", format!("signed in as {user}"))),
         Err(e) => {
-            let message = if e.kind == ErrorKind::Auth {
-                format!(
-                    "Nextcloud refused {user} with this app password ({})",
-                    e.message
-                )
-            } else if e.kind == ErrorKind::NotFound && user_id.is_none() {
-                format!(
-                    "Nextcloud has no files for {user} at {url}. If you sign in with an email \
+            let message =
+                if e.kind == ErrorKind::Auth && e.message.contains("PasswordLoginForbidden") {
+                    // Nextcloud answers this to anything that isn't one of the user's app
+                    // passwords when it forbids account passwords (two-factor sign-in or an admin
+                    // setting).
+                    format!(
+                        "Nextcloud takes only an app password here, not the password {user} signs \
+                     in with (always so with two-factor sign-in). Create one at \
+                     {server}/index.php/settings/user/security → Devices & sessions, signed in \
+                     as {user}, and paste it whole ({})",
+                        e.message
+                    )
+                } else if e.kind == ErrorKind::Auth {
+                    format!(
+                        "Nextcloud refused {user} with this app password ({})",
+                        e.message
+                    )
+                } else if e.kind == ErrorKind::NotFound && user_id.is_none() {
+                    format!(
+                        "Nextcloud has no files for {user} at {url}. If you sign in with an email \
                      address or a company account, paste the WebDAV address from Files → \
                      Settings instead of the server's ({})",
-                    e.message
-                )
-            } else {
-                format!("could not reach Nextcloud at {server}: {}", e.message)
-            };
+                        e.message
+                    )
+                } else {
+                    format!("could not reach Nextcloud at {server}: {}", e.message)
+                };
             steps.push(step("sign-in", "fail", message));
             forget().await;
             return Ok(DetectNextcloudResponse {

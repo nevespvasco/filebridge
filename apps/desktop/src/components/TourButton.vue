@@ -10,7 +10,7 @@ const guides = useTour();
 
 <template>
   <button class="tour-btn" type="button" :title="$t('tour.replay')" :aria-label="$t('tour.replay')" @click="guides.start(props.tour)">
-    <AppIcon name="help" :size="18" />
+    <AppIcon name="help" :size="22" />
   </button>
 </template>
 
@@ -24,7 +24,6 @@ const guides = useTour();
   height: 1.9rem;
   border-radius: 50%;
   color: var(--text-2);
-  border: 1px solid var(--border);
   cursor: pointer;
   vertical-align: middle;
 }

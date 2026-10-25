@@ -1,24 +1,23 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import JobProgress from "@/components/JobProgress.vue";
+import ReportDialog from "@/components/ReportDialog.vue";
+import ResultCard from "@/components/ResultCard.vue";
 import TransferQueue from "@/components/TransferQueue.vue";
-import DetailsPanel from "@/components/DetailsPanel.vue";
-import { useFmt } from "@/composables/useFmt";
-import { request } from "@/lib/requests";
 import { TERMINAL, useJobs } from "@/stores/jobs";
 import { useWizard } from "@/stores/wizard";
 
 const wizard = useWizard();
 const jobs = useJobs();
 const router = useRouter();
-const fmt = useFmt();
 
 const id = computed(() => wizard.jobId!);
 const job = computed(() => jobs.byId[id.value]);
 const live = computed(() => jobs.live[id.value]);
 const done = computed(() => !!job.value && TERMINAL.includes(job.value.state));
+const reportOpen = ref(false);
 
 function newTransfer() {
   wizard.reset();
@@ -33,19 +32,11 @@ function newTransfer() {
       <p>{{ $t("after.closeOk") }}</p>
     </div>
 
-    <div class="card"><JobProgress :job-id="id" /></div>
+    <ResultCard v-if="done" :job-id="id" @export-report="reportOpen = true" />
+    <div v-else class="card"><JobProgress :job-id="id" /></div>
     <div v-if="job && ['transferring', 'retrying', 'paused'].includes(job.state)" class="card queue-card"><TransferQueue :job-id="id" /></div>
 
-    <div v-if="done && job" class="card report">
-      <h3>{{ $t(`after.result.${job.state}`) }}</h3>
-      <div class="stats">
-        <div><span class="big">{{ fmt.count(job.counts.done) }}</span><span class="small muted">{{ $t("counts.done") }}</span></div>
-        <div><span class="big">{{ fmt.count(job.counts.failed) }}</span><span class="small muted">{{ $t("counts.failed") }}</span></div>
-        <div><span class="big">{{ fmt.count(job.counts.skipped) }}</span><span class="small muted">{{ $t("counts.skipped") }}</span></div>
-        <div v-if="job.options.verify"><span class="big">{{ fmt.count(job.counts.verified_ok) }}</span><span class="small muted">{{ $t("counts.verified") }}</span></div>
-        <div v-if="job.options.verify"><span class="big">{{ fmt.count(job.counts.mismatch) }}</span><span class="small muted">{{ $t("counts.mismatch") }}</span></div>
-      </div>
-      <p v-if="job.options.verify && job.counts.mismatch === 0 && job.state === 'completed'" class="ok-text small">{{ $t("after.verifiedAll") }}</p>
+    <div v-if="done && job && (live?.failures.length || live?.problems.length)" class="card report">
       <details v-if="live?.failures.length" class="list">
         <summary class="small warn-text">{{ $t("after.failures", { n: live.failures.length }, live.failures.length) }}</summary>
         <p class="small muted">{{ $t("after.failuresHint") }}</p>
@@ -60,8 +51,7 @@ function newTransfer() {
         </ul>
       </details>
     </div>
-
-    <DetailsPanel :lines="[request('job', { job_id: id })]" />
+    <ReportDialog :job-id="reportOpen ? id : null" @close="reportOpen = false" />
 
     <div class="footer">
       <button class="btn" :title="$t('after.openJobTip')" @click="router.push({ name: 'job', params: { id } })">{{ $t("after.openJob") }}</button>
@@ -74,10 +64,6 @@ function newTransfer() {
 <style scoped>
 .queue-card { margin-top: 1rem; }
 .report { margin-top: 1rem; }
-.report h3 { margin-top: 0; }
-.stats { display: flex; gap: 2rem; flex-wrap: wrap; }
-.stats > div { display: grid; }
-.big { font-size: 1.4rem; font-weight: 600; }
-.list { margin-top: 0.75rem; }
+.list + .list { margin-top: 0.75rem; }
 .list ul { max-height: 14rem; overflow: auto; }
 </style>

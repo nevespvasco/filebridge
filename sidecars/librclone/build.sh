@@ -45,9 +45,15 @@ case "${1:-}" in
     build "$root/sidecars/bin/librclone/host/librclone.so"
     ;;
   android)
-    ndk="${ANDROID_NDK_HOME:-${NDK_HOME:-$(ls -d "$HOME"/Android/Sdk/ndk/* 2>/dev/null | sort -V | tail -1)}}"
+    # Android Studio's default SDK folder: ~/Android/Sdk on Linux, ~/Library/Android/sdk on macOS.
+    ndk="${ANDROID_NDK_HOME:-${NDK_HOME:-$(ls -d "$HOME"/Android/Sdk/ndk/* "$HOME"/Library/Android/sdk/ndk/* 2>/dev/null | sort -V | tail -1)}}"
     [[ -d "$ndk" ]] || { echo "Android NDK not found; set ANDROID_NDK_HOME" >&2; exit 1; }
-    cc="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
+    # The NDK ships one prebuilt toolchain per host; macOS's is a universal binary named x86_64.
+    case "$(uname -s)" in
+      Darwin) host_tag=darwin-x86_64 ;;
+      *) host_tag=linux-x86_64 ;;
+    esac
+    cc="$ndk/toolchains/llvm/prebuilt/$host_tag/bin"
     # ABI dir, GOARCH, clang target
     for t in "arm64-v8a arm64 aarch64-linux-android" "x86_64 amd64 x86_64-linux-android"; do
       read -r abi arch triple <<<"$t"

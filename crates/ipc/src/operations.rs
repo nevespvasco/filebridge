@@ -72,7 +72,12 @@ macro_rules! for_each_operation {
             /// Waiting, Paused): Skipped at once, never sent by a resume, stopping the batch
             /// that is sending it. Shown skipped in the Files tab and the report.
             SkipEntry skip_entry(job_id: String, idx: u64) -> ();
-            /// A page of the jobs matching `filter`, with how many match in all.
+            /// Cancels an unsent job (Draft, AwaitingApproval, Ready) the New-transfer wizard
+            /// replaced, and hides it from the Transfers list and Activity; `job` still finds it
+            /// (ADR 0030).
+            DiscardDraft discard_draft(job_id: String) -> ();
+            /// A page of the jobs matching `filter`, with how many match in all and per group.
+            /// Discarded drafts are left out.
             ListJobs list_jobs(filter: $crate::JobFilter, limit: u32, offset: u32) -> $crate::JobPage;
             /// Names a job (any state); a blank name clears it.
             SetLabel set_label(job_id: String, label: Option<String>) -> ();
@@ -141,6 +146,9 @@ macro_rules! for_each_operation {
             FolderSizes folder_sizes(scan_id: String, path: String) -> $crate::FolderSizes;
             /// Stops a `folder_sizes` measurement; nothing happens if it already ended.
             CancelFolderSizes cancel_folder_sizes(scan_id: String) -> ();
+            /// The file system of a local folder (or of its nearest existing parent) on the
+            /// service's machine, and the name rules it needs. Writes nothing.
+            ProbeLocalTarget probe_local_target(path: String) -> $crate::LocalTargetProbe;
             /// One page of a job's files, filtered and sorted (at most 500).
             Entries entries(job_id: String, filter: $crate::EntryFilter, after: Option<$crate::EntryCursor>, limit: u32) -> $crate::EntryPage;
             /// Counts for the Files tab's filter chips, over the whole job.

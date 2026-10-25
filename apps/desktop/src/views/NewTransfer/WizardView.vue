@@ -2,7 +2,7 @@
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { useWizard, type Step } from "@/stores/wizard";
+import { SEND_STEPS, useWizard, type Step } from "@/stores/wizard";
 import StepSource from "./StepSource.vue";
 import StepDestination from "./StepDestination.vue";
 import StepAnalysis from "./StepAnalysis.vue";
@@ -12,8 +12,11 @@ import StepAfter from "./StepAfter.vue";
 const wizard = useWizard();
 const { t } = useI18n();
 
+/** The four steps; the result (5) joins them once the transfer is sent. */
 const steps = computed(() =>
-  ([1, 2, 3, 4, 5] as Step[]).map((n) => ({ n, label: t(`wizard.steps.${n}`), tip: t(`wizard.stepTips.${n}`) })),
+  ([1, 2, 3, 4, 5] as Step[])
+    .filter((n) => n <= SEND_STEPS || wizard.step === n)
+    .map((n) => ({ n, label: t(`wizard.steps.${n}`), tip: t(`wizard.stepTips.${n}`) })),
 );
 
 /** Earlier steps can be revisited until the job is sent; after that only step 5 remains. */
@@ -42,11 +45,8 @@ function go(n: Step) {
 <template>
   <div class="wizard">
     <header class="page-head">
-      <div>
-        <h1>{{ $t("wizard.title") }}</h1>
-        <p class="lead-text">{{ $t("wizard.subtitle") }}</p>
-      </div>
-      <span v-if="wizard.step < 5" class="badge badge-accent">{{ $t("wizard.stepOf", { n: wizard.step, total: 4 }) }}</span>
+      <h1>{{ $t("wizard.title") }}</h1>
+      <span v-if="wizard.step < 5" class="badge badge-accent">{{ $t("wizard.stepOf", { n: wizard.step, total: SEND_STEPS }) }}</span>
     </header>
     <ol class="stepper" data-tour="wizard-stepper">
       <li v-for="s in steps" :key="s.n" :class="{ current: wizard.step === s.n, done: s.n < wizard.step }">
@@ -83,10 +83,9 @@ function go(n: Step) {
 .stepper button:focus-visible { outline: 2px solid var(--accent); }
 .stepper .current button { border-color: var(--accent); color: var(--text); font-weight: 600; }
 .stepper .done button { border-color: var(--ok); }
-.num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--surface-2); font-size: 0.85rem; flex: none; }
+.num { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--surface-2); font-size: var(--fs-sm); flex: none; }
 .current .num { background: var(--accent); color: var(--on-accent); }
 .done .num { background: var(--ok); color: var(--on-accent); }
-.page-head .lead-text { margin-bottom: 0; }
 .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Not enough room for five labels: every step keeps its number, only the current one its label
    (the others keep theirs for screen readers). */

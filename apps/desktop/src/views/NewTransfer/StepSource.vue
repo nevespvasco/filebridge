@@ -130,7 +130,10 @@ const summary = computed(() => {
     parts.push(kinds.join(", "));
   }
   if (files) parts.push(t("source.summarySize", { size: fmt.bytes(bytes) }));
-  return parts.join(" · ");
+  // A narrow footer has room for one short line: "1 file · 316 KB" (the count goes once kinds are known).
+  const short = known.length ? parts.slice(1) : parts;
+  if (files) short[short.length - 1] = fmt.bytes(bytes);
+  return { long: parts.join(" · "), short: short.join(" · ") };
 });
 const blocked = computed(() => wizard.sourceBlockers.length);
 </script>
@@ -172,17 +175,15 @@ const blocked = computed(() => wizard.sourceBlockers.length);
     <RecentSources v-if="recentShown.length" class="recent" data-tour="source-recent" :items="recentShown" @add="(p) => wizard.addSources([p])" />
 
     <div class="footer sticky" data-tour="source-next">
-      <span class="summary small" aria-live="polite">
-        <template v-if="has">{{ summary }}</template>
-        <template v-else>{{ $t("source.nothingYet") }}</template>
+      <span class="summary small" :class="{ 'has-hint': blocked, 'has-undo': undo }" :title="has ? summary.long : undefined" aria-live="polite">
+        <template v-if="has"><span class="long">{{ summary.long }}</span><span class="short" aria-hidden="true">{{ summary.short }}</span></template>
       </span>
       <span v-if="undo" class="undo small" role="status">
         {{ $t("source.removed", { what: undo.label }) }}
         <button class="btn btn-small" type="button" @click="restore"><AppIcon name="undo" /> {{ $t("source.undo") }}</button>
       </span>
       <span class="grow" />
-      <span v-if="!has" class="why-disabled">{{ $t("source.needOne") }}</span>
-      <span v-else-if="blocked" class="why-disabled warn-text">{{ $t("source.blocked", { n: blocked }, blocked) }}</span>
+      <span v-if="blocked" class="why-disabled warn-text" :class="{ 'has-undo': undo }">{{ $t("source.blocked", { n: blocked }, blocked) }}</span>
       <button class="btn btn-primary" :disabled="!wizard.canLeaveSource" @click="wizard.step = 2">{{ $t("common.next") }} <AppIcon name="next" /></button>
     </div>
 
@@ -199,15 +200,14 @@ const blocked = computed(() => wizard.sourceBlockers.length);
 .chosen-head { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
 .chosen > p { margin: 0.5rem 0 0; }
 .grow { flex: 1; }
-.sticky {
-  position: sticky;
-  bottom: var(--nav-bottom);
-  z-index: 5;
-  margin-top: 0.5rem;
-  padding: 0.75rem 0;
-  background: var(--bg);
-  box-shadow: 0 -10px 12px -10px rgb(0 0 0 / 0.12);
-}
 .summary { color: var(--text-2); }
+.summary .short { display: none; }
 .undo { display: inline-flex; gap: 0.5rem; align-items: center; padding-left: 0.75rem; border-left: 1px solid var(--border); }
+/* One row on a phone: the short summary, or the reason Next waits, or the undo while it lasts. */
+@media (max-width: 559px) {
+  .summary .long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .summary .short { display: inline; }
+  .footer > .summary.has-hint, .footer > .has-undo.has-undo { display: none; }
+  .footer > .undo.undo { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; padding-left: 0; border-left: 0; -webkit-line-clamp: none; line-clamp: none; }
+}
 </style>

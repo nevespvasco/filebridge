@@ -104,7 +104,7 @@ The Nextcloud profile wizard detects the setup by itself:
    On the SSH host itself the owner is the web user's own uid:gid (e.g. `33:33`).
 6. **Save everything in a reusable profile** (`profiles` table; secrets as keyring references).
 
-Each step shows ✓/✗ with the command it ran in the "Details" panel and an actionable message on
+Each step shows ✓/✗ and an actionable message on
 failure. When the host has no `pct`, the "Containers" step says so and the steps for Nextcloud on
 the host follow it, so the panel shows which setup was found.
 

@@ -32,7 +32,7 @@ acceptance checklist for v1.
 | Problem in the manual migration | Feature in the app | Where it's specified |
 |---|---|---|
 | SSH dropped or the terminal closed mid-31 h | Jobs managed by a background service, with automatic resume | [07](07-security-reliability.md#reliability) |
-| `tmux` not installed; long, fragile commands | No terminal; everything through the UI ("Details" panel shows equivalent commands) | [06](06-interface.md) |
+| `tmux` not installed; long, fragile commands | No terminal; everything through the UI | [06](06-interface.md) |
 | Password asked on every reconnect | Credentials stored in the OS keyring | [07](07-security-reliability.md#security), [ADR 0004](adr/0004-os-keyring-secrets.md) |
 | Names with decomposed accents (NFD) rejected by Nextcloud | Pre-send analysis and automatic NFC correction | [04](04-name-correction.md) |
 | Broken names (`PatolÃ³gica`) | Mojibake detection with a suggested correct name | [04](04-name-correction.md) |

@@ -337,6 +337,43 @@ impl Store {
         .await
     }
 
+    /// Records one failed send of each `(idx, error)`: the entry goes back to `Partial` to be
+    /// sent again, or to `Failed` once it has failed more than `max_retries` times; a file
+    /// skipped meanwhile stays skipped. Returns the idx of the entries given up on.
+    pub async fn record_send_failures(
+        &self,
+        job_id: &str,
+        failures: Vec<(u64, String)>,
+        max_retries: u32,
+    ) -> Result<Vec<u64>> {
+        let job_id = job_id.to_owned();
+        self.call(move |c| {
+            let tx = c.transaction()?;
+            let mut given_up = Vec::new();
+            {
+                let mut stmt = tx.prepare_cached(
+                    "UPDATE manifest_entries SET send_failures = send_failures + 1, error = ?3,
+                         transfer_state = CASE WHEN send_failures + 1 > ?4
+                                               THEN 'failed' ELSE 'partial' END
+                     WHERE job_id = ?1 AND idx = ?2 AND transfer_state != 'skipped'",
+                )?;
+                let mut state = tx.prepare_cached(
+                    "SELECT transfer_state FROM manifest_entries WHERE job_id = ?1 AND idx = ?2",
+                )?;
+                for (idx, error) in &failures {
+                    stmt.execute(params![job_id, idx, error, max_retries])?;
+                    let s: String = state.query_row(params![job_id, idx], |r| r.get(0))?;
+                    if s == EntryState::Failed.as_str() {
+                        given_up.push(*idx);
+                    }
+                }
+            }
+            tx.commit()?;
+            Ok(given_up)
+        })
+        .await
+    }
+
     /// Moves every entry in one of `from` back to `to` (e.g. partial/failed → pending on
     /// resume, or mismatch → pending to resend only those). Returns how many changed.
     pub async fn reset_transfer_states(
@@ -1251,6 +1288,38 @@ mod tests {
         );
         let c = store.manifest_counts(&job).await.unwrap();
         assert_eq!((c.skipped, c.bytes_skipped), (2, 30));
+    }
+
+    #[tokio::test]
+    async fn a_file_is_given_up_on_after_its_retries() {
+        let (store, job) = store_with_job().await;
+        store
+            .insert_entries(&job, vec![file(0, b"a", 1), file(1, b"b", 1)])
+            .await
+            .unwrap();
+        for _ in 0..3 {
+            let given_up = store
+                .record_send_failures(&job, vec![(0, "denied".into())], 3)
+                .await
+                .unwrap();
+            assert!(given_up.is_empty());
+            assert_eq!(
+                store.get_entry(&job, 0).await.unwrap().transfer_state,
+                EntryState::Partial
+            );
+        }
+        let given_up = store
+            .record_send_failures(&job, vec![(0, "denied".into()), (1, "timeout".into())], 3)
+            .await
+            .unwrap();
+        assert_eq!(given_up, vec![0]);
+        let e = store.get_entry(&job, 0).await.unwrap();
+        assert_eq!(e.transfer_state, EntryState::Failed);
+        assert_eq!(e.error.as_deref(), Some("denied"));
+        assert_eq!(
+            store.get_entry(&job, 1).await.unwrap().transfer_state,
+            EntryState::Partial
+        );
     }
 
     #[tokio::test]

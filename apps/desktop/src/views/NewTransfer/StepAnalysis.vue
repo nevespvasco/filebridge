@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import AppIcon from "@/components/AppIcon.vue";
-import { computed, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import TourButton from "@/components/TourButton.vue";
+import { useTour } from "@/stores/tour";
+import BulkDecision from "@/components/BulkDecision.vue";
 import IssueGroup from "@/components/IssueGroup.vue";
+import NoticeBox from "@/components/NoticeBox.vue";
 import PreflightList from "@/components/PreflightList.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import TransferComposition from "@/components/TransferComposition.vue";
 import { useProfiles } from "@/stores/profiles";
-import DetailsPanel from "@/components/DetailsPanel.vue";
 import HelpTip from "@/components/HelpTip.vue";
 import { useFmt } from "@/composables/useFmt";
-import { request } from "@/lib/requests";
+import { bulkAcceptable } from "@/lib/decisions";
+import { api } from "@/lib/api";
+import { useRouter } from "vue-router";
 import { useJobs } from "@/stores/jobs";
 import { useWizard } from "@/stores/wizard";
 
@@ -28,6 +33,46 @@ watch(
   { immediate: true },
 );
 
+// Garbled names at the source, and transfers already made to this destination: those may have
+// left names like these there. Repair destination fixes them in place (docs/04).
+const router = useRouter();
+const repairHint = ref(false);
+watch(
+  () => [wizard.profileId, wizard.ruleCounts.some((r) => r.rule === "mojibake" && r.total > 0)] as const,
+  async ([id, garbled]) => {
+    repairHint.value = false;
+    if (!id || !garbled) return;
+    try {
+      const used = await api.listJobs({ query: null, groups: ["finished"], profile_id: id, reclaimable: false, sort: "newest" }, 1, 0);
+      repairHint.value = used.total > 0;
+    } catch {
+      // No hint.
+    }
+  },
+  { immediate: true },
+);
+
+// The guide starts by itself once, when there is an analysis to point at.
+const tour = useTour();
+watch(
+  () => !!wizard.jobId && !wizard.analysing && !wizard.analyseError,
+  async (ready) => {
+    if (!ready) return;
+    await nextTick();
+    tour.maybeStart("analysis");
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => tour.stop("analysis"));
+
+/** "Review one by one": every group opens; until then only those the button leaves out do. */
+const reviewing = ref(false);
+async function review() {
+  reviewing.value = true;
+  await nextTick();
+  document.querySelector<HTMLElement>(".issue-group.pending .group-head")?.focus();
+}
+
 const scan = computed(() => (wizard.jobId ? jobs.live[wizard.jobId]?.scan : undefined));
 const job = computed(() => (wizard.jobId ? jobs.byId[wizard.jobId] : undefined));
 const a = computed(() => wizard.analysis);
@@ -35,21 +80,14 @@ const a = computed(() => wizard.analysis);
 const totals = computed(() => a.value ?? (job.value ? { files: job.value.counts.files, dirs: job.value.counts.dirs, bytes: job.value.counts.bytes } : null));
 const free = computed(() => a.value?.preflight.find((p) => p.source === "transport")?.free_bytes ?? null);
 const tooBig = computed(() => free.value != null && a.value != null && a.value.bytes > free.value);
-
-const details = computed(() => {
-  if (!wizard.jobId) return [];
-  const id = wizard.jobId;
-  return [
-    request("create_job", { sources: wizard.sources, profile_id: wizard.profileId, options: wizard.jobOptions }),
-    request("analyse", { job_id: id }),
-    ...wizard.ruleCounts.map((r) => request("issues", { job_id: id, rule: r.rule, after_id: null, limit: 101 })),
-  ];
-});
 </script>
 
 <template>
   <div class="step">
-    <h2>{{ $t("analysis.title") }}</h2>
+    <div class="title-row">
+      <h2>{{ $t("analysis.title") }}</h2>
+      <TourButton tour="analysis" />
+    </div>
     <p class="lead-text">{{ $t("analysis.intro") }}</p>
 
     <div v-if="wizard.analysing" class="card counting" aria-live="polite">
@@ -69,23 +107,13 @@ const details = computed(() => {
     </div>
 
     <template v-else-if="wizard.jobId">
-      <div v-if="wizard.pending > 0" class="guide warn" role="status">
-        <AppIcon class="guide-icon" name="hand" :size="20" />
-        <div>
-          <p><strong>{{ $t("analysis.guidePendingTitle", { n: fmt.count(wizard.pending) }, wizard.pending) }}</strong></p>
-          <p class="small">{{ $t("analysis.guidePending") }}</p>
-        </div>
-      </div>
-      <div v-else-if="tooBig" class="guide warn" role="status">
-        <AppIcon class="guide-icon" name="warning" :size="20" />
-        <p>{{ $t("analysis.tooBigHint") }}</p>
-      </div>
-      <div v-else class="guide ok" role="status">
-        <AppIcon class="guide-icon" name="checkCircle" :size="20" />
+      <BulkDecision v-if="wizard.pending > 0" data-tour="analysis-decide" :rules="wizard.ruleCounts" @review="review" />
+      <NoticeBox v-else-if="tooBig" tone="warn" icon="warning" role="status"><p>{{ $t("analysis.tooBigHint") }}</p></NoticeBox>
+      <NoticeBox v-else tone="ok" icon="checkCircle" role="status">
         <p>{{ wizard.ruleCounts.length ? $t("analysis.guideFixed") : $t("analysis.guideOk") }}</p>
-      </div>
+      </NoticeBox>
 
-      <div class="card summary">
+      <div class="card summary" data-tour="analysis-summary">
         <div class="stats">
           <div><span class="big">{{ fmt.count(totals?.files) }}</span><span class="small muted">{{ $t("analysis.files") }}</span></div>
           <div><span class="big">{{ fmt.count(totals?.dirs) }}</span><span class="small muted">{{ $t("analysis.dirs") }}</span></div>
@@ -118,7 +146,7 @@ const details = computed(() => {
         :destination="destinationName"
       />
 
-      <h3>{{ $t("analysis.names") }}<HelpTip :text="$t('analysis.namesHelp')" :example="$t('analysis.namesExample')" :label="$t('analysis.names')" /></h3>
+      <h3 data-tour="analysis-names">{{ $t("analysis.names") }}<HelpTip :text="$t('analysis.namesHelp')" :example="$t('analysis.namesExample')" :label="$t('analysis.names')" /></h3>
       <details v-if="wizard.ruleCounts.length" class="legend card" :open="wizard.pending > 0">
         <summary class="small"><strong>{{ $t("analysis.legendTitle") }}</strong></summary>
         <dl class="small">
@@ -129,14 +157,22 @@ const details = computed(() => {
         </dl>
       </details>
       <p v-if="!wizard.ruleCounts.length" class="card ok-text"><AppIcon name="check" /> {{ $t("analysis.noIssues") }}</p>
+      <NoticeBox v-if="repairHint" icon="renamed" class="repair-hint">
+        <p>{{ $t("analysis.repairHint", { destination: destinationName ?? "" }) }}</p>
+        <div><button class="btn btn-small" @click="router.push({ name: 'destinations' })">{{ $t("repair.button") }}</button></div>
+      </NoticeBox>
       <div class="groups">
-        <IssueGroup v-for="r in wizard.ruleCounts" :key="`${wizard.jobId}-${r.rule}`" :job-id="wizard.jobId" :rule="r" />
+        <IssueGroup
+          v-for="r in wizard.ruleCounts"
+          :key="`${wizard.jobId}-${r.rule}-${reviewing}`"
+          :job-id="wizard.jobId"
+          :rule="r"
+          :start-open="r.pending > 0 && (reviewing || !bulkAcceptable(r))"
+        />
       </div>
     </template>
 
-    <DetailsPanel :lines="details" />
-
-    <div class="footer">
+    <div class="footer sticky" data-tour="analysis-next">
       <button class="btn" :disabled="wizard.analysing" @click="wizard.step = 2"><AppIcon name="back" /> {{ $t("common.back") }}</button>
       <span class="grow" />
       <span v-if="wizard.analysing" class="why-disabled">{{ $t("analysis.waitHint") }}</span>
@@ -147,11 +183,13 @@ const details = computed(() => {
 </template>
 
 <style scoped>
+.title-row { display: flex; gap: var(--sp-2); align-items: center; }
+.title-row h2 { margin: 0; }
 .counting { display: grid; gap: 0.5rem; }
-.total { font-size: 1.4rem; font-weight: 600; margin: 0; }
+.total { font-size: var(--fs-xl); font-weight: 600; margin: 0; }
 .stats { display: flex; gap: 2rem; flex-wrap: wrap; }
 .stats > div { display: grid; }
-.big { font-size: 1.4rem; font-weight: 600; }
+.big { font-size: var(--fs-xl); font-weight: 600; }
 .scan-errors, .pre { margin-top: 0.75rem; }
 .scan-errors ul { max-height: 12rem; overflow: auto; }
 h3 { margin: 1.5rem 0 0.5rem; display: flex; align-items: center; }

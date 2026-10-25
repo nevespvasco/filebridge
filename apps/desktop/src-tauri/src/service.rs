@@ -245,14 +245,21 @@ struct Starter<'a> {
 impl Starter<'_> {
     async fn connect_or_start(&self) -> Result<Client, ErrorBody> {
         let endpoint = self.endpoint;
-        let Ok(client) = Client::connect(endpoint).await else {
-            let bin = (self.find_binary)().ok_or_else(|| {
-                unavailable(format!(
-                    "{SERVICE_BIN} is not running and was not found next to the app or on PATH"
-                ))
-            })?;
-            let (client, pong) = self.start(&bin, &Launch::default()).await?;
-            return check_protocol(client, &pong, self.protocol);
+        let client = match Client::connect(endpoint).await {
+            Ok(client) => client,
+            // Another user's process holds the name: starting ours wouldn't take it back.
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Err(unavailable(format!("{}: {e}", endpoint.display())));
+            }
+            Err(_) => {
+                let bin = (self.find_binary)().ok_or_else(|| {
+                    unavailable(format!(
+                        "{SERVICE_BIN} is not running and was not found next to the app or on PATH"
+                    ))
+                })?;
+                let (client, pong) = self.start(&bin, &Launch::default()).await?;
+                return check_protocol(client, &pong, self.protocol);
+            }
         };
         let pong = client.ping().await?;
         if pong.protocol >= self.protocol {
@@ -352,7 +359,10 @@ impl Starter<'_> {
                     let pong = client.ping().await?;
                     return Ok((client, pong));
                 }
-                Err(e) if Instant::now() >= deadline => {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::PermissionDenied
+                        || Instant::now() >= deadline =>
+                {
                     return Err(unavailable(format!(
                         "{what} did not answer on {} within {} s: {e}",
                         endpoint.display(),
@@ -399,6 +409,7 @@ const SERVICE_VARS: [&str; 5] = [
 ];
 
 /// The systemd user unit `filebridge-service install-user-unit` writes.
+#[cfg(any(target_os = "linux", test))]
 const UNIT_NAME: &str = "filebridge-service.service";
 
 /// How the old service was started, so that its replacement is started the same way.
@@ -414,8 +425,9 @@ enum Started {
 
 /// How the old service was started, from its `/proc/PID/cmdline`, `environ` and `cgroup`
 /// (Linux), so that its replacement uses the same data folder, rclone and socket. Refused
-/// when it has arguments this app doesn't know how to pass on.
-#[cfg(unix)]
+/// when it has arguments this app doesn't know how to pass on. Only Linux has `/proc`; the tests
+/// run it on every Unix.
+#[cfg(all(unix, any(target_os = "linux", test)))]
 fn launch_from(cmdline: &[u8], environ: &[u8], cgroup: &str) -> Result<Started, String> {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
@@ -729,6 +741,7 @@ mod tests {
     }
 
     /// The pid of the process listening on `endpoint`.
+    #[cfg(target_os = "linux")]
     async fn peer(endpoint: &Endpoint) -> i32 {
         let Endpoint::Path(path) = endpoint else {
             unreachable!()
@@ -737,6 +750,9 @@ mod tests {
         stream.peer_cred().unwrap().pid().unwrap()
     }
 
+    // The test's service has arguments, which only Linux can pass on to a replacement
+    // (`launch_of`); elsewhere it is left running and this would wait for it forever.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn an_older_service_is_stopped_and_its_launch_kept() {
         let Some(bin) = service_binary() else {
@@ -825,6 +841,9 @@ mod tests {
         child.wait().unwrap();
     }
 
+    // The test's service has arguments, which only Linux can pass on to a replacement
+    // (`launch_of`); elsewhere it is left running and this would wait for it forever.
+    #[cfg(target_os = "linux")]
     #[tokio::test]
     async fn a_replacement_just_as_old_is_not_replaced_again() {
         let Some(bin) = service_binary() else {

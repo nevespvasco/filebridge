@@ -5,8 +5,10 @@ interface, seam, adapter) are used in their usual sense.
 
 **Job**: one send, from the sources the user picked to a Profile's destination. Goes through the
 Stages and the Job lifecycle's states; everything about it is persisted in SQLite.
-Shown to the user as a **Transfer** (pt: *Transferência*). Never called an "upload": filebridge
-owns no store to upload to.
+Shown to the user as a **Transfer** (pt: *Envio*), and only that: not "send" or "job" as a noun
+in English, not "transferência" or "tarefa" in Portuguese ([ADR 0031](docs/adr/0031-one-word-for-a-transfer.md)).
+The verb stays "send" / "enviar". Never called an "upload": filebridge owns no store to upload
+to.
 
 **Source**: a file or folder the user picked for a Job. filebridge only reads it; nothing at a
 Source is ever moved, renamed or deleted.

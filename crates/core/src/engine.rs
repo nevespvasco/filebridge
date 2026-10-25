@@ -41,6 +41,9 @@ pub struct EngineOptions {
     pub inhibit_sleep: bool,
     /// Verify → resend rounds before giving up on mismatches.
     pub max_verify_rounds: u32,
+    /// Retries of a file that fails while the destination answers, before it is given up on
+    /// (ADR 0033).
+    pub max_file_retries: u32,
     /// The local time the send window is checked against.
     pub local_clock: LocalClock,
     /// How often a transfer measures the destination's free space (docs/design/specs/D03).
@@ -56,6 +59,7 @@ impl Default for EngineOptions {
             batch_size: 500,
             inhibit_sleep: true,
             max_verify_rounds: 3,
+            max_file_retries: 3,
             local_clock: LocalClock::default(),
             space_check_every: Duration::from_secs(120),
             wall_clock: WallClock::default(),
@@ -633,6 +637,7 @@ impl Engine {
             label: row.label,
             again_of: row.again_of,
             schedule_id: row.schedule_id,
+            discarded: row.discarded_at.is_some(),
         })
     }
 
@@ -1214,6 +1219,18 @@ impl Engine {
         self.stop_runner(job_id).await;
         let mut job = self.begin(job_id, Op::Cancel).await?;
         job.go(JobState::Cancelled, None).await
+    }
+
+    /// Cancels a job never sent (Draft, AwaitingApproval, Ready) that the New-transfer wizard
+    /// replaced with another, and marks it discarded: the Transfers list and Activity leave it
+    /// out, `job` still finds it, nothing is deleted (ADR 0030).
+    pub async fn discard_draft(&self, job_id: &str) -> Result<()> {
+        let mut job = self.begin(job_id, Op::DiscardDraft).await?;
+        let discarded = crate::lifecycle::Outcome {
+            discarded: true,
+            ..Default::default()
+        };
+        job.go_with(JobState::Cancelled, None, discarded).await
     }
 
     /// On startup: restarts every job that was running when the app stopped. Returns their ids.

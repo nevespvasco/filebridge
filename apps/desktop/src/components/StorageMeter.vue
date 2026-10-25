@@ -64,12 +64,12 @@ const pct = (b: number) => (b / whole.value) * 100;
 
 <style scoped>
 .meter { margin: 0; display: grid; gap: 0.5rem; }
-.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--track); }
+.bar { display: flex; height: 12px; border-radius: var(--radius-sm); overflow: hidden; background: var(--track); }
 .bar.overflow { box-shadow: inset -4px 0 0 var(--danger); }
 .seg { height: 100%; transition: width 0.3s ease; }
 .seg + .seg { box-shadow: inset 1px 0 0 var(--surface); }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; margin: 0; padding: 0; }
 .legend li { display: inline-flex; gap: 0.4rem; align-items: center; }
-.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.swatch { width: 10px; height: 10px; border-radius: var(--radius-xs); flex: none; }
 .swatch.free { background: var(--track); box-shadow: inset 0 0 0 1px var(--border-strong); }
 </style>

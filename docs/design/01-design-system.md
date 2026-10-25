@@ -214,7 +214,7 @@ New icons used by the specs:
 
 ## Components
 
-Existing components keep their roles: `BytesDiff`, `ConfirmDialog`, `DetailsPanel`,
+Existing components keep their roles: `BytesDiff`, `ConfirmDialog`,
 `FileDropZone`, `HelpTip`, `IssueGroup`, `JobProgress`, `JobStateBadge`, `NextcloudDetect`,
 `PreflightList`, `ProfileForm`, `ProgressBar`, `StatusIcon`. `HelpTip` also takes a default slot,
 which then is the trigger instead of the "?" (the service status in the sidebar uses it: hover,
@@ -241,9 +241,69 @@ nothing about the engine, so specs reuse them.
 | `Toast` | `text` | Short confirmation ("Path copied"), `aria-live="polite"`, 3 s | D05, D09 |
 | `DropOverlay` | `show` | Full-window layer while files are dragged over it: dashed accent frame, "Drop to add". `aria-hidden`, `pointer-events: none` | D02 (`FileDropZone`) |
 | `GuidedTour` | — (reads the tour store) | Mounted once in `App.vue`. Spotlight on a `data-tour` element (`box-shadow` with `--overlay`), a card with count, dots, Skip / Back / Next. `role="dialog"`, `#app` inert, focus trapped and restored, Esc skips, ← / → move. Steps are data in `src/lib/tour.ts` | D02 |
-| `TourButton` | `tour` | The `?` next to a page title: plays its guide again | D02 |
+| `TourButton` | `tour` | The `?` next to a page title: plays its guide again. Just the circled-`?` icon, no ring of its own (the icon already is one) | D02 |
 | `SourceCard` | `name, parent?, icon, disabled?, tip, action = "plus"`; slot `side` | A quick-source card (Recently sent, Pinned, Disks): the main button adds its path, a side button (pin, unpin, whole disk) sits beside it, never inside it. A missing source is dimmed and dashed, `aria-disabled` | D02 |
 | `FolderSizesDrawer` | `path` | A `Drawer` with a folder's size per item inside it, biggest first, a bar each; numbers grow while the service counts; Stop / Count again; folders open in turn with `Breadcrumbs` | D02 |
+| `ClampText` | `text, lines = 2` | A long message cut after `lines` lines, with More / Less only when it is cut; re-measured when the width changes | Destinations, D03, `PreflightList` |
+
+### Dialogs
+
+Every dialog is a `ModalDialog` (`open, title, role?, width?, busy?`, slots for the body, the
+title and the actions): a card over `--overlay`, named by its title (`aria-labelledby`), focus
+moved in (to `[data-autofocus]`, else the first control) and kept in, Esc and the backdrop close
+it unless `busy`, and focus goes back to the control that opened it. The focus handling is
+`composables/useFocusTrap.ts`, shared with `Drawer`. `ConfirmDialog` is a `ModalDialog` whose
+focus starts on the safe button; a flow that isn't a page's own action asks through the confirm
+store (`useConfirm().ask(...)`), rendered once in `App.vue`.
+
+### Forms
+
+A field is a `FormField` (`label, help?, example?, hint?, required?`): the visible label is a
+`<label for>` tied to the control, so a screen reader announces "Name", never the placeholder or
+the help text; the `?` sits beside the label, and the hint under the control describes it
+(`aria-describedby`). A saved secret is never shown again: "Saved in the system keyring" with
+"Replace…".
+
+Fields sit in a `.form-grid`: two columns while each gets at least 15rem, one below that, never
+three, so rows stay even at every width. A field that needs the whole line (a folder with Browse…)
+is `.wide`; a short value (a port) is `.narrow`, which shortens its input, not its column. A
+`SegmentedControl` that doesn't fit puts each option on its own line instead of widening the page.
+
+### Status
+
+A state is icon + word + colour, never colour alone (`JobStateBadge`, `StatusIcon`). Given the
+whole job, a finished one says what matters most: **Verified** (shield, green) when every file was
+compared with no difference, or "N problems" (amber). Green is kept for "verified" and "no
+differences"; the accent is for the one main action of a screen.
+
+### Result card
+
+`ResultCard` ends a transfer, in the wizard's last step and on top of its page: one big number in
+`--fs-stat`, one sentence ("1,234 files copied and verified, one by one"), one line under it ("No
+differences…"), the facts (size, names fixed, skipped, retries, when) and what to do next
+(Export the report, See the problems, See the space to free). When files couldn't be sent, it
+lists the first ten with their error and how many more ([ADR 0033](../adr/0033-give-up-on-a-file-after-three-retries.md)). Its numbers are the Files tab's own
+facets, so the card and the list never disagree. Tones: green verified, accent copied without
+verification, amber problems, red stopped, grey cancelled.
+
+### Notices
+
+`NoticeBox` (`tone, icon`) is the "what to do now" box (the `.guide` look): one or two sentences
+and at most one action. `BulkDecision` is the one for names waiting for a decision: "Accept the N
+suggestions" (every rule whose suggestions may be accepted without a look) and "Review one by
+one"; garbled names are left out of the button, with the reason.
+
+A check's result (a destination's test, its last space check) is a **status line**, not a red
+paragraph: a `StatusIcon` and the message in body colour, cut with `ClampText`. Each thing is said
+once: a failed space check isn't repeated when the test under it already failed, "doesn't report
+its free space" isn't added under the error that explains it, and a `PreflightList` block whose
+checks all pass is one line ("✓ Integration · can write") with its checks behind "N checks
+passed". Technical information on shows every check.
+
+### Toast
+
+`useToast().show(text)` for the confirmation of a small action ("Copied"): bottom centre, above the
+phone tab bar, `aria-live="polite"`, 2.5 s, one at a time (`ToastHost` in `App.vue`).
 
 ### Long lists
 
@@ -264,11 +324,11 @@ Every screen and component that loads data handles all four states the same way:
 
 | State | Look |
 |---|---|
-| Loading (first time) | Skeleton rows or tiles in `--surface-2` with no animation if `prefers-reduced-motion` is set; never a page-wide spinner |
+| Loading (first time) | `SkeletonRows` in `--surface-2`, still when `prefers-reduced-motion` is set; never a page-wide spinner, and never the empty state before the first answer |
 | Loading (refresh) | The old content stays; a thin indeterminate `ProgressBar` at the top of the card |
 | Empty | `EmptyState` |
-| Error | `Notice tone="danger"` with the message in plain words and a **Try again** action; technical detail goes in `DetailsPanel` |
-| Service disconnected | The app-wide red banner that exists today; lists keep their last content, greyed (`opacity: .6`), with actions disabled and the reason "Not connected to the service" |
+| Error | `LoadError`: the problem in plain words and a **Try again** action; the service's own message is folded under "Technical details". Never the raw message as the text, and never the empty state |
+| Service disconnected | The app-wide red banner is the only place that says why. Lists keep their last content, greyed (`.stale`, `opacity: .6`); a list never read shows "Waiting for the copy engine" (`LoadError` does this by itself), with no search, filters or counts above it. Actions that need the engine are disabled with the reason "Copy engine not responding" (`useConnection().offline`) |
 
 ### Empty states
 
@@ -309,8 +369,9 @@ not be technical).
 
 ## i18n rules
 
-- Every string exists in `src/i18n/en.json` and `src/i18n/pt.json` with the same keys (enforced
-  today by convention; add a unit test that the key sets match).
+- Every string exists in `src/i18n/en.json` and `src/i18n/pt.json` with the same keys and the same
+  number of plural forms (`apps/desktop/src-tauri/tests/i18n.rs`). The same test fails if a string
+  quotes a number of wizard steps other than `SEND_STEPS`.
 - Numbers, sizes and dates go through `Intl` with the locale (`pt-PT`, `en-GB` as today).
 - Byte sizes use 1000-based units (kB, MB, GB, TB), as rclone and most file managers show them,
   with the exact byte count in `title` (and visible in Entry detail).
@@ -326,10 +387,15 @@ not be technical).
   `Breadcrumbs`, `RelativeTime` and `SegmentedControl`; later `DropOverlay`, `GuidedTour` and
   `TourButton` (D02's Source step redesign). `FileDropZone` gained a `compact` one-line form, and
   its listen-while-on-screen logic moved to `composables/useFileDrop.ts`.
+- Added after the UX audit of 2026-10-23: `ModalDialog` (all seven dialogs), `FormField`,
+  `EmptyState`, `NoticeBox`, `Toast` (`ToastHost`), `SkeletonRows`, `ResultCard`, `BulkDecision`;
+  `JobStateBadge` gained an icon per state. Font sizes and radii are tokens everywhere
+  (`--radius-xs` and `--radius-pill` added). The "Show technical information" setting
+  (`DetailsPanel`, check codes, "Copy transfer id") was removed on 2026-10-24.
 - Done differently: there is no generic `DataTable`. The one list that needs virtualisation (the
   Files tab) has its own `role="grid"` built on `@tanstack/vue-virtual`, and the other tables are
-  short, offset-paged `<table>`s. `CategoryBar`, `Notice`, `StatTile` and `Toast` are inline
-  styles or messages, not components, because each has only one or two uses so far.
+  short, offset-paged `<table>`s. `CategoryBar` and `StatTile` are inline styles, not components:
+  the big numbers use `--fs-stat` where they appear.
 - The sidebar notice slot holds low destination space (D03) and reclaimable space (D10); the
   "service not installed as a user unit" notice isn't built. What it would open exists:
   Settings → "Start the engine when I log in".

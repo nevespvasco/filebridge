@@ -25,6 +25,8 @@ pub(crate) struct Outcome {
     pub warnings: Vec<String>,
     /// A verify round found differences and sends those files again.
     pub verify_round: bool,
+    /// The user discarded the draft (ADR 0030); only with a move to Cancelled.
+    pub discarded: bool,
 }
 
 /// One lock per job id.
@@ -94,6 +96,10 @@ impl Engine {
             Op::Start => transition(JobState::Transferring),
             Op::Pause => transition(JobState::Paused),
             Op::Cancel => transition(JobState::Cancelled),
+            Op::DiscardDraft => CoreError::Invalid(format!(
+                "only a transfer not sent yet can be discarded; this one is {}",
+                state.as_str()
+            )),
             Op::SetLabel => CoreError::Invalid("a job can always be named".into()),
             Op::SendAgain | Op::Export => CoreError::Invalid(format!(
                 "only a finished transfer can do that; this one is {}",
@@ -176,7 +182,9 @@ impl JobLock<'_> {
         outcome: Outcome,
     ) -> Result<()> {
         let from = self.state;
-        if from == to && outcome.warnings.is_empty() && !outcome.verify_round {
+        let changes_nothing =
+            outcome.warnings.is_empty() && !outcome.verify_round && !outcome.discarded;
+        if from == to && changes_nothing {
             return Ok(());
         }
         if from != to && !can_go(from, to) {
@@ -195,6 +203,7 @@ impl JobLock<'_> {
                     finished: to.is_terminal(),
                     warnings: outcome.warnings.clone(),
                     verify_round: outcome.verify_round,
+                    discarded: outcome.discarded,
                 },
             )
             .await?;
@@ -211,17 +220,15 @@ impl JobLock<'_> {
             error: error.clone(),
         });
         if to.is_terminal() {
-            engine
-                .log(
-                    Some(&self.id),
-                    "finished",
-                    serde_json::json!({
-                        "state": to.as_str(),
-                        "warnings": self.warnings.len(),
-                        "error": error,
-                    }),
-                )
-                .await?;
+            let mut data = serde_json::json!({
+                "state": to.as_str(),
+                "warnings": self.warnings.len(),
+                "error": error,
+            });
+            if outcome.discarded {
+                data["discarded"] = true.into();
+            }
+            engine.log(Some(&self.id), "finished", data).await?;
             engine.emit(Event::JobFinished {
                 job_id: self.id.clone(),
                 state: to,

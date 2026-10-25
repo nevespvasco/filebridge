@@ -5,11 +5,14 @@
 //! "err": {…}}`. After a `subscribe` request the same connection also carries
 //! `{"kind": "event", "event": …}` lines. Requests on one connection are handled concurrently.
 //!
-//! The socket is user-only: a Unix socket inside a 0700 directory
-//! (`$XDG_RUNTIME_DIR/filebridge/service.sock`), or a per-user named pipe on Windows.
+//! The socket is user-only, both ways: a Unix socket inside a 0700 directory of this user
+//! (`$XDG_RUNTIME_DIR/filebridge/service.sock`), or a named pipe whose DACL admits only this
+//! user on Windows; and the client checks that the service at the other end runs as this user
+//! before it sends anything.
 
 mod client;
 mod operations;
+mod peer;
 mod server;
 
 use std::path::PathBuf;
@@ -29,15 +32,15 @@ pub use filebridge_model::{
     CategoryCount, CheckView, Counts, DEFAULT_QUIET_SECS, DecideManyResult, DecisionInput,
     EntryCursor, EntryDetail, EntryFacets, EntryFilter, EntryPage, EntrySort, EntryStatus,
     EntryThumbnail, EntryView, Event, ExportResult, FOLDER_SIZES_LISTED, Family, FolderNameCheck,
-    FolderSize, FolderSizes, HashView, IssueDecision, IssueSeverity, IssueView, JobFilter,
-    JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LogEntry, LogLevel,
-    MAX_PINNED_SOURCES, MAX_QUIET_SECS, MIN_QUIET_SECS, PinnedSource, PreflightView, Profile,
-    ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence, RefusedIssue,
-    RemoteEntryView, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck, ReportDiff,
-    ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount, SOURCE_CHILDREN_CAP,
-    ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem, SendOptions, SendWindow, SourceInfo,
-    SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView, TargetSpec, VolumeView,
-    WatchMode, WatchView, Weekday, job_operations,
+    FolderSize, FolderSizes, GroupCount, HashView, IssueDecision, IssueSeverity, IssueView,
+    JobFilter, JobGroup, JobKind, JobPage, JobSort, JobState, JobSummary, LocalTargetProbe,
+    LogEntry, LogLevel, MAX_PINNED_SOURCES, MAX_QUIET_SECS, MIN_QUIET_SECS, PinnedSource,
+    PreflightView, Profile, ProfileTest, RecentSource, ReclaimBlocker, ReclaimStatus, Recurrence,
+    RefusedIssue, RemoteEntryView, ReportChange, ReportChangeCount, ReportChangeKind, ReportCheck,
+    ReportDiff, ReportFormat, ReportRequest, ReportScope, ReportSide, RuleCount,
+    SOURCE_CHILDREN_CAP, ScheduleInput, ScheduleOutcome, ScheduleView, SealProblem, SendOptions,
+    SendWindow, SourceInfo, SourceProblem, SourceReclaim, SpaceView, StatusCount, StorageView,
+    TargetSpec, VolumeView, WatchMode, WatchView, Weekday, job_operations,
 };
 pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 
@@ -86,7 +89,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///     `SendOptions.keep_older`, `EntryView.kept_as`, `AnalysisSummary.unchanged`.
 /// 34: continuous sync (ADR 0023): `Recurrence::OnChange`, `ScheduleView.watch`,
 ///     `AnalysisSummary.unsettled`, the `schedule_changed` event.
-pub const PROTOCOL_VERSION: u32 = 34;
+/// 35: `discard_draft` and `JobSummary.discarded` (ADR 0030); `JobPage.groups` (per-group
+///     counts); `probe_local_target`; `EntryView.error`.
+pub const PROTOCOL_VERSION: u32 = 35;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -380,17 +385,29 @@ pub enum Endpoint {
 }
 
 impl Endpoint {
-    /// The per-user default.
+    /// The per-user default. On Unix: `$XDG_RUNTIME_DIR`, else this user's cache directory
+    /// (`~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` elsewhere), never a
+    /// shared temporary directory, where another user could create the path first.
     pub fn default_for_user() -> Self {
         if cfg!(windows) {
             let user = std::env::var("USERNAME").unwrap_or_else(|_| "user".into());
             return Self::Pipe(format!("filebridge-{user}"));
         }
+        let home = || {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_default()
+        };
         let dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
-                let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
-                std::env::temp_dir().join(format!("filebridge-{user}"))
+                if cfg!(target_os = "macos") {
+                    home().join("Library/Caches")
+                } else {
+                    std::env::var_os("XDG_CACHE_HOME")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| home().join(".cache"))
+                }
             });
         Self::Path(dir.join("filebridge").join("service.sock"))
     }

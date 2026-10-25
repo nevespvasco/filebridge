@@ -7,17 +7,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use filebridge_core::{
-    AppSettings, DecisionInput, Engine, EngineOptions, Event, JobState, Profile, Recurrence,
-    Registry, ScheduleInput, ScheduleOutcome, SendOptions, SendWindow, Store, TargetSpec, Weekday,
+    AppSettings, Engine, EngineOptions, Event, JobState, Profile, Recurrence, Registry,
+    ScheduleInput, ScheduleOutcome, SendOptions, SendWindow, Store, TargetSpec, Weekday,
 };
+// Only the tests that need an NFC/NFD collision use this, and those don't run on macOS.
+#[cfg(not(target_os = "macos"))]
+use filebridge_core::DecisionInput;
 use filebridge_host::EngineOperations;
-use filebridge_ipc::{Client, Endpoint, Operations, PROTOCOL_VERSION, bind, serve};
+#[cfg(not(target_os = "macos"))]
+use filebridge_ipc::PROTOCOL_VERSION;
+use filebridge_ipc::{Client, Endpoint, Operations, bind, serve};
 use filebridge_transport_api::{Backend, Destination};
 use filebridge_transport_fake::FakeTransport;
 use interprocess::local_socket::tokio::prelude::*;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast::error::RecvError;
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn client_drives_a_job_over_the_socket() {
     let dir = tempfile::tempdir().unwrap();
@@ -215,6 +222,8 @@ async fn service(dir: &Path) -> (Endpoint, Client, String) {
     (endpoint, client, profile.id)
 }
 
+// Needs an NFC and an NFD name side by side: one name on macOS (APFS, HFS+).
+#[cfg(not(target_os = "macos"))]
 #[tokio::test]
 async fn set_options_and_decide_all_over_the_socket() {
     let dir = tempfile::tempdir().unwrap();

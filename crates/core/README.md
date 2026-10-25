@@ -7,10 +7,11 @@ progress events.** **Landed in:** Phase 1 (Wave 2).
 | Area | Methods |
 |---|---|
 | Profiles | `save_profile` (checks plugins and caps), `get_profile`, `list_profiles`, `delete_profile`, `test_profile` |
-| Jobs | `create_job`, `job`, `list_jobs`, `wait` |
+| Jobs | `create_job`, `job`, `list_jobs`, `list_jobs_page` (with per-group counts; never discarded drafts), `wait` |
 | Stages 2–3 | `analyse` (scan + rules + preflight → `AnalysisSummary`), `rule_counts`, `issues`, `decide_issue` |
-| Lifecycle | `start`, `pause`, `resume`, `cancel`, `resume_unfinished` (on startup) |
+| Lifecycle | `start`, `pause`, `resume`, `cancel`, `discard_draft` (ADR 0030), `resume_unfinished` (on startup) |
 | Schedules (ADR 0019, 0023) | `save_schedule`, `list_schedules`, `get_schedule`, `delete_schedule`, `run_schedule_now`, `tick_schedules(now)` (testable: the time is an argument), `run_scheduler` (the service's timer), `set_watcher` (the watched schedules' `FolderWatcher`) |
+| Local folders | `inspect_sources`, `probe_local_target` (the file system of a local destination folder and the name rules it needs: `statfs` + `pathconf` on macOS, `/proc/self/mountinfo` on Linux and Android, always Windows rules on Windows) |
 | Events | `subscribe` → `broadcast::Receiver<Event>` |
 
 All types that cross into the UI derive `specta::Type`.

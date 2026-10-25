@@ -215,6 +215,16 @@ ALTER TABLE manifest_entries ADD COLUMN kept_as TEXT;
 ALTER TABLE schedules ADD COLUMN last_change_at INTEGER;
 ALTER TABLE schedules ADD COLUMN pending_since INTEGER;
 "#,
+    // 14: a draft the user replaced in the New-transfer wizard (ADR 0030): Cancelled like any
+    // other, but kept out of the Transfers list and Activity. The row stays.
+    r#"
+ALTER TABLE jobs ADD COLUMN discarded_at INTEGER;
+"#,
+    // 15: how many times sending a file failed while the destination answered; past the limit the
+    // file is given up on (ADR 0033).
+    r#"
+ALTER TABLE manifest_entries ADD COLUMN send_failures INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<()> {

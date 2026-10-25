@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Everything about one file of a transfer: its names, where it is at both ends, and the checksum
 // that proves it arrived intact (docs/design/specs/D05, "Entry detail").
+import { useToast } from "@/stores/toast";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { JOB_OPERATIONS, type EntryDetail_Serialize, type JobState } from "@/bindings";
@@ -28,7 +29,7 @@ const detail = ref<EntryDetail_Serialize | null>(null);
 /** A preview of the source image, when it has one (ADR 0027). */
 const preview = ref<string | null>(null);
 const error = ref<string | null>(null);
-const copied = ref<string | null>(null);
+const toast = useToast();
 
 async function load(job: string, idx: number | null) {
   detail.value = null;
@@ -92,8 +93,8 @@ function ruleLabel(rule: string): string {
 async function copy(what: string, text: string) {
   try {
     await copyText(text);
-    copied.value = what;
-    setTimeout(() => (copied.value = null), 2500);
+    void what;
+    toast.show(t("entry.copied"));
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -195,7 +196,6 @@ async function reveal() {
         </dl>
       </section>
 
-      <p v-if="copied" class="small ok-text" role="status">{{ $t("entry.copied") }}</p>
       <button v-if="!remote && canReveal()" class="btn" @click="reveal"><AppIcon name="reveal" /> {{ $t("entry.reveal") }}</button>
       <button v-if="canSkip" class="btn" @click="skipping = true"><AppIcon name="skipped" /> {{ $t("skip.confirm") }}</button>
       <SkipEntryDialog :job-id="jobId" :entry="skipping && v ? { idx: v.idx, name: v.name } : null" @done="skipped" @cancel="skipping = false" />
@@ -204,10 +204,10 @@ async function reveal() {
 </template>
 
 <style scoped>
-h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); margin: 0 0 0.4rem; }
+h3 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); margin: 0 0 0.4rem; }
 .preview { display: block; max-width: 100%; max-height: 16rem; margin: 0 auto; border-radius: 6px; background: var(--surface-2); }
 .hero { display: flex; gap: 0.9rem; align-items: center; }
-.name { font-size: 1.05rem; overflow-wrap: anywhere; }
+.name { font-size: var(--fs-lg); overflow-wrap: anywhere; }
 .kv { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.45rem 0.8rem; margin: 0; }
 dt { color: var(--text-2); font-size: var(--fs-sm); display: inline-flex; gap: 0.3rem; align-items: center; }
 dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

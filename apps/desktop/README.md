@@ -37,7 +37,9 @@ src-tauri/src/
 
 ## Talking to the service
 - The window connects to `FILEBRIDGE_SOCKET` if set, else `Endpoint::default_for_user()`
-  (`$XDG_RUNTIME_DIR/filebridge/service.sock`, or a named pipe on Windows).
+  (`$XDG_RUNTIME_DIR/filebridge/service.sock`, else in this user's cache directory, or a named
+  pipe on Windows). A service there run by another user is refused, and reported rather than
+  replaced by starting one.
 - If nothing listens there it starts `filebridge-service`: `FILEBRIDGE_SERVICE` if set, else the
   binary next to the app's own executable (the bundled sidecar: Tauri installs `externalBin`
   beside the app, `/usr/bin/` in the .deb and .rpm; `target/debug/` in development), else
@@ -191,6 +193,7 @@ FILEBRIDGE_FAKE_TRANSPORT=1 pnpm tauri dev   # the real service and engine, no r
                                              # use transport "fake" and a local root
 VITE_MOCK=1 pnpm dev    # UI only, in a plain browser, against src/dev/mock.ts (visual work)
 VITE_MOCK=1 VITE_MOCK_EMPTY=1 pnpm dev   # the same, starting like a new user (no destinations, no jobs)
+VITE_MOCK=1 VITE_MOCK_OFFLINE=1 pnpm dev # the same, with a copy engine that never starts
 pnpm build              # vue-tsc + vite build
 pnpm bindings           # regenerate src/bindings/index.ts
 pnpm bundle             # installers with the service and rclone inside (see Bundle)

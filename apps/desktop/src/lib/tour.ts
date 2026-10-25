@@ -1,6 +1,7 @@
 // First-run guides (docs/design/specs/D02, "Guided tour"): each one is data, a list of steps that
 // point at elements marked `data-tour="…"`. Bumping a guide's `version` shows it again to people
 // who already saw it, after it changes.
+import { SEND_STEPS } from "@/stores/wizard";
 
 export type Placement = "top" | "bottom" | "left" | "right";
 
@@ -10,6 +11,8 @@ export type TourStep = {
   /** i18n keys. */
   title: string;
   body: string;
+  /** Values for the title's and body's placeholders. */
+  params?: Record<string, unknown>;
   placement?: Placement;
   /** Left out when its element isn't on screen (e.g. no recent sources yet). */
   optional?: boolean;
@@ -21,11 +24,28 @@ export const TOURS = {
   source: {
     version: 1,
     steps: [
-      { target: "wizard-stepper", title: "tour.source.steps.title", body: "tour.source.steps.body", placement: "bottom" },
+      { target: "wizard-stepper", title: "tour.source.steps.title", body: "tour.source.steps.body", params: { n: SEND_STEPS }, placement: "bottom" },
       { target: "source-add", title: "tour.source.add.title", body: "tour.source.add.body", placement: "bottom" },
       { target: "source-recent", title: "tour.source.recent.title", body: "tour.source.recent.body", placement: "top", optional: true },
       { target: "source-chosen", title: "tour.source.chosen.title", body: "tour.source.chosen.body", placement: "top", optional: true },
       { target: "source-next", title: "tour.source.next.title", body: "tour.source.next.body", placement: "top" },
+    ],
+  },
+  analysis: {
+    version: 1,
+    steps: [
+      { target: "analysis-summary", title: "tour.analysis.summary.title", body: "tour.analysis.summary.body", placement: "bottom" },
+      { target: "analysis-decide", title: "tour.analysis.decide.title", body: "tour.analysis.decide.body", placement: "bottom", optional: true },
+      { target: "analysis-names", title: "tour.analysis.names.title", body: "tour.analysis.names.body", placement: "top" },
+      { target: "analysis-next", title: "tour.analysis.next.title", body: "tour.analysis.next.body", placement: "top" },
+    ],
+  },
+  destinations: {
+    version: 1,
+    steps: [
+      { target: "dest-card", title: "tour.destinations.card.title", body: "tour.destinations.card.body", placement: "bottom" },
+      { target: "dest-actions", title: "tour.destinations.actions.title", body: "tour.destinations.actions.body", placement: "left" },
+      { target: "dest-new", title: "tour.destinations.new.title", body: "tour.destinations.new.body", placement: "bottom", optional: true },
     ],
   },
 } satisfies Record<string, Tour>;
@@ -53,9 +73,10 @@ export function place(target: Rect | null, pop: Size, view: Size, preferred: Pla
   const clampY = (y: number) => Math.max(margin, Math.min(y, view.height - pop.height - margin));
   if (!target) return { top: clampY((view.height - pop.height) / 2), left: clampX((view.width - pop.width) / 2), placement: "center" };
   if (view.width < NARROW) {
-    // Bottom of the window, unless the target is down there: then the top.
+    // Bottom of the window, unless the target is down there: then the top. Full width (`.narrow
+    // .pop`), so the left edge is the margin, whatever width the popover had when measured.
     const low = target.top + target.height / 2 > view.height / 2;
-    return { top: low ? margin : view.height - pop.height - margin, left: clampX((view.width - pop.width) / 2), placement: low ? "top" : "bottom" };
+    return { top: low ? margin : view.height - pop.height - margin, left: margin, placement: low ? "top" : "bottom" };
   }
   const at = (p: Placement) => {
     switch (p) {

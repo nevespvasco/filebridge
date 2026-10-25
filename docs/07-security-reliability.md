@@ -28,6 +28,11 @@ freed ([ADR 0021](adr/0021-full-destination-pauses-the-job.md)). So does a sourc
 unplugged, a share dropped): its files wait, and Resume sends them once it is back
 ([ADR 0026](adr/0026-unreadable-source-pauses-the-job.md)).
 
+This schedule is for the job. **One file** that fails while the destination answers is retried
+three times (after the rest is sent, on the same schedule), then given up on: `Failed`, its error
+kept, listed on the result card. Failures while the destination doesn't answer count against no
+file ([ADR 0033](adr/0033-give-up-on-a-file-after-three-retries.md)).
+
 ## Security
 
 | Measure | Implementation |
@@ -42,6 +47,7 @@ unplugged, a share dropped): its files wait, and Resume sends them once it is ba
 | **WebDAV with app passwords** | Nextcloud app passwords, revocable in Nextcloud itself; never the account password. |
 | **No telemetry by default** | Nothing leaves the machine except the transfer itself. |
 | **Logs** | Local logs include paths, **never credentials**. `tracing` fields for secrets use a `Redacted<T>` wrapper whose `Debug`/`Display` print `***`; IPC passwords are `Password`, same `Debug`. rclone's errors and stderr lines are scrubbed of secret parameters and of the exact secret values in use ([ADR 0004](adr/0004-os-keyring-secrets.md)). |
+| **Window ↔ service socket** | Only this user can reach the service, and the client talks only to a service run by this user: a Unix socket in a 0700 directory of this user (never a shared temporary directory) or a named pipe whose DACL admits only this user's SID; before sending anything the client checks the peer's uid, or the token user SID of the pipe's server process ([ADR 0008](adr/0008-service-ipc.md)). |
 | **rclone sidecar** | `rclone rcd` bound to `127.0.0.1` on a random port with `--rc-user`/`--rc-pass` generated per start; config passed in-memory, no `rclone.conf` with secrets on disk. |
 
 ## Threat notes

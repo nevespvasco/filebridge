@@ -73,6 +73,9 @@ pub struct JobRow {
     pub reclaim_check: Option<serde_json::Value>,
     /// The schedule this job is a run of; `None` once the schedule is removed.
     pub schedule_id: Option<String>,
+    /// When the user discarded the draft (ADR 0030): it is Cancelled, and hidden from the
+    /// Transfers list and Activity.
+    pub discarded_at: Option<i64>,
 }
 
 /// A job's move to a new state, written in one transaction with what the stage that just
@@ -92,11 +95,14 @@ pub struct StateChange {
     pub warnings: Vec<String>,
     /// The stage that just ended was a verify round that sends files again.
     pub verify_round: bool,
+    /// The user discarded the draft (ADR 0030): records `discarded_at` with the change.
+    pub discarded: bool,
 }
 
 const COLUMNS: &str = "id, kind, profile_id, state, options, error, attempt, next_retry_at, \
                        created_at, updated_at, finished_at, warnings, verify_rounds, label, \
-                       again_of, reclaim_dismissed_at, reclaim_check, error_code, schedule_id";
+                       again_of, reclaim_dismissed_at, reclaim_check, error_code, schedule_id,
+                       discarded_at";
 
 /// A row, plus its options and warnings as JSON text.
 type RawJob = (JobRow, String, String);
@@ -126,6 +132,7 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<RawJob> {
                 .and_then(|s| serde_json::from_str(&s).ok()),
             error_code: row.get(17)?,
             schedule_id: row.get(18)?,
+            discarded_at: row.get(19)?,
         },
         row.get(4)?,
         row.get(11)?,
@@ -158,6 +165,43 @@ fn expect_one(n: usize, id: &str) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// The `WHERE` clause (never empty: discarded drafts are always left out) and its arguments
+/// for `q`, with or without its states. `None` when nothing can match (`q.ids` is empty).
+fn where_clause(q: &JobQuery, with_states: bool) -> Option<(String, Vec<Value>)> {
+    let mut clauses: Vec<String> = vec!["discarded_at IS NULL".into()];
+    let mut args: Vec<Value> = Vec::new();
+    if with_states && !q.states.is_empty() {
+        clauses.push(format!(
+            "state IN ({})",
+            vec!["?"; q.states.len()].join(", ")
+        ));
+        args.extend(q.states.iter().cloned().map(Value::Text));
+    }
+    if let Some(p) = &q.profile_id {
+        clauses.push("profile_id = ?".into());
+        args.push(Value::Text(p.clone()));
+    }
+    if let Some(text) = q.text.as_deref().filter(|t| !t.is_empty()) {
+        let pattern = format!("%{}%", crate::manifest::like_escape(text));
+        clauses.push(
+            "(label LIKE ? ESCAPE '\\' \
+              OR EXISTS (SELECT 1 FROM job_sources s WHERE s.job_id = jobs.id \
+                         AND CAST(s.path AS TEXT) LIKE ? ESCAPE '\\') \
+              OR profile_id IN (SELECT id FROM profiles WHERE name LIKE ? ESCAPE '\\'))"
+                .into(),
+        );
+        args.extend(std::iter::repeat_n(Value::Text(pattern), 3));
+    }
+    if let Some(only) = &q.ids {
+        if only.is_empty() {
+            return None;
+        }
+        clauses.push(format!("id IN ({})", vec!["?"; only.len()].join(", ")));
+        args.extend(only.iter().cloned().map(Value::Text));
+    }
+    Some((format!("WHERE {}", clauses.join(" AND ")), args))
 }
 
 impl Store {
@@ -289,7 +333,8 @@ impl Store {
                 "UPDATE jobs SET state = ?2, error = ?3, updated_at = ?4,
                      finished_at = CASE WHEN ?5 THEN ?4 ELSE finished_at END,
                      next_retry_at = CASE WHEN ?5 THEN NULL ELSE next_retry_at END,
-                     warnings = ?6, verify_rounds = verify_rounds + ?7, error_code = ?8
+                     warnings = ?6, verify_rounds = verify_rounds + ?7, error_code = ?8,
+                     discarded_at = CASE WHEN ?9 THEN ?4 ELSE discarded_at END
                  WHERE id = ?1",
                 params![
                     id,
@@ -299,7 +344,8 @@ impl Store {
                     change.finished,
                     serde_json::to_string(&all)?,
                     u32::from(change.verify_round),
-                    change.error_code
+                    change.error_code,
+                    change.discarded
                 ],
             )?;
             tx.execute(
@@ -382,6 +428,7 @@ impl Store {
     }
 
     /// A page of jobs matching `q`, and how many match in all (the Transfers list, D06).
+    /// Discarded drafts (ADR 0030) are never listed.
     pub async fn list_jobs_filtered(
         &self,
         q: JobQuery,
@@ -389,41 +436,8 @@ impl Store {
         offset: u32,
     ) -> Result<(Vec<JobRow>, u64)> {
         self.call(move |c| {
-            let mut clauses: Vec<String> = Vec::new();
-            let mut args: Vec<Value> = Vec::new();
-            if !q.states.is_empty() {
-                clauses.push(format!(
-                    "state IN ({})",
-                    vec!["?"; q.states.len()].join(", ")
-                ));
-                args.extend(q.states.iter().cloned().map(Value::Text));
-            }
-            if let Some(p) = &q.profile_id {
-                clauses.push("profile_id = ?".into());
-                args.push(Value::Text(p.clone()));
-            }
-            if let Some(text) = q.text.as_deref().filter(|t| !t.is_empty()) {
-                let pattern = format!("%{}%", crate::manifest::like_escape(text));
-                clauses.push(
-                    "(label LIKE ? ESCAPE '\\' \
-                      OR EXISTS (SELECT 1 FROM job_sources s WHERE s.job_id = jobs.id \
-                                 AND CAST(s.path AS TEXT) LIKE ? ESCAPE '\\') \
-                      OR profile_id IN (SELECT id FROM profiles WHERE name LIKE ? ESCAPE '\\'))"
-                        .into(),
-                );
-                args.extend(std::iter::repeat_n(Value::Text(pattern), 3));
-            }
-            if let Some(only) = &q.ids {
-                if only.is_empty() {
-                    return Ok((Vec::new(), 0));
-                }
-                clauses.push(format!("id IN ({})", vec!["?"; only.len()].join(", ")));
-                args.extend(only.iter().cloned().map(Value::Text));
-            }
-            let sql_where = if clauses.is_empty() {
-                String::new()
-            } else {
-                format!("WHERE {}", clauses.join(" AND "))
+            let Some((sql_where, mut args)) = where_clause(&q, true) else {
+                return Ok((Vec::new(), 0));
             };
             let total: u64 = c.query_row(
                 &format!("SELECT COUNT(*) FROM jobs {sql_where}"),
@@ -444,6 +458,24 @@ impl Store {
                 format!("SELECT {COLUMNS} FROM jobs {sql_where} ORDER BY {order} LIMIT ? OFFSET ?");
             let rows = query_jobs(c, &sql, rusqlite::params_from_iter(args.iter()))?;
             Ok((rows, total))
+        })
+        .await
+    }
+
+    /// How many jobs match `q` in each state, ignoring `q.states`: the Transfers list's filter
+    /// chips (D06). Discarded drafts are not counted. States with no job are left out.
+    pub async fn job_state_counts(&self, q: JobQuery) -> Result<Vec<(String, u64)>> {
+        self.call(move |c| {
+            let Some((sql_where, args)) = where_clause(&q, false) else {
+                return Ok(Vec::new());
+            };
+            let mut stmt = c.prepare(&format!(
+                "SELECT state, COUNT(*) FROM jobs {sql_where} GROUP BY state"
+            ))?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(args.iter()), |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
         })
         .await
     }
@@ -592,6 +624,72 @@ mod tests {
         let job = store.get_job("j2").await.unwrap();
         assert_eq!(job.sources[0], b"/a/Patol\xf3gica");
         assert_eq!(job.options["verify"], true);
+    }
+
+    #[tokio::test]
+    async fn a_discarded_draft_is_kept_but_never_listed_or_counted() {
+        let (store, id) = store_with_job().await;
+        for (n, state) in [("j2", "draft"), ("j3", "completed")] {
+            store
+                .insert_job(crate::NewJob {
+                    id: n.into(),
+                    kind: "transfer".into(),
+                    profile_id: "p1".into(),
+                    state: state.into(),
+                    options: serde_json::json!({}),
+                    sources: vec![b"/x".to_vec()],
+                    label: None,
+                    again_of: None,
+                    schedule_id: None,
+                })
+                .await
+                .unwrap();
+        }
+        store
+            .change_job_state(
+                &id,
+                StateChange {
+                    finished: true,
+                    discarded: true,
+                    ..change("draft", "cancelled", None)
+                },
+            )
+            .await
+            .unwrap();
+        let job = store.get_job(&id).await.unwrap();
+        assert_eq!(job.state, "cancelled");
+        assert!(job.discarded_at.is_some(), "the row stays, marked");
+
+        let (rows, total) = store
+            .list_jobs_filtered(crate::JobQuery::default(), 10, 0)
+            .await
+            .unwrap();
+        assert_eq!(total, 2);
+        assert!(rows.iter().all(|r| r.id != id));
+        let cancelled = crate::JobQuery {
+            states: vec!["cancelled".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            store
+                .list_jobs_filtered(cancelled.clone(), 10, 0)
+                .await
+                .unwrap()
+                .1,
+            0
+        );
+        // The counts ignore the states asked for.
+        let mut counts = store.job_state_counts(cancelled).await.unwrap();
+        counts.sort();
+        assert_eq!(
+            counts,
+            [("completed".to_owned(), 1), ("draft".to_owned(), 1)]
+        );
+        let only_none = crate::JobQuery {
+            ids: Some(Vec::new()),
+            ..Default::default()
+        };
+        assert!(store.job_state_counts(only_none).await.unwrap().is_empty());
     }
 
     #[tokio::test]

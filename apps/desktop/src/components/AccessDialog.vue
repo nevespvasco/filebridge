@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // filebridge's own SSH key for a destination, and "Remove access" (ADR 0012, docs/07). Says
 // exactly what changes on the server before doing anything, then shows each step ✓ / ! / ✗.
-import { computed, nextTick, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { AccessReport, Profile_Serialize } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 import { bcp47 } from "@/i18n";
 import { sshAccounts, useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
+import ModalDialog from "./ModalDialog.vue";
 import StatusIcon from "./StatusIcon.vue";
 
 const props = defineProps<{
@@ -22,17 +23,12 @@ const profiles = useProfiles();
 const running = ref(false);
 const error = ref<string | null>(null);
 const report = shallowRef<AccessReport | null>(null);
-const cancelBtn = ref<HTMLButtonElement | null>(null);
 
 watch(
   () => props.profile,
-  async (p) => {
+  () => {
     report.value = null;
     error.value = null;
-    if (p) {
-      await nextTick();
-      cancelBtn.value?.focus();
-    }
   },
 );
 
@@ -85,10 +81,17 @@ async function run() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="profile" class="overlay" @keydown.esc="!running && emit('close')" @click.self="!running && emit('close')">
-      <div class="dialog card" role="alertdialog" aria-modal="true" :aria-label="$t(`access.${action}.title`, { name: profile.name })">
-        <h2><AppIcon :name="action === 'install' ? 'key' : 'lock'" /> {{ $t(`access.${action}.title`, { name: profile.name }) }}</h2>
+  <ModalDialog
+    :open="!!profile"
+    :title="$t(`access.${action}.title`, { name: profile?.name ?? '' })"
+    role="alertdialog"
+    :width="520"
+    :busy="running"
+    @close="emit('close')"
+  >
+    <template #title>
+      <span class="title"><AppIcon :name="action === 'install' ? 'key' : 'lock'" /> {{ $t(`access.${action}.title`, { name: profile?.name ?? "" }) }}</span>
+    </template>
 
         <template v-if="!done">
           <ul>
@@ -109,27 +112,22 @@ async function run() {
           </p>
         </div>
 
-        <div class="actions">
+    <template #actions>
           <template v-if="!done">
-            <button ref="cancelBtn" class="btn" :disabled="running" @click="emit('close')">{{ $t("common.cancel") }}</button>
+            <button data-autofocus class="btn" :disabled="running" @click="emit('close')">{{ $t("common.cancel") }}</button>
             <button class="btn" :class="action === 'remove' ? 'btn-danger' : 'btn-primary'" :disabled="running" @click="run">
               {{ running ? $t("access.working") : $t(`access.${action}.confirm`) }}
             </button>
           </template>
-          <button v-else class="btn btn-primary" @click="emit('close')">{{ $t("common.close") }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+          <button v-else data-autofocus class="btn btn-primary" @click="emit('close')">{{ $t("common.close") }}</button>
+    </template>
+  </ModalDialog>
 </template>
 
 <style scoped>
-.overlay { position: fixed; inset: 0; background: var(--overlay); display: grid; place-items: center; z-index: 50; padding: 1rem; }
-.dialog { max-width: 520px; width: 100%; }
-h2 { margin-top: 0; font-size: 1.15rem; display: flex; gap: 0.5rem; align-items: center; }
-ul { padding-left: 1.2rem; color: var(--text-2); }
+.title { display: inline-flex; gap: var(--sp-2); align-items: center; }
+ul { padding-left: 1.2rem; margin: 0; color: var(--text-2); }
 li { margin: 0.35rem 0; }
 .steps { list-style: none; padding: 0; margin: 0.5rem 0; }
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; }
-.actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 </style>

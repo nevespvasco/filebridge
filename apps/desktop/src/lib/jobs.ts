@@ -2,8 +2,22 @@
 import type { Router } from "vue-router";
 import type { JobSummary_Serialize } from "@/bindings";
 import { i18n } from "@/i18n";
+import { useConfirm } from "@/stores/confirm";
 import { useWizard } from "@/stores/wizard";
 import { baseName } from "./format";
+
+/** Before the wizard is reused for something else: when it holds choices not sent yet, asks
+ *  whether to drop them. Resolves `true` to go on. */
+export async function discardWizardIfAsked(): Promise<boolean> {
+  if (!useWizard().hasWork) return true;
+  const t = i18n.global.t;
+  return useConfirm().ask({
+    title: t("wizard.discard.title"),
+    consequences: [t("wizard.discard.forgets"), t("wizard.discard.noDelete")],
+    confirmLabel: t("wizard.discard.confirm"),
+    cancelLabel: t("wizard.discard.keep"),
+  });
+}
 
 /** Opens an unsent job where it is decided and confirmed: a Repair job in its own page (its
  *  folder can't change, and the renames wait for that page's confirmation), any other in the New
@@ -13,7 +27,11 @@ export async function continueJob(job: JobSummary_Serialize, router: Router): Pr
     await router.push({ name: "repair", params: { id: job.id } });
     return;
   }
-  await useWizard().openJob(job);
+  const wizard = useWizard();
+  if (wizard.jobId !== job.id) {
+    if (!(await discardWizardIfAsked())) return;
+    await wizard.openJob(job);
+  }
   await router.push({ name: "new" });
 }
 

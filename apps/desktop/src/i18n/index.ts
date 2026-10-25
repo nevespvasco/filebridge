@@ -22,7 +22,8 @@ export function applyPhoneTexts() {
 
 export function setLocale(locale: Locale) {
   i18n.global.locale.value = locale;
-  document.documentElement.lang = locale;
+  // The full tag: a screen reader picks European Portuguese, and hyphenation follows it.
+  document.documentElement.lang = bcp47(locale);
 }
 
 /** `pt` → `pt-PT` for number and date formatting. */

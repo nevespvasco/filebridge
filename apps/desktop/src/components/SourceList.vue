@@ -151,7 +151,7 @@ async function remove(path: string, i: number) {
 .problem { color: var(--warn-strong); }
 .link { all: unset; cursor: pointer; color: var(--accent); font-weight: 600; margin-left: 0.35rem; }
 .link:hover { text-decoration: underline; }
-.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-xs); }
 .more { display: block !important; text-align: center; }
 .more .link { margin: 0; }
 .skeleton {
@@ -159,7 +159,7 @@ async function remove(path: string, i: number) {
   width: 5rem;
   height: 0.7em;
   margin-right: 0.5rem;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: linear-gradient(90deg, var(--surface-2), var(--border), var(--surface-2));
   background-size: 200% 100%;
   animation: shimmer 1.2s linear infinite;

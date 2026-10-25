@@ -176,13 +176,22 @@ pub struct JobFilter {
     pub reclaimable: bool,              // D10
     pub sort: JobSort,                  // Newest | Oldest | Largest
 }
-pub struct JobPage { pub items: Vec<JobSummary>, pub total: u64 }
+pub struct JobPage {
+    pub items: Vec<JobSummary>,
+    pub total: u64,
+    /// One per JobGroup::ALL, in order: the count with this filter's query, profile and
+    /// reclaimable, whatever its groups (each chip shows its count while another is selected).
+    pub groups: Vec<GroupCount>,       // protocol 35
+}
+pub struct GroupCount { pub group: JobGroup, pub total: u64 }
 
 pub struct JobSummary {
     // … existing fields …
     pub label: Option<String>,
     /// Set by send_again: the job this one repeats.
     pub again_of: Option<String>,
+    /// A draft the New-transfer wizard replaced (ADR 0030); never listed.
+    pub discarded: bool,
 }
 
 pub struct IssueView {
@@ -205,6 +214,11 @@ SendAgain send_again(job_id: String, profile_id: Option<String>) -> String;
 
 `list_jobs` changes shape, so `PROTOCOL_VERSION` is bumped. The CLI's `jobs [--limit]` builds a
 default filter.
+
+Discarded drafts ([ADR 0030](../../adr/0030-discarded-drafts.md)) are in no group, in no count
+and in no total; `job(id)` still returns them. The chip counts come from one
+`SELECT state, COUNT(*) … GROUP BY state` with the same conditions minus the states
+(`Store::job_state_counts`).
 
 ### Store: migration M-job-label
 
