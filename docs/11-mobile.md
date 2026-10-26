@@ -1,6 +1,6 @@
 # 11 — Mobile (Android, then iOS)
 
-*Android built (Phase 4a); iOS not started.* The plan to run filebridge on phones: what it is for there, what changes in the
+*Android built (Phase 4a); iOS built on CI, not yet run on an iPhone (Phase 4b, [ADR 0034](adr/0034-ios-without-a-mac.md)).* The plan to run filebridge on phones: what it is for there, what changes in the
 engine, and the order of the work. Decisions: [ADR 0013](adr/0013-phones-as-a-source-android-first.md)
 (scope) and [ADR 0014](adr/0014-engine-in-the-app-on-phones.md) (how the engine runs). Roadmap:
 [Phase 4](09-roadmap.md#phase-4--mobile).
@@ -20,9 +20,9 @@ Not in scope either: scheduled sends and continuous sync on the phone. They run 
 permanent foreground notification and the battery, and iOS doesn't allow it
 ([ADR 0023](adr/0023-continuous-sync.md#phones-not-in-phase-5)).
 
-Order: **Android first** (Phase 4a), **iOS second** (Phase 4b, only once a Mac and an Apple
-Developer account are available). Builds are for personal use: a signed APK installed by hand,
-like the desktop builds ([10](10-risks-and-open-decisions.md#risks)). Stores wait for signed
+Order: **Android first** (Phase 4a), **iOS second** (Phase 4b: built on GitHub's Mac and
+signed with a free Apple ID, [ADR 0034](adr/0034-ios-without-a-mac.md)). Builds are for personal
+use: a signed APK, or on iOS a 7-day `.ipa`, installed by hand, like the desktop builds ([10](10-risks-and-open-decisions.md#risks)). Stores wait for signed
 installers (Phase 3).
 
 ## What is already portable
@@ -43,7 +43,7 @@ installers (Phase 3).
 |---|---|---|---|
 | Where the engine runs | `filebridge-service`, a detached process; the window is an IPC client | Inside the app process, through `host::EngineOperations` ([ADR 0014](adr/0014-engine-in-the-app-on-phones.md)) | `apps/desktop/src-tauri` (`cfg(mobile)`) |
 | Keeping a send alive | The service outlives the window; `systemd --user` on Linux | Android: a foreground service with a progress notification keeps the process alive. iOS: sends advance while the app is open, then resume on return | Tauri mobile plugin (Kotlin / Swift) |
-| rclone | `rclone rcd` child process over HTTP on localhost | librclone linked in-process (Go `c-shared` on Android, `c-archive` on iOS), called through its C `RcloneRPC` | `transport-rclone`: an `RcCall` trait, implemented by `Rcd` and `Librclone` |
+| rclone | `rclone rcd` child process over HTTP on localhost | librclone in-process (Go `c-shared` loaded on Android, `c-archive` linked in on iOS), called through its C `RcloneRPC` | `transport-rclone`: an `RcCall` trait, implemented by `Rcd` and `Librclone` (`open` / `open_linked`) |
 | Picking Sources | `tauri-plugin-dialog` folder picker and drag & drop; absolute paths | Android: "All files access" (`MANAGE_EXTERNAL_STORAGE`), so `/storage/emulated/0/…` paths work with `std::fs` and rclone `:local:`; a small folder picker. iOS: folder picker with security-scoped bookmarks, kept open while a Job reads them | Tauri mobile plugin; `scanner` unchanged |
 | Secrets | `keyring` 3.x: Keychain, Credential Manager, Secret Service | iOS: Keychain (`apple-native` covers iOS). Android: a Keystore-backed store, through `keyring`'s pluggable credential builder or `keyring-core` | `crates/secrets` |
 | SSH known hosts, SSH agent | `~/.ssh/known_hosts`; the user's key file or agent | known hosts in the app's data folder; no agent: only filebridge's own key from the keyring ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)) | `transport-rclone/src/fs.rs`, `integration-nextcloud/src/ssh.rs` |
@@ -92,9 +92,12 @@ and see the Job resume; finish with a verification of zero differences.
 
 ### Phase 4b — iOS
 
-Starts only with a Mac (Xcode) and an Apple Developer account. librclone as `c-archive` for
-`aarch64-apple-ios` (upstream says iOS is untested), `tauri ios init`, a Swift plugin for the
-folder picker and security-scoped bookmarks, Keychain via `apple-native`.
+No Mac and no paid account ([ADR 0034](adr/0034-ios-without-a-mac.md)): GitHub's macOS runner
+builds librclone as `c-archive` (upstream says iOS is untested), runs the transport contract
+against it inside the simulator, then runs `tauri ios init` and builds the app for the simulator
+and, unsigned, for a device. The `.ipa` is signed with a free Apple ID and installed from Linux
+([runbook](runbooks/ios-without-a-mac.md)). A Swift plugin gives the folder picker with
+security-scoped bookmarks and keeps the screen on while sending; Keychain via `apple-native`.
 
 **Gate:** send a folder from the Files app to Nextcloud over WebDAV, leaving the app and coming
 back mid-send; the Job resumes and the verification has zero differences.
@@ -157,7 +160,34 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
 - Without `gen/android/key.properties` (git-ignored, your own key) the release APK comes out
   unsigned; for an emulator, sign it with the debug key (`zipalign`, then `apksigner sign --ks
   ~/.android/debug.keystore`).
-- iOS (Phase 4b) is not started: it needs a Mac.
+- iOS: see [As built — iOS](#as-built--ios-2026-10-26).
+
+## As built — iOS (2026-10-26)
+
+| Piece | Where |
+|---|---|
+| librclone as a static archive for `aarch64-apple-ios` and `aarch64-apple-ios-sim` (and the host, for tests) | `sidecars/librclone/build.sh ios`, `host-archive` |
+| `librclone-linked`: `build.rs` links the archive, `Librclone::open_linked` calls it; `host`'s feature of the same name picks it | `crates/transport-rclone`, `crates/host` |
+| The contract suite in an iOS simulator (cargo runner `simctl spawn`) | `sidecars/librclone/simctl-run.sh`, `.github/workflows/ios.yml` |
+| Swift plugin: `pickFolder` (Files app folder, access opened, bookmark kept), `restoreAccess` (every bookmark opened again before Jobs resume), `sending` (screen kept on; extra time to finish the Batch on leaving) | `apps/desktop/src-tauri/ios/`, linked by `src-tauri/build.rs`; called from `native.rs`, `engine.rs` |
+| `app.filebridge`, iOS 15 or later | `src-tauri/tauri.ios.conf.json` |
+| iPhone texts: an `iphone` section laid over `phone` (keep the app open while it sends) | `src/i18n/{en,pt}.json`, `applyPhoneTexts` |
+| `gen/apple` made by `tauri ios init` on every CI run, not committed, plus the system libraries librclone needs at Xcode's link (`-framework CoreFoundation -lresolv`) | `apps/desktop/scripts/ios-project.sh`, `.github/workflows/ios.yml` |
+
+**Tested:** on Linux, the linked mode itself (`build.sh host-archive`, then the contract suite
+with `--features librclone-linked`). On CI's Mac (macOS 15, Xcode 16.4): librclone builds for
+iOS and the simulator, the contract suite passes linked inside an iOS simulator, and the app
+builds as an unsigned arm64 `.ipa` (17.6 MB; librclone and the Swift plugin inside). Not yet run:
+the app in the simulator or on an iPhone, and the gate.
+
+**Known gaps:**
+
+- Not a Source yet: the Photos library (PhotoKit assets have no path; a new kind of Source, its
+  own ADR).
+- Picked folders' bookmarks are kept for good and all opened at launch.
+- An iCloud Drive folder whose files are not downloaded yet holds placeholders: the scan sees
+  them as missing or unreadable. Download the folder in the Files app first.
+- Every iOS change costs a CI run; no local build or debugger.
 
 ## Risks
 
@@ -166,6 +196,7 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
 | librclone is marked experimental; iOS untested upstream | High | The transport contract suite runs both `Rcd` and `Librclone`; plan B is a native SFTP/WebDAV transport crate (a new plugin, no `core` change) |
 | Go cross-compiling (NDK, `CGO`) adds a second toolchain | Medium | One script in `sidecars/`, pinned Go and NDK versions |
 | "All files access" is hard to get approved on Google Play | Low now | Personal APK only; the Storage Access Framework (content URIs) would need a new Source kind, which waits for a store release |
-| iOS stops background work after a short time | Medium | Accepted: sends advance in the foreground; every Stage is already persisted, so a Job resumes where it stopped |
+| iOS stops background work after a short time | Medium | Accepted: sends advance in the foreground, the screen kept on, with ~30 s to finish the Batch on leaving; every Stage is already persisted, so a Job resumes where it stopped |
+| The iOS build has only ever run on CI | Medium | The contract suite runs inside the simulator before the app is built; the runbook's gate on a real iPhone |
 | Android kills a foreground service under memory pressure or battery savers | Medium | Same resume path as a crash (`kill -9` test from Phase 1); ask to exclude filebridge from battery optimisation |
 | A keyring store for Android does not exist in `keyring` 3.x | Medium | Write it behind `keyring`'s credential builder, backed by Android Keystore through the Kotlin plugin |

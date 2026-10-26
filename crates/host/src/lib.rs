@@ -47,7 +47,7 @@ pub struct HostOptions {
     pub cache_dir: Option<PathBuf>,
     /// The rclone binary (default: see [`find_rclone`]), or with
     /// [`TransportChoice::Librclone`] the library (default: `librclone.so`, found by the
-    /// system loader).
+    /// system loader; unused with feature `librclone-linked`, where it is in the program).
     pub rclone: Option<PathBuf>,
     /// The transport jobs use.
     pub transport: TransportChoice,
@@ -156,7 +156,7 @@ impl Host {
                 );
                 Some(rcd.into())
             }
-            #[cfg(feature = "librclone")]
+            #[cfg(all(feature = "librclone", not(feature = "librclone-linked")))]
             TransportChoice::Librclone => {
                 let lib = opts
                     .rclone
@@ -165,6 +165,13 @@ impl Host {
                 let lib = filebridge_transport_rclone::Librclone::open(&lib)
                     .await
                     .with_context(|| format!("load {}", lib.display()))?;
+                Some(lib.into())
+            }
+            #[cfg(feature = "librclone-linked")]
+            TransportChoice::Librclone => {
+                let lib = filebridge_transport_rclone::Librclone::open_linked()
+                    .await
+                    .context("start the linked librclone")?;
                 Some(lib.into())
             }
             TransportChoice::Fake => {

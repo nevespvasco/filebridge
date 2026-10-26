@@ -25,6 +25,8 @@ work; Android allows long work through a foreground service.
 - **Personal builds**: a signed APK installed by hand. Store releases wait for signed installers.
 - *Amended (2026-10-22):* the author asked to build Phase 4a now, alongside Phase 2, rather than
   after its gate.
+- *Amended by [ADR 0034](0034-ios-without-a-mac.md) (2026-10-26):* iOS no longer waits for a Mac
+  or a paid account: it is built on CI's Mac and signed with a free Apple ID.
 
 Details in [11 — Mobile](../11-mobile.md).
 

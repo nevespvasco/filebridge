@@ -67,7 +67,9 @@
 
 ## Tests
 - `tests/contract.rs`: the shared contract against `rclone rcd` on the local backend, and over
-  librclone with `--features librclone`.
+  librclone with `--features librclone`, and over librclone linked in as on iOS with
+  `--features librclone-linked` (`sidecars/librclone/build.sh host-archive` first; CI runs it
+  inside an iOS simulator, ADR 0034).
 - `tests/sftp_password.rs`, `tests/webdav.rs`, `tests/s3.rs`: against `rclone serve sftp`,
   `serve webdav` and `serve s3` on 127.0.0.1, secrets from a keyring: the contract, wrong secrets
   as `Auth`, no secret in any message.

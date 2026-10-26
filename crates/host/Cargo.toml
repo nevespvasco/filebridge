@@ -9,6 +9,8 @@ publish.workspace = true
 [features]
 # rclone loaded into the process (`TransportChoice::Librclone`), for phones (ADR 0014).
 librclone = ["filebridge-transport-rclone/librclone"]
+# librclone linked into the program (iOS) instead of loaded from a file.
+librclone-linked = ["librclone", "filebridge-transport-rclone/librclone-linked"]
 
 [dependencies]
 anyhow.workspace = true

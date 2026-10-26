@@ -172,11 +172,17 @@ see the Job resume; the verification has zero differences.
 
 ### Phase 4b — iOS
 
-Needs a Mac (Xcode) and an Apple Developer account.
+Built on GitHub's Mac, signed with a free Apple ID ([ADR 0034](adr/0034-ios-without-a-mac.md),
+[runbook](runbooks/ios-without-a-mac.md)).
 
-- [ ] librclone as `c-archive` for `aarch64-apple-ios`.
-- [ ] Tauri iOS project; Swift plugin for the folder picker and security-scoped bookmarks.
-- [ ] Keychain through `keyring`'s `apple-native`.
+- [x] librclone as `c-archive` for `aarch64-apple-ios` and the simulator, linked in
+      (`librclone-linked`); the contract suite passes linked on Linux.
+- [x] The contract suite passes inside the iOS simulator (CI).
+- [x] Tauri iOS project (made by `tauri ios init` on CI); Swift plugin for the folder picker,
+      security-scoped bookmarks and the screen kept on while sending.
+- [x] Keychain through `keyring`'s `apple-native` (already in `crates/secrets`).
+- [x] The app builds on CI (unsigned `.ipa` for a device).
+- [ ] The app opens on an iPhone, signed with a free Apple ID; then the gate.
 
 **Gate:** send a folder from the Files app to Nextcloud over WebDAV, leaving the app and coming
 back mid-send; the Job resumes and the verification has zero differences.

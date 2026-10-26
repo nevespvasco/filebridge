@@ -143,6 +143,8 @@ impl Service {
         .await
         .map_err(|e| unavailable(format!("{e:#}")))?;
         let ops = Arc::new(host.operations());
+        // iOS: the folders those Jobs read are only readable once opened again.
+        native.restore_folder_access().await;
         tauri::async_runtime::spawn(self.clone().forward_events(ops.subscribe(), native));
         // Jobs a closed app left mid-way go on now, as the desktop service does on start.
         match host.engine.resume_unfinished().await {

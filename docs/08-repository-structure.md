@@ -10,7 +10,9 @@ filebridge/
 │   │   ├── src/                 # interface (views, Pinia stores, components)
 │   │   └── src-tauri/           # Tauri commands — thin IPC client of filebridge-service;
 │   │       │                    #   on phones the engine itself (ADR 0014)
-│   │       └── gen/android/     # Android project: FilebridgePlugin, SendService, SecretVault
+│   │       ├── gen/android/     # Android project: FilebridgePlugin, SendService, SecretVault
+│   │       └── ios/             # iOS plugin (Swift package, linked by build.rs); gen/apple is
+│   │                            #   made on CI's Mac at every build (ADR 0034)
 │   ├── cli/                     # same logic, no UI (servers, scripts); `filebridge`, installed
 │   │                            #   with `cargo install` or in the .deb/.rpm
 │   └── service/                 # filebridge-service: hosts the engine, serves ipc (ADR 0008)

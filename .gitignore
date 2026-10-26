@@ -12,6 +12,11 @@ dist/
 # build output and the .so libraries out)
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/schemas/
+# gen/apple is made by `tauri ios init` on CI's Mac at every build (.github/workflows/ios.yml);
+# the iOS plugin's Swift package (src-tauri/ios) gets the Tauri package copied in by build.rs
+apps/desktop/src-tauri/gen/apple/
+apps/desktop/src-tauri/.tauri/
+apps/desktop/src-tauri/ios/.build/
 
 # Sidecar binaries (downloaded per platform at build time) and librclone's build tree
 sidecars/bin/

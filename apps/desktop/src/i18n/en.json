@@ -78,6 +78,30 @@
       }
     }
   },
+  "iphone": {
+    "conn": {
+      "tip": "The copy engine runs inside filebridge. iOS pauses it soon after you leave the app, and it continues where it stopped when you come back. This shows whether it is running."
+    },
+    "review": {
+      "safety": "Copy only: the source is never changed or deleted. Keep filebridge open while it sends: if you leave, the send pauses and continues when you come back."
+    },
+    "after": {
+      "closeOk": "Keep filebridge open until the send ends; the screen stays on meanwhile. If you leave the app, the send pauses and continues where it stopped when you come back."
+    },
+    "settings": {
+      "sendingHint": "Applies to every send, including the ones already running. Times are this phone's local time; filebridge has to be open when the send window opens.",
+      "serviceHint": "On an iPhone the copy engine runs inside filebridge, while the app is open."
+    },
+    "joblog": {
+      "note": "Recorded by the copy engine while the app was open."
+    },
+    "activity": {
+      "empty": "Nothing happened yet. What your transfers do appears here."
+    },
+    "mobile": {
+      "pickHint": "A folder in the Files app: on this iPhone, iCloud Drive, a USB drive… Add one folder at a time."
+    }
+  },
   "conn": {
     "connected": "Copy engine running",
     "connecting": "Starting the copy engine…",

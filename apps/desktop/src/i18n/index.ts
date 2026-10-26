@@ -13,10 +13,12 @@ export const i18n = createI18n({
 });
 
 /** On a phone there is no window and no separate service: the texts under `phone` (same keys
- *  as the rest of the file) replace the ones that say otherwise. */
-export function applyPhoneTexts() {
+ *  as the rest of the file) replace the ones that say otherwise. On an iPhone, those under
+ *  `iphone` then replace the ones about sending in the background, which iOS doesn't allow. */
+export function applyPhoneTexts(iphone = false) {
   for (const [locale, m] of Object.entries({ pt, en })) {
     i18n.global.mergeLocaleMessage(locale, m.phone);
+    if (iphone) i18n.global.mergeLocaleMessage(locale, m.iphone);
   }
 }
 
