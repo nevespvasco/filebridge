@@ -1638,7 +1638,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1663,7 +1663,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1692,7 +1692,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-desktop"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "filebridge-host",
  "filebridge-ipc",
@@ -1715,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-host"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1744,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-integration-api"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-names",
@@ -1757,7 +1757,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-integration-immich"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-integration-api",
@@ -1773,7 +1773,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-integration-nextcloud"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-integration-api",
@@ -1792,7 +1792,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-ipc"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-model",
@@ -1812,7 +1812,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-model"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "filebridge-names",
  "filebridge-transport-api",
@@ -1824,14 +1824,14 @@ dependencies = [
 
 [[package]]
 name = "filebridge-names"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "unicode-normalization",
 ]
 
 [[package]]
 name = "filebridge-scanner"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "filebridge-names",
  "libc",
@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-secrets"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-transport-api",
@@ -1853,7 +1853,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-service"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1871,7 +1871,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-store"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-thumbnail"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "image",
  "sha2 0.11.1",
@@ -1893,7 +1893,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-transport-api"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "bitflags 2.13.2",
@@ -1908,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-transport-fake"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-transport-api",
@@ -1919,7 +1919,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-transport-nextcloud"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "filebridge-names",
@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "filebridge-transport-rclone"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
