@@ -17,6 +17,9 @@ struct SendingArgs: Decodable {
   let active: Bool
 }
 
+/// `{}`: native.rs reads a missing `path` as "cancelled"; a bare `resolve()` would send null.
+private let nothing: JsonObject = [:]
+
 class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
   /// Bookmarks of the picked folders, by path, in the app's own preferences.
   private let bookmarksKey = "filebridge.folderBookmarks"
@@ -55,7 +58,7 @@ class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
     guard let invoke = pendingPick else { return }
     pendingPick = nil
     guard let url = urls.first else {
-      invoke.resolve()
+      invoke.resolve(nothing)
       return
     }
     guard url.startAccessingSecurityScopedResource() else {
@@ -76,7 +79,7 @@ class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
   }
 
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-    pendingPick?.resolve()
+    pendingPick?.resolve(nothing)
     pendingPick = nil
   }
 
@@ -156,6 +159,6 @@ class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
 }
 
 @_cdecl("init_plugin_filebridge")
-func initPlugin() -> Plugin {
+public func initPlugin() -> Plugin {
   return FilebridgePlugin()
 }

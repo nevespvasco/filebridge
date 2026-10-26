@@ -1,4 +1,4 @@
-// swift-tools-version:5.3
+// swift-tools-version:5.5
 // filebridge's iOS plugin (src/native.rs), built and linked by build.rs.
 
 import PackageDescription

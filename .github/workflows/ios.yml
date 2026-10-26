@@ -43,6 +43,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios
+          # A failed run still saves what it compiled, so the next one starts from there.
+          cache-on-failure: true
 
       - uses: actions/setup-go@v5
         with:
@@ -51,7 +53,7 @@ jobs:
 
       - name: librclone cache
         id: librclone
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             sidecars/bin/librclone/aarch64-apple-ios
@@ -61,6 +63,16 @@ jobs:
       - name: Build librclone
         if: steps.librclone.outputs.cache-hit != 'true'
         run: sidecars/librclone/build.sh ios
+
+      # Saved at once, not at the end: a later step failing must not throw the build away.
+      - name: Save librclone
+        if: steps.librclone.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            sidecars/bin/librclone/aarch64-apple-ios
+            sidecars/bin/librclone/aarch64-apple-ios-sim
+          key: ${{ steps.librclone.outputs.cache-primary-key }}
 
       - name: Boot a simulator
         run: |
