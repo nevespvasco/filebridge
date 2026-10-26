@@ -1,6 +1,6 @@
 // Window-side platform features: the file picker, drag & drop, OS notifications. They come from
 // Tauri plugins and `@tauri-apps/api`, not from the service. On a phone (ADR 0013) the folder
-// picker is the app's own Android plugin, and drag & drop, the tray and "show in the file
+// picker is the app's own Android or iOS plugin, and drag & drop, the tray and "show in the file
 // manager" don't exist.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -21,7 +21,7 @@ let current: Platform = "desktop";
 /** Asks Rust where the app runs; called once before the app mounts. */
 export async function initPlatform(): Promise<void> {
   if (!isMock) current = await commands.platform();
-  if (isMobile()) applyPhoneTexts();
+  if (isMobile()) applyPhoneTexts(current === "ios");
 }
 
 /** Android or iOS: no tray, no service, no drag & drop, folders only. */
@@ -49,7 +49,7 @@ export function setMockPicker(picker: (opts: PickOptions) => Promise<string[]>) 
 }
 
 /** Native picker. Returns absolute paths (empty when cancelled). On a phone only folders can
- *  be picked, one at a time, after Android's "All files access" is granted. */
+ *  be picked, one at a time; on Android after "All files access" is granted. */
 export async function pickPaths(opts: PickOptions): Promise<string[]> {
   if (isMock) return mockPicker ? mockPicker(opts) : [];
   if (isMobile()) return pickPhoneFolder(opts);

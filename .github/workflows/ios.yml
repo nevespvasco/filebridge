@@ -1,0 +1,141 @@
+# iOS builds on GitHub's Mac, so no Mac is needed (ADR 0034). Runs on a push to the `ios` branch,
+# or by hand: Actions → iOS → Run workflow, or `gh workflow run ios.yml [-f simulator=true]`.
+# Never on other pushes: a private repository's free minutes go fast on a Mac. With the account's
+# spending limit at $0 a run past them is refused, never billed.
+#
+# 1. librclone for iOS and the simulator (cached until rclone or the shim changes).
+# 2. The transport contract against the linked librclone, inside an iOS simulator.
+# 3. An unsigned .ipa for a real iPhone (artifact `filebridge-ios-device`), to sign with your own
+#    Apple ID and install (docs/runbooks/ios-without-a-mac.md).
+# 4. With `simulator`, or when the APPETIZE_API_TOKEN secret is set: the app for the simulator
+#    (artifact `filebridge-ios-simulator`), uploaded to Appetize when the secret is set.
+name: iOS
+
+on:
+  push:
+    branches: [ios]
+  workflow_dispatch:
+    inputs:
+      simulator:
+        description: Also build the app for the simulator
+        type: boolean
+        default: false
+
+concurrency:
+  group: ios
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  APPETIZE: ${{ secrets.APPETIZE_API_TOKEN != '' }}
+  SIMULATOR_APP: ${{ inputs.simulator || secrets.APPETIZE_API_TOKEN != '' }}
+
+jobs:
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust targets
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache: false
+
+      - name: librclone cache
+        id: librclone
+        uses: actions/cache@v4
+        with:
+          path: |
+            sidecars/bin/librclone/aarch64-apple-ios
+            sidecars/bin/librclone/aarch64-apple-ios-sim
+          key: librclone-ios-${{ hashFiles('sidecars/RCLONE_VERSION', 'sidecars/librclone/**') }}
+
+      - name: Build librclone
+        if: steps.librclone.outputs.cache-hit != 'true'
+        run: sidecars/librclone/build.sh ios
+
+      - name: Boot a simulator
+        run: |
+          udid="$(xcrun simctl list devices available --json | jq -r '
+            [.devices | to_entries[] | select(.key | contains("iOS")) | .value[]
+             | select(.name | startswith("iPhone"))][0].udid')"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+
+      - name: Transport contract in the simulator (linked librclone)
+        env:
+          CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER: ${{ github.workspace }}/sidecars/librclone/simctl-run.sh
+        run: >-
+          cargo test -p filebridge-transport-rclone --features librclone-linked
+          --target aarch64-apple-ios-sim --test contract
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.5.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Install the UI's packages
+        working-directory: apps/desktop
+        run: pnpm install --frozen-lockfile
+
+      - name: Xcode project (tauri ios init)
+        working-directory: apps/desktop
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          pnpm tauri ios init --ci
+
+      - name: Unsigned app for a real iPhone
+        working-directory: apps/desktop
+        run: |
+          pnpm tauri ios build --target aarch64 --no-sign --ci
+          ipa="$(find src-tauri/gen/apple/build -name '*.ipa' | head -1)"
+          test -n "$ipa"
+          cp "$ipa" "$RUNNER_TEMP/filebridge-ios-device.ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: filebridge-ios-device
+          path: ${{ runner.temp }}/filebridge-ios-device.ipa
+          retention-days: 14
+
+      - name: App for the simulator
+        if: env.SIMULATOR_APP == 'true'
+        working-directory: apps/desktop
+        run: |
+          pnpm tauri ios build --target aarch64-sim --debug --no-sign --ci
+          app="$(find src-tauri/gen/apple/build -name '*.app' -type d -prune | head -1)"
+          test -n "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/filebridge-ios-simulator.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: env.SIMULATOR_APP == 'true'
+        with:
+          name: filebridge-ios-simulator
+          path: ${{ runner.temp }}/filebridge-ios-simulator.zip
+          retention-days: 14
+
+      - name: Upload to Appetize
+        env:
+          APPETIZE_API_TOKEN: ${{ secrets.APPETIZE_API_TOKEN }}
+          APPETIZE_APP_KEY: ${{ vars.APPETIZE_APP_KEY }}
+        if: env.APPETIZE == 'true'
+        run: |
+          # The same app page every time once APPETIZE_APP_KEY (a repository variable) is set.
+          url="https://api.appetize.io/v1/apps${APPETIZE_APP_KEY:+/$APPETIZE_APP_KEY}"
+          curl --fail-with-body -sS -X POST "$url" -H "X-API-KEY: $APPETIZE_API_TOKEN" \
+            -F "file=@$RUNNER_TEMP/filebridge-ios-simulator.zip" -F platform=ios \
+            | jq '{publicKey, appURL: .appURL}'

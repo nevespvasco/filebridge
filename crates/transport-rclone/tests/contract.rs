@@ -3,6 +3,8 @@
 //!
 //! With feature `librclone`, the same contract against librclone in the process (ADR 0014).
 //! Skipped when it isn't built (`LIBRCLONE`, else `sidecars/librclone/build.sh host`'s output).
+//! With `librclone-linked`, against the static librclone linked into the test (as on iOS;
+//! `build.sh host-archive`, or `build.sh ios` for the simulator).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -48,7 +50,7 @@ async fn per_file_keeps_the_transport_contract() {
     filebridge_transport_api::contract::check_probe(&transport, &dest, dir.path()).await;
 }
 
-#[cfg(feature = "librclone")]
+#[cfg(all(feature = "librclone", not(feature = "librclone-linked")))]
 #[tokio::test]
 async fn librclone_keeps_the_transport_contract() {
     let path = std::env::var_os("LIBRCLONE")
@@ -64,6 +66,20 @@ async fn librclone_keeps_the_transport_contract() {
     let lib = filebridge_transport_rclone::Librclone::open(&path)
         .await
         .unwrap();
+    check_librclone(lib).await;
+}
+
+#[cfg(feature = "librclone-linked")]
+#[tokio::test]
+async fn linked_librclone_keeps_the_transport_contract() {
+    let lib = filebridge_transport_rclone::Librclone::open_linked()
+        .await
+        .unwrap();
+    check_librclone(lib).await;
+}
+
+#[cfg(feature = "librclone")]
+async fn check_librclone(lib: Arc<filebridge_transport_rclone::Librclone>) {
     let transport = RcloneTransport::new(lib);
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("dest");

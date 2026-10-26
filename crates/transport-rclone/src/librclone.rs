@@ -1,6 +1,7 @@
 //! rclone linked into the process (ADR 0014): phones can't start the `rclone rcd` sidecar, so
-//! they load librclone (`sidecars/librclone`) and call its C `RcloneRPC`, which takes the same
-//! rc methods and JSON as the HTTP API.
+//! they call librclone's C `RcloneRPC` (`sidecars/librclone`), which takes the same rc methods
+//! and JSON as the HTTP API. Android loads it as a shared library; iOS links it into the app
+//! (feature `librclone-linked`), since Go builds only static archives for iOS.
 
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::path::{Path, PathBuf};
@@ -28,18 +29,32 @@ type FreeFn = unsafe extern "C" fn(*mut c_char);
 /// librclone, loaded once per process and never unloaded: rclone keeps global state (config,
 /// stats, jobs), so a second load of the same library would share it anyway.
 pub struct Librclone {
-    path: PathBuf,
+    /// The file it was loaded from; `None` when it is linked into the program.
+    path: Option<PathBuf>,
     rpc: RpcFn,
     free: FreeFn,
     /// Secrets in use with rclone, scrubbed from every error it returns.
     scrubber: Scrubber,
-    _lib: libloading::Library,
+    _lib: Option<libloading::Library>,
 }
 
 static LOADED: Mutex<Option<Arc<Librclone>>> = Mutex::new(None);
 
 /// What librclone is told about the host's environment before it starts.
 const FORWARDED_ENV: &[&str] = &["HOME", "TMPDIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"];
+
+/// librclone's exports, from the static archive `build.rs` links (`sidecars/librclone/shim`).
+#[cfg(feature = "librclone-linked")]
+mod linked {
+    use super::{RpcResult, c_char};
+
+    unsafe extern "C" {
+        pub fn RcloneInitialize();
+        pub fn RcloneSetenv(key: *const c_char, value: *const c_char);
+        pub fn RcloneRPC(method: *const c_char, input: *const c_char) -> RpcResult;
+        pub fn RcloneFreeString(s: *mut c_char);
+    }
+}
 
 impl Librclone {
     /// Loads librclone from `path` (a file, or a bare name such as `librclone.so` that the
@@ -48,18 +63,44 @@ impl Librclone {
     ///
     /// Later calls return the library already loaded; a different `path` is an error.
     pub async fn open(path: &Path) -> Result<Arc<Self>> {
+        Self::start(Some(path), || Self::load(path)).await
+    }
+
+    /// The librclone linked into this program (iOS), initialised as [`Librclone::open`] does.
+    #[cfg(feature = "librclone-linked")]
+    pub async fn open_linked() -> Result<Arc<Self>> {
+        Self::start(None, || {
+            // SAFETY: the archive exports these C signatures (sidecars/librclone/shim), and a
+            // linked library is never unloaded.
+            unsafe {
+                init(linked::RcloneInitialize, Some(linked::RcloneSetenv));
+            }
+            Ok(Self {
+                path: None,
+                rpc: linked::RcloneRPC,
+                free: linked::RcloneFreeString,
+                scrubber: Scrubber::default(),
+                _lib: None,
+            })
+        })
+        .await
+    }
+
+    async fn start(path: Option<&Path>, load: impl FnOnce() -> Result<Self>) -> Result<Arc<Self>> {
         let lib = {
             let mut loaded = LOADED.lock().unwrap();
             if let Some(lib) = loaded.as_ref() {
-                if lib.path != path {
+                if lib.path.as_deref() != path {
                     return Err(TransportError::fatal(format!(
                         "librclone is already loaded from {}",
-                        lib.path.display()
+                        lib.path
+                            .as_deref()
+                            .map_or("this program".into(), |p| p.display().to_string())
                     )));
                 }
                 return Ok(lib.clone());
             }
-            let lib = Arc::new(Self::load(path)?);
+            let lib = Arc::new(load()?);
             *loaded = Some(lib.clone());
             lib
         };
@@ -81,32 +122,40 @@ impl Librclone {
         // symbols are only used while `_lib` keeps the library loaded.
         unsafe {
             let lib = libloading::Library::new(path).map_err(fail)?;
-            let init = *lib.get::<InitFn>(b"RcloneInitialize\0").map_err(fail)?;
+            let initialize = *lib.get::<InitFn>(b"RcloneInitialize\0").map_err(fail)?;
             let rpc = *lib.get::<RpcFn>(b"RcloneRPC\0").map_err(fail)?;
             let free = *lib.get::<FreeFn>(b"RcloneFreeString\0").map_err(fail)?;
-            // Go only sees the environment the process started with; pass what the host set
-            // since (on Android, HOME and TMPDIR in the app's folders). Only our own build of
-            // librclone (sidecars/librclone/shim) has this.
-            if let Ok(setenv) = lib.get::<SetenvFn>(b"RcloneSetenv\0") {
-                for key in FORWARDED_ENV {
-                    if let Some(value) = std::env::var_os(key)
-                        && let Ok(value) = CString::new(value.into_encoded_bytes())
-                    {
-                        let key = CString::new(*key).expect("static name");
-                        setenv(key.as_ptr(), value.as_ptr());
-                    }
-                }
-            }
-            init();
+            // Only our own build of librclone (sidecars/librclone/shim) has this.
+            let setenv = lib.get::<SetenvFn>(b"RcloneSetenv\0").ok().map(|f| *f);
+            init(initialize, setenv);
             Ok(Self {
-                path: path.to_path_buf(),
+                path: Some(path.to_path_buf()),
                 rpc,
                 free,
                 scrubber: Scrubber::default(),
-                _lib: lib,
+                _lib: Some(lib),
             })
         }
     }
+}
+
+/// Starts rclone. Go only sees the environment the process started with; pass what the host set
+/// since (on phones, HOME and TMPDIR in the app's folders).
+///
+/// # Safety
+/// `initialize` and `setenv` are librclone's, and stay valid for the life of the process.
+unsafe fn init(initialize: InitFn, setenv: Option<SetenvFn>) {
+    if let Some(setenv) = setenv {
+        for key in FORWARDED_ENV {
+            if let Some(value) = std::env::var_os(key)
+                && let Ok(value) = CString::new(value.into_encoded_bytes())
+            {
+                let key = CString::new(*key).expect("static name");
+                unsafe { setenv(key.as_ptr(), value.as_ptr()) };
+            }
+        }
+    }
+    unsafe { initialize() };
 }
 
 /// One blocking `RcloneRPC`. The pointers stay valid: the library is never unloaded.

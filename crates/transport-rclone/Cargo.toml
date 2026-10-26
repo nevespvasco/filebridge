@@ -9,6 +9,9 @@ publish.workspace = true
 [features]
 # rclone linked into the process (`Librclone`), for phones (ADR 0014).
 librclone = ["dep:libloading"]
+# librclone linked in as a static archive, for iOS: build.rs links `sidecars/librclone/build.sh`'s
+# output for the target (or `LIBRCLONE_LIB_DIR`).
+librclone-linked = ["librclone"]
 
 [dependencies]
 async-trait.workspace = true

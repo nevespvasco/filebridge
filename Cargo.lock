@@ -1707,6 +1707,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-specta",
+ "tauri-utils",
  "tempfile",
  "tokio",
  "tracing",

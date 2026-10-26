@@ -59,6 +59,7 @@ detail to build each crate on its own.
 | [0031](adr/0031-one-word-for-a-transfer.md) | The UI calls a Job a Transfer, in Portuguese *Envio*, everywhere; "send" is only a verb |
 | [0032](adr/0032-keep-the-name-filebridge.md) | The app keeps the name `filebridge` (the open decision, closed; ADR 0018 had said so in passing) |
 | [0033](adr/0033-give-up-on-a-file-after-three-retries.md) | A file that keeps failing is retried three times, then given up on and listed at the end; a destination that doesn't answer uses up no file's retries |
+| [0034](adr/0034-ios-without-a-mac.md) | iOS is built on GitHub's Mac (librclone linked in, `gen/apple` made per run) and tested in the simulator and on the author's iPhone with a free Apple ID; Sources are Files-app folders kept with bookmarks; sends run while the app is open |
 
 ADR format: Context / Decision / Consequences. To change a decision, add a new ADR that supersedes
 the old one rather than rewriting history.

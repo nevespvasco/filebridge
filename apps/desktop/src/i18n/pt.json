@@ -78,6 +78,30 @@
       }
     }
   },
+  "iphone": {
+    "conn": {
+      "tip": "O motor de cópia funciona dentro do filebridge. O iOS põe-no em pausa pouco depois de sair da aplicação, e ele continua de onde parou quando voltar. Isto mostra se está a funcionar."
+    },
+    "review": {
+      "safety": "Só cópia: a origem nunca é alterada nem apagada. Mantenha o filebridge aberto enquanto envia: se sair, o envio fica em pausa e continua quando voltar."
+    },
+    "after": {
+      "closeOk": "Mantenha o filebridge aberto até o envio acabar; o ecrã fica ligado entretanto. Se sair da aplicação, o envio fica em pausa e continua de onde parou quando voltar."
+    },
+    "settings": {
+      "sendingHint": "Aplica-se a todos os envios, incluindo os que já estão a correr. As horas são as deste telemóvel; o filebridge tem de estar aberto quando o horário começa.",
+      "serviceHint": "No iPhone o motor de cópia funciona dentro do filebridge, enquanto a aplicação está aberta."
+    },
+    "joblog": {
+      "note": "Registado pelo motor de cópia enquanto a aplicação estava aberta."
+    },
+    "activity": {
+      "empty": "Ainda nada aconteceu. O que os envios fazem aparece aqui."
+    },
+    "mobile": {
+      "pickHint": "Uma pasta da aplicação Ficheiros: neste iPhone, no iCloud Drive, numa pen USB… Junte uma pasta de cada vez."
+    }
+  },
   "conn": {
     "connected": "Motor de cópia a funcionar",
     "connecting": "A iniciar o motor de cópia…",
