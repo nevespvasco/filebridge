@@ -108,7 +108,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
-          pnpm tauri ios init --ci
+          scripts/ios-project.sh
 
       - name: Unsigned app for a real iPhone
         working-directory: apps/desktop

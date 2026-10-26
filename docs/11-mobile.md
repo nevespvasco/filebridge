@@ -172,7 +172,7 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
 | Swift plugin: `pickFolder` (Files app folder, access opened, bookmark kept), `restoreAccess` (every bookmark opened again before Jobs resume), `sending` (screen kept on; extra time to finish the Batch on leaving) | `apps/desktop/src-tauri/ios/`, linked by `src-tauri/build.rs`; called from `native.rs`, `engine.rs` |
 | `app.filebridge`, iOS 15 or later | `src-tauri/tauri.ios.conf.json` |
 | iPhone texts: an `iphone` section laid over `phone` (keep the app open while it sends) | `src/i18n/{en,pt}.json`, `applyPhoneTexts` |
-| `gen/apple` made by `tauri ios init` on every CI run, not committed | `.gitignore`, `.github/workflows/ios.yml` |
+| `gen/apple` made by `tauri ios init` on every CI run, not committed, plus the system libraries librclone needs at Xcode's link (`-framework CoreFoundation -lresolv`) | `apps/desktop/scripts/ios-project.sh`, `.github/workflows/ios.yml` |
 
 **Tested:** on Linux only, the linked mode itself: `build.sh host-archive`, then the contract
 suite with `--features librclone-linked` (passes). Nothing has run on CI's Mac, the simulator or
