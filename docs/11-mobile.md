@@ -1,6 +1,6 @@
 # 11 — Mobile (Android, then iOS)
 
-*Android built (Phase 4a); iOS built, not yet run (Phase 4b, [ADR 0034](adr/0034-ios-without-a-mac.md)).* The plan to run filebridge on phones: what it is for there, what changes in the
+*Android built (Phase 4a); iOS built on CI, not yet run on an iPhone (Phase 4b, [ADR 0034](adr/0034-ios-without-a-mac.md)).* The plan to run filebridge on phones: what it is for there, what changes in the
 engine, and the order of the work. Decisions: [ADR 0013](adr/0013-phones-as-a-source-android-first.md)
 (scope) and [ADR 0014](adr/0014-engine-in-the-app-on-phones.md) (how the engine runs). Roadmap:
 [Phase 4](09-roadmap.md#phase-4--mobile).
@@ -174,9 +174,11 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
 | iPhone texts: an `iphone` section laid over `phone` (keep the app open while it sends) | `src/i18n/{en,pt}.json`, `applyPhoneTexts` |
 | `gen/apple` made by `tauri ios init` on every CI run, not committed, plus the system libraries librclone needs at Xcode's link (`-framework CoreFoundation -lresolv`) | `apps/desktop/scripts/ios-project.sh`, `.github/workflows/ios.yml` |
 
-**Tested:** on Linux only, the linked mode itself: `build.sh host-archive`, then the contract
-suite with `--features librclone-linked` (passes). Nothing has run on CI's Mac, the simulator or
-an iPhone yet: the first run of `ios.yml` is the first build.
+**Tested:** on Linux, the linked mode itself (`build.sh host-archive`, then the contract suite
+with `--features librclone-linked`). On CI's Mac (macOS 15, Xcode 16.4): librclone builds for
+iOS and the simulator, the contract suite passes linked inside an iOS simulator, and the app
+builds as an unsigned arm64 `.ipa` (17.6 MB; librclone and the Swift plugin inside). Not yet run:
+the app in the simulator or on an iPhone, and the gate.
 
 **Known gaps:**
 
