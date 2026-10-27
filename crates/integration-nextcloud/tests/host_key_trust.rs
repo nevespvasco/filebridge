@@ -111,6 +111,7 @@ async fn an_unknown_host_is_trusted_only_with_its_fingerprint_and_then_signs_in(
         key_file: None,
         known_hosts_file: Some(known.clone()),
         key: None,
+        password: None,
     };
     let connector = SshConnector::new();
     let refused = connector

@@ -23,13 +23,15 @@
     "quit": "Fechar janela (os envios continuam)"
   },
   "mobile": {
-    "pickLead": "Escolha uma pasta deste telemóvel",
+    "pickLead": "Escolha uma pasta ou ficheiros deste telemóvel",
     "pickFolder": "Escolher pasta",
-    "pickHint": "A câmara, as Transferências, um cartão SD… Junte uma pasta de cada vez.",
-    "addMore": "Juntar outra pasta",
+    "pickHint": "A câmara, as Transferências, um cartão SD… Uma pasta de cada vez, ou vários ficheiros de uma vez.",
+    "addMore": "Juntar mais",
     "storageDenied": "O filebridge precisa de “Acesso a todos os ficheiros” para ler os ficheiros do telemóvel. Permita-o nas definições do Android e tente outra vez.",
     "sendingOne": "1 envio em curso",
-    "sendingMany": "{n} envios em curso"
+    "sendingMany": "{n} envios em curso",
+    "pickFiles": "Escolher ficheiros",
+    "filesSkipped": "1 ficheiro ficou de fora: não está guardado neste telemóvel (um ficheiro na nuvem, por exemplo). | {n} ficheiros ficaram de fora: não estão guardados neste telemóvel (ficheiros na nuvem, por exemplo)."
   },
   "phone": {
     "conn": {
@@ -73,8 +75,22 @@
     "tour": {
       "source": {
         "add": {
-          "body": "Escolha uma pasta com o botão, uma de cada vez. Junte quantas quiser: vão todas para o mesmo sítio, e nada muda na origem."
+          "body": "Escolha uma pasta ou ficheiros com os botões: uma pasta de cada vez, ficheiros vários de uma vez. Junte quantos quiser: vão todos para o mesmo sítio, e nada muda na origem."
         }
+      }
+    },
+    "profile": {
+      "keyFileHint": "vazio = entrar com a palavra-passe",
+      "passwordHint": "vazio = o ficheiro da chave",
+      "hint": {
+        "keyFile": "Um telemóvel não tem agente SSH: escolha um ficheiro de chave neste telemóvel, ou deixe vazio e escreva a palavra-passe",
+        "user": "O utilizador com que entra no servidor",
+        "knownHosts": "Vazio = a lista própria do filebridge neste telemóvel"
+      },
+      "help": {
+        "keyFile": "Um ficheiro com uma chave SSH privada guardado neste telemóvel, usado em vez de palavra-passe. Um telemóvel não tem agente SSH: sem ficheiro de chave, o filebridge entra com a palavra-passe.",
+        "user": "O utilizador com que entra no servidor.",
+        "knownHosts": "O ficheiro com os servidores em que este telemóvel já confia. Deixe vazio para usar o do filebridge."
       }
     }
   },
@@ -99,7 +115,7 @@
       "empty": "Ainda nada aconteceu. O que os envios fazem aparece aqui."
     },
     "mobile": {
-      "pickHint": "Uma pasta da aplicação Ficheiros: neste iPhone, no iCloud Drive, numa pen USB… Junte uma pasta de cada vez."
+      "pickHint": "Pastas ou ficheiros da aplicação Ficheiros: neste iPhone, no iCloud Drive, numa pen USB… Uma pasta de cada vez, ou vários ficheiros de uma vez."
     }
   },
   "conn": {
@@ -826,11 +842,13 @@
       "folder": "Uma pasta dentro dos ficheiros desse utilizador. Vazio põe os ficheiros no topo.",
       "ctid": "Só Proxmox: o número do contentor onde corre o Nextcloud. Deixe vazio e o filebridge encontra-o.",
       "installDir": "Onde o Nextcloud está instalado dentro do contentor. Deixe vazio e o filebridge encontra-a.",
-      "dedicated": "Em vez de root, o filebridge entra com um utilizador próprio: no grupo do servidor web (para entregar ao Nextcloud os ficheiros que envia sem precisar de root), e autorizado por uma linha de sudoers a correr apenas o occ do Nextcloud. O filebridge mostra os comandos para preparar isto; é o utilizador que os corre."
+      "dedicated": "Em vez de root, o filebridge entra com um utilizador próprio: no grupo do servidor web (para entregar ao Nextcloud os ficheiros que envia sem precisar de root), e autorizado por uma linha de sudoers a correr apenas o occ do Nextcloud. O filebridge mostra os comandos para preparar isto; é o utilizador que os corre.",
+      "sshPassword": "Um telemóvel não tem agente SSH. O filebridge entra uma vez com esta palavra-passe, junta a sua própria chave ao authorized_keys do utilizador SSH (restrita, removível com Remover acesso) e daí em diante entra só com essa chave. A palavra-passe nunca é guardada."
     },
     "hint": {
       "host": "O nó Proxmox ou o próprio servidor do Nextcloud",
-      "sshUser": "Normalmente root"
+      "sshUser": "Normalmente root",
+      "sshPassword": "Usada uma vez para instalar a chave própria do filebridge no servidor, depois esquecida."
     },
     "advice": {
       "title": "Não sabe qual escolher? Deixe o filebridge verificar o servidor",
@@ -850,7 +868,8 @@
     "serverSetup": "Preparação do servidor para o utilizador dedicado",
     "serverSetupHint": "O filebridge nunca corre estes comandos nem altera o sudoers. Leia-os, corra-os como root no servidor e depois carregue outra vez em Detetar.",
     "copySetup": "Copiar",
-    "copied": "Copiado"
+    "copied": "Copiado",
+    "sshPassword": "Palavra-passe SSH"
   },
   "immich": {
     "intro": "O filebridge copia os ficheiros para uma pasta de uma biblioteca externa do Immich (por SFTP, ou para uma pasta deste computador) e depois pede ao Immich que leia essa biblioteca. O Immich só lê a pasta: nunca move nem apaga os seus ficheiros.",
@@ -1510,6 +1529,7 @@
     "server": "Endereço do Nextcloud",
     "appPassword": "Palavra-passe de aplicação",
     "https": "Use https://: uma palavra-passe de aplicação não pode viajar sem cifra.",
+    "ipAddress": "Um endereço IP raramente funciona com https://: o certificado é feito para o nome do servidor. Escreva o nome com que abre o Nextcloud no browser.",
     "folderHint": "vazio = a raiz dos ficheiros do utilizador",
     "check": "Verificar e guardar",
     "checking": "A verificar…",
@@ -1529,7 +1549,8 @@
       "direct": "direto (SSH)"
     },
     "appPasswordHint": "Não é a palavra-passe com que entra no Nextcloud: com autenticação de dois fatores essa não funciona aqui. Crie uma no Nextcloud em Definições → Segurança → Dispositivos e sessões.",
-    "appPasswordLink": "Abrir essa página"
+    "appPasswordLink": "Abrir essa página",
+    "appPasswordShort": "É mais curta do que qualquer palavra-passe de aplicação do Nextcloud (têm o formato xxxxx-xxxxx-xxxxx-xxxxx-xxxxx): deve ser a palavra-passe com que entra."
   },
   "access": {
     "uses": "Entra com a chave própria do filebridge",

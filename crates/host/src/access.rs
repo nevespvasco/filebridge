@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 
 use filebridge_core::{Engine, Profile};
 use filebridge_integration_nextcloud::ssh::{NewKey, generate_key};
-use filebridge_integration_nextcloud::{NextcloudSettings, ShellConnector, SshTarget};
+use filebridge_integration_nextcloud::{NextcloudSettings, ShellConnector, SshPassword, SshTarget};
 use filebridge_ipc::{AccessReport, DetectStepView, ErrorBody};
 use filebridge_secrets::{KeyringRef, SecretKind, SecretStore, reference};
 use filebridge_transport_api::Backend;
@@ -180,6 +180,7 @@ fn targets(profile: &Profile) -> Result<Vec<SshTarget>, ErrorBody> {
         key_file: key_file.clone(),
         known_hosts_file: known_hosts_file.clone(),
         key: None,
+        password: None,
     }];
     if let Ok(NextcloudSettings::Direct(nc)) =
         serde_json::from_value::<NextcloudSettings>(profile.integration_settings.clone())
@@ -373,6 +374,49 @@ pub(crate) async fn install(
     }
     let targets = targets(&profile)?;
     ensure_idle(engine, profile_id).await?;
+    install_key(engine, connector, &profile, targets, Before::OwnKey).await
+}
+
+/// What the profile signed in with before filebridge's key, for the last step's message.
+#[derive(Clone, Copy)]
+enum Before {
+    /// The user's key file or SSH agent.
+    OwnKey,
+    /// A password typed once, on a phone.
+    Password,
+}
+
+/// A new direct-mode profile set up from a phone, which has no SSH agent: filebridge's key is
+/// installed by signing in once with the SSH user's `password`, and the profile is saved (for
+/// the first time) only once it signs in with the key. The password is never stored.
+pub(crate) async fn install_with_password(
+    engine: &Engine,
+    connector: &dyn ShellConnector,
+    profile: Profile,
+    password: SshPassword,
+) -> Result<AccessReport, ErrorBody> {
+    check_id(&profile.id)?;
+    let _claim = Claim::take(&profile.id)?;
+    let targets = targets(&profile)?
+        .into_iter()
+        .map(|t| SshTarget {
+            password: Some(password.clone()),
+            ..t
+        })
+        .collect();
+    install_key(engine, connector, &profile, targets, Before::Password).await
+}
+
+/// Generates filebridge's key, installs it on `targets` with the access they carry, and saves
+/// `profile` signing in with it; any failed step undoes the others.
+async fn install_key(
+    engine: &Engine,
+    connector: &dyn ShellConnector,
+    profile: &Profile,
+    targets: Vec<SshTarget>,
+    before: Before,
+) -> Result<AccessReport, ErrorBody> {
+    let profile_id = profile.id.as_str();
     let secrets = engine
         .registry()
         .secrets()
@@ -383,7 +427,7 @@ pub(crate) async fn install(
     let mut steps = vec![step(
         "generate",
         "ok",
-        "a new Ed25519 key, made on this computer",
+        "a new Ed25519 key, made on this device",
     )];
     let key_ref = reference(profile_id, SecretKind::SshKey);
     let mut undo = Undo {
@@ -442,7 +486,7 @@ pub(crate) async fn install(
         }
     }
 
-    let updated = with_key(&profile, Some(key_ref.clone()))?;
+    let updated = with_key(profile, Some(key_ref.clone()))?;
     let transport = engine
         .registry()
         .transport(&updated.destination.transport)
@@ -463,7 +507,14 @@ pub(crate) async fn install(
     steps.push(step(
         "saved",
         "ok",
-        "the destination now uses filebridge's own key; your own key is no longer used",
+        match before {
+            Before::OwnKey => {
+                "the destination now uses filebridge's own key; your own key is no longer used"
+            }
+            Before::Password => {
+                "the destination uses filebridge's own key; the password was not kept"
+            }
+        },
     ));
     Ok(AccessReport {
         steps,
@@ -947,6 +998,8 @@ exec $REAL "$@""#;
         dir: tempfile::TempDir,
         connects: AtomicUsize,
         connect_limit: usize,
+        /// Connections that signed in with a password.
+        by_password: AtomicUsize,
     }
 
     struct LocalShell(PathBuf);
@@ -957,6 +1010,7 @@ exec $REAL "$@""#;
                 dir: tempfile::tempdir().unwrap(),
                 connects: AtomicUsize::new(0),
                 connect_limit: usize::MAX,
+                by_password: AtomicUsize::new(0),
             }
         }
 
@@ -1003,6 +1057,9 @@ exec $REAL "$@""#;
                 return Err(filebridge_integration_api::IntegrationError::fatal(
                     "connection refused",
                 ));
+            }
+            if target.password.is_some() {
+                self.by_password.fetch_add(1, Ordering::SeqCst);
             }
             Ok(Arc::new(LocalShell(self.home(&target.user))))
         }
@@ -1144,6 +1201,62 @@ exec $REAL "$@""#;
             p.destination.backend,
             Backend::Sftp { key: None, .. }
         ));
+    }
+
+    #[tokio::test]
+    async fn a_phone_installs_the_key_with_a_password_and_saves_the_profile_only_then() {
+        let dest = tempfile::tempdir().unwrap();
+        let (engine, secrets, _) = engine_with_profile(dest.path()).await;
+        let servers = LocalServers::new();
+        let new = |root: &Path| Profile {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "Nextcloud".into(),
+            destination: filebridge_transport_api::Destination {
+                transport: "fake".into(),
+                backend: sftp("root"),
+                root: root.to_string_lossy().into_owned(),
+            },
+            integration: None,
+            integration_settings: serde_json::json!({}),
+            target: filebridge_core::TargetSpec::default(),
+        };
+
+        let profile = new(dest.path());
+        let id = profile.id.clone();
+        let report = install_with_password(&engine, &servers, profile, SshPassword::new("pw"))
+            .await
+            .unwrap();
+        assert!(failures(&report).is_empty(), "{report:?}");
+        assert!(servers.by_password.load(Ordering::SeqCst) > 0);
+        let saved = engine.get_profile(&id).await.unwrap();
+        let key_ref = reference(&id, SecretKind::SshKey);
+        assert!(
+            matches!(&saved.destination.backend, Backend::Sftp { key: Some(r), .. } if *r == key_ref)
+        );
+        assert!(secrets.get(&key_ref).is_ok());
+        assert!(
+            report
+                .steps
+                .last()
+                .unwrap()
+                .message
+                .contains("password was not kept")
+        );
+
+        // A failed check leaves no profile, no line and no key behind.
+        let profile = new(&dest.path().join("nope"));
+        let id = profile.id.clone();
+        let report = install_with_password(&engine, &servers, profile, SshPassword::new("pw"))
+            .await
+            .unwrap();
+        assert!(report.profile.is_none());
+        assert!(engine.get_profile(&id).await.is_err());
+        assert!(
+            !servers
+                .authorized("root")
+                .contains(&format!("filebridge-{id}"))
+        );
+        assert!(secrets.get(&reference(&id, SecretKind::SshKey)).is_err());
     }
 
     #[tokio::test]

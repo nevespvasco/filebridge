@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::autostart::Autostart;
-use crate::native::Native;
+use crate::native::{Native, PickedFiles};
 use crate::service::Service;
 
 type Res<T> = Result<T, ErrorBody>;
@@ -36,6 +36,7 @@ macro_rules! service_commands {
                 set_tray_labels,
                 platform,
                 pick_folder,
+                pick_files,
                 storage_access,
                 request_storage_access,
                 request_battery_exemption,
@@ -114,6 +115,13 @@ pub fn platform() -> Platform {
 #[specta::specta]
 pub async fn pick_folder(native: State<'_, Native>) -> Res<Option<String>> {
     native.pick_folder().await
+}
+
+/// A phone: the system file picker, any number of files, as paths (none when cancelled).
+#[tauri::command]
+#[specta::specta]
+pub async fn pick_files(native: State<'_, Native>) -> Res<PickedFiles> {
+    native.pick_files().await
 }
 
 /// Android: whether filebridge may read the phone's files ("All files access").

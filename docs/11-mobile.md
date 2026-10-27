@@ -8,7 +8,7 @@ engine, and the order of the work. Decisions: [ADR 0013](adr/0013-phones-as-a-so
 ## What filebridge is on a phone
 
 The same app, with the phone's own files as Sources: pick a folder (the camera roll, Downloads, a
-WhatsApp media folder, an SD card), pick a Profile, review the names, send, verify, update the
+WhatsApp media folder, an SD card) or some files, pick a Profile, review the names, send, verify, update the
 tool. The wizard, the Job lifecycle, the Manifest, verification and the Report do not change.
 
 Not in scope: the phone as a remote control for a computer's `filebridge-service`. That needs the
@@ -44,9 +44,9 @@ installers (Phase 3).
 | Where the engine runs | `filebridge-service`, a detached process; the window is an IPC client | Inside the app process, through `host::EngineOperations` ([ADR 0014](adr/0014-engine-in-the-app-on-phones.md)) | `apps/desktop/src-tauri` (`cfg(mobile)`) |
 | Keeping a send alive | The service outlives the window; `systemd --user` on Linux | Android: a foreground service with a progress notification keeps the process alive. iOS: sends advance while the app is open, then resume on return | Tauri mobile plugin (Kotlin / Swift) |
 | rclone | `rclone rcd` child process over HTTP on localhost | librclone in-process (Go `c-shared` loaded on Android, `c-archive` linked in on iOS), called through its C `RcloneRPC` | `transport-rclone`: an `RcCall` trait, implemented by `Rcd` and `Librclone` (`open` / `open_linked`) |
-| Picking Sources | `tauri-plugin-dialog` folder picker and drag & drop; absolute paths | Android: "All files access" (`MANAGE_EXTERNAL_STORAGE`), so `/storage/emulated/0/…` paths work with `std::fs` and rclone `:local:`; a small folder picker. iOS: folder picker with security-scoped bookmarks, kept open while a Job reads them | Tauri mobile plugin; `scanner` unchanged |
+| Picking Sources | `tauri-plugin-dialog` folder picker and drag & drop; absolute paths | Android: "All files access" (`MANAGE_EXTERNAL_STORAGE`), so `/storage/emulated/0/…` paths work with `std::fs` and rclone `:local:`; small folder and file pickers. iOS: folder and file pickers with security-scoped bookmarks, kept open while a Job reads them | Tauri mobile plugin; `scanner` unchanged |
 | Secrets | `keyring` 3.x: Keychain, Credential Manager, Secret Service | iOS: Keychain (`apple-native` covers iOS). Android: a Keystore-backed store, through `keyring`'s pluggable credential builder or `keyring-core` | `crates/secrets` |
-| SSH known hosts, SSH agent | `~/.ssh/known_hosts`; the user's key file or agent | known hosts in the app's data folder; no agent: only filebridge's own key from the keyring ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)) | `transport-rclone/src/fs.rs`, `integration-nextcloud/src/ssh.rs` |
+| SSH known hosts, SSH agent | `~/.ssh/known_hosts`; the user's key file or agent | known hosts in the app's data folder; no agent: filebridge's own key from the keyring, installed by signing in once with the SSH password ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)); SFTP also by password or a key file on the phone | `transport-rclone/src/fs.rs`, `integration-nextcloud/src/ssh.rs` |
 | Data folder | `HOME` / `XDG_DATA_HOME` / `APPDATA` | The app's data folder from Tauri (`app_data_dir`) passed to `Host::open` | `crates/host` |
 | Sleep inhibit | `systemd-inhibit`, `caffeinate`, `SetThreadExecutionState` | Android: partial wake lock and Wi-Fi lock held by the foreground service. iOS: idle timer off while sending in the foreground | The app (`engine.rs`); `core`'s inhibit is a quiet no-op on phones |
 | Desktop-only UI | Tray, close-to-tray, drag & drop, service status, "Install as service", "Open in file manager" | Hidden. A reclaimable Source shows its path instead of opening a file manager (ADR 0011 still holds: the app never frees it) | Vue, by a `platform` flag from Rust |
@@ -56,8 +56,8 @@ installers (Phase 3).
 | Profile | Phone | Note |
 |---|---|---|
 | Nextcloud over WebDAV (app password) | Yes, first | No SSH needed; the natural first target |
-| SFTP | Yes | filebridge's own key only (no agent on a phone) |
-| Nextcloud direct mode (SSH + `occ`, `pct`) | Yes, after SFTP | russh runs on both targets; `aws-lc-sys` needs the NDK / Xcode C toolchain, or russh's `ring` backend |
+| SFTP | Yes | A password, a key file on the phone, or filebridge's own key (no agent on a phone) |
+| Nextcloud direct mode (SSH + `occ`, `pct`) | Yes, after SFTP | The SSH password once, which installs filebridge's own key (ADR 0012, amended 2026-10-27); russh runs on both targets |
 | Local disk (`Backend::Local`) | No | A USB drive on a phone is out of scope |
 
 ## The layering rule on phones
@@ -110,9 +110,9 @@ back mid-send; the Job resumes and the verification has zero differences.
 | librclone build: rclone's C shims with the local, SFTP, WebDAV and SMB backends only (~22 MB per ABI; SMB since ADR 0022, S3 left out), plus `RcloneSetenv` | `sidecars/librclone/` |
 | `TransportChoice::Librclone`, `Host::open_with_secrets` | `crates/host` |
 | The engine in the app under `cfg(mobile)`, same commands and events as the desktop's `Service`; the foreground service follows the busy Jobs | `apps/desktop/src-tauri/src/engine.rs` |
-| Phone-only commands (`platform`, `pick_folder`, `storage_access`, `request_storage_access`, `request_battery_exemption`, `set_send_notice_labels`) and the Keystore `SecretStore` | `apps/desktop/src-tauri/src/native.rs`, `commands.rs` |
-| Android plugin: folder picker → path, "All files access", `SendService` (`specialUse`, wake and Wi-Fi locks), `SecretVault` (AES-GCM key in the Android Keystore) | `gen/android/app/src/main/java/app/filebridge/` |
-| UI: folders only, no drag & drop or "show in file manager", the notification's text in pt/en, battery exemption asked once at the first send | `apps/desktop/src/lib/platform.ts`, `FileDropZone.vue`, `App.vue` |
+| Phone-only commands (`platform`, `pick_folder`, `pick_files`, `storage_access`, `request_storage_access`, `request_battery_exemption`, `set_send_notice_labels`) and the Keystore `SecretStore` | `apps/desktop/src-tauri/src/native.rs`, `commands.rs` |
+| Android plugin: folder and file pickers → paths, "All files access", `SendService` (`specialUse`, wake and Wi-Fi locks), `SecretVault` (AES-GCM key in the Android Keystore) | `gen/android/app/src/main/java/app/filebridge/` |
+| UI: a folder at a time or several files (files since 2026-10-27), no drag & drop or "show in file manager", the notification's text in pt/en, battery exemption asked once at the first send | `apps/desktop/src/lib/platform.ts`, `FileDropZone.vue`, `App.vue` |
 | Phone texts: a `phone` section in `en.json`/`pt.json` laid over the normal texts on a phone ("You can leave the app: it keeps going" instead of the window) | `apps/desktop/src/i18n/index.ts` (`applyPhoneTexts`), called from `initPlatform()` |
 | Package id `app.filebridge` on Android only (`identifier` override). Desktop keeps `app.filebridge.desktop`: there it names the folder of the UI's local settings, and changing it would reset them. The service data (`~/.local/share/filebridge`) and the keyring service (`filebridge`) never depended on it | `apps/desktop/src-tauri/tauri.android.conf.json` |
 | Release APK signed with your own key: the one-time `keytool -genkeypair` command is in the script's header; Gradle reads the keystore, alias and passwords from `FILEBRIDGE_ANDROID_*`; with no keystore the debug key signs | `apps/desktop/scripts/android-release.sh`, `gen/android/app/build.gradle.kts` |
@@ -148,11 +148,10 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
   `known_hosts`, but that file is inside the app's private folder: the only way out is clearing
   the app's data (which also removes its destinations). A guided "replace the key" flow needs its
   own decision (ADR 0015, Consequences).
-- At 1080×2400 the changed-key dialog's long path and fingerprint run past its right edge, and
-  the SFTP form still says "SSH agent" and "your user on this computer", which a phone has not.
-  A phone has no SSH agent: sign in with filebridge's own key
-  ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md)) or a key file. Nextcloud direct mode is not
-  tried on a phone yet.
+- At 1080×2400 the changed-key dialog's long path and fingerprint run past its right edge.
+  *Fixed 2026-10-27:* the SFTP form no longer says "SSH agent" or "your user on this computer" on
+  a phone. See [Tried on a real phone](#tried-on-a-real-phone-2026-10-27) for Nextcloud's direct
+  mode.
 - rclone picks its cache folder before the app sets HOME. The local, SFTP and WebDAV backends
   don't use it.
 - An emulator or phone that had the earlier `app.filebridge.desktop` build keeps it as a
@@ -162,6 +161,29 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
   ~/.android/debug.keystore`).
 - iOS: see [As built — iOS](#as-built--ios-2026-10-26).
 
+### Tried on a real phone (2026-10-27)
+
+The first run on the author's own Android phone, against Nextcloud behind Tailscale, found four
+problems. All four are fixed:
+
+| Seen | Cause | Fix |
+|---|---|---|
+| The sign-in check's message ran off the screen, and the page scrolled sideways | Step messages carry long addresses with no spaces | Step lists wrap anywhere (`overflow-wrap: anywhere`), like errors already did |
+| WebDAV by IP (`https://100.x.y.z`): `remote error: tls: internal error` | The HTTPS certificate is made for the server's name (`*.ts.net`); reached by IP, the server has no name to answer with | The check says to use the name (`webdav::ip_tls_hint`), and the form warns as soon as the address is an IP |
+| WebDAV by name: `PasswordLoginForbidden` | The account password was typed, not an app password | The message already said so, but was cut off (row 1). The form now warns when the password is shorter than any app password (29 or 72 characters) |
+| Direct mode: "no SSH key file in the profile and no SSH agent" | A phone has no agent, and "Browse…" picked nothing (folders only) | An SSH password field on the phone, used once to install filebridge's own key ([ADR 0012](adr/0012-own-ssh-key-with-restrict.md), amended); the key file and `known_hosts` fields are hidden there |
+
+The author also asked to send single files, not just folders: Android and iOS now have a file
+picker, several files at once ([ADR 0013](adr/0013-phones-as-a-source-android-first.md),
+amended). On Android, files from a cloud provider have no path: they are left out, and a toast
+says how many.
+
+**Tested:** the Rust side by `cargo test` (`password_auth.rs` against russh's own server: the
+password signs in, a wrong one is named, and neither `Debug` nor the saved form carries it;
+`access.rs`: a profile from a password is saved only once the key works, and a failed check
+leaves no profile, no `authorized_keys` line and no keyring entry). The Android and iOS pickers
+and the phone form are not run on a device yet.
+
 ## As built — iOS (2026-10-26)
 
 | Piece | Where |
@@ -169,7 +191,7 @@ the app anyway) and Nextcloud direct mode (same operations, not run on the phone
 | librclone as a static archive for `aarch64-apple-ios` and `aarch64-apple-ios-sim` (and the host, for tests) | `sidecars/librclone/build.sh ios`, `host-archive` |
 | `librclone-linked`: `build.rs` links the archive, `Librclone::open_linked` calls it; `host`'s feature of the same name picks it | `crates/transport-rclone`, `crates/host` |
 | The contract suite in an iOS simulator (cargo runner `simctl spawn`) | `sidecars/librclone/simctl-run.sh`, `.github/workflows/ios.yml` |
-| Swift plugin: `pickFolder` (Files app folder, access opened, bookmark kept), `restoreAccess` (every bookmark opened again before Jobs resume), `sending` (screen kept on; extra time to finish the Batch on leaving) | `apps/desktop/src-tauri/ios/`, linked by `src-tauri/build.rs`; called from `native.rs`, `engine.rs` |
+| Swift plugin: `pickFolder`, `pickFiles` (Files app folder or files, access opened, a bookmark kept for each), `restoreAccess` (every bookmark opened again before Jobs resume), `sending` (screen kept on; extra time to finish the Batch on leaving) | `apps/desktop/src-tauri/ios/`, linked by `src-tauri/build.rs`; called from `native.rs`, `engine.rs` |
 | `app.filebridge`, iOS 15 or later | `src-tauri/tauri.ios.conf.json` |
 | iPhone texts: an `iphone` section laid over `phone` (keep the app open while it sends) | `src/i18n/{en,pt}.json`, `applyPhoneTexts` |
 | `gen/apple` made by `tauri ios init` on every CI run, not committed, plus the system libraries librclone needs at Xcode's link (`-framework CoreFoundation -lresolv`) | `apps/desktop/scripts/ios-project.sh`, `.github/workflows/ios.yml` |

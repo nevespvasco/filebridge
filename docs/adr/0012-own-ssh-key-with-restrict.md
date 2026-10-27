@@ -52,6 +52,16 @@ allows only SFTP and the exact commands filebridge runs.
   to an SFTP destination that signs in by password only (the line is installed through the key
   file or SSH agent).
 
+- *Amended 2026-10-27 (phones):* a phone has no SSH agent, and a key file rarely lives on it, so
+  Nextcloud's direct mode had no way to sign in there. On a phone the direct-mode form asks for
+  the SSH user's password instead. Detection signs in with it. When detection passes, the key is
+  installed by signing in with the same password, and the new profile is saved for the first time
+  only after the usual checks with the key (sign-in, rclone listing). The password lives only in
+  memory for that one request (`SshTarget.password`, `serde(skip)`, `***` in `Debug`). It never
+  goes to the keyring, the profile or a log, and the form clears it once the profile is saved.
+  A failed step undoes the install as before (over the same password), and nothing is saved.
+  The desktop flow is unchanged.
+
 ## Consequences
 - The user's personal key is no longer used by filebridge and can be removed from the server. A
   stolen laptop exposes a key that can be revoked from anywhere by deleting one line.
@@ -63,6 +73,8 @@ allows only SFTP and the exact commands filebridge runs.
   signs in, and keeps the destination on it.
 - Deleting a destination that has the key forgets it locally but can't reach the server: the
   delete dialog says so and offers Remove access first.
+- On a phone, Remove access leaves the destination with no way to sign in (no agent): it is
+  then useful only to revoke the key before deleting the destination.
 - Rejected for now: B (creates users and sudoers rules on the user's Proxmox host or container,
   more ways to break). *Amended 2026-10-23:* offered as an opt-in the user sets up by hand from a
   generated setup ([ADR 0024](0024-nextcloud-mode-advice-and-occ-user.md)), C (fragile: every change to filebridge's commands needs the gate updated on

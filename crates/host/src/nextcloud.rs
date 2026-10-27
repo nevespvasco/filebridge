@@ -7,7 +7,8 @@ use std::sync::Arc;
 use filebridge_core::{Engine, PreflightView, Profile, TargetSpec};
 use filebridge_integration_nextcloud::webdav::{self, NextcloudWebdavProfile};
 use filebridge_integration_nextcloud::{
-    Detection, INTEGRATION_ID, Nextcloud, NextcloudSettings, SetupError, SetupRequest, SshTarget,
+    Detection, INTEGRATION_ID, Nextcloud, NextcloudSettings, SetupError, SetupRequest,
+    ShellConnector, SshPassword, SshTarget,
 };
 use filebridge_ipc::{
     DetectNextcloudRequest, DetectNextcloudResponse, DetectStepView, ErrorBody, NextcloudAdvice,
@@ -33,6 +34,10 @@ fn setup_request(req: &DetectNextcloudRequest, modes: Option<(String, String)>) 
             key_file: req.key_file.clone().map(PathBuf::from),
             known_hosts_file: req.known_hosts_file.clone().map(PathBuf::from),
             key: None,
+            password: req
+                .ssh_password
+                .as_ref()
+                .map(|p| SshPassword::new(p.expose())),
         },
         nextcloud_user: req.nextcloud_user.clone(),
         folder: req.folder.clone(),
@@ -62,10 +67,13 @@ fn step_views(detection: &Detection) -> Vec<DetectStepView> {
 }
 
 /// Runs the wizard and, when every step passes, saves the profile with `transport`. `modes`
-/// overrides the default `750`/`640` (the CLI exposes it; the app keeps the defaults).
+/// overrides the default `750`/`640` (the CLI exposes it; the app keeps the defaults). Signed
+/// in with a password (a phone), the profile is saved only with filebridge's own key installed
+/// (ADR 0012), its steps after detection's.
 async fn detect_nextcloud(
     engine: &Engine,
     nextcloud: &Nextcloud,
+    ssh: &dyn ShellConnector,
     transport: &str,
     req: DetectNextcloudRequest,
     modes: Option<(String, String)>,
@@ -77,7 +85,7 @@ async fn detect_nextcloud(
             SetupError::Connect(m) => err("ssh", m),
             SetupError::Invalid(m) => err("invalid", m),
         })?;
-    let steps = step_views(&setup.detection);
+    let mut steps = step_views(&setup.detection);
     let containers = setup
         .detection
         .containers
@@ -86,19 +94,37 @@ async fn detect_nextcloud(
         .collect();
     let profile = match setup.profile {
         None => None,
-        Some(parts) => Some(
-            engine
-                .save_profile(Profile {
-                    id: String::new(),
-                    name: req.name,
-                    destination: parts.destination,
-                    integration: Some(INTEGRATION_ID.into()),
-                    integration_settings: parts.settings,
-                    target: TargetSpec::default(),
-                })
-                .await
-                .map_err(|e| err("invalid", e.to_string()))?,
-        ),
+        Some(parts) => {
+            let profile = Profile {
+                id: String::new(),
+                name: req.name,
+                destination: parts.destination,
+                integration: Some(INTEGRATION_ID.into()),
+                integration_settings: parts.settings,
+                target: TargetSpec::default(),
+            };
+            match req.ssh_password {
+                None => Some(
+                    engine
+                        .save_profile(profile)
+                        .await
+                        .map_err(|e| err("invalid", e.to_string()))?,
+                ),
+                Some(password) => {
+                    // The key's keyring entry and comment name the profile: its id comes first.
+                    let profile = Profile {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        ..profile
+                    };
+                    let password = SshPassword::new(password.expose());
+                    let report =
+                        crate::access::install_with_password(engine, ssh, profile, password)
+                            .await?;
+                    steps.extend(report.steps);
+                    report.profile
+                }
+            }
+        }
     };
     Ok(DetectNextcloudResponse {
         detector: setup.detection.detector.clone(),
@@ -132,6 +158,8 @@ async fn probe_nextcloud(nextcloud: &Nextcloud, req: DetectNextcloudRequest) -> 
 /// The Nextcloud plugin this host registered, and the transport its profiles use.
 pub(crate) struct NextcloudWizard {
     pub(crate) nextcloud: Arc<Nextcloud>,
+    /// Installs filebridge's own key for a profile set up with a password.
+    pub(crate) ssh: Arc<dyn ShellConnector>,
     pub(crate) transport: &'static str,
 }
 
@@ -154,7 +182,15 @@ impl NextcloudWizard {
         req: DetectNextcloudRequest,
         modes: Option<(String, String)>,
     ) -> Result<DetectNextcloudResponse, ErrorBody> {
-        detect_nextcloud(engine, &self.nextcloud, self.transport, req, modes).await
+        detect_nextcloud(
+            engine,
+            &self.nextcloud,
+            self.ssh.as_ref(),
+            self.transport,
+            req,
+            modes,
+        )
+        .await
     }
 }
 
@@ -262,6 +298,11 @@ async fn add_webdav(
                         "Nextcloud has no files for {user} at {url}. If you sign in with an email \
                      address or a company account, paste the WebDAV address from Files → \
                      Settings instead of the server's ({})",
+                        e.message
+                    )
+                } else if let Some(hint) = webdav::ip_tls_hint(&server, &e.message) {
+                    format!(
+                        "could not open a secure connection to {server}: {hint} ({})",
                         e.message
                     )
                 } else {

@@ -504,6 +504,7 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                 ctid,
                 install_dir,
                 dedicated_user,
+                ssh_password: None,
             };
             let modes = match (dir_mode, file_mode) {
                 (None, None) => None,

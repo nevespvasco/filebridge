@@ -105,6 +105,7 @@ async fn a_generated_key_signs_in_and_another_is_refused() {
         key_file: None,
         known_hosts_file: Some(known),
         key: None,
+        password: None,
     };
     let connector = SshConnector::new();
     assert!(

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import android.provider.Settings
 import androidx.activity.result.ActivityResult
 import androidx.core.content.ContextCompat
@@ -20,6 +21,7 @@ import app.tauri.annotation.Permission
 import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 
@@ -39,8 +41,8 @@ class SecretArgs {
 }
 
 /**
- * What the Rust side of filebridge needs from Android (ADR 0014): a folder the user picks, as a
- * path; "All files access", so Sources are plain paths; the foreground service that keeps a send
+ * What the Rust side of filebridge needs from Android (ADR 0014): a folder or files the user
+ * picks, as paths; "All files access", so Sources are plain paths; the foreground service that keeps a send
  * alive; and secrets kept with an Android Keystore key.
  */
 @TauriPlugin(
@@ -73,6 +75,44 @@ class FilebridgePlugin(private val activity: Activity) : Plugin(activity) {
       return
     }
     res.put("path", path)
+    invoke.resolve(res)
+  }
+
+  /** Any number of files from the system picker, as paths; those with none are counted. */
+  @Command
+  fun pickFiles(invoke: Invoke) {
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+      .addCategory(Intent.CATEGORY_OPENABLE)
+      .setType("*/*")
+      .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+    startActivityForResult(invoke, intent, "filesPicked")
+  }
+
+  @ActivityCallback
+  private fun filesPicked(invoke: Invoke, result: ActivityResult) {
+    val data = result.data
+    val uris = mutableListOf<Uri>()
+    if (result.resultCode == Activity.RESULT_OK && data != null) {
+      val clip = data.clipData
+      if (clip != null) {
+        for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+      } else {
+        data.data?.let { uris.add(it) }
+      }
+    }
+    val paths = JSArray()
+    var skipped = 0
+    for (uri in uris) {
+      val path = documentUriToPath(uri)
+      if (path == null) skipped++ else paths.put(path)
+    }
+    if (uris.isNotEmpty() && skipped == uris.size) {
+      invoke.reject("not_local", "pick files on the phone's storage or SD card")
+      return
+    }
+    val res = JSObject()
+    res.put("paths", paths)
+    res.put("skipped", skipped)
     invoke.resolve(res)
   }
 
@@ -197,5 +237,48 @@ class FilebridgePlugin(private val activity: Activity) : Plugin(activity) {
       "/storage/$volume"
     }
     return if (rest.isEmpty()) base else "$base/$rest"
+  }
+
+  /**
+   * The file system path of a file from the system picker. The phone's storage and SD cards
+   * name it in the id (`primary:DCIM/Camera/IMG_1.jpg`, `raw:/storage/…`); the Images, Videos,
+   * Audio and Downloads views give a MediaStore row (`image:1234`, `msf:1234`, or a bare number
+   * in Downloads), whose path "All files access" lets the app read. Cloud providers have none.
+   */
+  private fun documentUriToPath(uri: Uri): String? {
+    if (!DocumentsContract.isDocumentUri(activity, uri)) return null
+    val id = DocumentsContract.getDocumentId(uri) ?: return null
+    if (id.startsWith("raw:")) return id.removePrefix("raw:")
+    return when (uri.authority) {
+      "com.android.externalstorage.documents" -> {
+        val volume = id.substringBefore(':')
+        val rest = id.substringAfter(':', "")
+        val base = if (volume == "primary") {
+          @Suppress("DEPRECATION")
+          Environment.getExternalStorageDirectory().absolutePath
+        } else {
+          "/storage/$volume"
+        }
+        if (rest.isEmpty()) null else "$base/$rest"
+      }
+      "com.android.providers.media.documents",
+      "com.android.providers.downloads.documents" ->
+        id.substringAfter(':').toLongOrNull()?.let(::mediaStorePath)
+      else -> null
+    }
+  }
+
+  /** The path MediaStore records for row `rowId` (any kind of file), if it has one. */
+  private fun mediaStorePath(rowId: Long): String? {
+    @Suppress("DEPRECATION")
+    val data = MediaStore.MediaColumns.DATA
+    return activity.contentResolver.query(
+      MediaStore.Files.getContentUri("external"),
+      arrayOf(data),
+      "${MediaStore.MediaColumns._ID} = ?",
+      arrayOf(rowId.toString()),
+      null
+    )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+      ?.takeIf { it.startsWith("/") }
   }
 }

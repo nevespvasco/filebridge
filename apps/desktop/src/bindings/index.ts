@@ -249,6 +249,8 @@ export const commands = {
 	platform: () => __TAURI_INVOKE<Platform>("platform"),
 	/**  Android: the system folder picker, as a path (`null` when cancelled). */
 	pickFolder: () => typedError<string | null, ErrorBody>(__TAURI_INVOKE("pick_folder")),
+	/**  A phone: the system file picker, any number of files, as paths (none when cancelled). */
+	pickFiles: () => typedError<PickedFiles_Serialize, ErrorBody>(__TAURI_INVOKE("pick_files")),
 	/**  Android: whether filebridge may read the phone's files ("All files access"). */
 	storageAccess: () => typedError<boolean, ErrorBody>(__TAURI_INVOKE("storage_access")),
 	/**  Android: opens the "All files access" screen; answers whether it was granted. */
@@ -281,7 +283,7 @@ export const MAX_QUIET_SECS = 3600 as const;
 
 export const MIN_QUIET_SECS = 5 as const;
 
-export const PROTOCOL_VERSION = 35 as const;
+export const PROTOCOL_VERSION = 36 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -674,6 +676,11 @@ export type DetectNextcloudRequest_Deserialize = {
 	 *  in the web server's group, `occ` through a sudoers rule limited to it.
 	 */
 	dedicated_user?: boolean,
+	/**
+	 *  The SSH user's password, for a phone (no SSH agent there): detection signs in with it,
+	 *  then filebridge installs its own key with it (ADR 0012) and forgets it. Never stored.
+	 */
+	ssh_password?: Password | null,
 };
 
 /**
@@ -698,6 +705,11 @@ export type DetectNextcloudRequest_Serialize = {
 	 *  in the web server's group, `occ` through a sudoers rule limited to it.
 	 */
 	dedicated_user: boolean,
+	/**
+	 *  The SSH user's password, for a phone (no SSH agent there): detection signs in with it,
+	 *  then filebridge installs its own key with it (ADR 0012) and forgets it. Never stored.
+	 */
+	ssh_password: Password | null,
 };
 
 export type DetectNextcloudResponse = DetectNextcloudResponse_Serialize | DetectNextcloudResponse_Deserialize;
@@ -1613,6 +1625,30 @@ export type NextcloudWebdavRequest = {
  *  shows it, so neither does any request, envelope or log line that carries one.
  */
 export type Password = string;
+
+/**
+ *  The files picked on a phone: their paths, and how many had none (a cloud provider's files on
+ *  Android, those iOS gave no access to), which are left out.
+ */
+export type PickedFiles = PickedFiles_Serialize | PickedFiles_Deserialize;
+
+/**
+ *  The files picked on a phone: their paths, and how many had none (a cloud provider's files on
+ *  Android, those iOS gave no access to), which are left out.
+ */
+export type PickedFiles_Deserialize = {
+	paths: string[],
+	skipped?: number,
+};
+
+/**
+ *  The files picked on a phone: their paths, and how many had none (a cloud provider's files on
+ *  Android, those iOS gave no access to), which are left out.
+ */
+export type PickedFiles_Serialize = {
+	paths: string[],
+	skipped: number,
+};
 
 /**  A folder or file the user pinned, to add it again in one click. */
 export type PinnedSource = {

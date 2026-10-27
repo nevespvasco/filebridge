@@ -34,6 +34,7 @@ fn profile() -> NextcloudDirectProfile {
             key_file: None,
             known_hosts_file: None,
             key: None,
+            password: None,
         },
         host_sudo: false,
         runtime: Runtime::ProxmoxLxc { ctid: 105 },

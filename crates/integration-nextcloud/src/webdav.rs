@@ -125,6 +125,30 @@ pub fn server_url(input: &str) -> std::result::Result<String, String> {
     parse_address(input).map(|a| a.server)
 }
 
+/// Why a secure connection to `server` (a [`server_url`]) failed, in words, when the address is
+/// an IP and the error came from TLS: certificates name the server (Tailscale's `*.ts.net`, a
+/// Let's Encrypt one), so a server reached by IP gets no name to answer with and breaks off
+/// (`tls: internal error`) or shows a certificate for another name.
+pub fn ip_tls_hint(server: &str, error: &str) -> Option<String> {
+    let url = url::Url::parse(server).ok()?;
+    let ip = match url.host()? {
+        url::Host::Domain(_) => return None,
+        url::Host::Ipv4(ip) => ip.to_string(),
+        url::Host::Ipv6(ip) => ip.to_string(),
+    };
+    let e = error.to_ascii_lowercase();
+    let tls = ["tls:", "x509", "certificate", "handshake"]
+        .iter()
+        .any(|w| e.contains(w));
+    tls.then(|| {
+        format!(
+            "{ip} is an IP address, and the server's HTTPS certificate is made for its name: \
+             enter the name you open Nextcloud with in the browser (for example \
+             nextcloud.example.ts.net) instead"
+        )
+    })
+}
+
 /// `user` as one URL path segment.
 fn segment(user: &str) -> String {
     user.bytes()
@@ -246,6 +270,26 @@ pub fn after_transfer(changed: &[RemotePath]) -> AfterTransferReport {
 mod tests {
     use super::*;
     use filebridge_transport_api::KeyringRef;
+
+    #[test]
+    fn a_tls_failure_by_ip_asks_for_the_name() {
+        let tls = "Propfind \"https://192.0.2.10/remote.php/dav/files/alice/\": remote error: tls: internal error";
+        let hint = ip_tls_hint("https://192.0.2.10", tls).unwrap();
+        assert!(hint.starts_with("192.0.2.10 is an IP address"), "{hint}");
+        assert!(
+            ip_tls_hint(
+                "https://[2001:db8::1]:8443",
+                "x509: certificate is valid for cloud.example.com"
+            )
+            .is_some()
+        );
+        // A name, or an error that isn't TLS, keeps the plain message.
+        assert_eq!(ip_tls_hint("https://cloud.example.com", tls), None);
+        assert_eq!(
+            ip_tls_hint("https://192.0.2.10", "connection refused"),
+            None
+        );
+    }
 
     #[test]
     fn what_people_type_becomes_one_address() {

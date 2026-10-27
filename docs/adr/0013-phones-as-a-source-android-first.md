@@ -35,7 +35,13 @@ Details in [11 — Mobile](../11-mobile.md).
 - Personal builds allow Android's "All files access", so Sources stay plain paths and `scanner` is
   unchanged. A store release would need the Storage Access Framework and a new kind of Source.
 - On a phone only folders are picked (the system folder picker gives a tree, not loose files),
-  one at a time.
+  one at a time. *Amended 2026-10-27:* files too, several at once, because the author asked for
+  it after trying the phone app. On Android the file picker's document ids give the path for the
+  phone's storage and SD cards (`primary:…`, `raw:…`), and MediaStore gives it for the Images,
+  Videos, Audio and Downloads views ("All files access" lets the app read it). Cloud files have
+  no path: they are left out, and the app says how many. On iOS each picked file gets its own
+  security-scoped bookmark, like a folder. Sources are still plain paths, and `scanner` is
+  unchanged.
 - The narrow layouts from D12 become the phone UI; desktop-only parts (tray, service status, drag
   & drop, "Open in file manager") are hidden there.
 - Rejected: the phone as a remote control (network-exposed service); iOS first (higher cost, weaker

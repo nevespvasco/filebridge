@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Drop files and folders on the window, or pick them in the file explorer. `compact` is the
-// one-line bar shown once something is chosen. On a phone: folders only, picked one at a time.
+// one-line bar shown once something is chosen. On a phone: no drag & drop; a folder at a time,
+// or several files.
 import AppIcon from "@/components/AppIcon.vue";
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
@@ -35,7 +36,7 @@ async function pick(directory: boolean) {
       <span class="lead" aria-hidden="true">{{ mobile ? $t("mobile.addMore") : $t("source.dropMore") }}</span>
       <span class="buttons">
         <button class="btn btn-small" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ $t("source.addFolders") }}</button>
-        <button v-if="!mobile" class="btn btn-small" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.addFiles") }}</button>
+        <button class="btn btn-small" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.addFiles") }}</button>
       </span>
     </div>
     <template v-else>
@@ -44,7 +45,7 @@ async function pick(directory: boolean) {
       <p v-else class="lead">{{ $t("source.drop") }}<span class="or">{{ $t("source.dropOr") }}</span></p>
       <div class="buttons">
         <button class="btn" :class="{ 'btn-primary': !quiet }" :title="$t('source.pickFoldersTip')" @click="pick(true)"><AppIcon name="addFolder" /> {{ mobile ? $t("mobile.pickFolder") : $t("source.pickFolders") }}</button>
-        <button v-if="!mobile" class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ $t("source.pickFiles") }}</button>
+        <button class="btn" :title="$t('source.pickFilesTip')" @click="pick(false)"><AppIcon name="addFile" /> {{ mobile ? $t("mobile.pickFiles") : $t("source.pickFiles") }}</button>
       </div>
       <p class="hint small muted">{{ mobile ? $t("mobile.pickHint") : $t("source.hint") }}</p>
     </template>

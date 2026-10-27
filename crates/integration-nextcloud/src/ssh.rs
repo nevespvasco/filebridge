@@ -111,7 +111,7 @@ fn key_works(res: &client::AuthResult) -> bool {
 
 /// How [`SshShell`] signs in.
 pub enum Auth {
-    /// The target's own: its key file, else the SSH agent.
+    /// The target's own: its one-time password, else its key file, else the SSH agent.
     Profile,
     /// This key (filebridge's own, or one just generated).
     Key(Arc<PrivateKey>),
@@ -464,6 +464,22 @@ async fn authenticate(
         };
     }
 
+    if let Some(password) = &target.password {
+        let res = handle
+            .authenticate_password(user, password.expose())
+            .await
+            .map_err(net)?;
+        return if res.success() {
+            Ok(())
+        } else {
+            Err(IntegrationError::fatal(format!(
+                "server refused the password for user {user} (wrong password, or the server \
+                 allows only keys: PasswordAuthentication no, or PermitRootLogin prohibit-password \
+                 for root)"
+            )))
+        };
+    }
+
     if let Some(path) = &target.key_file {
         let key = russh::keys::load_secret_key(path, None).map_err(|e| {
             IntegrationError::fatal(format!(
@@ -516,9 +532,13 @@ async fn connect_agent() -> Result<
     let agent = russh::keys::agent::client::AgentClient::connect_env()
         .await
         .map_err(|e| {
-            IntegrationError::fatal(format!(
-                "no SSH key file in the profile and no SSH agent ({e})"
-            ))
+            IntegrationError::fatal(if cfg!(any(target_os = "android", target_os = "ios")) {
+                "a phone has no SSH agent: enter the server's password, and filebridge signs in \
+                 with it once to install its own key"
+                    .to_owned()
+            } else {
+                format!("no SSH key file in the profile and no SSH agent ({e})")
+            })
         })?;
     Ok(agent.dynamic())
 }

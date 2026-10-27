@@ -1,9 +1,10 @@
 // filebridge's iOS plugin (ADR 0014), the twin of the Android one
 // (gen/android/.../FilebridgePlugin.kt); src/native.rs calls it.
 //
-// - pickFolder: a folder from the Files app, as a path the engine reads with std::fs. iOS lets
-//   the app read it only while it holds the folder's security-scoped access, so the access is
-//   opened at once and a bookmark is kept to open it again in later launches.
+// - pickFolder, pickFiles: a folder, or any number of files, from the Files app, as paths the
+//   engine reads with std::fs. iOS lets the app read them only while it holds their
+//   security-scoped access, so the access is opened at once and a bookmark is kept for each to
+//   open it again in later launches.
 // - restoreAccess: opens every kept bookmark again, before the engine resumes Jobs left mid-way.
 // - sending: keeps the screen on while Jobs send (iOS suspends an app soon after the user leaves
 //   it), and asks for the short extra time iOS gives to finish the current Batch on leaving.
@@ -21,11 +22,15 @@ struct SendingArgs: Decodable {
 private let nothing: JsonObject = [:]
 
 class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
-  /// Bookmarks of the picked folders, by path, in the app's own preferences.
+  /// Bookmarks of the picked folders and files, by path, in the app's own preferences (the key
+  /// predates files).
   private let bookmarksKey = "filebridge.folderBookmarks"
-  /// Folders readable now, by path. Never closed while the app runs: a Job may read them later.
+  /// Folders and files readable now, by path. Never closed while the app runs: a Job may read
+  /// them later.
   private var opened: [String: URL] = [:]
   private var pendingPick: Invoke?
+  /// Whether the pending pick is files (answered as `paths`) rather than one folder (`path`).
+  private var pickingFiles = false
   private var sendingNow = false
   private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
@@ -39,15 +44,24 @@ class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
       name: UIApplication.willEnterForegroundNotification, object: nil)
   }
 
-  // MARK: Folders
+  // MARK: Folders and files
 
   @objc public func pickFolder(_ invoke: Invoke) {
+    present(invoke, types: [.folder], files: false)
+  }
+
+  @objc public func pickFiles(_ invoke: Invoke) {
+    present(invoke, types: [.item], files: true)
+  }
+
+  private func present(_ invoke: Invoke, types: [UTType], files: Bool) {
     DispatchQueue.main.async {
       let picker = UIDocumentPickerViewController(
-        forOpeningContentTypes: [.folder], asCopy: false)
+        forOpeningContentTypes: types, asCopy: false)
       picker.delegate = self
-      picker.allowsMultipleSelection = false
+      picker.allowsMultipleSelection = files
       self.pendingPick = invoke
+      self.pickingFiles = files
       self.manager.viewController?.present(picker, animated: true)
     }
   }
@@ -57,29 +71,35 @@ class FilebridgePlugin: Plugin, UIDocumentPickerDelegate {
   ) {
     guard let invoke = pendingPick else { return }
     pendingPick = nil
-    guard let url = urls.first else {
-      invoke.resolve(nothing)
-      return
-    }
-    guard url.startAccessingSecurityScopedResource() else {
-      invoke.reject("iOS gave no access to this folder", code: "not_readable")
-      return
-    }
-    opened[url.path] = url
     var bookmarks = savedBookmarks()
-    do {
-      bookmarks[url.path] = try url.bookmarkData(
-        options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
-      save(bookmarks)
-    } catch {
-      // Readable for this launch only: a Job left mid-way can't read it after a restart.
-      NSLog("filebridge: no bookmark for a picked folder: \(error)")
+    var paths: [String] = []
+    for url in urls {
+      // No access: counted as skipped, as Android counts files with no path.
+      guard url.startAccessingSecurityScopedResource() else { continue }
+      opened[url.path] = url
+      do {
+        bookmarks[url.path] = try url.bookmarkData(
+          options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+      } catch {
+        // Readable for this launch only: a Job left mid-way can't read it after a restart.
+        NSLog("filebridge: no bookmark for a picked item: \(error)")
+      }
+      paths.append(url.path)
     }
-    invoke.resolve(["path": url.path])
+    save(bookmarks)
+    if !urls.isEmpty && paths.isEmpty {
+      invoke.reject("iOS gave no access to what was picked", code: "not_readable")
+    } else if pickingFiles {
+      invoke.resolve(["paths": paths, "skipped": urls.count - paths.count])
+    } else if let path = paths.first {
+      invoke.resolve(["path": path])
+    } else {
+      invoke.resolve(nothing)
+    }
   }
 
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-    pendingPick?.resolve(nothing)
+    pendingPick?.resolve(pickingFiles ? ["paths": [String](), "skipped": 0] : nothing)
     pendingPick = nil
   }
 

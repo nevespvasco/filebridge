@@ -91,7 +91,8 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 ///     `AnalysisSummary.unsettled`, the `schedule_changed` event.
 /// 35: `discard_draft` and `JobSummary.discarded` (ADR 0030); `JobPage.groups` (per-group
 ///     counts); `probe_local_target`; `EntryView.error`.
-pub const PROTOCOL_VERSION: u32 = 35;
+/// 36: `DetectNextcloudRequest.ssh_password` (ADR 0012, phones).
+pub const PROTOCOL_VERSION: u32 = 36;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,6 +259,10 @@ pub struct DetectNextcloudRequest {
     /// in the web server's group, `occ` through a sudoers rule limited to it.
     #[serde(default)]
     pub dedicated_user: bool,
+    /// The SSH user's password, for a phone (no SSH agent there): detection signs in with it,
+    /// then filebridge installs its own key with it (ADR 0012) and forgets it. Never stored.
+    #[serde(default)]
+    pub ssh_password: Option<Password>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

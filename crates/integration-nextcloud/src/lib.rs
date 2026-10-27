@@ -32,7 +32,7 @@ pub use direct::DirectOptions;
 pub use profile::{Access, NextcloudDirectProfile, NextcloudSettings, Owner, RunAs, Runtime};
 pub use rules::{NextcloudNfc, NextcloudReserved};
 pub use setup::{Advice, AdviceReason, Mode, ProfileParts, Setup, SetupError, SetupRequest};
-pub use shell::{Output, RemoteShell, ShellConnector, SshTarget};
+pub use shell::{Output, RemoteShell, ShellConnector, SshPassword, SshTarget};
 pub use ssh::{SshConnector, SshShell};
 pub use webdav::NextcloudWebdavProfile;
 

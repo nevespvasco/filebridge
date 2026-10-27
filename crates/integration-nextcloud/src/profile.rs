@@ -434,6 +434,7 @@ pub(crate) mod tests {
                 key_file: None,
                 known_hosts_file: None,
                 key: None,
+                password: None,
             },
             host_sudo: false,
             runtime: Runtime::ProxmoxLxc { ctid: 105 },
