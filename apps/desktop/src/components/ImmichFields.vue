@@ -94,6 +94,7 @@ const libraries = computed(() =>
 .wide { grid-column: 1 / -1; }
 .steps { list-style: none; padding: 0; margin: 0.5rem 0 0; }
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; }
+.steps li > span { min-width: 0; overflow-wrap: anywhere; }
 .libraries { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .libraries p { flex-basis: 100%; margin: 0; }
 .btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }

@@ -35,6 +35,11 @@ const missing = computed(() => {
 });
 /** http:// is refused by the service; say so before asking it. */
 const plainHttp = computed(() => /^http:\/\//i.test(form.server.trim()) && !/^http:\/\/(localhost|127\.|\[::1\])/i.test(form.server.trim()));
+/** An IP address over HTTPS: the certificate names the server, so the check would fail. */
+const ipAddress = computed(() => /^(https:\/\/)?(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-f:]+\])(:\d+)?(\/|$)/i.test(form.server.trim()));
+/** Nextcloud's app passwords are 29 characters (xxxxx-xxxxx-…) or 72 (login flow): anything
+ *  much shorter is the account password. Said, not refused. */
+const shortPassword = computed(() => appPassword.value.trim().length > 0 && appPassword.value.trim().length < 25);
 
 /** The server's Security settings, where app passwords are made, once the address looks like one. */
 const securityPage = computed(() => {
@@ -93,6 +98,7 @@ const uid = useId();
         </span>
         <input :id="`${uid}-2`" v-model="form.server" spellcheck="false" autocomplete="url" placeholder="cloud.example.com" />
         <span v-if="plainHttp" class="hint warn-text">{{ $t("webdav.https") }}</span>
+        <span v-else-if="ipAddress" class="hint warn-text">{{ $t("webdav.ipAddress") }}</span>
       </div>
       <div class="field">
         <span class="label-line"><label :for="`${uid}-3`">{{ $t("nextcloud.ncUser") }}</label><span class="req" aria-hidden="true">*</span>
@@ -105,6 +111,7 @@ const uid = useId();
           <HelpTip :text="$t('webdav.help.appPassword')" :label="$t('webdav.appPassword')" />
         </span>
         <input :id="`${uid}-4`" v-model="appPassword" type="password" autocomplete="new-password" spellcheck="false" />
+        <span v-if="shortPassword" class="hint warn-text">{{ $t("webdav.appPasswordShort") }}</span>
         <span class="hint">
           {{ $t("webdav.appPasswordHint") }}
           <a v-if="securityPage" :href="securityPage" @click.prevent="openInBrowser(securityPage)">{{ $t("webdav.appPasswordLink") }}</a>
@@ -150,5 +157,7 @@ const uid = useId();
 .grow { flex: 1; }
 .steps { list-style: none; padding: 0; margin: 1rem 0 0; }
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; }
+/* Messages carry addresses with no spaces: they wrap anywhere rather than widen the page. */
+.steps li > span { min-width: 0; overflow-wrap: anywhere; }
 .saved { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
 </style>

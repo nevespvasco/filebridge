@@ -152,6 +152,7 @@ async fn client_drives_a_job_over_the_socket() {
             ctid: None,
             install_dir: None,
             dedicated_user: false,
+            ssh_password: None,
         })
         .await
         .unwrap_err();

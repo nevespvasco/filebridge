@@ -130,4 +130,5 @@ ul { padding-left: 1.2rem; margin: 0; color: var(--text-2); }
 li { margin: 0.35rem 0; }
 .steps { list-style: none; padding: 0; margin: 0.5rem 0; }
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; }
+.steps li > span { min-width: 0; overflow-wrap: anywhere; }
 </style>

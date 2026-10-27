@@ -88,6 +88,30 @@ pub struct SshTarget {
     /// instead of `key_file` and the agent when set.
     #[serde(default)]
     pub key: Option<filebridge_transport_api::KeyringRef>,
+    /// The SSH user's password, for one sign-in only: a phone has no SSH agent, so it signs in
+    /// with it once to install filebridge's own key. Never stored (`serde(skip)`), never shown.
+    #[serde(skip)]
+    pub password: Option<SshPassword>,
+}
+
+/// A password typed for one SSH sign-in: wiped from memory when dropped, `***` when printed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SshPassword(zeroize::Zeroizing<String>);
+
+impl SshPassword {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(zeroize::Zeroizing::new(value.into()))
+    }
+
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for SshPassword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("***")
+    }
 }
 
 fn default_port() -> u16 {

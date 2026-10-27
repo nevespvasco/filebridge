@@ -245,6 +245,7 @@ impl Host {
     fn nextcloud_wizard(&self) -> Option<NextcloudWizard> {
         Some(NextcloudWizard {
             nextcloud: self.nextcloud.clone()?,
+            ssh: self.ssh.clone()?,
             transport: self.transport?,
         })
     }

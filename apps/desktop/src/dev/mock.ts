@@ -788,6 +788,7 @@ const handlers: Handlers = {
   setTrayLabels: () => null,
   platform: () => "desktop",
   pickFolder: () => null,
+  pickFiles: () => ({ paths: [], skipped: 0 }),
   storageAccess: () => true,
   requestStorageAccess: () => true,
   requestBatteryExemption: () => null,
@@ -1071,7 +1072,7 @@ const handlers: Handlers = {
     const step = (id: string, message: string) => ({ id, status: "ok", message, commands: [] as string[] });
     return {
       steps: [
-        step("generate", "a new Ed25519 key, made on this computer"),
+        step("generate", "a new Ed25519 key, made on this device"),
         ...accounts.map((who) => step("install", `added to ${who}'s authorized_keys, restricted`)),
         step("keyring", "the private key is in the system keyring"),
         ...accounts.map((who) => step("sign-in", `${who} signs in with the new key`)),
@@ -1691,7 +1692,7 @@ const handlers: Handlers = {
 const camel = (cmd: string) => cmd.replace(/_(.)/g, (_, c: string) => c.toUpperCase());
 
 /** Commands the window answers itself (src-tauri/src/commands.rs), without the service. */
-const WINDOW_ONLY = new Set(["serviceEndpoint", "serviceReplacing", "setTrayLabels", "setSendNoticeLabels", "platform", "pickFolder", "storageAccess", "requestStorageAccess", "requestBatteryExemption"]);
+const WINDOW_ONLY = new Set(["serviceEndpoint", "serviceReplacing", "setTrayLabels", "setSendNoticeLabels", "platform", "pickFolder", "pickFiles", "storageAccess", "requestStorageAccess", "requestBatteryExemption"]);
 
 async function handle(cmd: string, a: Args): Promise<unknown> {
   // `VITE_MOCK_OFFLINE=1`: the copy engine never starts, as when its binary fails.

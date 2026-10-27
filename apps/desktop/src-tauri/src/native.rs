@@ -1,9 +1,9 @@
 //! What only a phone's OS gives (ADR 0013, ADR 0014), through the app's own plugin.
 //!
-//! - Android (`gen/android/.../FilebridgePlugin.kt`): a folder picked as a path, "All files
+//! - Android (`gen/android/.../FilebridgePlugin.kt`): a folder or files picked as paths, "All files
 //!   access", the foreground service that keeps a send alive, and secrets under an Android
 //!   Keystore key.
-//! - iOS (`ios/Sources/FilebridgePlugin.swift`): a folder from the Files app as a path, kept
+//! - iOS (`ios/Sources/FilebridgePlugin.swift`): a folder or files from the Files app as paths, kept
 //!   readable across launches with security-scoped bookmarks, and the screen kept on while Jobs
 //!   send. Secrets go to the Keychain through the keyring crate.
 //!
@@ -62,6 +62,15 @@ pub fn plugin() -> TauriPlugin<tauri::Wry> {
 #[cfg_attr(desktop, allow(dead_code))]
 struct Picked {
     path: Option<String>,
+}
+
+/// The files picked on a phone: their paths, and how many had none (a cloud provider's files on
+/// Android, those iOS gave no access to), which are left out.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct PickedFiles {
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub skipped: u32,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +135,13 @@ impl Native {
     pub async fn pick_folder(&self) -> Result<Option<String>, ErrorBody> {
         let picked: Picked = self.call("pickFolder", ()).await?;
         Ok(picked.path)
+    }
+
+    /// The system file picker, several files at once; none when cancelled. On Android only files
+    /// on the phone's storage or an SD card have a path (code `not_local` when none has); on
+    /// iOS any file the Files app shows, readable from then on like a picked folder.
+    pub async fn pick_files(&self) -> Result<PickedFiles, ErrorBody> {
+        self.call("pickFiles", ()).await
     }
 
     /// Whether the app may read the phone's files ("All files access"). iOS has no such

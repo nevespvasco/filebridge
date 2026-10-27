@@ -32,6 +32,7 @@ fn ssh(user: &str) -> SshTarget {
         key_file: None,
         known_hosts_file: None,
         key: None,
+        password: None,
     }
 }
 

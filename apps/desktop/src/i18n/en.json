@@ -23,13 +23,15 @@
     "quit": "Close window (transfers keep running)"
   },
   "mobile": {
-    "pickLead": "Choose a folder on this phone",
+    "pickLead": "Choose a folder or files on this phone",
     "pickFolder": "Choose a folder",
-    "pickHint": "The camera roll, Downloads, an SD card… Add one folder at a time.",
-    "addMore": "Add another folder",
+    "pickHint": "The camera roll, Downloads, an SD card… A folder at a time, or several files at once.",
+    "addMore": "Add more",
     "storageDenied": "filebridge needs “All files access” to read the phone's files. Allow it in Android's settings and try again.",
     "sendingOne": "Sending 1 transfer",
-    "sendingMany": "Sending {n} transfers"
+    "sendingMany": "Sending {n} transfers",
+    "pickFiles": "Choose files",
+    "filesSkipped": "1 file was left out: it has no place on this phone (a cloud file, for example). | {n} files were left out: they have no place on this phone (cloud files, for example)."
   },
   "phone": {
     "conn": {
@@ -73,8 +75,22 @@
     "tour": {
       "source": {
         "add": {
-          "body": "Choose a folder with the button, one at a time. Add as many as you like: they all go to the same place, and nothing at the source changes."
+          "body": "Choose a folder or files with the buttons: a folder at a time, files several at once. Add as many as you like: they all go to the same place, and nothing at the source changes."
         }
+      }
+    },
+    "profile": {
+      "keyFileHint": "empty = sign in with the password",
+      "passwordHint": "empty = the key file",
+      "hint": {
+        "keyFile": "A phone has no SSH agent: pick a key file on this phone, or leave empty and enter the password",
+        "user": "The user you sign in with on the server",
+        "knownHosts": "Empty = filebridge's own list on this phone"
+      },
+      "help": {
+        "keyFile": "A file with a private SSH key kept on this phone, used instead of a password. A phone has no SSH agent: without a key file, filebridge signs in with the password.",
+        "user": "The user you sign in with on the server.",
+        "knownHosts": "The file listing the servers this phone already trusts. Leave empty to use filebridge's own."
       }
     }
   },
@@ -99,7 +115,7 @@
       "empty": "Nothing happened yet. What your transfers do appears here."
     },
     "mobile": {
-      "pickHint": "A folder in the Files app: on this iPhone, iCloud Drive, a USB drive… Add one folder at a time."
+      "pickHint": "Folders or files in the Files app: on this iPhone, iCloud Drive, a USB drive… A folder at a time, or several files at once."
     }
   },
   "conn": {
@@ -826,11 +842,13 @@
       "folder": "A folder inside that user's files. Empty puts the files at the top.",
       "ctid": "Proxmox only: the number of the container where Nextcloud runs. Leave empty and filebridge finds it.",
       "installDir": "Where Nextcloud is installed inside the container. Leave empty and filebridge finds it.",
-      "dedicated": "Instead of root, filebridge signs in as a user of its own: in the web server's group (so it can hand the files it sends to Nextcloud without root), allowed by one sudoers line to run only Nextcloud's occ. filebridge shows the commands to set this up; you run them yourself."
+      "dedicated": "Instead of root, filebridge signs in as a user of its own: in the web server's group (so it can hand the files it sends to Nextcloud without root), allowed by one sudoers line to run only Nextcloud's occ. filebridge shows the commands to set this up; you run them yourself.",
+      "sshPassword": "A phone has no SSH agent. filebridge signs in once with this password, adds its own key to the SSH user's authorized_keys (restricted, removable with Remove access) and from then on signs in only with that key. The password is never kept."
     },
     "hint": {
       "host": "The Proxmox node or the Nextcloud server itself",
-      "sshUser": "Usually root"
+      "sshUser": "Usually root",
+      "sshPassword": "Used once to install filebridge's own key on the server, then forgotten."
     },
     "advice": {
       "title": "Not sure which to pick? Let filebridge check the server",
@@ -850,7 +868,8 @@
     "serverSetup": "Server setup for the dedicated user",
     "serverSetupHint": "filebridge never runs these and never changes sudoers. Read them, run them yourself as root on the server, then press Detect again.",
     "copySetup": "Copy",
-    "copied": "Copied"
+    "copied": "Copied",
+    "sshPassword": "SSH password"
   },
   "immich": {
     "intro": "filebridge copies the files into a folder of an Immich external library (over SFTP, or into a folder of this computer), then asks Immich to scan that library. Immich only reads the folder: it never moves or deletes your files.",
@@ -1510,6 +1529,7 @@
     "server": "Nextcloud address",
     "appPassword": "App password",
     "https": "Use https://: an app password must not travel unencrypted.",
+    "ipAddress": "An IP address rarely works with https://: the certificate is made for the server's name. Enter the name you open Nextcloud with in the browser.",
     "folderHint": "empty = the user's files root",
     "check": "Check and save",
     "checking": "Checking…",
@@ -1529,7 +1549,8 @@
       "direct": "direct (SSH)"
     },
     "appPasswordHint": "Not the password you sign in to Nextcloud with: with two-factor sign-in that one can't work here. Create one in Nextcloud under Settings → Security → Devices & sessions.",
-    "appPasswordLink": "Open that page"
+    "appPasswordLink": "Open that page",
+    "appPasswordShort": "This is shorter than any Nextcloud app password (they look like xxxxx-xxxxx-xxxxx-xxxxx-xxxxx): it is probably the password you sign in with."
   },
   "access": {
     "uses": "Signs in with filebridge's own key",

@@ -1,14 +1,15 @@
 <script setup lang="ts">
 // Nextcloud direct mode (docs/05): SSH to the Proxmox host (and find the Nextcloud container) or
 // to the machine Nextcloud runs on, then find its data directory, `occ` and the file owner. Each
-// step shows ✓ / ! / ✗.
+// step shows ✓ / ! / ✗. A phone has no SSH agent: it signs in with the SSH password, which
+// installs filebridge's own key (ADR 0012) and is then forgotten.
 import { trimBoth } from "@/lib/format";
 import AppIcon from "@/components/AppIcon.vue";
 import { computed, reactive, ref, shallowRef, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
-import { copyText, pickPaths } from "@/lib/platform";
+import { copyText, isMobile, pickPaths } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import StatusIcon from "./StatusIcon.vue";
 import HelpTip from "./HelpTip.vue";
@@ -34,6 +35,9 @@ const form = reactive({
   install_dir: "",
   dedicated_user: false,
 });
+/** The phone's SSH password: kept apart from the form and cleared once the profile is saved. */
+const sshPassword = ref(props.initial?.ssh_password ?? "");
+const mobile = isMobile();
 const running = ref(false);
 const error = ref<string | null>(null);
 const result = shallowRef<DetectNextcloudResponse_Serialize | null>(null);
@@ -46,6 +50,7 @@ const missing = computed(() => {
   if (!form.host.trim()) m.push(t("nextcloud.host"));
   if (!(form.port > 0)) m.push(t("profile.port"));
   if (!form.user.trim()) m.push(t("nextcloud.sshUser"));
+  if (mobile && !sshPassword.value) m.push(t("nextcloud.sshPassword"));
   return m;
 });
 const valid = computed(() => !missing.value.length);
@@ -68,9 +73,10 @@ async function copySetup() {
 }
 const runtimeKey = computed(() => `nextcloud.runtime.${result.value?.detector ?? ""}`);
 
+/** Detection's steps, then (with a password) the key install's. */
 function stepLabel(id: string) {
-  const key = `nextcloud.steps.${id}`;
-  return te(key) ? t(key) : id;
+  const key = [`nextcloud.steps.${id}`, `access.steps.${id}`].find((k) => te(k));
+  return key ? t(key) : id;
 }
 
 async function pickKey() {
@@ -108,7 +114,9 @@ async function detect() {
       ctid: ctid != null && Number.isInteger(ctid) ? ctid : null,
       install_dir: form.install_dir.trim() || null,
       dedicated_user: form.dedicated_user,
+      ssh_password: mobile ? sshPassword.value : null,
     });
+    if (result.value.profile) sshPassword.value = "";
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -168,7 +176,14 @@ const uid = useId();
         <span v-if="folderLooksLikeHostPath" class="small warn-text">{{ $t("nextcloud.folderHostPath") }}</span>
         <span v-else class="hint">{{ $t("nextcloud.folderHint") }}</span>
       </div>
-      <div class="field wide">
+      <div v-if="mobile" class="field wide">
+        <span class="label-line"><label :for="`${uid}-12`">{{ $t("nextcloud.sshPassword") }}</label><span class="req" aria-hidden="true">*</span>
+          <HelpTip :text="$t('nextcloud.help.sshPassword')" :label="$t('nextcloud.sshPassword')" />
+        </span>
+        <input :id="`${uid}-12`" v-model="sshPassword" type="password" required autocomplete="current-password" spellcheck="false" />
+        <span class="hint"><AppIcon name="lock" :size="16" /> {{ $t("nextcloud.hint.sshPassword") }}</span>
+      </div>
+      <div v-else class="field wide">
         <span class="label-line"><label :for="`${uid}-7`">{{ $t("profile.keyFile") }}</label>
           <HelpTip :text="$t('profile.help.keyFile')" example="~/.ssh/id_ed25519" :label="$t('profile.keyFile')" />
         </span>
@@ -185,7 +200,7 @@ const uid = useId();
     </button>
     <span v-if="!advanced" class="small muted adv-hint">{{ $t("nextcloud.advancedHint") }}</span>
     <div v-if="advanced" class="form-grid">
-      <div class="field">
+      <div v-if="!mobile" class="field">
         <span class="label-line"><label :for="`${uid}-8`">{{ $t("profile.knownHosts") }}</label>
           <HelpTip :text="$t('profile.help.knownHosts')" example="~/.ssh/known_hosts" :label="$t('profile.knownHosts')" />
         </span>
@@ -258,6 +273,7 @@ const uid = useId();
 .adv-hint { margin-left: 0.5rem; }
 .steps { list-style: none; padding: 0; margin: 1rem 0 0; }
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; }
+.steps li > span { min-width: 0; overflow-wrap: anywhere; }
 .saved { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
 .containers { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 .check .label-line { display: flex; gap: 0.4rem; align-items: center; }

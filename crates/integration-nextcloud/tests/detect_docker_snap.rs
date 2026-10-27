@@ -34,6 +34,7 @@ fn input(user: &str) -> DetectInput {
             key_file: None,
             known_hosts_file: None,
             key: None,
+            password: None,
         },
         nextcloud_user: "alice".into(),
         ctid: None,

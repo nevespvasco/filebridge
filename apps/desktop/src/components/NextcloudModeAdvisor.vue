@@ -6,6 +6,7 @@ import { computed, reactive, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import type { NextcloudAdvice } from "@/bindings";
 import { errorMessage } from "@/lib/api";
+import { isMobile } from "@/lib/platform";
 import { useProfiles } from "@/stores/profiles";
 import AppIcon from "./AppIcon.vue";
 import HelpTip from "./HelpTip.vue";
@@ -18,6 +19,8 @@ export interface AdvisorFields {
   port: number;
   user: string;
   nextcloud_user: string;
+  /** A phone's SSH password (no SSH agent there), handed on so it isn't typed twice. */
+  ssh_password?: string;
 }
 
 const emit = defineEmits<{ advised: [mode: AdvisedMode, fields: AdvisorFields] }>();
@@ -25,12 +28,15 @@ const { t } = useI18n();
 const profiles = useProfiles();
 
 const open = ref(false);
-const form = reactive<AdvisorFields>({ host: "", port: 22, user: "root", nextcloud_user: "" });
+const form = reactive<AdvisorFields>({ host: "", port: 22, user: "root", nextcloud_user: "", ssh_password: "" });
+const mobile = isMobile();
 const running = ref(false);
 const error = ref<string | null>(null);
 /** The service's advice, or the window's own when the user didn't trust the server's key. */
 const advice = shallowRef<Pick<NextcloudAdvice, "mode" | "reason" | "message" | "steps"> | null>(null);
-const valid = computed(() => !!form.host.trim() && form.port > 0 && !!form.user.trim() && !!form.nextcloud_user.trim());
+const valid = computed(
+  () => !!form.host.trim() && form.port > 0 && !!form.user.trim() && !!form.nextcloud_user.trim() && (!mobile || !!form.ssh_password),
+);
 const modeLabel = computed(() => (advice.value?.mode === "direct" ? t("webdav.modeDirect") : t("webdav.modeWebdav")));
 
 const hostKey = ref<InstanceType<typeof HostKeyPrompt> | null>(null);
@@ -39,7 +45,13 @@ async function check() {
   running.value = true;
   error.value = null;
   advice.value = null;
-  const fields = { host: form.host.trim(), port: form.port, user: form.user.trim(), nextcloud_user: form.nextcloud_user.trim() };
+  const fields: AdvisorFields = {
+    host: form.host.trim(),
+    port: form.port,
+    user: form.user.trim(),
+    nextcloud_user: form.nextcloud_user.trim(),
+    ssh_password: mobile ? form.ssh_password : undefined,
+  };
   try {
     let known: boolean;
     try {
@@ -66,6 +78,7 @@ async function check() {
       folder: "",
       ctid: null,
       install_dir: null,
+      ssh_password: fields.ssh_password || null,
     });
     advice.value = res;
     emit("advised", res.mode === "direct" ? "direct" : "webdav", fields);
@@ -102,6 +115,12 @@ async function check() {
         <label class="field">
           <span class="label-line">{{ $t("nextcloud.ncUser") }}</span>
           <input v-model="form.nextcloud_user" required spellcheck="false" />
+        </label>
+        <label v-if="mobile" class="field">
+          <span class="label-line">{{ $t("nextcloud.sshPassword") }}
+            <HelpTip :text="$t('nextcloud.help.sshPassword')" :label="$t('nextcloud.sshPassword')" />
+          </span>
+          <input v-model="form.ssh_password" type="password" required autocomplete="current-password" spellcheck="false" />
         </label>
       </div>
       <div class="actions">

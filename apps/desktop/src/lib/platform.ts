@@ -1,7 +1,7 @@
 // Window-side platform features: the file picker, drag & drop, OS notifications. They come from
 // Tauri plugins and `@tauri-apps/api`, not from the service. On a phone (ADR 0013) the folder
-// picker is the app's own Android or iOS plugin, and drag & drop, the tray and "show in the file
-// manager" don't exist.
+// and file pickers are the app's own Android or iOS plugin, and drag & drop, the tray and "show
+// in the file manager" don't exist.
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   isPermissionGranted,
@@ -13,6 +13,7 @@ import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { commands, type Platform } from "@/bindings";
 import { i18n, applyPhoneTexts } from "@/i18n";
 import { api } from "@/lib/api";
+import { useToast } from "@/stores/toast";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
 
@@ -24,7 +25,7 @@ export async function initPlatform(): Promise<void> {
   if (isMobile()) applyPhoneTexts(current === "ios");
 }
 
-/** Android or iOS: no tray, no service, no drag & drop, folders only. */
+/** Android or iOS: no tray, no service, no drag & drop. */
 export function isMobile(): boolean {
   return current !== "desktop";
 }
@@ -48,11 +49,12 @@ export function setMockPicker(picker: (opts: PickOptions) => Promise<string[]>) 
   mockPicker = picker;
 }
 
-/** Native picker. Returns absolute paths (empty when cancelled). On a phone only folders can
- *  be picked, one at a time; on Android after "All files access" is granted. */
+/** Native picker. Returns absolute paths (empty when cancelled). On a phone folders are picked
+ *  one at a time and files several at once, on Android after "All files access" is granted;
+ *  files with no path there (a cloud provider's) are left out, and a toast says how many. */
 export async function pickPaths(opts: PickOptions): Promise<string[]> {
   if (isMock) return mockPicker ? mockPicker(opts) : [];
-  if (isMobile()) return pickPhoneFolder(opts);
+  if (isMobile()) return opts.directory ? pickPhoneFolder() : pickPhoneFiles();
   const picked = await open({
     directory: opts.directory,
     multiple: opts.multiple ?? true,
@@ -63,13 +65,23 @@ export async function pickPaths(opts: PickOptions): Promise<string[]> {
   return Array.isArray(picked) ? picked : [picked];
 }
 
-async function pickPhoneFolder(opts: PickOptions): Promise<string[]> {
-  if (!opts.directory) return [];
+async function ensureStorageAccess() {
   if (!(await api.storageAccess()) && !(await api.requestStorageAccess())) {
     throw new Error(i18n.global.t("mobile.storageDenied"));
   }
+}
+
+async function pickPhoneFolder(): Promise<string[]> {
+  await ensureStorageAccess();
   const path = await api.pickFolder();
   return path ? [path] : [];
+}
+
+async function pickPhoneFiles(): Promise<string[]> {
+  await ensureStorageAccess();
+  const { paths, skipped } = await api.pickFiles();
+  if (skipped) useToast().show(i18n.global.t("mobile.filesSkipped", { n: skipped }, skipped), "error", 5000);
+  return paths;
 }
 
 /** Mock mode only: where "Save as" answers from. */

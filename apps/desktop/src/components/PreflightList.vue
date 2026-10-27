@@ -70,5 +70,5 @@ const shown = (v: PreflightView_Serialize): Check[] => [...problems(v), ...(open
 .toggle { margin-left: auto; }
 .checks { list-style: none; padding: 0; margin: 0.4rem 0 0; }
 .checks li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.3rem 0; }
-.what { display: grid; gap: 0.1rem; min-width: 0; }
+.what { display: grid; gap: 0.1rem; min-width: 0; overflow-wrap: anywhere; }
 </style>

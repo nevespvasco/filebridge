@@ -71,6 +71,7 @@ async fn a_key_taken_as_a_first_factor_is_accepted() {
         key_file: None,
         known_hosts_file: Some(known),
         key: None,
+        password: None,
     };
     let connector = SshConnector::new();
     assert!(connector.key_accepted(&target, ours.key).await.unwrap());
