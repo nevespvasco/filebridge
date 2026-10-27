@@ -153,7 +153,7 @@ would make `cargo test`, clippy and `tauri dev` need the files and overwrite the
 ```bash
 pnpm bundle                       # .deb and .rpm (tauri.linux.conf.json)
 RCLONE_DOWNLOAD=1 pnpm bundle     # the same, with the pinned rclone downloaded and checked
-sudo apt install ../../target/release/bundle/deb/filebridge_0.2.0_amd64.deb
+sudo apt install ../../target/release/bundle/deb/filebridge_0.3.0_amd64.deb
 ```
 **No AppImage.** `tauri.linux.conf.json` limits the Linux targets to `deb` and `rpm`. Tauri
 builds an AppImage only after downloading linuxdeploy, its AppRun and its GTK plugin from
