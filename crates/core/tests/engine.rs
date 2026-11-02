@@ -2937,6 +2937,7 @@ async fn a_password_a_profile_needs_cannot_be_removed() {
                     user: "alice".into(),
                     password: Some(r.clone()),
                     vendor: Some("nextcloud".into()),
+                    skip_certificate_check: false,
                 },
                 root: "Backup".into(),
             },

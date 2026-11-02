@@ -95,6 +95,7 @@ async fn webdav_with_a_password_from_the_keyring() {
             user: "alice".into(),
             password: Some(pass_ref.clone()),
             vendor: None,
+            skip_certificate_check: false,
         },
         root: "dest".into(),
     };

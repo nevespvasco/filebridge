@@ -160,6 +160,11 @@ pub enum Backend {
         password: Option<KeyringRef>,
         /// Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV.
         vendor: Option<String>,
+        /// Accept any HTTPS certificate: a self-signed one, or one for another name (a home
+        /// server reached by a name only the router knows, or by IP; ADR 0035). Still
+        /// encrypted, but nothing proves the server is the one meant. The user's opt-in.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        skip_certificate_check: bool,
     },
     /// A Windows or Samba share (SMB2/3). `root` is a folder inside `share` (empty for the
     /// share itself), `/`-separated (ADR 0022).

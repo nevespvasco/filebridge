@@ -294,6 +294,7 @@ mod tests {
                 user: "alice".into(),
                 password: None,
                 vendor: None,
+                skip_certificate_check: false,
             },
             ..sftp("Photos")
         };

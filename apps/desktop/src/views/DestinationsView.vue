@@ -4,7 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 
 import TourButton from "@/components/TourButton.vue";
 import { useTour } from "@/stores/tour";
 import { useI18n } from "vue-i18n";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import type { Profile_Serialize } from "@/bindings";
 import ClampText from "@/components/ClampText.vue";
 import StatusIcon from "@/components/StatusIcon.vue";
@@ -59,7 +59,13 @@ const error = ref<string | null>(null);
 
 // The guide starts by itself once, when there is a destination to point at.
 const tour = useTour();
+const route = useRoute();
 onMounted(async () => {
+  // Sent here to add one (the Schedules page with no destination yet).
+  if (route.query.new !== undefined) {
+    creating.value = true;
+    void router.replace({ query: {} });
+  }
   await profiles.load();
   void profiles.loadAllStorage();
   await nextTick();
@@ -182,6 +188,16 @@ function removeAccessFirst() {
   if (p) access.value = { profile: p, action: "remove" };
 }
 
+/** A WebDAV destination its user let go unencrypted, or without checking the server's
+ *  certificate (ADR 0035): said on its card, so the choice stays in sight. */
+function connectionNote(p: Profile_Serialize): string | null {
+  const b = p.destination.backend;
+  if (b.kind !== "webdav") return null;
+  if (b.skip_certificate_check) return "destinations.certificateUnchecked";
+  if (/^http:\/\//i.test(b.url) && !/^http:\/\/(localhost|127\.|\[::1\])/i.test(b.url)) return "destinations.unencrypted";
+  return null;
+}
+
 function nextcloudMode(p: Profile_Serialize): string | null {
   const s = p.integration_settings;
   if (s && typeof s === "object" && !Array.isArray(s) && typeof s.mode === "string") return s.mode;
@@ -240,6 +256,7 @@ function nextcloudMode(p: Profile_Serialize): string | null {
             <HelpTip :text="$t('profile.help.target')" :label="$t('profile.target')" />
           </p>
         </div>
+        <p v-if="connectionNote(p)" class="small warn-text"><AppIcon name="warning" :size="16" /> {{ $t(connectionNote(p)!) }}</p>
         <p v-if="sshKey(p) === 'remove'" class="small ok-text"><AppIcon name="key" :size="16" /> {{ $t("access.uses") }}</p>
         <div class="status">
           <DestinationSpace :profile-id="p.id" :hide-error="!!profiles.tests[p.id] && !profiles.tests[p.id].running && failed(profiles.tests[p.id])" :refresh="() => checkSpace(p)" />

@@ -62,6 +62,7 @@ fn step_views(detection: &Detection) -> Vec<DetectStepView> {
                 .iter()
                 .map(|c| format!("{}  (exit {})", c.command, c.status))
                 .collect(),
+            hint: None,
         })
         .collect()
 }
@@ -205,7 +206,58 @@ fn step(id: &str, status: &str, message: impl Into<String>) -> DetectStepView {
         status: status.into(),
         message: message.into(),
         commands: Vec::new(),
+        hint: None,
     }
+}
+
+/// Plain `http` goes only to the user's home network (ADR 0035): this machine, a private or
+/// link-local address, or Tailscale's, by IP or by every address its name resolves to (a name
+/// the router's DNS gives, like `pve.example.lan`).
+async fn at_home(server: &str) -> Result<(), ErrorBody> {
+    let (host, port) = match webdav::host(server) {
+        Some(webdav::Host::Loopback) => return Ok(()),
+        Some(webdav::Host::Ip(ip)) => return outside(&ip.to_string(), ip),
+        Some(webdav::Host::Name(name, port)) => (name, port),
+        None => return Err(err("invalid", format!("{server:?} has no host"))),
+    };
+    let addrs: Vec<_> = tokio::net::lookup_host((host.as_str(), port))
+        .await
+        .map_err(|e| {
+            err(
+                "invalid",
+                format!("could not find {host} on the network: {e}"),
+            )
+        })?
+        .collect();
+    if addrs.is_empty() {
+        return Err(err(
+            "invalid",
+            format!("could not find {host} on the network"),
+        ));
+    }
+    for a in addrs {
+        outside(&host, a.ip())?;
+    }
+    Ok(())
+}
+
+/// An error unless `ip` (what `host` is, or resolves to) is on the home network.
+fn outside(host: &str, ip: std::net::IpAddr) -> Result<(), ErrorBody> {
+    if webdav::home_network(ip) {
+        return Ok(());
+    }
+    let is = if host == ip.to_string() {
+        format!("{host} is")
+    } else {
+        format!("{host} resolves to {ip}, which is")
+    };
+    Err(err(
+        "invalid",
+        format!(
+            "{is} outside your home network: http:// is accepted only for a server at home or \
+             on Tailscale; use https:// instead"
+        ),
+    ))
 }
 
 /// The WebDAV-mode wizard (docs/05): normalise the address, keep the app password in the
@@ -216,8 +268,15 @@ async fn add_webdav(
     transport_id: &str,
     req: NextcloudWebdavRequest,
 ) -> Result<DetectNextcloudResponse, ErrorBody> {
-    let address = webdav::parse_address(&req.server).map_err(|m| err("invalid", m))?;
+    let address =
+        webdav::parse_address(&req.server, req.plain_http).map_err(|m| err("invalid", m))?;
     let server = address.server;
+    let plain_http = server.starts_with("http://");
+    if plain_http {
+        at_home(&server).await?;
+    }
+    // Nothing to trust over plain http.
+    let skip_certificate_check = req.skip_certificate_check && !plain_http;
     let user = req.user.trim().to_owned();
     // A WebDAV address copied from Nextcloud names the user's id, which an email or LDAP
     // login is not.
@@ -236,7 +295,24 @@ async fn add_webdav(
         RemotePath::new(folder.clone()).map_err(|e| err("invalid", e.message))?;
     }
     let url = webdav::dav_url(&server, user_id.as_deref().unwrap_or(&user));
-    let mut steps = vec![step("address", "ok", format!("WebDAV address {url}"))];
+    let mut steps = vec![if plain_http {
+        step(
+            "address",
+            "warn",
+            format!(
+                "WebDAV address {url}, unencrypted: the app password travels in clear on your \
+                 network"
+            ),
+        )
+    } else if skip_certificate_check {
+        step(
+            "address",
+            "warn",
+            format!("WebDAV address {url}; the server's certificate is not checked"),
+        )
+    } else {
+        step("address", "ok", format!("WebDAV address {url}"))
+    }];
 
     let registry = engine.registry();
     let transport = registry
@@ -264,6 +340,7 @@ async fn add_webdav(
             user: user.clone(),
             password: Some(pass_ref.clone()),
             vendor: Some(webdav::VENDOR.into()),
+            skip_certificate_check,
         },
         root: folder.clone(),
     };
@@ -276,6 +353,10 @@ async fn add_webdav(
     match transport.list(&files, None, true).await {
         Ok(_) => steps.push(step("sign-in", "ok", format!("signed in as {user}"))),
         Err(e) => {
+            let hint = (!skip_certificate_check)
+                .then(|| webdav::tls_hint(&server, &e.message))
+                .flatten();
+            let certificate = hint.is_some() && webdav::certificate_error(&e.message);
             let message =
                 if e.kind == ErrorKind::Auth && e.message.contains("PasswordLoginForbidden") {
                     // Nextcloud answers this to anything that isn't one of the user's app
@@ -300,7 +381,7 @@ async fn add_webdav(
                      Settings instead of the server's ({})",
                         e.message
                     )
-                } else if let Some(hint) = webdav::ip_tls_hint(&server, &e.message) {
+                } else if let Some(hint) = hint {
                     format!(
                         "could not open a secure connection to {server}: {hint} ({})",
                         e.message
@@ -308,7 +389,10 @@ async fn add_webdav(
                 } else {
                     format!("could not reach Nextcloud at {server}: {}", e.message)
                 };
-            steps.push(step("sign-in", "fail", message));
+            steps.push(DetectStepView {
+                hint: certificate.then(|| "certificate".into()),
+                ..step("sign-in", "fail", message)
+            });
             forget().await;
             return Ok(DetectNextcloudResponse {
                 detector: "webdav".into(),
@@ -350,6 +434,8 @@ async fn add_webdav(
         server,
         user,
         user_id,
+        plain_http,
+        skip_certificate_check,
     }))
     .map_err(|e| err("internal", e.to_string()))?;
     let saved = engine
@@ -376,4 +462,34 @@ async fn add_webdav(
         profile: Some(profile),
         server_setup: Vec::new(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn plain_http_goes_only_to_the_home_network() {
+        for server in [
+            "http://192.168.77.20",
+            "http://10.77.0.5:8080",
+            "http://100.77.88.99",
+            "http://[fd12:3456::1]",
+            "http://127.0.0.1:8080",
+            "http://localhost",
+        ] {
+            at_home(server)
+                .await
+                .unwrap_or_else(|e| panic!("{server}: {}", e.message));
+        }
+        for server in ["http://203.0.113.5", "http://[2001:db8::1]"] {
+            let e = at_home(server).await.unwrap_err();
+            assert_eq!(e.code, "invalid");
+            assert!(
+                e.message.contains("outside your home network"),
+                "{}",
+                e.message
+            );
+        }
+    }
 }

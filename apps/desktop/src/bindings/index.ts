@@ -39,13 +39,13 @@ export const commands = {
 	 *  Which Nextcloud mode suits this server (ADR 0024): detection over SSH as for
 	 *  `detect_nextcloud`, but nothing is saved; `name` and `folder` are not used.
 	 */
-	probeNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<NextcloudAdvice, ErrorBody>(__TAURI_INVOKE("probe_nextcloud", { req })),
+	probeNextcloud: (req: DetectNextcloudRequest_Deserialize) => typedError<NextcloudAdvice_Serialize, ErrorBody>(__TAURI_INVOKE("probe_nextcloud", { req })),
 	/**
 	 *  Nextcloud WebDAV-mode profile wizard: checks the address, the sign-in, the folder
 	 *  and the space, and saves the profile (its app password in the keyring) when they
 	 *  pass. Same answer as `detect_nextcloud`.
 	 */
-	addNextcloudWebdav: (req: NextcloudWebdavRequest) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_nextcloud_webdav", { req })),
+	addNextcloudWebdav: (req: NextcloudWebdavRequest_Deserialize) => typedError<DetectNextcloudResponse_Serialize, ErrorBody>(__TAURI_INVOKE("add_nextcloud_webdav", { req })),
 	/**
 	 *  Immich profile wizard (ADR 0020): checks the destination, the Immich address, the
 	 *  API key, the external library and its folder, and saves the profile (the key in
@@ -283,7 +283,7 @@ export const MAX_QUIET_SECS = 3600 as const;
 
 export const MIN_QUIET_SECS = 5 as const;
 
-export const PROTOCOL_VERSION = 36 as const;
+export const PROTOCOL_VERSION = 37 as const;
 
 export const SOURCE_CHILDREN_CAP = 1000 as const;
 
@@ -299,7 +299,7 @@ export type AccessReport = AccessReport_Serialize | AccessReport_Deserialize;
  *  ✓/!/✗, and the profile as saved when it went through.
  */
 export type AccessReport_Deserialize = {
-	steps: DetectStepView[],
+	steps: DetectStepView_Deserialize[],
 	profile?: Profile_Deserialize | null,
 };
 
@@ -308,7 +308,7 @@ export type AccessReport_Deserialize = {
  *  ✓/!/✗, and the profile as saved when it went through.
  */
 export type AccessReport_Serialize = {
-	steps: DetectStepView[],
+	steps: DetectStepView_Serialize[],
 	profile: Profile_Serialize | null,
 };
 
@@ -442,7 +442,13 @@ url: string; user: string;
 /**  The password (a Nextcloud app password) in the keyring. */
 password?: KeyringRef | null; 
 /**  Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV. */
-vendor?: string | null } | 
+vendor?: string | null; 
+/**
+ *  Accept any HTTPS certificate: a self-signed one, or one for another name (a home
+ *  server reached by a name only the router knows, or by IP; ADR 0035). Still
+ *  encrypted, but nothing proves the server is the one meant. The user's opt-in.
+ */
+skip_certificate_check?: boolean } | 
 /**
  *  A Windows or Samba share (SMB2/3). `root` is a folder inside `share` (empty for the
  *  share itself), `/`-separated (ADR 0022).
@@ -497,7 +503,13 @@ url: string; user: string;
 /**  The password (a Nextcloud app password) in the keyring. */
 password: KeyringRef | null; 
 /**  Server flavour for rclone (`nextcloud`, `owncloud`, …); `None` = generic WebDAV. */
-vendor: string | null } | 
+vendor: string | null; 
+/**
+ *  Accept any HTTPS certificate: a self-signed one, or one for another name (a home
+ *  server reached by a name only the router knows, or by IP; ADR 0035). Still
+ *  encrypted, but nothing proves the server is the one meant. The user's opt-in.
+ */
+skip_certificate_check?: boolean } | 
 /**
  *  A Windows or Samba share (SMB2/3). `root` is a folder inside `share` (empty for the
  *  share itself), `/`-separated (ADR 0022).
@@ -720,7 +732,7 @@ export type DetectNextcloudResponse_Deserialize = {
 	 *  reached over SSH) or `host` (Nextcloud on the SSH host itself).
 	 */
 	detector?: string,
-	steps: DetectStepView[],
+	steps: DetectStepView_Deserialize[],
 	/**  Containers (Nextcloud) or libraries (Immich) seen, when the choice was ambiguous. */
 	containers: string[],
 	/**  The saved profile, when every step passed. */
@@ -738,7 +750,7 @@ export type DetectNextcloudResponse_Serialize = {
 	 *  reached over SSH) or `host` (Nextcloud on the SSH host itself).
 	 */
 	detector: string,
-	steps: DetectStepView[],
+	steps: DetectStepView_Serialize[],
 	/**  Containers (Nextcloud) or libraries (Immich) seen, when the choice was ambiguous. */
 	containers: string[],
 	/**  The saved profile, when every step passed. */
@@ -750,13 +762,34 @@ export type DetectNextcloudResponse_Serialize = {
 	server_setup: string[],
 };
 
-export type DetectStepView = {
+export type DetectStepView = DetectStepView_Serialize | DetectStepView_Deserialize;
+
+export type DetectStepView_Deserialize = {
 	id: string,
 	/**  `ok`, `warn` or `fail`. */
 	status: string,
 	message: string,
 	/**  The commands the step ran, for the Details panel. */
 	commands: string[],
+	/**
+	 *  What the wizard can offer about a failed step: `certificate` when the server's HTTPS
+	 *  certificate was refused, which trusting it gets past (ADR 0035).
+	 */
+	hint?: string | null,
+};
+
+export type DetectStepView_Serialize = {
+	id: string,
+	/**  `ok`, `warn` or `fail`. */
+	status: string,
+	message: string,
+	/**  The commands the step ran, for the Details panel. */
+	commands: string[],
+	/**
+	 *  What the wizard can offer about a failed step: `certificate` when the server's HTTPS
+	 *  certificate was refused, which trusting it gets past (ADR 0035).
+	 */
+	hint?: string,
 };
 
 /**  A file that just arrived. */
@@ -1580,7 +1613,10 @@ export type LoginEntry =
 "run_key";
 
 /**  The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024). */
-export type NextcloudAdvice = {
+export type NextcloudAdvice = NextcloudAdvice_Serialize | NextcloudAdvice_Deserialize;
+
+/**  The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024). */
+export type NextcloudAdvice_Deserialize = {
 	/**
 	 *  `direct` when SSH reaches the machine Nextcloud runs on with the rights direct mode needs,
 	 *  else `webdav`.
@@ -1597,14 +1633,41 @@ export type NextcloudAdvice = {
 	/**  The setup detection found (`proxmox-lxc`, `host`, …); empty when SSH didn't connect. */
 	detector: string,
 	/**  What detection did, for the Details panel. */
-	steps: DetectStepView[],
+	steps: DetectStepView_Deserialize[],
+};
+
+/**  The Nextcloud wizard's recommendation (`probe_nextcloud`, ADR 0024). */
+export type NextcloudAdvice_Serialize = {
+	/**
+	 *  `direct` when SSH reaches the machine Nextcloud runs on with the rights direct mode needs,
+	 *  else `webdav`.
+	 */
+	mode: string,
+	/**
+	 *  Why: `ready`, `unreachable` (SSH didn't connect), `rights` (the SSH user lacks root,
+	 *  `sudo -n` or writing the files folder) or `not_found` (no usable Nextcloud there). The
+	 *  window's i18n key is `nextcloud.advice.<reason>`.
+	 */
+	reason: string,
+	/**  The message of the step (or the connection error) that decided it, untranslated. */
+	message: string,
+	/**  The setup detection found (`proxmox-lxc`, `host`, …); empty when SSH didn't connect. */
+	detector: string,
+	/**  What detection did, for the Details panel. */
+	steps: DetectStepView_Serialize[],
 };
 
 /**
  *  Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
  *  password, which goes to the OS keyring and nowhere else.
  */
-export type NextcloudWebdavRequest = {
+export type NextcloudWebdavRequest = NextcloudWebdavRequest_Serialize | NextcloudWebdavRequest_Deserialize;
+
+/**
+ *  Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
+ *  password, which goes to the OS keyring and nowhere else.
+ */
+export type NextcloudWebdavRequest_Deserialize = {
 	/**  Name for the profile saved when every check passes. */
 	name: string,
 	/**
@@ -1618,6 +1681,40 @@ export type NextcloudWebdavRequest = {
 	app_password: Password,
 	/**  Folder inside the user's files that receives sends (`""` for the root). */
 	folder: string,
+	/**  The user allows an `http://` address, for a server on their home network (ADR 0035). */
+	plain_http?: boolean,
+	/**
+	 *  The user trusts the server's HTTPS certificate whatever it is: self-signed, or made for
+	 *  another name (ADR 0035).
+	 */
+	skip_certificate_check?: boolean,
+};
+
+/**
+ *  Nextcloud WebDAV-mode profile wizard (docs/05): the server's address, the user and an app
+ *  password, which goes to the OS keyring and nowhere else.
+ */
+export type NextcloudWebdavRequest_Serialize = {
+	/**  Name for the profile saved when every check passes. */
+	name: string,
+	/**
+	 *  What the user typed: `cloud.example.com`, or a WebDAV address copied from Nextcloud
+	 *  (whose `…/dav/files/<id>/` gives the user's id when the login is an email).
+	 */
+	server: string,
+	/**  The login the app password belongs to. */
+	user: string,
+	/**  A Nextcloud app password (Settings → Security), never the account password. */
+	app_password: Password,
+	/**  Folder inside the user's files that receives sends (`""` for the root). */
+	folder: string,
+	/**  The user allows an `http://` address, for a server on their home network (ADR 0035). */
+	plain_http: boolean,
+	/**
+	 *  The user trusts the server's HTTPS certificate whatever it is: self-signed, or made for
+	 *  another name (ADR 0035).
+	 */
+	skip_certificate_check: boolean,
 };
 
 /**

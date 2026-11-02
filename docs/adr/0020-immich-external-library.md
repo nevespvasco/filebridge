@@ -31,8 +31,8 @@ the background after the request is accepted.
   folder when Immich reads a folder of this machine) writes into a folder inside one of the
   library's import paths; after the transfer the integration asks Immich to scan the library.
   No new `Transport`, no change in `core`.
-- **Settings:** the server's address (HTTPS, except on this machine, as for Nextcloud's WebDAV
-  mode: the key travels with every request), the API key as a `KeyringRef`
+- **Settings:** the server's address (HTTPS, except on this machine, as Nextcloud's WebDAV mode
+  was before ADR 0035: the key travels with every request), the API key as a `KeyringRef`
   (`filebridge/<profile>/api-key`, new `SecretKind::ApiKey`; ADR 0004), the library id, and the
   destination's root **as Immich sees it** (`import_path`), because Immich in Docker sees the
   host's `/srv/photos` as e.g. `/mnt/photos`. Empty means the same path.

@@ -58,6 +58,8 @@ and its modification time, and the answer says per file whether it was stored.
   100 files: 1,200 files in 14 s with the account password, 371 s before.
 - A second HTTP client lives next to rclone, with TLS (rustls, the OS's certificates plus the
   Mozilla roots). It applies only to Nextcloud, and anything it can't do falls back to rclone.
+  A destination whose user trusts its server's certificate (ADR 0035) gets a client that checks
+  none.
 - The bandwidth limit applies per request, not per byte: a request starts when its turn comes, so
   the rate averages out to the limit in steps of up to 16 MiB.
 - A pause or a closed send window drops requests in flight. Their files stay `Partial` and go

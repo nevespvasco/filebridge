@@ -60,6 +60,7 @@ async fn bulk_over_rclone(binary: &Path, password: &str) -> (NextcloudBulk, Back
         user: String::new(),
         password: Some(pass_ref),
         vendor: Some("nextcloud".into()),
+        skip_certificate_check: false,
     };
     (NextcloudBulk::over(rclone, resolver), backend)
 }
@@ -67,12 +68,16 @@ async fn bulk_over_rclone(binary: &Path, password: &str) -> (NextcloudBulk, Back
 fn with_address(backend: &Backend, url: String, user: String) -> Backend {
     match backend.clone() {
         Backend::Webdav {
-            password, vendor, ..
+            password,
+            vendor,
+            skip_certificate_check,
+            ..
         } => Backend::Webdav {
             url,
             user,
             password,
             vendor,
+            skip_certificate_check,
         },
         other => other,
     }
@@ -128,6 +133,7 @@ async fn a_server_without_bulk_upload_gets_everything_through_rclone() {
             user,
             password,
             vendor: None,
+            skip_certificate_check: false,
         },
         other => other,
     };

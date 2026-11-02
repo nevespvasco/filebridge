@@ -22,12 +22,16 @@ network (like the 500 GB initial migration).
 ### As built (Phase 2)
 
 - **WebDAV mode** (`crates/integration-nextcloud/src/webdav.rs`): `Backend::Webdav { url, user,
-  password, vendor: "nextcloud" }` through rclone's `webdav` backend; settings
-  `{ "mode": "webdav", "server", "user" }`. The wizard (`add_nextcloud_webdav`, the window's
+  password, vendor: "nextcloud", skip_certificate_check }` through rclone's `webdav` backend;
+  settings `{ "mode": "webdav", "server", "user", "plain_http"?, "skip_certificate_check"? }`. The wizard (`add_nextcloud_webdav`, the window's
   "Over the internet (WebDAV)" form, `filebridge profile add-nextcloud-webdav`) normalises what
   is typed (`cloud.example.com`, or a WebDAV address copied from Nextcloud) to
   `https://…/remote.php/dav/files/<id>/` — plain `http` only on this machine (`localhost` or a
-  loopback IP as parsed by the `url` crate, never a name like `127.example.org`); an address with
+  loopback IP as parsed by the `url` crate, never a name like `127.example.org`), or on the home
+  network when the user allows it (ADR 0035; a name must resolve to private, link-local or
+  Tailscale addresses only). A server whose certificate is self-signed or made for another name
+  is reached when the user ticks "Trust this server's certificate" (ADR 0035): rclone skips the
+  check for that remote only, and a refused certificate says so in the Sign-in row. An address with
   a user or password in it is refused, as are bad ports and IPv6 literals. `<id>` is the login,
   or the user id from a pasted WebDAV address (`…/dav/files/<id>/`) when it differs, as with
   email or LDAP logins (settings `user_id`); a missing user folder suggests pasting it. It keeps the app

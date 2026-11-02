@@ -92,7 +92,9 @@ pub use filebridge_transport_api::{Backend, Destination, KeyringRef};
 /// 35: `discard_draft` and `JobSummary.discarded` (ADR 0030); `JobPage.groups` (per-group
 ///     counts); `probe_local_target`; `EntryView.error`.
 /// 36: `DetectNextcloudRequest.ssh_password` (ADR 0012, phones).
-pub const PROTOCOL_VERSION: u32 = 36;
+/// 37: `NextcloudWebdavRequest.plain_http` and `.skip_certificate_check`; `DetectStepView.hint`
+/// (ADR 0035).
+pub const PROTOCOL_VERSION: u32 = 37;
 
 /// One call: its `id` and the request, kept apart so no argument can collide with the `id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,6 +215,13 @@ pub struct NextcloudWebdavRequest {
     pub app_password: Password,
     /// Folder inside the user's files that receives sends (`""` for the root).
     pub folder: String,
+    /// The user allows an `http://` address, for a server on their home network (ADR 0035).
+    #[serde(default)]
+    pub plain_http: bool,
+    /// The user trusts the server's HTTPS certificate whatever it is: self-signed, or made for
+    /// another name (ADR 0035).
+    #[serde(default)]
+    pub skip_certificate_check: bool,
 }
 
 /// Immich profile wizard (ADR 0020): files go by `destination` (SFTP, or a local folder) into a
@@ -273,6 +282,10 @@ pub struct DetectStepView {
     pub message: String,
     /// The commands the step ran, for the Details panel.
     pub commands: Vec<String>,
+    /// What the wizard can offer about a failed step: `certificate` when the server's HTTPS
+    /// certificate was refused, which trusting it gets past (ADR 0035).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
@@ -488,6 +501,8 @@ mod tests {
                     user: "alice".into(),
                     app_password: Password::new("app-pass-AbCdE"),
                     folder: String::new(),
+                    plain_http: false,
+                    skip_certificate_check: false,
                 },
             },
             Request::AddImmich {

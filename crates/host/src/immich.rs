@@ -29,6 +29,7 @@ fn step(id: &str, status: &str, message: impl Into<String>) -> DetectStepView {
         status: status.into(),
         message: message.into(),
         commands: Vec::new(),
+        hint: None,
     }
 }
 
