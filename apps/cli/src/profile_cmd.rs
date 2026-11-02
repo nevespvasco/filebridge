@@ -142,6 +142,14 @@ pub enum ProfileCmd {
         /// Folder inside that user's files, e.g. `Backup` (default: the files root).
         #[arg(long, default_value = "")]
         folder: String,
+        /// Allow an `http://` address: the app password then travels unencrypted, so only to a
+        /// server on your home network or Tailscale (ADR 0035).
+        #[arg(long)]
+        plain_http: bool,
+        /// Trust the server's HTTPS certificate whatever it is (self-signed, or for another
+        /// name): still encrypted, but nothing proves the server is yours (ADR 0035).
+        #[arg(long)]
+        skip_certificate_check: bool,
     },
     /// Immich (ADR 0020): files go over SFTP (or to a local folder with --local) into a folder of
     /// an Immich external library, which is scanned after each send. The API key (an
@@ -398,6 +406,8 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
             server,
             user,
             folder,
+            plain_http,
+            skip_certificate_check,
         } => {
             let app = App::open(g, Access::Exclusive, true).await?;
             let app_password = read_password(&format!("App password for {user}: "))?;
@@ -409,6 +419,8 @@ pub async fn run(g: &Global, cmd: ProfileCmd) -> Result<()> {
                     user,
                     app_password: filebridge_ipc::Password::new(app_password),
                     folder,
+                    plain_http,
+                    skip_certificate_check,
                 })
                 .await
                 .map_err(|e| anyhow::anyhow!("{}: {}", e.code, e.message))?;

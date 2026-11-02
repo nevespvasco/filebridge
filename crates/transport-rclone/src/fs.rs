@@ -189,6 +189,7 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
             user,
             password,
             vendor,
+            skip_certificate_check,
         } => {
             let mut params = vec![("url", url.clone()), ("user", user.clone())];
             if let Some(vendor) = vendor {
@@ -196,6 +197,10 @@ pub fn dest_fs(dest: &Destination, creds: &Creds, sub: &str) -> Result<String> {
             }
             if password.is_some() {
                 params.push(("pass", needed(&creds.pass, "WebDAV")?));
+            }
+            // rclone's global option, for this remote only (ADR 0035).
+            if *skip_certificate_check {
+                params.push(("override.no_check_certificate", "true".into()));
             }
             Ok(format!(":webdav,{}:{path}", connection(params)))
         }
@@ -461,6 +466,37 @@ mod tests {
         );
         let err = dest_fs(&dest(Some("ana"), true, ""), &Creds::default(), "").unwrap_err();
         assert_eq!(err.kind, filebridge_transport_api::ErrorKind::Auth);
+    }
+
+    #[test]
+    fn webdav_connection_string() {
+        let dest = |skip_certificate_check: bool| Destination {
+            transport: "rclone".into(),
+            backend: Backend::Webdav {
+                url: "https://pve.example.lan/remote.php/dav/files/ana/".into(),
+                user: "ana".into(),
+                password: Some(filebridge_transport_api::KeyringRef(
+                    "filebridge/p/app-password".into(),
+                )),
+                vendor: Some("nextcloud".into()),
+                skip_certificate_check,
+            },
+            root: "Fotos".into(),
+        };
+        let creds = Creds {
+            pass: Some(SecretValue::new("obscured".into())),
+            ..Creds::default()
+        };
+        assert_eq!(
+            dest_fs(&dest(false), &creds, "2026").unwrap(),
+            ":webdav,url=\"https://pve.example.lan/remote.php/dav/files/ana/\",user=\"ana\",\
+             vendor=\"nextcloud\",pass=\"obscured\":Fotos/2026"
+        );
+        assert_eq!(
+            dest_fs(&dest(true), &creds, "").unwrap(),
+            ":webdav,url=\"https://pve.example.lan/remote.php/dav/files/ana/\",user=\"ana\",\
+             vendor=\"nextcloud\",pass=\"obscured\",override.no_check_certificate=\"true\":Fotos"
+        );
     }
 
     #[test]

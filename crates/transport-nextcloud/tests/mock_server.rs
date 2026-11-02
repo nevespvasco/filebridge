@@ -161,6 +161,7 @@ fn bulk(
             user: "alice".into(),
             password: Some(pass_ref),
             vendor: Some("nextcloud".into()),
+            skip_certificate_check: false,
         },
         // The fake lists and writes here; for Nextcloud it is the folder inside alice's files.
         root: dest_dir.to_string_lossy().into_owned(),

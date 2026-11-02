@@ -58,6 +58,9 @@ pub struct NextcloudBulk {
     inner: Arc<dyn Transport>,
     secrets: Arc<dyn SecretResolver>,
     http: reqwest::Client,
+    /// The same, accepting any certificate, for destinations whose user chose to trust their
+    /// server's (`skip_certificate_check`, ADR 0035).
+    trusting: reqwest::Client,
     /// Whether a server (by [`Site::base`]) offers bulk upload, once asked.
     offers: Mutex<HashMap<String, bool>>,
     limit: Limiter,
@@ -77,12 +80,26 @@ impl NextcloudBulk {
             .build()
             .or_else(|_| builder().tls_built_in_native_certs(false).build())
             .expect("a client with the bundled roots always builds");
+        let trusting = builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .expect("a client that checks no certificate always builds");
         Self {
             inner,
             secrets,
             http,
+            trusting,
             offers: Mutex::new(HashMap::new()),
             limit: Limiter::default(),
+        }
+    }
+
+    /// The client for a destination: one that accepts any certificate if its user chose so.
+    fn client(&self, skip_certificate_check: bool) -> &reqwest::Client {
+        if skip_certificate_check {
+            &self.trusting
+        } else {
+            &self.http
         }
     }
 
@@ -94,6 +111,7 @@ impl NextcloudBulk {
             user,
             password: Some(password),
             vendor: Some(vendor),
+            skip_certificate_check,
         } = &dest.backend
         else {
             return Ok(None);
@@ -111,12 +129,13 @@ impl NextcloudBulk {
             return Ok(None);
         }
         let s = SignedIn {
+            http: self.client(*skip_certificate_check).clone(),
             site,
             user: user.clone(),
             password: Arc::new(self.secrets.resolve(password).await?),
         };
         if known.is_none() {
-            let answer = self
+            let answer = s
                 .http
                 .get(s.site.capabilities())
                 .basic_auth(&s.user, Some(s.password.expose()))
@@ -155,6 +174,7 @@ impl NextcloudBulk {
             user,
             password: Some(password),
             vendor: Some(vendor),
+            skip_certificate_check,
         } = &dest.backend
         else {
             return None;
@@ -162,7 +182,7 @@ impl NextcloudBulk {
         let site = Site::of(url).filter(|_| vendor == "nextcloud")?;
         let password = self.secrets.resolve(password).await.ok()?;
         let r = self
-            .http
+            .client(*skip_certificate_check)
             .request(
                 reqwest::Method::from_bytes(b"PROPFIND").expect("PROPFIND is a valid method"),
                 &site.files,
@@ -257,7 +277,7 @@ impl NextcloudBulk {
             if made.contains(&path) {
                 continue;
             }
-            let r = self
+            let r = s
                 .http
                 .request(
                     reqwest::Method::from_bytes(b"MKCOL").expect("MKCOL is a valid method"),
@@ -331,7 +351,7 @@ impl NextcloudBulk {
             );
             progress.stats(out, &in_flight);
             let call = BulkCall {
-                http: self.http.clone(),
+                http: s.http.clone(),
                 site: s.site.clone(),
                 user: s.user.clone(),
                 password: s.password.clone(),
@@ -478,6 +498,8 @@ impl NextcloudBulk {
 
 /// A Nextcloud to send to by bulk upload, signed in.
 struct SignedIn {
+    /// The client for this destination ([`NextcloudBulk::client`]).
+    http: reqwest::Client,
     site: Site,
     user: String,
     password: Arc<SecretValue>,

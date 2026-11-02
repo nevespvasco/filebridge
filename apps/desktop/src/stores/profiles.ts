@@ -1,7 +1,7 @@
 // Saved destinations, their connection tests and the Nextcloud direct-mode detection.
 import { defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
-import type { DetectNextcloudRequest_Deserialize, DetectNextcloudResponse_Serialize, ImmichRequest_Deserialize, NextcloudAdvice, NextcloudWebdavRequest, Profile_Deserialize, Profile_Serialize, ProfileTest_Serialize, StorageView_Serialize as StorageView } from "@/bindings";
+import type { DetectNextcloudRequest_Deserialize, DetectNextcloudResponse_Serialize, ImmichRequest_Deserialize, NextcloudAdvice_Serialize as NextcloudAdvice, NextcloudWebdavRequest_Deserialize, Profile_Deserialize, Profile_Serialize, ProfileTest_Serialize, StorageView_Serialize as StorageView } from "@/bindings";
 import { api, errorMessage } from "@/lib/api";
 
 export type TestState = { running: boolean; result?: ProfileTest_Serialize; error?: string };
@@ -89,7 +89,7 @@ export const useProfiles = defineStore("profiles", () => {
   }
 
   /** WebDAV-mode wizard (docs/05): the app password goes to the keyring, never into a profile. */
-  async function addNextcloudWebdav(req: NextcloudWebdavRequest): Promise<DetectNextcloudResponse_Serialize> {
+  async function addNextcloudWebdav(req: NextcloudWebdavRequest_Deserialize): Promise<DetectNextcloudResponse_Serialize> {
     const res = await api.addNextcloudWebdav(req);
     if (res.profile) await load();
     return res;

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Nextcloud in WebDAV mode (docs/05): its address, the user and an app password. The password
 // goes to the system keyring when the profile is saved, and never into the profile, the logs or
-// the Details panel. Each check shows ✓ / ! / ✗.
+// the Details panel. Each check shows ✓ / ! / ✗. A server at home may be reached by http://, or
+// with a certificate nothing vouches for, when the user chooses so (ADR 0035).
 import { computed, reactive, ref, shallowRef, useId } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
@@ -24,6 +25,12 @@ const appPassword = ref("");
 const running = ref(false);
 const error = ref<string | null>(null);
 const result = shallowRef<DetectNextcloudResponse_Serialize | null>(null);
+/** The user's leave for http:// to a server at home; the service checks it is at home. */
+const allowHttp = ref(false);
+/** The user trusts the server's certificate, whatever it is. */
+const trustCertificate = ref(false);
+/** The connection options, opened by the user or by a refused certificate. */
+const connectionOpen = ref(false);
 
 const missing = computed(() => {
   const m: string[] = [];
@@ -33,12 +40,14 @@ const missing = computed(() => {
   if (!appPassword.value) m.push(t("webdav.appPassword"));
   return m;
 });
-/** http:// is refused by the service; say so before asking it. */
+/** http:// is refused by the service unless allowed; say so before asking it. */
 const plainHttp = computed(() => /^http:\/\//i.test(form.server.trim()) && !/^http:\/\/(localhost|127\.|\[::1\])/i.test(form.server.trim()));
 /** An IP address over HTTPS: the certificate names the server, so the check would fail. */
 const ipAddress = computed(() => /^(https:\/\/)?(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-f:]+\])(:\d+)?(\/|$)/i.test(form.server.trim()));
 /** Nextcloud's app passwords are 29 characters (xxxxx-xxxxx-…) or 72 (login flow): anything
  *  much shorter is the account password. Said, not refused. */
+/** The sign-in failed on the server's certificate, which trusting it gets past. */
+const certificateRefused = computed(() => !!result.value?.steps.some((s) => s.hint === "certificate"));
 const shortPassword = computed(() => appPassword.value.trim().length > 0 && appPassword.value.trim().length < 25);
 
 /** The server's Security settings, where app passwords are made, once the address looks like one. */
@@ -71,8 +80,11 @@ async function check() {
       user: form.user.trim(),
       app_password: appPassword.value,
       folder: trimBoth(form.folder.trim(), "/"),
+      plain_http: plainHttp.value && allowHttp.value,
+      skip_certificate_check: !plainHttp.value && trustCertificate.value,
     });
     if (result.value.profile) appPassword.value = "";
+    if (certificateRefused.value) connectionOpen.value = true;
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -97,8 +109,24 @@ const uid = useId();
           <HelpTip :text="$t('webdav.help.server')" example="cloud.example.com" :label="$t('webdav.server')" />
         </span>
         <input :id="`${uid}-2`" v-model="form.server" spellcheck="false" autocomplete="url" placeholder="cloud.example.com" />
-        <span v-if="plainHttp" class="hint warn-text">{{ $t("webdav.https") }}</span>
-        <span v-else-if="ipAddress" class="hint warn-text">{{ $t("webdav.ipAddress") }}</span>
+        <template v-if="plainHttp">
+          <label class="check">
+            <input v-model="allowHttp" type="checkbox" />
+            <span>{{ $t("webdav.plainHttp") }}</span>
+          </label>
+          <span class="hint warn-text">{{ allowHttp ? $t("webdav.plainHttpWarn") : $t("webdav.https") }}</span>
+        </template>
+        <template v-else>
+          <span v-if="ipAddress" class="hint warn-text">{{ $t("webdav.ipAddress") }}</span>
+          <details class="connection" :open="connectionOpen || ipAddress || trustCertificate" @toggle="connectionOpen = ($event.target as HTMLDetailsElement).open">
+            <summary class="small">{{ $t("webdav.connectionOptions") }}</summary>
+            <label class="check">
+              <input v-model="trustCertificate" type="checkbox" />
+              <span>{{ $t("webdav.trustCertificate") }}</span>
+            </label>
+            <span class="hint" :class="{ 'warn-text': trustCertificate }">{{ $t("webdav.trustCertificateHint") }}</span>
+          </details>
+        </template>
       </div>
       <div class="field">
         <span class="label-line"><label :for="`${uid}-3`">{{ $t("nextcloud.ncUser") }}</label><span class="req" aria-hidden="true">*</span>
@@ -144,6 +172,7 @@ const uid = useId();
           <span><strong>{{ stepLabel(s.id) }}</strong> <span class="muted">{{ s.message }}</span></span>
         </li>
       </ol>
+      <p v-if="certificateRefused && !trustCertificate" class="hint small warn-text">{{ $t("webdav.trustCertificateAgain") }}</p>
       <div v-if="result.profile" class="saved">
         <p class="ok-text small">{{ $t("nextcloud.saved", { name: result.profile.name }) }}</p>
         <button type="button" class="btn btn-primary" @click="emit('saved', result.profile!)">{{ $t("nextcloud.done") }}</button>
@@ -159,5 +188,9 @@ const uid = useId();
 .steps li { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.45rem 0; }
 /* Messages carry addresses with no spaces: they wrap anywhere rather than widen the page. */
 .steps li > span { min-width: 0; overflow-wrap: anywhere; }
+.check { display: flex; gap: 0.5rem; align-items: flex-start; margin-top: 0.4rem; cursor: pointer; }
+.check input { margin-top: 0.2rem; }
+.connection { margin-top: 0.4rem; }
+.connection summary { cursor: pointer; color: var(--muted); }
 .saved { display: flex; gap: 1rem; align-items: center; justify-content: space-between; }
 </style>

@@ -27,6 +27,7 @@ async fn main() {
             user: env("BENCH_USER"),
             password: Some(pass_ref),
             vendor: Some("nextcloud".into()),
+            skip_certificate_check: false,
         },
         root: env("BENCH_ROOT"),
     };

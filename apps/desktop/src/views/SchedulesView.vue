@@ -367,6 +367,7 @@ async function doRemove() {
     <div v-if="schedules.loaded && !schedules.items.length && !draft" class="card empty">
       <AppIcon name="waiting" :size="28" />
       <p>{{ profiles.list.length ? $t("schedules.empty") : $t("schedules.emptyNoDestination") }}</p>
+      <RouterLink v-if="!profiles.list.length" class="btn btn-primary" :to="{ name: 'destinations', query: { new: '1' } }"><AppIcon name="plus" /> {{ $t("dest.new") }}</RouterLink>
     </div>
 
     <ul class="list">
