@@ -271,7 +271,9 @@ async fn add_webdav(
     let address =
         webdav::parse_address(&req.server, req.plain_http).map_err(|m| err("invalid", m))?;
     let server = address.server;
-    let plain_http = server.starts_with("http://");
+    // Plain http off this machine: always allowed on it, as before.
+    let plain_http =
+        server.starts_with("http://") && webdav::host(&server) != Some(webdav::Host::Loopback);
     if plain_http {
         at_home(&server).await?;
     }

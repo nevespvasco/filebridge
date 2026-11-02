@@ -3,7 +3,7 @@
 // goes to the system keyring when the profile is saved, and never into the profile, the logs or
 // the Details panel. Each check shows ✓ / ! / ✗. A server at home may be reached by http://, or
 // with a certificate nothing vouches for, when the user chooses so (ADR 0035).
-import { computed, reactive, ref, shallowRef, useId } from "vue";
+import { computed, reactive, ref, shallowRef, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { DetectNextcloudResponse_Serialize, Profile_Serialize } from "@/bindings";
 import { errorMessage } from "@/lib/api";
@@ -29,7 +29,9 @@ const result = shallowRef<DetectNextcloudResponse_Serialize | null>(null);
 const allowHttp = ref(false);
 /** The user trusts the server's certificate, whatever it is. */
 const trustCertificate = ref(false);
-/** The connection options, opened by the user or by a refused certificate. */
+/** The connection options: open or closed as the user left them, opened again by an IP
+ *  address or a refused certificate. The one state the disclosure follows, so closing it by
+ *  hand never keeps it from opening later. */
 const connectionOpen = ref(false);
 
 const missing = computed(() => {
@@ -44,6 +46,9 @@ const missing = computed(() => {
 const plainHttp = computed(() => /^http:\/\//i.test(form.server.trim()) && !/^http:\/\/(localhost|127\.|\[::1\])/i.test(form.server.trim()));
 /** An IP address over HTTPS: the certificate names the server, so the check would fail. */
 const ipAddress = computed(() => /^(https:\/\/)?(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-f:]+\])(:\d+)?(\/|$)/i.test(form.server.trim()));
+watch(ipAddress, (ip) => {
+  if (ip) connectionOpen.value = true;
+});
 /** Nextcloud's app passwords are 29 characters (xxxxx-xxxxx-…) or 72 (login flow): anything
  *  much shorter is the account password. Said, not refused. */
 /** The sign-in failed on the server's certificate, which trusting it gets past. */
@@ -118,7 +123,7 @@ const uid = useId();
         </template>
         <template v-else>
           <span v-if="ipAddress" class="hint warn-text">{{ $t("webdav.ipAddress") }}</span>
-          <details class="connection" :open="connectionOpen || ipAddress || trustCertificate" @toggle="connectionOpen = ($event.target as HTMLDetailsElement).open">
+          <details class="connection" :open="connectionOpen" @toggle="connectionOpen = ($event.target as HTMLDetailsElement).open">
             <summary class="small">{{ $t("webdav.connectionOptions") }}</summary>
             <label class="check">
               <input v-model="trustCertificate" type="checkbox" />
