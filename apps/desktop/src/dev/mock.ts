@@ -984,14 +984,14 @@ const handlers: Handlers = {
     const userId = pastedId ? decodeURIComponent(pastedId) : null;
     const url = `${scheme}://${host}/remote.php/dav/files/${encodeURIComponent(userId ?? req.user)}/`;
     const steps: DetectStepView_Serialize[] = [
-      plain
+      plain && !/^(localhost|127\.)/.test(host)
         ? { id: "address", status: "warn", message: `WebDAV address ${url}, unencrypted: the app password travels in clear on your network`, commands: [] }
         : trusted
           ? { id: "address", status: "warn", message: `WebDAV address ${url}; the server's certificate is not checked`, commands: [] }
           : { id: "address", status: "ok", message: `WebDAV address ${url}`, commands: [] },
     ];
     // Demo: a .lan name (or "self-signed") over https has a self-signed certificate.
-    if (!plain && !trusted && /(\.lan|self-signed)/.test(host)) {
+    if (!plain && !trusted && (/(\.lan|self-signed)/.test(host) || /^\d+(\.\d+){3}(:\d+)?$/.test(host))) {
       steps.push({ id: "sign-in", status: "fail", message: `could not open a secure connection to https://${host}: the server's HTTPS certificate is not one this device can check (it is self-signed, or made for another name): if this is your own server, you can also tick "Trust this server's certificate" (tls: failed to verify certificate: x509: certificate is not valid for any names, but wanted to match ${host})`, commands: [], hint: "certificate" });
       return { detector: "webdav", steps, containers: [], profile: null, server_setup: [] };
     }
@@ -1009,7 +1009,7 @@ const handlers: Handlers = {
       name: req.name,
       destination: { transport: "rclone", backend: { kind: "webdav", url, user: req.user, password: `filebridge/${id}/app-password`, vendor: "nextcloud", ...(trusted ? { skip_certificate_check: true } : {}) }, root: req.folder },
       integration: "nextcloud",
-      integration_settings: { mode: "webdav", server: `${scheme}://${host}`, user: req.user, ...(userId && userId !== req.user ? { user_id: userId } : {}), ...(plain ? { plain_http: true } : {}), ...(trusted ? { skip_certificate_check: true } : {}) },
+      integration_settings: { mode: "webdav", server: `${scheme}://${host}`, user: req.user, ...(userId && userId !== req.user ? { user_id: userId } : {}), ...(plain && !/^(localhost|127\.)/.test(host) ? { plain_http: true } : {}), ...(trusted ? { skip_certificate_check: true } : {}) },
       target: { family: "unix", case_sensitive: true, max_name_bytes: null, max_path_bytes: null },
     };
     profiles.push(profile);
